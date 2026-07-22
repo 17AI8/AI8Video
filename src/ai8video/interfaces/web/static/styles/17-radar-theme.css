@@ -1,0 +1,449 @@
+
+    #hotRadarModal .hot-radar-action-button,
+    #hotRadarModal .hot-radar-primary-button,
+    #hotRadarModal .hot-radar-ghost-button {
+      min-height: 36px;
+      border-radius: 9px;
+      box-shadow: none;
+    }
+
+    #hotRadarModal .hot-radar-action-button,
+    #hotRadarModal .hot-radar-primary-button {
+      background: var(--hot-radar-accent);
+      color: #fff;
+    }
+
+    #hotRadarModal .hot-radar-ghost-button {
+      border: 1px solid var(--hot-radar-line);
+      background: #fff;
+      color: var(--hot-radar-text);
+    }
+
+    #hotRadarModal .modal-close {
+      border: 1px solid var(--hot-radar-line);
+      background: #fff;
+      color: var(--hot-radar-text);
+    }
+
+    #hotRadarModal .hot-radar-content-grid {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(300px, 350px);
+      align-items: start;
+      gap: 16px;
+      padding: 16px;
+      overflow: auto;
+    }
+
+    #hotRadarModal .hot-radar-hotlist-panel,
+    #hotRadarModal .hot-radar-detail-panel {
+      min-height: 0;
+      overflow: visible;
+      padding: 16px;
+      border: 1px solid var(--hot-radar-line);
+      border-radius: 14px;
+      background: var(--hot-radar-surface);
+      box-shadow: 0 8px 22px rgba(35, 60, 45, 0.06);
+      backdrop-filter: none;
+    }
+
+    #hotRadarModal .hot-radar-detail-panel {
+      position: sticky;
+      top: 0;
+    }
+
+    #hotRadarModal .hot-radar-search-input {
+      min-height: 38px;
+      border: 1px solid var(--hot-radar-line);
+      border-radius: 9px;
+      background: #fff;
+      color: var(--hot-radar-text);
+    }
+
+    #hotRadarModal .hot-radar-search-input::placeholder {
+      color: #9aa69f;
+    }
+
+    #hotRadarModal .hot-radar-topic-list {
+      position: relative;
+      gap: 9px;
+      transition: opacity 180ms ease, transform 180ms ease, filter 180ms ease;
+    }
+
+    #hotRadarModal .hot-radar-topic-list.is-two-columns {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: start;
+    }
+
+    #hotRadarModal .hot-radar-topic-list.is-switching {
+      min-height: 180px;
+      opacity: 0.5;
+      transform: translateY(4px);
+      filter: saturate(0.72) blur(1px);
+      pointer-events: none;
+    }
+
+    #hotRadarModal .hot-radar-topic-list.is-switching::after {
+      content: "正在切换热点…";
+      position: sticky;
+      inset-block-start: 16px;
+      display: block;
+      width: max-content;
+      margin: -64px auto 20px;
+      padding: 9px 14px 9px 34px;
+      border: 1px solid rgba(79, 109, 255, 0.2);
+      border-radius: 999px;
+      background: rgba(248, 250, 255, 0.94);
+      color: var(--hot-radar-brand);
+      font-size: 13px;
+      font-weight: 800;
+      box-shadow: 0 10px 28px rgba(79, 109, 255, 0.16);
+      background-image: radial-gradient(circle, var(--hot-radar-brand) 0 3px, transparent 4px);
+      background-position: 17px center;
+      background-repeat: no-repeat;
+      animation: hotRadarLoadingPulse 850ms ease-in-out infinite alternate;
+    }
+
+    #hotRadarModal .hot-radar-topic-list:not(.is-switching) .hot-radar-topic-card {
+      animation: hotRadarTopicEnter 260ms ease both;
+    }
+
+    #hotRadarModal .hot-radar-topic-list:not(.is-switching) .hot-radar-topic-card:nth-child(2) { animation-delay: 35ms; }
+    #hotRadarModal .hot-radar-topic-list:not(.is-switching) .hot-radar-topic-card:nth-child(3) { animation-delay: 70ms; }
+    #hotRadarModal .hot-radar-topic-list:not(.is-switching) .hot-radar-topic-card:nth-child(4) { animation-delay: 105ms; }
+    #hotRadarModal .hot-radar-topic-list:not(.is-switching) .hot-radar-topic-card:nth-child(n + 5) { animation-delay: 140ms; }
+
+    @keyframes hotRadarLoadingPulse {
+      from { opacity: 0.76; transform: scale(0.98); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    @keyframes hotRadarTopicEnter {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #hotRadarModal .hot-radar-topic-list,
+      #hotRadarModal .hot-radar-topic-list::after,
+      #hotRadarModal .hot-radar-topic-list .hot-radar-topic-card {
+        animation: none !important;
+        transition: none !important;
+      }
+    }
+
+    @media (max-width: 900px) {
+      .hot-radar-filter-toolbar {
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+
+      .hot-radar-filter-toolbar .hot-radar-source-select-wrap {
+        grid-column: 1 / -1;
+      }
+
+      #hotRadarModal .hot-radar-topic-list.is-two-columns {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    #hotRadarModal .hot-radar-topic-list .hot-radar-topic-card,
+    #hotRadarModal .hot-radar-selected-topic {
+      border: 1px solid var(--hot-radar-line);
+      border-radius: 11px;
+      background: #fff;
+      color: var(--hot-radar-text);
+      padding: 12px;
+      gap: 6px;
+    }
+
+    #hotRadarModal .hot-radar-topic-list .hot-radar-topic-card:hover,
+    #hotRadarModal .hot-radar-topic-list .hot-radar-topic-card.active {
+      border-color: rgba(15, 106, 78, 0.32);
+      background: var(--hot-radar-accent-soft);
+    }
+
+    #hotRadarModal .hot-radar-topic-title,
+    #hotRadarModal .hot-radar-detail-title {
+      color: var(--hot-radar-text);
+    }
+
+    #hotRadarModal .hot-radar-detail-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    #hotRadarModal #hotRadarFillPromptButton {
+      grid-column: 1 / -1;
+    }
+
+    #hotRadarModal .hot-radar-summary-output {
+      min-height: 180px;
+      max-height: none;
+      overflow: visible;
+      border: 1px solid var(--hot-radar-line);
+      border-radius: 11px;
+      background: #f7faf8;
+      color: var(--hot-radar-text);
+      padding: 12px;
+      line-height: 1.65;
+    }
+
+    #hotRadarModal .viral-breakdown-empty {
+      min-height: 72px;
+      display: grid;
+      place-items: center;
+      color: var(--hot-radar-muted);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    @media (max-width: 900px) {
+      #hotRadarModal .hot-radar-modal-panel {
+        width: calc(100vw - 20px);
+        height: calc(100dvh - 20px);
+      }
+
+      #hotRadarModal .hot-radar-sidebar {
+        grid-template-columns: 1fr;
+        gap: 10px;
+        padding: 13px 15px;
+      }
+
+      #hotRadarModal .hot-radar-brand {
+        min-width: 0;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+      }
+
+      #hotRadarModal .hot-radar-content-grid {
+        grid-template-columns: minmax(0, 1fr) minmax(260px, 300px);
+        padding: 12px;
+      }
+
+      #hotRadarModal .hot-radar-detail-panel {
+        position: sticky;
+      }
+    }
+
+    @media (max-width: 640px) {
+
+      #hotRadarModal .hot-radar-update-pill {
+        width: 100%;
+        text-align: right;
+      }
+
+      #hotRadarModal .hot-radar-filter-row,
+      #hotRadarModal .hot-radar-detail-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+
+      #hotRadarModal #hotRadarFillPromptButton {
+        grid-column: auto;
+      }
+
+      #hotRadarModal .hot-radar-content-grid {
+        grid-template-columns: 1fr;
+      }
+
+      #hotRadarModal .hot-radar-detail-panel {
+        position: static;
+        order: -1;
+      }
+    }
+    /* 热点雷达复用AI8video 蓝紫玻璃设计系统，布局与数据逻辑保持独立。 */
+    #hotRadarModal {
+      --hot-radar-brand: #4f6dff;
+      --hot-radar-brand-strong: #655eea;
+      --hot-radar-brand-violet: #8b5cf6;
+      --hot-radar-text: #1a2242;
+      --hot-radar-muted: #687293;
+      --hot-radar-line: rgba(255, 255, 255, 0.62);
+      --hot-radar-glass: linear-gradient(
+        145deg,
+        rgba(255, 255, 255, 0.72) 0%,
+        rgba(231, 239, 255, 0.52) 100%
+      );
+      --hot-radar-glass-strong: linear-gradient(
+        145deg,
+        rgba(255, 255, 255, 0.88) 0%,
+        rgba(235, 241, 255, 0.72) 100%
+      );
+      --hot-radar-shadow: 0 18px 48px rgba(45, 63, 130, 0.16);
+      background: rgba(24, 31, 62, 0.2);
+      backdrop-filter: blur(16px) saturate(1.12);
+      -webkit-backdrop-filter: blur(16px) saturate(1.12);
+    }
+
+    #hotRadarModal .hot-radar-modal-panel {
+      position: relative;
+      border: 1px solid rgba(255, 255, 255, 0.72);
+      background:
+        radial-gradient(circle at 8% 4%, rgba(139, 92, 246, 0.2), transparent 34%),
+        radial-gradient(circle at 92% 8%, rgba(79, 109, 255, 0.24), transparent 36%),
+        linear-gradient(145deg, rgba(246, 249, 255, 0.84), rgba(224, 233, 255, 0.68));
+      color: var(--hot-radar-text);
+      box-shadow:
+        0 32px 90px rgba(32, 43, 92, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.82);
+      backdrop-filter: blur(28px) saturate(1.18);
+      -webkit-backdrop-filter: blur(28px) saturate(1.18);
+    }
+
+    #hotRadarModal .hot-radar-sidebar,
+    #hotRadarModal .hot-radar-list-panel,
+    #hotRadarModal .hot-radar-detail-panel {
+      border: 1px solid var(--hot-radar-line);
+      background: var(--hot-radar-glass);
+      box-shadow:
+        var(--hot-radar-shadow),
+        inset 0 1px 0 rgba(255, 255, 255, 0.7);
+      backdrop-filter: blur(18px) saturate(1.1);
+      -webkit-backdrop-filter: blur(18px) saturate(1.1);
+    }
+
+    #hotRadarModal .hot-radar-sidebar {
+      border-width: 0 0 1px;
+      border-radius: 0;
+      box-shadow: inset 0 -1px 0 rgba(79, 109, 255, 0.08);
+    }
+
+    #hotRadarModal .hot-radar-brand-icon {
+      display: grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(79, 109, 255, 0.16), rgba(139, 92, 246, 0.2));
+      box-shadow:
+        0 10px 24px rgba(79, 109, 255, 0.16),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    }
+
+    #hotRadarModal .hot-radar-brand h1,
+    #hotRadarModal .hot-radar-detail-title,
+    #hotRadarModal .hot-radar-topic-title,
+    #hotRadarModal .hot-radar-side-label {
+      color: var(--hot-radar-text);
+    }
+
+    #hotRadarModal .hot-radar-brand p,
+    #hotRadarModal .hot-radar-side-meta,
+    #hotRadarModal .hot-radar-detail-sub,
+    #hotRadarModal .hot-radar-topic-meta,
+    #hotRadarModal .hot-radar-topic-desc,
+    #hotRadarModal .hot-radar-update-pill {
+      color: var(--hot-radar-muted);
+    }
+
+    #hotRadarModal .hot-radar-fetch-route-badge,
+    #hotRadarModal .hot-radar-category-button,
+    #hotRadarModal .hot-radar-source-list .hot-radar-source-button,
+    #hotRadarModal .hot-radar-ghost-button,
+    #hotRadarModal .modal-close {
+      border: 1px solid rgba(255, 255, 255, 0.66);
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.74), rgba(231, 239, 255, 0.56));
+      color: #536084;
+      box-shadow:
+        0 7px 18px rgba(45, 63, 130, 0.09),
+        inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    }
+
+    #hotRadarModal .hot-radar-category-button:hover,
+    #hotRadarModal .hot-radar-source-list .hot-radar-source-button:hover,
+    #hotRadarModal .hot-radar-ghost-button:hover,
+    #hotRadarModal .modal-close:hover {
+      color: var(--hot-radar-brand);
+      border-color: rgba(79, 109, 255, 0.34);
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    #hotRadarModal .hot-radar-category-button.active,
+    #hotRadarModal .hot-radar-source-list .hot-radar-source-button.active,
+    #hotRadarModal .hot-radar-action-button,
+    #hotRadarModal .hot-radar-primary-button {
+      border-color: transparent;
+      background: linear-gradient(
+        135deg,
+        var(--hot-radar-brand) 0%,
+        var(--hot-radar-brand-strong) 52%,
+        var(--hot-radar-brand-violet) 100%
+      );
+      color: #ffffff;
+      box-shadow: 0 12px 26px rgba(79, 109, 255, 0.24);
+    }
+
+    #hotRadarModal .hot-radar-filter-row input,
+    #hotRadarModal .hot-radar-search-input {
+      border: 1px solid rgba(255, 255, 255, 0.68);
+      background: var(--hot-radar-glass-strong);
+      color: var(--hot-radar-text);
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.38),
+        0 7px 18px rgba(45, 63, 130, 0.07);
+    }
+
+    #hotRadarModal .hot-radar-filter-row input:focus,
+    #hotRadarModal .hot-radar-search-input:focus {
+      border-color: rgba(79, 109, 255, 0.48);
+      box-shadow:
+        inset 0 0 0 1px rgba(79, 109, 255, 0.28),
+        0 0 0 3px rgba(79, 109, 255, 0.12);
+    }
+
+    #hotRadarModal .hot-radar-topic-card,
+    #hotRadarModal .hot-radar-summary-output {
+      border: 1px solid rgba(255, 255, 255, 0.68);
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.7), rgba(235, 241, 255, 0.5));
+      color: var(--hot-radar-text);
+      box-shadow:
+        0 8px 22px rgba(45, 63, 130, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.72);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    #hotRadarModal .hot-radar-topic-card:hover {
+      border-color: rgba(79, 109, 255, 0.3);
+      transform: translateY(-1px);
+      box-shadow: 0 12px 28px rgba(79, 109, 255, 0.12);
+    }
+
+    #hotRadarModal .hot-radar-list-panel .hot-radar-topic-card.active {
+      border-color: rgba(79, 109, 255, 0.48);
+      background: linear-gradient(145deg, rgba(239, 244, 255, 0.94), rgba(226, 232, 255, 0.82));
+      box-shadow:
+        0 14px 32px rgba(79, 109, 255, 0.16),
+        inset 3px 0 0 var(--hot-radar-brand);
+    }
+
+    #hotRadarModal .hot-radar-list-panel,
+    #hotRadarModal .hot-radar-detail-panel {
+      border-radius: 18px;
+    }
+
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-meta {
+      min-width: 0;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 5px;
+      line-height: 1.2;
+    }
+
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-meta-item {
+      min-width: 0;
+      max-width: 100%;
+      padding: 3px 7px;
+      overflow: hidden;
+      border: 1px solid rgba(79, 109, 255, 0.12);
+      border-radius: 999px;
+      background: rgba(79, 109, 255, 0.07);
+      color: #5d688c;
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1.2;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }

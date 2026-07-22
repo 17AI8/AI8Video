@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+cd "$(dirname "$0")"
+PY=.venv/bin/python
+[ -x "$PY" ] || PY=python
+export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+exec "$PY" -m ai8video "$@"

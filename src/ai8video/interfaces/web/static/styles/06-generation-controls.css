@@ -1,0 +1,439 @@
+
+    .viral-breakdown-empty {
+      padding: 18px;
+      color: rgba(248, 251, 255, 0.74);
+      font-size: 13px;
+      line-height: 1.7;
+      text-align: center;
+    }
+
+    #resultModal .button-secondary {
+      height: 40px;
+      min-height: 40px;
+    }
+
+    #resultModal .material-actions {
+      margin-left: auto;
+      flex: 0 0 auto;
+      flex-wrap: nowrap;
+    }
+
+    #progressModalBody,
+    #resultModalBody {
+      min-height: 0;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    #systemPromptModal .material-modal-panel {
+      width: min(880px, calc(100vw - 48px));
+      max-height: min(760px, calc(100vh - 48px));
+      grid-template-rows: auto minmax(0, 1fr);
+      overflow: hidden;
+    }
+
+    #systemPromptModalBody {
+      min-height: 0;
+      overflow: auto;
+    }
+
+    #videoParamsModal .material-modal-panel {
+      width: min(760px, calc(100vw - 48px));
+      max-height: min(760px, calc(100vh - 48px));
+      grid-template-rows: auto minmax(0, 1fr);
+      overflow: hidden;
+    }
+
+    #videoParamsModalBody {
+      min-height: 0;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .system-prompt-box {
+      margin: 0;
+      min-height: 240px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f8fafc;
+      color: #142318;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-size: 13px;
+      line-height: 1.68;
+    }
+
+    .system-prompt-drawer {
+      display: grid;
+      grid-template-rows: 0fr;
+      max-width: 980px;
+      margin: 0 auto;
+      overflow: hidden;
+      opacity: 0;
+      border: 0 solid rgba(37, 99, 235, 0.22);
+      border-bottom: 0;
+      border-radius: 0 8px 0 0;
+      background: transparent;
+      box-shadow: none;
+      pointer-events: none;
+      transition: grid-template-rows 220ms ease, opacity 180ms ease, border-width 180ms ease, box-shadow 180ms ease;
+    }
+
+    .system-prompt-drawer.open {
+      grid-template-rows: 1fr;
+      margin-bottom: -1px;
+      opacity: 1;
+      border-width: 1px 1px 0;
+      border-top-right-radius: 0;
+      background: #fff;
+      box-shadow: 0 14px 32px rgba(47, 109, 183, 0.1);
+      pointer-events: auto;
+    }
+
+    .composer-wrap:has(#backgroundMusicButton.is-open) .system-prompt-drawer.open,
+    .composer-wrap:has(#defaultReferenceButton.is-open) .system-prompt-drawer.open,
+    .composer-wrap:has(#scriptReferenceButton.is-open) .system-prompt-drawer.open,
+    .composer-wrap:has(#flowerTextButton.is-open) .system-prompt-drawer.open,
+    .composer-wrap:has(#generationModeButton.is-open) .system-prompt-drawer.open,
+    .composer-wrap:has(#htmlMotionOverlayButton.is-open) .system-prompt-drawer.open {
+      border-top-right-radius: 0;
+    }
+
+    #flowerTextDrawer.open {
+      position: relative;
+      overflow: visible;
+      z-index: 300;
+    }
+
+    .system-prompt-drawer-inner {
+      display: grid;
+      gap: 8px;
+      min-height: 0;
+      overflow: hidden;
+      border-top: 0 solid rgba(37, 99, 235, 0.22);
+      padding: 0 12px;
+      transition: padding-block 220ms ease, border-width 180ms ease;
+    }
+
+    .system-prompt-drawer.open .system-prompt-drawer-inner {
+      border-top-width: 1px;
+      padding-block: 12px;
+    }
+
+    #flowerTextDrawer.open .system-prompt-drawer-inner {
+      overflow: visible;
+    }
+
+    #flowerTextDrawer.open .system-prompt-drawer-body {
+      max-height: min(680px, calc(100vh - 180px));
+      overflow: visible;
+      overscroll-behavior: contain;
+    }
+
+    .system-prompt-drawer-body {
+      max-height: min(340px, 38vh);
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .system-prompt-drawer .system-prompt-box {
+      min-height: 0;
+      padding: 12px;
+      border-color: rgba(37, 99, 235, 0.16);
+      background: rgba(248, 251, 255, 0.92);
+      font-size: 12px;
+      line-height: 1.62;
+    }
+
+    .background-music-drawer .system-prompt-drawer-body {
+      display: grid;
+      gap: 8px;
+    }
+
+    .background-music-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .background-music-status {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .background-music-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .background-audio-mode {
+      display: inline-grid;
+      grid-template-columns: repeat(3, minmax(68px, 1fr));
+      align-items: center;
+      gap: 2px;
+      min-height: 30px;
+      padding: 2px;
+      border: 1px solid rgba(37, 99, 235, 0.2);
+      border-radius: 8px;
+      background: #f5f8ff;
+    }
+
+    .background-audio-mode-button {
+      min-height: 24px;
+      padding: 0 9px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: #24549f;
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1;
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .background-audio-mode-button.active {
+      background: #2563eb;
+      color: #fff;
+      box-shadow: 0 4px 10px rgba(37, 99, 235, 0.16);
+    }
+
+    .background-audio-mode-button:disabled {
+      cursor: not-allowed;
+      opacity: 0.62;
+    }
+
+    .background-music-add-button {
+      min-height: 30px;
+      padding: 0 10px;
+      border: 1px solid rgba(37, 99, 235, 0.22);
+      border-radius: 8px;
+      background: #eef5ff;
+      color: #24549f;
+      box-shadow: none;
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .background-music-folder-button {
+      background: rgba(255, 255, 255, 0.94);
+      color: #24549f;
+    }
+
+    .background-music-list {
+      display: grid;
+      gap: 6px;
+    }
+
+    .background-music-option .material-option-thumb {
+      background: #e8f0fb;
+      color: #24549f;
+      font-size: 18px;
+    }
+
+    .background-music-option:disabled {
+      cursor: default;
+    }
+
+    .background-music-volume {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 180px;
+      color: #24549f;
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .background-music-volume input {
+      width: 115px;
+      accent-color: #2563eb;
+    }
+
+    .default-reference-drawer .system-prompt-drawer-body {
+      max-height: min(380px, 42vh);
+    }
+
+    .default-reference-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 156px;
+      gap: 8px;
+      align-items: start;
+    }
+
+    .default-reference-panel {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .default-reference-settings {
+      padding: 6px;
+      border: 1px solid rgba(37, 99, 235, 0.14);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    .reference-option-list {
+      display: grid;
+      gap: 5px;
+    }
+
+    .reference-option-form {
+      display: grid;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .reference-option {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      min-height: 26px;
+      padding: 4px 7px;
+      border: 1px solid rgba(37, 99, 235, 0.14);
+      border-radius: 7px;
+      background: rgba(238, 245, 255, 0.62);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .reference-option input {
+      width: 14px;
+      height: 14px;
+      accent-color: var(--accent-blue);
+      flex: 0 0 auto;
+    }
+
+    .reference-option span {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .reference-option-textarea-field {
+      display: grid;
+      gap: 6px;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .reference-option-textarea {
+      width: 100%;
+      min-height: 104px;
+      padding: 8px 10px;
+      border: 1px solid rgba(37, 99, 235, 0.16);
+      border-radius: 8px;
+      background: rgba(238, 245, 255, 0.62);
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+      line-height: 1.5;
+      resize: vertical;
+      outline: none;
+    }
+
+    .reference-option-textarea:focus {
+      border-color: rgba(37, 99, 235, 0.36);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+    }
+
+    .generation-mode-panel {
+      display: grid;
+      gap: 8px;
+      padding: 2px;
+    }
+
+    .generation-mode-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 34px;
+      padding: 6px 8px;
+      border: 1px solid rgba(37, 99, 235, 0.14);
+      border-radius: 8px;
+      background: rgba(238, 245, 255, 0.64);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 900;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .generation-mode-toggle input {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent-blue);
+      flex: 0 0 auto;
+    }
+
+    .watermark-segmented-control {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      border: 1px solid rgba(37, 99, 235, 0.18);
+      border-radius: 8px;
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    .watermark-segmented-control .watermark-segment-btn {
+      flex: 1;
+      min-height: 34px;
+      min-width: 0;
+      padding: 4px 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 3px;
+      background: rgba(238, 245, 255, 0.48);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      user-select: none;
+      border: none;
+      outline: none;
+      white-space: nowrap;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .watermark-segmented-control .watermark-segment-btn:first-child {
+      border-right: 1px solid rgba(37, 99, 235, 0.2);
+    }
+
+    .watermark-segmented-control .watermark-segment-btn.active {
+      background: rgba(37, 99, 235, 0.12);
+      color: var(--accent-blue);
+      font-weight: 900;
+    }
+
+    .watermark-segment-checkbox {
+      width: 14px;
+      height: 14px;
+      margin: 0;
+      flex-shrink: 0;
+      accent-color: var(--accent-blue);
+      cursor: pointer;
+    }
+
+    .watermark-segment-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }

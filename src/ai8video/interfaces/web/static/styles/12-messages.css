@@ -1,0 +1,488 @@
+    .message.text-cleared .result-notify-failed-mark,
+    .message.text-cleared .progress-overview-row strong,
+    .message.text-cleared .progress-overview-value,
+    .message.text-cleared .pending-card-head,
+    .message.text-cleared .pinned-progress-banner-head {
+      display: none !important;
+    }
+
+    .message.pinned-progress {
+      position: sticky;
+      top: 0;
+      z-index: 12;
+      display: block;
+      padding: 8px 0 14px;
+      background: linear-gradient(180deg, rgba(242, 246, 250, 0.98), rgba(242, 246, 250, 0.78) 76%, rgba(242, 246, 250, 0));
+      backdrop-filter: blur(10px);
+    }
+
+    .message.pinned-progress .avatar {
+      display: none;
+    }
+
+    .avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: transparent url("/static/images/ai8video-avatar.webp?v=20260720-2205") center / contain no-repeat;
+      color: transparent;
+      font-weight: 900;
+      font-size: 0;
+      box-shadow: 0 10px 24px rgba(20, 35, 24, 0.1);
+    }
+
+    .message.user .avatar {
+      background: linear-gradient(135deg, #202b20, #495848);
+      color: #fff;
+      font-size: 15px;
+      box-shadow: none;
+    }
+
+    .message.user {
+      grid-template-columns: minmax(0, 1fr) 44px;
+    }
+
+    .message.user .avatar {
+      grid-column: 2;
+      grid-row: 1;
+    }
+
+    .message.user .bubble {
+      grid-column: 1;
+      grid-row: 1;
+      justify-self: end;
+      width: fit-content;
+      max-width: min(100%, 680px);
+    }
+
+    .bubble {
+      padding: 16px 18px;
+      line-height: 1.72;
+      font-size: 15px;
+    }
+
+    .message:not(.user) .bubble {
+      width: 70%;
+      max-width: 700px;
+    }
+
+    .message.pinned-progress .bubble {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 82px;
+      padding: 18px 22px;
+      border: 1px solid rgba(102, 145, 255, 0.42);
+      border-radius: 8px;
+      background:
+        linear-gradient(90deg, rgba(69, 121, 255, 0.95), rgba(49, 88, 226, 0.98)),
+        #3158e2;
+      box-shadow: 0 14px 28px rgba(38, 80, 190, 0.26);
+      overflow: hidden;
+    }
+
+    .message.pinned-progress .bubble::before {
+      content: "";
+      position: absolute;
+      inset: -48px auto auto -34px;
+      width: 150px;
+      height: 150px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.16), transparent 68%);
+      pointer-events: none;
+    }
+
+    .message.pinned-progress .bubble::after {
+      content: "";
+      position: absolute;
+      inset: auto -48px -72px auto;
+      width: 210px;
+      height: 160px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.11), transparent 66%);
+      pointer-events: none;
+    }
+
+    .pinned-progress-banner-head {
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+      flex: 1;
+      position: relative;
+      z-index: 1;
+    }
+
+    .pinned-progress-summary-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      max-width: none;
+      min-height: 38px;
+      padding: 0 16px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.9);
+      color: #3158e2;
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1.4;
+      text-align: left;
+      white-space: nowrap;
+      box-shadow: 0 8px 18px rgba(23, 54, 145, 0.16);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .pinned-progress-summary-chip::before {
+      content: "⌛";
+      color: #3158e2;
+      font-size: 15px;
+      line-height: 1;
+    }
+
+    .pinned-progress-note {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      box-shadow: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 8px;
+      flex: 0 0 auto;
+      color: rgba(255, 255, 255, 0.88);
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1;
+      white-space: nowrap;
+      padding: 0;
+      cursor: pointer;
+    }
+
+    .pinned-progress-note:hover {
+      color: #fff;
+      text-decoration: underline;
+    }
+
+    .pinned-progress-note::after {
+      content: "›";
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    .bubble p { margin: 0 0 10px; }
+    .bubble p:last-child { margin-bottom: 0; }
+
+    .pinned-progress-title {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 0;
+    }
+
+    .pinned-progress-title strong {
+      color: #fff;
+      font-size: 15px;
+      line-height: 1.25;
+    }
+
+    @media (max-width: 920px) {
+      .message.pinned-progress .bubble,
+      .pinned-progress-banner-head {
+        display: grid;
+        justify-content: stretch;
+      }
+
+      .pinned-progress-summary-chip {
+        max-width: none;
+        text-align: left;
+        white-space: normal;
+      }
+
+      .pinned-progress-note {
+        justify-content: flex-end;
+      }
+
+      .message:not(.user) .bubble {
+        width: 100%;
+      }
+    }
+
+    .summary-row, .episode-list, .job-list, .review-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .summary-card {
+      border-radius: var(--radius);
+      padding: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.82);
+    }
+
+    .summary-card strong {
+      display: block;
+      font-size: 24px;
+      margin-bottom: 4px;
+    }
+
+    .summary-card span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .mini-card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 12px;
+      background: rgba(255,255,255,0.74);
+    }
+
+    .mini-card.pending-card {
+      background: #eef4ff;
+      border-color: rgba(47, 109, 183, 0.18);
+    }
+
+    .pending-card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .pending-card-head strong {
+      min-width: 0;
+    }
+
+    .pending-card-title {
+      display: flex;
+      align-items: baseline;
+      min-width: 0;
+      gap: 10px;
+    }
+
+    .pending-card-status {
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 680px) {
+      .pending-card-title {
+        display: block;
+      }
+
+      .pending-card-status {
+        display: block;
+        margin-top: 3px;
+      }
+    }
+
+    .force-cancel-button {
+      appearance: none;
+      border: 1px solid rgba(196, 67, 51, 0.28);
+      border-radius: 8px;
+      background: #fff3f1;
+      color: #b33424;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1;
+      min-height: 36px;
+      padding: 0 12px;
+      white-space: nowrap;
+    }
+
+    .force-cancel-button:hover {
+      background: #ffe7e2;
+      border-color: rgba(196, 67, 51, 0.42);
+    }
+
+    .force-cancel-button:disabled {
+      cursor: wait;
+      opacity: 0.62;
+    }
+
+    #progressModal .force-cancel-button {
+      min-height: 30px;
+      min-width: 96px;
+    }
+
+    .progress-modal-heading-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .mini-card.pending-card strong {
+      color: var(--blue);
+    }
+
+    .mini-card.pending-card .progress-overview {
+      margin: 8px 0 10px;
+    }
+
+    .mini-card.pending-card .progress-overview-row strong {
+      display: inline;
+      margin: 0;
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    .mini-card strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .mini-card + .summary-grid {
+      margin-top: 12px;
+    }
+
+    .guide-card {
+      display: grid;
+      gap: 10px;
+    }
+
+    .guide-missing-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 2px;
+    }
+
+    .guide-missing-item {
+      border: 1px solid rgba(15, 106, 78, 0.12);
+      border-radius: 8px;
+      padding: 9px 10px;
+      background: rgba(15, 106, 78, 0.05);
+    }
+
+    .guide-missing-item strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 13px;
+      color: var(--text);
+    }
+
+    .guide-missing-item span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .guide-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .guide-action-button {
+      min-height: 34px;
+      padding: 0 12px;
+      border: 1px solid rgba(15, 106, 78, 0.14);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.94);
+      color: var(--brand);
+      box-shadow: none;
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .guide-action-button.primary {
+      background: var(--brand-soft);
+    }
+
+    .guide-action-button:hover {
+      background: rgba(15, 106, 78, 0.12);
+    }
+
+    .job-meta, .reason-list {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+      word-break: break-all;
+    }
+
+    .composer-wrap {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 0 28px 28px;
+      pointer-events: none;
+    }
+
+    .composer-wrap:has(#flowerTextDrawer.open) {
+      z-index: 70;
+    }
+
+    .composer-tools {
+      --composer-tool-gap: 16px;
+      width: 100%;
+      max-width: 980px;
+      margin: 0 auto -1px;
+      min-height: 29px;
+      padding: 0;
+      display: flex;
+      justify-content: flex-start;
+      align-items: flex-end;
+      gap: var(--composer-tool-gap);
+      position: relative;
+      z-index: 2;
+      box-sizing: border-box;
+      border: 0;
+      background: transparent !important;
+      background-image: none !important;
+      box-shadow: none !important;
+      pointer-events: auto;
+    }
+
+    .composer {
+      position: relative;
+      width: 100%;
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 12px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 62px;
+      gap: 10px;
+      position: relative;
+      border-color: rgba(37, 99, 235, 0.22);
+      border-top-left-radius: 0;
+      border-top-right-radius: 0;
+      background: #fff;
+      box-shadow: none;
+      pointer-events: auto;
+    }
+
+    .composer-editor {
+      width: 100%;
+      min-height: 72px;
+      max-height: 200px;
+      overflow: auto;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      font: inherit;
+      line-height: 1.65;
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }

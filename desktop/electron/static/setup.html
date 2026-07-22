@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI8video 启动设置</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f5f7fb;
+      --panel: rgba(255,255,255,0.88);
+      --text: #101626;
+      --muted: #667085;
+      --line: rgba(16,24,40,0.08);
+      --accent: #4f46e5;
+      --danger: #dc2626;
+      --success: #15803d;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f141f;
+        --panel: rgba(20,28,44,0.9);
+        --text: #eef2ff;
+        --muted: #9aa4b2;
+        --line: rgba(148,163,184,0.18);
+        --accent: #7c8cff;
+        --danger: #f87171;
+        --success: #4ade80;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at top left, rgba(79,70,229,0.14), transparent 30%),
+        radial-gradient(circle at bottom right, rgba(56,189,248,0.12), transparent 28%),
+        var(--bg);
+      color: var(--text);
+    }
+    body {
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .panel {
+      width: min(720px, 100%);
+      padding: 32px 30px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
+    }
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.2;
+    }
+    .sub {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+    .form {
+      display: grid;
+      gap: 18px;
+      margin-top: 28px;
+    }
+    .field {
+      display: grid;
+      gap: 8px;
+    }
+    .label {
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+    }
+    input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      background: rgba(255,255,255,0.7);
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+    }
+    @media (prefers-color-scheme: dark) {
+      input {
+        background: rgba(15,23,42,0.5);
+      }
+    }
+    input:focus {
+      border-color: rgba(79,70,229,0.55);
+      box-shadow: 0 0 0 3px rgba(79,70,229,0.14);
+    }
+    button {
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .pick {
+      background: rgba(79,70,229,0.1);
+      color: var(--accent);
+    }
+    .start {
+      margin-top: 10px;
+      background: var(--accent);
+      color: white;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .status {
+      min-height: 24px;
+      margin-top: 18px;
+      font-size: 14px;
+    }
+    .status.error {
+      color: var(--danger);
+    }
+    .status.success {
+      color: var(--success);
+    }
+  </style>
+</head>
+<body>
+  <section class="panel">
+    <h1>AI8video Electron 客户端</h1>
+    <div class="sub">Electron 只负责桌面壳。聊天、生成和资产管理仍然复用本地 AI8video 项目目录里的工作台服务。</div>
+    <div class="form">
+      <label class="field">
+        <span class="label">Python 解释器</span>
+        <div class="row">
+          <input id="pythonPath" type="text" spellcheck="false" placeholder="例如 /Users/xxx/.../.venv/bin/python 或 python3">
+          <button class="pick" type="button" id="pickPython">选择</button>
+        </div>
+        <div class="meta">优先建议直接指向项目 `.venv` 里的 Python。</div>
+      </label>
+
+      <label class="field">
+        <span class="label">AI8video 项目目录</span>
+        <div class="row">
+          <input id="projectDir" type="text" spellcheck="false" placeholder="即包含 src/ai8video 的项目目录">
+          <button class="pick" type="button" id="pickProjectDir">选择</button>
+        </div>
+        <div class="meta">开发态会直接连这个目录里跑起来的工作台，前端继续可以边改边看。</div>
+      </label>
+    </div>
+
+    <button class="start" type="button" id="startButton">启动AI8video</button>
+    <div id="status" class="status"></div>
+  </section>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const initialError = params.get('error') || '';
+    const pythonInput = document.getElementById('pythonPath');
+    const projectInput = document.getElementById('projectDir');
+    const pickPythonButton = document.getElementById('pickPython');
+    const pickProjectDirButton = document.getElementById('pickProjectDir');
+    const startButton = document.getElementById('startButton');
+    const statusEl = document.getElementById('status');
+
+    function setStatus(message, kind = '') {
+      statusEl.textContent = message || '';
+      statusEl.className = `status ${kind}`.trim();
+    }
+
+    async function hydrateConfig() {
+      try {
+        const config = await window.ai8VideoElectron.getConfig();
+        pythonInput.value = config.pythonPath || config.detectedPythonPath || '';
+        projectInput.value = config.projectDir || config.detectedProjectDir || '';
+      } catch (error) {
+        setStatus(`读取配置失败：${error.message || error}`, 'error');
+      }
+      if (initialError) {
+        setStatus(initialError, 'error');
+      }
+    }
+
+    pickPythonButton.addEventListener('click', async () => {
+      const value = await window.ai8VideoElectron.pickPython();
+      if (value) pythonInput.value = value;
+    });
+
+    pickProjectDirButton.addEventListener('click', async () => {
+      const value = await window.ai8VideoElectron.pickProjectDir();
+      if (value) projectInput.value = value;
+    });
+
+    startButton.addEventListener('click', async () => {
+      startButton.disabled = true;
+      setStatus('正在连接本地工作台...');
+      try {
+        const result = await window.ai8VideoElectron.startBackend({
+          pythonPath: pythonInput.value.trim(),
+          projectDir: projectInput.value.trim(),
+        });
+        setStatus(`已连接 ${result.url}`, 'success');
+      } catch (error) {
+        setStatus(`启动失败：${error.message || error}`, 'error');
+      } finally {
+        startButton.disabled = false;
+      }
+    });
+
+    pythonInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        projectInput.focus();
+      }
+    });
+
+    projectInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        startButton.click();
+      }
+    });
+
+    hydrateConfig();
+  </script>
+</body>
+</html>

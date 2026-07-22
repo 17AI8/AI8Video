@@ -1,0 +1,462 @@
+    .hot-radar-topic-card {
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .hot-radar-topic-card.active {
+      border-color: rgba(61, 92, 255, 0.42);
+      background: rgba(239, 243, 255, 0.96);
+    }
+
+    .hot-radar-topic-title {
+      font-size: 14px;
+      font-weight: 900;
+      line-height: 1.45;
+    }
+
+    .hot-radar-topic-meta,
+    .hot-radar-topic-desc {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .hot-radar-toolbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .hot-radar-summary-output {
+      min-height: 220px;
+      max-height: 320px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      border-radius: 18px;
+      border: 1px solid rgba(47, 109, 183, 0.12);
+      background: rgba(255, 255, 255, 0.78);
+      padding: 12px;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .viral-breakdown-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .viral-breakdown-footer .modal-sub {
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+
+    .viral-breakdown-primary-button {
+      width: auto;
+      min-width: 172px;
+      padding-inline: 18px;
+    }
+
+    .viral-breakdown-stage {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .viral-breakdown-workbench {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .viral-breakdown-toolbar {
+      padding: 14px 18px;
+      display: grid;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .viral-breakdown-toolbar-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .viral-breakdown-inline-field {
+      flex: 1 1 148px;
+      min-width: 148px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .viral-breakdown-inline-field .config-input {
+      min-width: 0;
+      width: 100%;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid var(--line);
+    }
+
+    .viral-breakdown-toolbar .button-secondary,
+    .viral-breakdown-toolbar .material-library-button {
+      width: auto;
+      flex: 0 1 auto;
+      white-space: nowrap;
+    }
+
+    .viral-breakdown-upload-trigger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      user-select: none;
+      text-decoration: none;
+    }
+
+    .viral-breakdown-workspace-layout {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 0.82fr) minmax(360px, 1.18fr);
+      gap: 16px;
+      padding-bottom: 4px;
+      overflow: auto;
+      align-content: start;
+    }
+
+    .viral-breakdown-preview-column,
+    .viral-breakdown-function-column {
+      min-height: 0;
+      display: grid;
+      gap: 16px;
+    }
+
+    .viral-breakdown-preview-column {
+      grid-template-rows: minmax(0, 2fr) minmax(0, 1fr);
+      align-content: stretch;
+    }
+
+    .viral-breakdown-script-guess-card {
+      min-height: 0;
+    }
+
+    .viral-breakdown-script-guess-editor {
+      flex: 1;
+      min-height: 220px;
+      resize: vertical;
+    }
+
+    .viral-breakdown-text-output.viral-breakdown-text-editor {
+      background: #ffffff;
+      color: var(--text);
+      border: 1px solid rgba(20, 35, 24, 0.12);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    }
+
+    .viral-breakdown-text-output.viral-breakdown-text-editor::placeholder {
+      color: rgba(96, 113, 100, 0.72);
+    }
+
+    .viral-breakdown-pane.area-video {
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .viral-breakdown-pane.area-video .viral-breakdown-pane-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      height: auto;
+      max-height: none;
+      overflow: hidden;
+    }
+
+    #viralBreakdownOriginalPane {
+      display: grid;
+      place-items: center;
+      width: 100%;
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
+      max-height: none;
+      overflow: hidden;
+    }
+
+    #viralBreakdownOriginalPane video {
+      display: block;
+      width: 100%;
+      height: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      object-position: center;
+      overflow: hidden;
+    }
+
+    .viral-breakdown-script-guess-card {
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .viral-breakdown-script-guess-card .viral-breakdown-pane-body {
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+
+    .viral-breakdown-function-column {
+      grid-template-rows: auto minmax(180px, 0.9fr) minmax(180px, 1fr) minmax(160px, 0.8fr);
+      align-content: start;
+      overflow: auto;
+      padding-right: 2px;
+      min-width: 0;
+    }
+
+    .viral-breakdown-pane {
+      min-height: 0;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      border-radius: 16px;
+    }
+
+    @media (max-width: 1080px) {
+      .viral-breakdown-workspace-layout {
+        grid-template-columns: minmax(0, 1fr) minmax(260px, 0.88fr);
+      }
+
+      .viral-breakdown-toolbar {
+        padding: 12px 14px;
+      }
+
+      .viral-breakdown-toolbar-row {
+        gap: 10px;
+      }
+    }
+
+    @media (max-width: 980px) {
+      #viralBreakdownModal > .material-modal-panel {
+        width: min(calc(100vw - 24px), 100%);
+        max-height: calc(100vh - 24px);
+        height: auto;
+        padding: 14px;
+        gap: 12px;
+        overflow: auto;
+        grid-template-rows: auto auto auto;
+      }
+
+      .viral-breakdown-workspace-layout {
+        grid-template-columns: minmax(0, 1fr) minmax(220px, 0.78fr);
+        gap: 12px;
+      }
+
+      .viral-breakdown-stage,
+      .viral-breakdown-workbench {
+        min-height: auto;
+        height: auto;
+        overflow: visible;
+      }
+
+      .viral-breakdown-preview-column,
+      .viral-breakdown-function-column {
+        grid-template-rows: auto;
+      }
+
+      .viral-breakdown-function-column {
+        overflow: visible;
+        padding-right: 0;
+      }
+
+      .viral-breakdown-toolbar-row {
+        align-items: stretch;
+      }
+
+      .viral-breakdown-inline-field {
+        flex-basis: 100%;
+      }
+    }
+
+    @media (max-width: 760px) {
+      #viralBreakdownModal > .material-modal-panel {
+        width: min(calc(100vw - 16px), 100%);
+        max-height: calc(100vh - 16px);
+        height: auto;
+        padding: 12px;
+        gap: 10px;
+        overflow: auto;
+        grid-template-rows: auto auto auto;
+      }
+
+      .viral-breakdown-workspace-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .viral-breakdown-stage,
+      .viral-breakdown-workbench {
+        min-height: auto;
+        height: auto;
+        overflow: visible;
+      }
+
+      .viral-breakdown-preview-column,
+      .viral-breakdown-function-column {
+        grid-template-rows: auto;
+      }
+
+      .viral-breakdown-toolbar .material-actions {
+        width: 100%;
+      }
+
+      .viral-breakdown-toolbar .button-secondary,
+      .viral-breakdown-toolbar .material-library-button {
+        flex: 1 1 0;
+      }
+    }
+
+    @media (max-width: 560px) {
+      #viralBreakdownModal .material-modal-panel {
+        width: min(calc(100vw - 12px), 100%);
+        height: min(calc(100vh - 12px), 100%);
+        border-radius: 16px;
+      }
+
+      #viralBreakdownModal > .material-modal-panel {
+        max-height: calc(100vh - 12px);
+        height: auto;
+        padding: 10px;
+        gap: 8px;
+        overflow: auto;
+        grid-template-rows: auto auto auto;
+      }
+
+      #viralBreakdownModal .modal-head {
+        align-items: flex-start;
+        gap: 8px;
+      }
+
+      #viralBreakdownModal .modal-title {
+        min-width: 0;
+      }
+
+      .viral-breakdown-workbench {
+        gap: 10px;
+      }
+
+      .viral-breakdown-toolbar {
+        padding: 10px 12px;
+        gap: 10px;
+      }
+
+      .viral-breakdown-toolbar-row {
+        gap: 8px;
+      }
+
+      .viral-breakdown-inline-field {
+        min-width: 0;
+        flex-basis: 100%;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+        font-size: 12px;
+      }
+
+      .viral-breakdown-pane {
+        padding: 10px;
+        gap: 6px;
+      }
+
+      .viral-breakdown-pane.area-video .viral-breakdown-pane-body {
+        min-height: clamp(120px, 22vh, 168px);
+      }
+
+      .viral-breakdown-pane.area-grid .viral-breakdown-pane-body,
+      .viral-breakdown-pane.area-transcript .viral-breakdown-pane-body,
+      .viral-breakdown-pane.area-generated .viral-breakdown-pane-body {
+        min-height: 84px;
+      }
+
+      .viral-breakdown-footer {
+        display: grid;
+        gap: 10px;
+      }
+
+      .viral-breakdown-footer .modal-sub {
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .viral-breakdown-footer .material-actions,
+      .viral-breakdown-footer .material-actions > * {
+        width: 100%;
+      }
+    }
+
+    .viral-breakdown-pane-body {
+      flex: 1;
+      min-height: 0;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(12, 16, 24, 0.85);
+      box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .viral-breakdown-pane.area-video .viral-breakdown-pane-body {
+      min-height: clamp(240px, 42vh, 520px);
+    }
+
+    .viral-breakdown-pane.area-video .viral-breakdown-pane-body {
+      background: #000;
+      border: 1px solid rgba(0, 0, 0, 0.6);
+      box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.8);
+    }
+
+    .viral-breakdown-pane-body video,
+    .viral-breakdown-pane-body img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      background: rgba(12, 16, 24, 0.96);
+    }
+
+    .viral-breakdown-text-output {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 14px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: #f8fbff;
+      font-size: 13px;
+      line-height: 1.7;
+      background: rgba(12, 16, 24, 0.96);
+    }
+
+    .viral-breakdown-text-editor {
+      display: block;
+      appearance: none;
+      -webkit-appearance: none;
+      border: 0;
+      resize: none;
+      outline: none;
+      box-shadow: none;
+      color: inherit;
+      caret-color: #f8fbff;
+      background: transparent;
+      font: inherit;
+    }

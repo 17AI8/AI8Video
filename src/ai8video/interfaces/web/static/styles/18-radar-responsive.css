@@ -1,0 +1,445 @@
+
+    /* 小窗口优先保证选题和摘要可操作，不强塞双栏。 */
+    @media (max-width: 820px) {
+      #hotRadarModal .hot-radar-modal-panel {
+        width: calc(100vw - 20px);
+        height: calc(100dvh - 20px);
+        border-radius: 16px;
+      }
+
+      #hotRadarModal .hot-radar-sidebar {
+        grid-template-columns: minmax(180px, auto) minmax(0, 1fr);
+        gap: 12px;
+        padding: 12px 14px;
+      }
+
+      #hotRadarModal .hot-radar-brand {
+        min-width: 0;
+      }
+
+      #hotRadarModal .hot-radar-content-grid {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+        padding: 12px;
+      }
+
+      #hotRadarModal .hot-radar-detail-panel {
+        position: static;
+        order: -1;
+      }
+
+      #hotRadarModal .hot-radar-summary-output {
+        min-height: 120px;
+        max-height: 240px;
+        overflow: auto;
+      }
+    }
+
+    @media (max-width: 560px) {
+      #hotRadarModal .hot-radar-modal-actions {
+        top: 10px;
+        right: 10px;
+      }
+
+      #hotRadarModal .hot-radar-modal-actions .hot-radar-update-pill {
+        display: none;
+      }
+
+      #hotRadarModal .hot-radar-sidebar {
+        padding-right: 118px;
+      }
+
+      #hotRadarModal .hot-radar-modal-panel {
+        width: calc(100vw - 12px);
+        height: calc(100dvh - 12px);
+        border-radius: 14px;
+      }
+
+      #hotRadarModal .hot-radar-sidebar {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 10px;
+        padding: 10px 12px;
+      }
+
+      #hotRadarModal .hot-radar-brand-main {
+        min-width: 0;
+      }
+
+      #hotRadarModal .hot-radar-brand p,
+      #hotRadarModal .hot-radar-side-meta {
+        display: none;
+      }
+
+        #hotRadarModal .hot-radar-update-pill {
+        white-space: normal;
+      }
+
+      #hotRadarModal .hot-radar-update-pill {
+        display: none;
+      }
+
+      #hotRadarModal .hot-radar-hotlist-panel,
+      #hotRadarModal .hot-radar-detail-panel {
+        padding: 12px;
+        border-radius: 14px;
+      }
+
+      #hotRadarModal .hot-radar-filter-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 6px;
+      }
+
+      #hotRadarModal .hot-radar-detail-actions {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      #hotRadarModal #hotRadarFillPromptButton {
+        grid-column: auto;
+      }
+    }
+
+    /* 两个工作区按自身基宽自动换行，不依赖窗口或 DevTools 视口断点。 */
+    #hotRadarModal .hot-radar-content-grid {
+      display: flex;
+      flex-wrap: wrap;
+      align-content: flex-start;
+    }
+
+    #hotRadarModal .hot-radar-hotlist-panel {
+      min-width: 0;
+      flex: 999 1 520px;
+    }
+
+    #hotRadarModal .hot-radar-detail-panel {
+      min-width: min(100%, 300px);
+      max-width: 350px;
+      flex: 1 1 300px;
+    }
+
+    #hotRadarModal .hot-radar-content-grid > * {
+      max-inline-size: 100%;
+    }
+
+    #hotRadarModal .hot-radar-hotlist-panel,
+    #hotRadarModal #hotRadarTopicList,
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-card,
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-card > * {
+      min-inline-size: 0;
+      max-inline-size: 100%;
+    }
+
+    #hotRadarModal #hotRadarTopicList {
+      width: 100%;
+      overflow: hidden;
+    }
+
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-card {
+      width: 100%;
+      overflow: hidden;
+    }
+
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-title,
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-desc {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    @media (min-width: 821px) {
+      #hotRadarModal .hot-radar-content-grid {
+        block-size: 100%;
+        min-block-size: 0;
+        flex-wrap: nowrap;
+        align-items: stretch;
+        overflow: hidden;
+      }
+
+      #hotRadarModal .hot-radar-hotlist-panel,
+      #hotRadarModal .hot-radar-detail-panel {
+        align-self: stretch;
+        block-size: auto;
+        min-block-size: 0;
+        max-block-size: none;
+        box-sizing: border-box;
+      }
+
+      #hotRadarModal .hot-radar-hotlist-panel {
+        overflow: auto;
+      }
+
+      #hotRadarModal .hot-radar-detail-panel {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        gap: 10px;
+      }
+
+      #hotRadarModal .hot-radar-detail-head {
+        flex: 0 0 auto;
+      }
+
+      #hotRadarModal .hot-radar-selected-topic {
+        flex: 0 0 220px;
+        block-size: 220px;
+        overflow: auto;
+        box-sizing: border-box;
+      }
+
+      #hotRadarModal .hot-radar-detail-actions {
+        flex: 0 0 80px;
+        box-sizing: border-box;
+      }
+
+      #hotRadarModal .hot-radar-summary-output {
+        flex: 0 0 200px;
+        block-size: 200px;
+        min-block-size: 0;
+        max-block-size: none;
+        overflow: auto;
+        box-sizing: border-box;
+      }
+
+      #hotRadarModal .hot-radar-hotlist-panel,
+      #hotRadarModal .hot-radar-selected-topic,
+      #hotRadarModal .hot-radar-summary-output {
+        scrollbar-color: rgba(124, 92, 246, 0.92) transparent;
+        scrollbar-width: thin;
+      }
+
+      #hotRadarModal .hot-radar-hotlist-panel::-webkit-scrollbar,
+      #hotRadarModal .hot-radar-selected-topic::-webkit-scrollbar,
+      #hotRadarModal .hot-radar-summary-output::-webkit-scrollbar {
+        width: 6px;
+      }
+
+      #hotRadarModal .hot-radar-hotlist-panel::-webkit-scrollbar-track,
+      #hotRadarModal .hot-radar-selected-topic::-webkit-scrollbar-track,
+      #hotRadarModal .hot-radar-summary-output::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      #hotRadarModal .hot-radar-hotlist-panel::-webkit-scrollbar-thumb,
+      #hotRadarModal .hot-radar-selected-topic::-webkit-scrollbar-thumb,
+      #hotRadarModal .hot-radar-summary-output::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        background: linear-gradient(180deg, #9f7aea, #6d5dfc);
+      }
+    }
+
+    /* 统一热点雷达实际控件的蓝紫玻璃状态，覆盖早期绿色高亮规则。 */
+    #hotRadarModal .hot-radar-ghost-button,
+    #hotRadarModal .modal-close {
+      border: 1px solid rgba(255, 255, 255, 0.68);
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.74), rgba(231, 239, 255, 0.56));
+      color: #536084;
+      box-shadow:
+        0 7px 18px rgba(45, 63, 130, 0.09),
+        inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    }
+
+    #hotRadarModal .hot-radar-ghost-button:hover,
+    #hotRadarModal .modal-close:hover {
+      border-color: rgba(79, 109, 255, 0.34);
+      background: rgba(255, 255, 255, 0.82);
+      color: var(--hot-radar-brand);
+    }
+
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-card,
+    #hotRadarModal .hot-radar-selected-topic,
+    #hotRadarModal .hot-radar-summary-output {
+      border-color: rgba(255, 255, 255, 0.68);
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.74), rgba(235, 241, 255, 0.54));
+      box-shadow:
+        0 8px 22px rgba(45, 63, 130, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    }
+
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-card:hover {
+      border-color: rgba(79, 109, 255, 0.34);
+      background: linear-gradient(145deg, rgba(248, 250, 255, 0.92), rgba(235, 232, 255, 0.76));
+      box-shadow: 0 12px 28px rgba(79, 109, 255, 0.12);
+    }
+
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-card.active {
+      border-color: rgba(124, 92, 246, 0.46);
+      background: linear-gradient(145deg, rgba(239, 244, 255, 0.96), rgba(232, 226, 255, 0.84));
+      box-shadow:
+        0 14px 32px rgba(79, 109, 255, 0.16),
+        inset 3px 0 0 var(--hot-radar-brand-violet);
+    }
+
+    #hotRadarModal .hot-radar-hotlist-panel,
+    #hotRadarModal .hot-radar-detail-panel {
+      background: var(--hot-radar-glass);
+    }
+
+    /* 普通侧栏模块使用无卡片壳的单行列表，保留进度卡片和设置按钮的独立背景。 */
+    .shell {
+      grid-template-columns: 260px minmax(0, 1fr) !important;
+    }
+
+    body > .shell > aside.sidebar {
+      grid-template-columns: minmax(0, 1fr) !important;
+      gap: 0 !important;
+    }
+
+    body > .shell > aside.sidebar > #sidebarResourceList,
+    body > .shell > aside.sidebar > #assistantToolsList {
+      background: transparent !important;
+      background-image: none !important;
+      box-shadow: none !important;
+      margin-top: 0 !important;
+      gap: 0 !important;
+    }
+
+    body > .shell > aside.sidebar > #sidebarResourceList > .material-list,
+    body > .shell > aside.sidebar > #assistantToolsList {
+      display: contents !important;
+    }
+
+    body > .shell > aside.sidebar #imageMaterialList > div.material-card,
+    body > .shell > aside.sidebar #scriptMaterialList > div.material-card,
+    body > .shell > aside.sidebar #recycleBinList > div.material-card,
+    body > .shell > aside.sidebar #assistantToolsList > div.material-card {
+      display: grid !important;
+      grid-template-columns: minmax(0, 1fr) auto !important;
+      grid-column: 1 / -1 !important;
+      align-items: center !important;
+      gap: 12px !important;
+      min-width: 0 !important;
+      padding: 10px 0 !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+      background: transparent !important;
+      background-image: none !important;
+      box-shadow: none !important;
+    }
+
+    body > .shell > aside.sidebar #imageMaterialList > div.material-card,
+    body > .shell > aside.sidebar #scriptMaterialList > div.material-card,
+    body > .shell > aside.sidebar #recycleBinList > div.material-card,
+    body > .shell > aside.sidebar #assistantToolsList > div.material-card {
+      margin: 4px 0 !important;
+      padding: 8px 10px !important;
+      border: 1px solid rgba(255, 255, 255, 0.34) !important;
+      border-radius: 14px !important;
+    }
+
+    body > .shell > aside.sidebar #recycleBinList > div.material-card {
+      margin: 3px 0 !important;
+      padding: 6px 10px !important;
+    }
+
+    body > .shell > aside.sidebar #imageMaterialList .material-heading,
+    body > .shell > aside.sidebar #scriptMaterialList .material-heading,
+    body > .shell > aside.sidebar #recycleBinList .material-heading,
+    body > .shell > aside.sidebar #assistantToolsList .material-heading {
+      min-width: 0 !important;
+      overflow: hidden !important;
+    }
+
+    body > .shell > aside.sidebar #imageMaterialList .material-heading.stacked,
+    body > .shell > aside.sidebar #scriptMaterialList .material-heading.stacked,
+    body > .shell > aside.sidebar #recycleBinList .material-heading.stacked,
+    body > .shell > aside.sidebar #assistantToolsList .material-heading.stacked {
+      display: grid !important;
+      grid-template-columns: auto minmax(0, 1fr) !important;
+      align-items: baseline !important;
+      justify-content: initial !important;
+      gap: 8px !important;
+    }
+
+    body > .shell > aside.sidebar #imageMaterialList .material-heading,
+    body > .shell > aside.sidebar #scriptMaterialList .material-heading,
+    body > .shell > aside.sidebar #recycleBinList .material-heading,
+    body > .shell > aside.sidebar #assistantToolsList .material-heading {
+      display: grid !important;
+      grid-template-columns: minmax(0, 1fr) !important;
+      grid-template-rows: auto auto !important;
+      align-items: start !important;
+      justify-content: start !important;
+      gap: 2px !important;
+    }
+
+    body > .shell > aside.sidebar #imageMaterialList .material-heading .material-meta,
+    body > .shell > aside.sidebar #scriptMaterialList .material-heading .material-meta,
+    body > .shell > aside.sidebar #recycleBinList .material-heading .material-meta,
+    body > .shell > aside.sidebar #assistantToolsList .material-heading .material-meta {
+      grid-column: 1 !important;
+      text-align: left !important;
+      white-space: nowrap !important;
+    }
+
+    body > .shell > aside.sidebar #imageMaterialList .material-meta,
+    body > .shell > aside.sidebar #scriptMaterialList .material-meta,
+    body > .shell > aside.sidebar #recycleBinList .material-meta,
+    body > .shell > aside.sidebar #assistantToolsList .material-meta {
+      min-width: 0 !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+    }
+
+    body > .shell > aside.sidebar #imageMaterialList .material-actions,
+    body > .shell > aside.sidebar #scriptMaterialList .material-actions,
+    body > .shell > aside.sidebar #recycleBinList .material-actions,
+    body > .shell > aside.sidebar #assistantToolsList .material-actions {
+      display: flex !important;
+      flex-wrap: nowrap !important;
+      align-items: center !important;
+      width: auto !important;
+      min-width: max-content !important;
+      gap: 8px !important;
+    }
+
+    body > .shell > aside.sidebar #imageMaterialList .material-actions > button,
+    body > .shell > aside.sidebar #scriptMaterialList .material-actions > button,
+    body > .shell > aside.sidebar #recycleBinList .material-actions > button,
+    body > .shell > aside.sidebar #assistantToolsList .material-actions > button {
+      width: auto !important;
+      min-width: max-content !important;
+      white-space: nowrap !important;
+    }
+
+    body > .shell > aside.sidebar #imageMaterialList .material-actions > button.material-library-button,
+    body > .shell > aside.sidebar #scriptMaterialList .material-actions > button.material-library-button,
+    body > .shell > aside.sidebar #recycleBinList .material-actions > button.material-library-button,
+    body > .shell > aside.sidebar #assistantToolsList .material-actions > button.material-library-button {
+      width: 96px !important;
+      min-width: 96px !important;
+      height: 34px !important;
+      min-height: 34px !important;
+      padding: 0 8px !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      white-space: nowrap !important;
+    }
+
+    body > .shell > aside.sidebar #imageMaterialList > div.material-card,
+    body > .shell > aside.sidebar #scriptMaterialList > div.material-card,
+    body > .shell > aside.sidebar #recycleBinList > div.material-card,
+    body > .shell > aside.sidebar #assistantToolsList > div.material-card {
+      border: 1px solid rgba(255, 255, 255, 0.34) !important;
+      border-radius: 14px !important;
+      padding: 10px 12px !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.34) !important;
+    }
+
+    body > .shell > aside.sidebar #imageMaterialList > div.material-card,
+    body > .shell > aside.sidebar #scriptMaterialList > div.material-card,
+    body > .shell > aside.sidebar #recycleBinList > div.material-card,
+    body > .shell > aside.sidebar #assistantToolsList > div:nth-child(2) {
+      position: relative !important;
+    }
+
+    body > .shell > aside.sidebar #imageMaterialList > div.material-card {
+      margin-top: 20px !important;
+    }
+
+    body > .shell > aside.sidebar #scriptMaterialList > div.material-card,
+    body > .shell > aside.sidebar #assistantToolsList > div:nth-child(2) {
+      margin-bottom: 20px !important;
+    }
+
+    body > .shell > aside.sidebar #imageMaterialList > div.material-card::before,

@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI8video 工作台</title>
+  <link rel="icon" type="image/webp" href="/static/images/ai8video-avatar.webp?v=20260720-2205">
+  <link rel="stylesheet" href="/static/script-knowledge.css?v=20260721-1">
+  <!-- Updated: 2026-06-23 15:17 CST - 花字调色预览连体按钮圆角修正 -->
+  <link rel="stylesheet" href="/static/workbench.css?v=20260721-1">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <img class="mark" src="/static/images/ai8video-avatar.webp?v=20260720-2205" alt="AI8video 头像" width="40" height="40">
+        <div>
+          <h1 id="brandName">AI8video</h1>
+          <p id="brandSlug">批量创作助手</p>
+        </div>
+      </div>
+      <div id="progressPanel"></div>
+      <div id="sidebarResourceList">
+        <div id="imageMaterialList" class="material-list"></div>
+        <div id="scriptMaterialList" class="material-list"></div>
+        <div id="recycleBinList" class="material-list"></div>
+      </div>
+      <div id="assistantToolsList" class="material-list"></div>
+      <div class="sidebar-footer">
+        <button id="settingsEntryButton" type="button" class="settings-entry-button">设置</button>
+      </div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div class="title-wrap">
+          <h2>对话</h2>
+          <p>输入提示词、多集剧本或参考图路径，系统会自动拆集、传图、创建任务并归档结果。</p>
+        </div>
+        <div id="statusBar" class="status-bar"></div>
+      </header>
+      <section class="conversation">
+        <div class="conversation-actions">
+          <button id="mobileSettingsEntryButton" type="button" class="mobile-settings-entry-button">设置</button>
+          <button id="clearConversationButton" type="button" class="clear-conversation-button">清空对话</button>
+        </div>
+        <div id="messages" class="messages"></div>
+      </section>
+      <div class="composer-wrap">
+        <div class="composer-tools">
+          <button id="systemPromptButton" type="button" class="system-prompt-entry-button" aria-expanded="false" aria-controls="systemPromptDrawer">系统提示词</button>
+          <button id="backgroundMusicButton" type="button" class="system-prompt-entry-button music-entry-button" aria-expanded="false" aria-controls="backgroundMusicDrawer">背景音乐</button>
+          <button id="defaultReferenceButton" type="button" class="system-prompt-entry-button reference-entry-button" aria-expanded="false" aria-controls="defaultReferenceDrawer">参考图</button>
+          <button id="scriptReferenceButton" type="button" class="system-prompt-entry-button script-reference-entry-button" aria-expanded="false" aria-controls="scriptReferenceDrawer">剧本参考</button>
+          <button id="flowerTextButton" type="button" class="system-prompt-entry-button flower-text-entry-button" aria-expanded="false" aria-controls="flowerTextDrawer">花字</button>
+          <button id="generationModeButton" type="button" class="system-prompt-entry-button generation-mode-entry-button" aria-expanded="false" aria-controls="generationModeDrawer">并发模式</button>
+          <button id="htmlMotionOverlayButton" type="button" class="system-prompt-entry-button generation-mode-entry-button" aria-expanded="false" aria-controls="htmlMotionOverlayDrawer" hidden>HTML 动效</button>
+        </div>
+        <div id="systemPromptDrawer" class="system-prompt-drawer" aria-hidden="true">
+          <div class="system-prompt-drawer-inner">
+            <div id="systemPromptDrawerBody" class="system-prompt-drawer-body"></div>
+          </div>
+        </div>
+        <div id="backgroundMusicDrawer" class="system-prompt-drawer background-music-drawer" aria-hidden="true">
+          <div class="system-prompt-drawer-inner">
+            <div id="backgroundMusicDrawerBody" class="system-prompt-drawer-body"></div>
+          </div>
+        </div>
+        <div id="defaultReferenceDrawer" class="system-prompt-drawer background-music-drawer default-reference-drawer" aria-hidden="true">
+          <div class="system-prompt-drawer-inner">
+            <div id="defaultReferenceDrawerBody" class="system-prompt-drawer-body"></div>
+          </div>
+        </div>
+        <div id="scriptReferenceDrawer" class="system-prompt-drawer background-music-drawer default-reference-drawer" aria-hidden="true">
+          <div class="system-prompt-drawer-inner">
+            <div id="scriptReferenceDrawerBody" class="system-prompt-drawer-body"></div>
+          </div>
+        </div>
+        <div id="flowerTextDrawer" class="system-prompt-drawer background-music-drawer" aria-hidden="true">
+          <div class="system-prompt-drawer-inner">
+            <div id="flowerTextDrawerBody" class="system-prompt-drawer-body"></div>
+          </div>
+        </div>
+        <div id="generationModeDrawer" class="system-prompt-drawer background-music-drawer" aria-hidden="true">
+          <div class="system-prompt-drawer-inner">
+            <div id="generationModeDrawerBody" class="system-prompt-drawer-body"></div>
+          </div>
+        </div>
+        <div id="htmlMotionOverlayDrawer" class="system-prompt-drawer background-music-drawer" aria-hidden="true" hidden>
+          <div class="system-prompt-drawer-inner">
+            <div id="htmlMotionOverlayDrawerBody" class="system-prompt-drawer-body"></div>
+          </div>
+        </div>
+        <form id="composer" class="composer">
+          <div id="materialMentionPicker" class="material-picker hidden"></div>
+          <input id="messageInput" type="hidden">
+          <div id="messageEditor" class="composer-editor" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="输入数量和要求，比如：2 个，618 活动"></div>
+          <button id="sendButton" type="submit">发送</button>
+        </form>
+      </div>
+    </main>
+    <aside class="aside">
+      <h3>资产库</h3>
+      <div id="metrics"></div>
+      <div id="assetList" class="asset-list"></div>
+      <div class="meta-block">
+        <strong>接口约束</strong>
+        生成任务直连视频模型模板。参考图按模板传 URL 或本地图片 data URL。
+      </div>
+      <div class="meta-block">
+        <strong>长期索引</strong>
+        资产库保存 `storageKey`、`coverImageStorageKey`、`finalFrameStorageKey`，并补充归档 key、归档路径与校验信息。
+      </div>
+    </aside>
+  </div>
+  <input id="userMaterialUploadInput" type="file" class="hidden" multiple>
+  <input id="backgroundMusicUploadInput" type="file" class="hidden" accept=".mp3,audio/mpeg,.mp4,.mov,.m4v,.webm,.mkv,.avi,video/*">
+  <input id="localTtsVoiceCloneUploadInput" type="file" class="hidden" accept=".mp3,audio/mpeg,.wav,audio/wav,.mp4,.mov,.m4v,.webm,.mkv,.avi,video/*">
+  <input id="viralBreakdownUploadInput" type="file" class="hidden" accept=".mp4,.mov,.m4v,.webm,.mkv,.avi,video/*" multiple>
+  <div id="materialLibraryModal" class="modal-shell hidden" role="dialog" aria-modal="true" aria-labelledby="materialLibraryTitle">
+    <div class="modal-panel material-modal-panel">
+      <div class="modal-head">
+        <div class="modal-title">
+          <div class="material-library-title-copy">
+            <strong id="materialLibraryTitle">素材库</strong>
+            <div id="materialLibrarySub" class="modal-sub"></div>
+          </div>
+          <button id="materialLibraryAddButton" type="button" class="material-add-button material-library-add-button" data-add-user-material="image">添加素材</button>
+        </div>
+        <div class="material-actions">
+          <button id="materialLibraryOpenFolderButton" type="button" class="button-secondary">打开文件夹</button>
+          <button id="materialLibraryCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+        </div>
+      </div>
+      <div id="scriptKnowledgeToolbar" class="script-knowledge-toolbar hidden">
+        <div class="script-knowledge-search">
+          <input id="scriptKnowledgeSearchInput" type="search" placeholder="搜索标题、标签或剧本正文" autocomplete="off">
+          <button id="scriptKnowledgeSearchClearButton" type="button">清除</button>
+        </div>
+        <div class="script-knowledge-toolbar-actions">
+          <span id="scriptKnowledgeStatus" class="script-knowledge-status">检查数据库</span>
+          <button id="scriptKnowledgeSyncButton" type="button" class="button-secondary">同步索引</button>
+        </div>
+      </div>
+      <div id="materialLibraryWall" class="material-wall"></div>
+    </div>
+  </div>
+  <div id="recycleBinModal" class="modal-shell hidden" role="dialog" aria-modal="true" aria-labelledby="recycleBinTitle">
+    <div class="modal-panel material-modal-panel">
+      <div class="modal-head">
+        <div class="modal-title">
+          <strong id="recycleBinTitle">回收站</strong>
+          <div id="recycleBinSub" class="modal-sub"></div>
+        </div>
+        <div class="material-actions">
+          <button id="recycleBinSelectAllButton" type="button" class="button-secondary">一键全选</button>
+          <button id="recycleBinBatchDeleteButton" type="button" class="button-danger" disabled>批量删除</button>
+          <button id="recycleBinOpenFolderButton" type="button" class="button-secondary">打开文件夹</button>
+          <button id="recycleBinCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+        </div>
+      </div>
+      <div id="recycleBinWall" class="material-wall"></div>
+    </div>
+  </div>
+  <div id="viralBreakdownModal" class="modal-shell hidden" role="dialog" aria-modal="true" aria-labelledby="viralBreakdownTitle">
+    <div class="modal-panel material-modal-panel">
+      <div class="modal-head">
+        <div class="modal-title">
+          <strong id="viralBreakdownTitle">爆款拆解微短剧观影台</strong>
+          <div class="modal-sub">先上传一个视频到本机爆款拆解文件夹，再做抽帧拼宫格和 Whisper 台词识别。</div>
+        </div>
+        <button id="viralBreakdownCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+      </div>
+      <div id="viralBreakdownVideoStage" class="viral-breakdown-stage">
+        <section class="viral-breakdown-workbench">
+          <div class="viral-breakdown-workspace-layout">
+            <div class="viral-breakdown-preview-column">
+              <article class="viral-breakdown-pane viral-breakdown-glass-card area-video">
+                <div class="material-heading">
+                  <div class="material-title">预览区</div>
+                  <div id="viralBreakdownOriginalMeta" class="material-meta"></div>
+                </div>
+                <div id="viralBreakdownOriginalPane" class="viral-breakdown-pane-body"></div>
+              </article>
+              <article class="viral-breakdown-pane viral-breakdown-glass-card viral-breakdown-script-guess-card">
+                <div class="material-heading">
+                  <div class="material-heading stacked">
+                    <div class="material-title">猜剧本结果</div>
+                    <div id="viralBreakdownScriptGuessMeta" class="material-meta"></div>
+                  </div>
+                </div>
+                <div id="viralBreakdownScriptGuessPane" class="viral-breakdown-pane-body"></div>
+              </article>
+            </div>
+            <div class="viral-breakdown-function-column">
+              <div class="viral-breakdown-toolbar viral-breakdown-glass-card">
+                <div class="viral-breakdown-toolbar-row">
+                  <div class="material-heading stacked">
+                    <div class="material-title">爆款拆解归档</div>
+                    <div id="viralBreakdownArchiveMeta" class="material-meta">0 个视频 · 0 B</div>
+                  </div>
+                  <div class="material-actions">
+                    <label id="viralBreakdownUploadButton" class="button-secondary viral-breakdown-upload-trigger" for="viralBreakdownUploadInput" role="button" tabindex="0">上传视频</label>
+                    <button id="viralBreakdownOpenFolderButton" type="button" class="button-secondary">打开文件夹</button>
+                  </div>
+                </div>
+                <div class="viral-breakdown-toolbar-row">
+                  <label class="viral-breakdown-inline-field">
+                    <span>当前视频</span>
+                    <select id="viralBreakdownVideoSelect" class="config-input compact"></select>
+                  </label>
+                  <label class="viral-breakdown-inline-field">
+                    <span>截图间隔(秒)</span>
+                    <input id="viralBreakdownIntervalInput" type="number" min="0.2" max="60" step="0.1" value="1" class="config-input compact">
+                  </label>
+                  <label class="viral-breakdown-inline-field">
+                    <span>宫格比例</span>
+                    <select id="viralBreakdownTargetRatio" class="config-input compact">
+                      <option value="16:9">16:9</option>
+                      <option value="9:16">9:16</option>
+                      <option value="1:1">1:1</option>
+                    </select>
+                  </label>
+                  <button id="viralBreakdownProcessFramesButton" type="button" class="button-secondary">拆解画面</button>
+                  <button id="viralBreakdownTranscribeButton" type="button" class="material-library-button">分析台词</button>
+                  <button id="viralBreakdownGuessScriptButton" type="button" class="material-library-button">猜剧本</button>
+                </div>
+                <div id="viralBreakdownStatusText" class="modal-sub">上传一个视频后，可以本地按间隔抽帧并智能拼成宫格图，再调用 Whisper 识别台词。</div>
+              </div>
+              <article class="viral-breakdown-pane viral-breakdown-glass-card area-grid">
+                <div class="material-heading">
+                  <div class="material-title">拼接宫格图</div>
+                  <div id="viralBreakdownGridMeta" class="material-meta"></div>
+                </div>
+                <div id="viralBreakdownGridPane" class="viral-breakdown-pane-body"></div>
+              </article>
+              <article class="viral-breakdown-pane viral-breakdown-glass-card area-transcript">
+                <div class="material-heading">
+                  <div class="material-heading stacked">
+                    <div class="material-title">识别到的台词</div>
+                    <div id="viralBreakdownTranscriptMeta" class="material-meta"></div>
+                  </div>
+                  <button id="viralBreakdownSaveTranscriptButton" type="button" class="button-secondary">已保存</button>
+                </div>
+                <div id="viralBreakdownTranscriptPane" class="viral-breakdown-pane-body"></div>
+              </article>
+              <article class="viral-breakdown-pane viral-breakdown-glass-card area-generated">
+                <div class="material-heading">
+                  <div class="material-title">用户生成的视频</div>
+                  <div id="viralBreakdownGeneratedMeta" class="material-meta">暂无</div>
+                </div>
+                <div id="viralBreakdownGeneratedPane" class="viral-breakdown-pane-body"></div>
+              </article>
+            </div>
+          </div>
+        </section>
+      </div>
+      <div class="viral-breakdown-footer">
+        <div class="modal-sub">当前版本只做本地上传、抽帧拼宫格、Whisper 识别和四窗预览，不会在这里直接触发真实视频生成。</div>
+        <div class="material-actions">
+          <button id="viralBreakdownCancelButton" type="button" class="button-secondary">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="hotRadarModal" class="modal-shell hidden" role="dialog" aria-modal="true" aria-labelledby="hotRadarTitle">
+    <div class="modal-panel hot-radar-modal-panel">
+      <div class="hot-radar-modal-actions">
+        <span id="hotRadarListMeta" class="hot-radar-update-pill">等待同步</span>
+        <button id="hotRadarRefreshButton" type="button" class="hot-radar-action-button">刷新</button>
+        <button id="hotRadarCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+      </div>
+      <div class="hot-radar-app-shell">
+        <aside class="hot-radar-sidebar">
+          <div class="hot-radar-brand">
+            <div class="hot-radar-brand-main">
+              <span class="hot-radar-brand-icon" aria-hidden="true">
+                <svg viewBox="0 0 48 48" width="30" height="30" role="img">
+                  <defs><linearGradient id="hotRadarFlameGradient" x1="8" y1="40" x2="38" y2="8"><stop stop-color="#4f6dff"/><stop offset="0.55" stop-color="#8b5cf6"/><stop offset="1" stop-color="#ff7a59"/></linearGradient></defs>
+                  <path fill="url(#hotRadarFlameGradient)" d="M27.8 4.8c1.1 7.2-3.2 10.6-6.2 14.2-2.1 2.5-3.3 5-1.8 8.2 1.1-3.2 3.5-5 6.1-7.2 5.3 4.1 8.2 8.8 7.4 14.2-.7 5.5-5.1 9.4-11.1 9.4-7.6 0-12.8-5-12.8-12.3 0-7.4 4.8-12.4 9.3-16.8 3.6-3.5 6.8-6.5 9.1-9.7Z"/>
+                  <path fill="#fff" fill-opacity=".9" d="M23.7 39.1c-3.3 0-5.7-2.2-5.7-5.4 0-2.8 1.7-5 4.1-7.3.1 3 1.9 4.2 3.1 5.8 1.8 2.5 1.1 6.9-1.5 6.9Z"/>
+                </svg>
+              </span>
+              <div>
+                <h1 id="hotRadarTitle">热点雷达</h1>
+                <p>公开热点聚合与选题工作台</p>
+              </div>
+            </div>
+          </div>
+        </aside>
+        <main class="hot-radar-main">
+          <section class="hot-radar-content-grid">
+            <section class="hot-radar-hotlist-panel">
+              <div class="hot-radar-filter-toolbar">
+                <label class="hot-radar-source-select-wrap" for="hotRadarSourceSelect">
+                  <span>热点来源</span>
+                  <select id="hotRadarSourceSelect" class="hot-radar-source-select" aria-label="切换热点来源"></select>
+                </label>
+                <div class="hot-radar-filter-row">
+                  <input id="hotRadarKeywordInput" class="hot-radar-search-input" placeholder="搜索热点，例如 AI / 出海 / 短视频">
+                  <button id="hotRadarClearButton" type="button" class="hot-radar-ghost-button">清空筛选</button>
+                  <button id="hotRadarColumnToggleButton" type="button" class="hot-radar-ghost-button" aria-pressed="false">单列</button>
+                </div>
+              </div>
+              <div id="hotRadarTopicList" class="hot-radar-topic-list"></div>
+            </section>
+            <aside class="hot-radar-detail-panel">
+              <div class="hot-radar-detail-head">
+                <div>
+                  <div class="hot-radar-detail-title">AI 摘要与转选题</div>
+                  <div id="hotRadarDetailMeta" class="hot-radar-detail-sub">热点摘要</div>
+                </div>
+              </div>
+              <div id="hotRadarSelectedTopic" class="hot-radar-topic-card hot-radar-selected-topic"></div>
+              <div class="hot-radar-detail-actions">
+                <button id="hotRadarSummaryButton" type="button" class="hot-radar-primary-button">AI 摘要</button>
+                <button id="hotRadarPromptButton" type="button" class="hot-radar-ghost-button">转成拆解提示词</button>
+                <button id="hotRadarFillPromptButton" type="button" class="hot-radar-ghost-button">填入对话框</button>
+              </div>
+              <div id="hotRadarSummaryOutput" class="hot-radar-summary-output">选择一个热点后，可生成摘要、拍摄角度和AI8video 业务切入点。</div>
+            </aside>
+          </section>
+        </main>
+      </div>
+    </div>
+  </div>
+  <div id="hotRadarSourceManagerModal" class="modal-shell hidden" role="dialog" aria-modal="true" aria-labelledby="hotRadarSourceManagerTitle">
+    <div class="modal-panel hot-radar-source-manager-panel">
+      <div class="material-modal-header">
+        <div class="material-heading">
+          <div id="hotRadarSourceManagerTitle" class="material-title">新增数据源</div>
+          <div class="material-meta">添加 RSS/Atom 订阅源，保存后自动参与热点刷新。</div>
+        </div>
+        <button id="hotRadarSourceManagerCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+      </div>
+      <div id="hotRadarSourceManagerList" class="hot-radar-source-manager-list"></div>
+      <div class="hot-radar-source-manager-form">
+        <input id="hotRadarCustomSourceName" placeholder="来源名称">
+        <input id="hotRadarCustomSourceId" placeholder="英文标识">
+        <input id="hotRadarCustomSourceUrl" type="url" placeholder="https://example.com/feed.xml">
+        <button id="hotRadarCustomSourceAddButton" type="button" class="button-secondary">添加</button>
+      </div>
+      <div id="hotRadarSourceManagerError" class="modal-sub"></div>
+      <div class="material-actions">
+        <button id="hotRadarSourceManagerCancelButton" type="button" class="button-secondary">取消</button>
+        <button id="hotRadarSourceManagerSaveButton" type="button" class="button-primary">保存数据源</button>
+      </div>
+    </div>
+  </div>
+  <div id="progressModal" class="modal-shell hidden" role="dialog" aria-modal="true" aria-labelledby="progressModalTitle">
+    <div class="modal-panel material-modal-panel">
+      <div class="modal-head">
+        <div class="modal-title">
+          <div class="progress-modal-heading-row">
+            <strong id="progressModalTitle">当前进度</strong>
+            <span id="progressModalCancelSlot"></span>
+          </div>
+          <div id="progressModalSub" class="modal-sub"></div>
+        </div>
+        <button id="progressModalCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+      </div>
+      <div id="progressModalBody"></div>
+    </div>
+  </div>
+  <div id="resultModal" class="modal-shell hidden" role="dialog" aria-modal="true" aria-labelledby="resultModalTitle">
+    <div class="modal-panel material-modal-panel">
+      <div class="modal-head">
+        <div class="modal-title">
+          <strong id="resultModalTitle">生成结果</strong>
+          <div id="resultModalSub" class="modal-sub"></div>
+        </div>
+        <div class="material-actions">
+          <button id="resultModalRefreshButton" type="button" class="button-secondary">刷新</button>
+          <button id="resultModalOpenFolderButton" type="button" class="button-secondary">打开文件夹</button>
+          <button id="resultModalCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+        </div>
+      </div>
+      <div id="resultModalBody"></div>
+    </div>
+  </div>
+  <div id="videoPreviewModal" class="modal-shell hidden" role="dialog" aria-modal="true" aria-labelledby="videoPreviewTitle">
+    <div class="modal-panel video-preview-panel">
+      <div class="modal-head">
+        <div class="modal-title">
+          <strong id="videoPreviewTitle">全屏播放</strong>
+          <div id="videoPreviewSub" class="modal-sub"></div>
+        </div>
+        <button id="videoPreviewCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+      </div>
+      <div id="videoPreviewBody"></div>
+    </div>
+  </div>
+  <div id="settingsModal" class="modal-shell hidden" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
+    <div class="modal-panel material-modal-panel">
+      <div class="modal-head">
+        <div class="modal-title">
+          <strong id="settingsModalTitle">设置</strong>
+          <span id="settingsSaveBadge" class="settings-save-badge" aria-live="polite">已保存</span>
+          <div id="settingsModalSub" class="modal-sub">实际使用的鉴权与生成设置。</div>
+        </div>
+        <button id="settingsModalCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+      </div>
+      <div id="settingsModalBody"></div>
+    </div>
+  </div>
+  <div id="videoParamsModal" class="modal-shell hidden" role="dialog" aria-modal="true" aria-labelledby="videoParamsModalTitle">
+    <div class="modal-panel material-modal-panel">
+      <div class="modal-head">
+        <div class="modal-title">
+          <strong id="videoParamsModalTitle">视频参数设置</strong>
+          <div id="videoParamsModalSub" class="modal-sub">默认 480p，可按当前模型支持项选择。</div>
+          <div id="videoParamsSaveStatus" class="video-params-save-status" aria-live="polite"></div>
+        </div>
+        <button id="videoParamsModalCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+      </div>
+      <div id="videoParamsModalBody"></div>
+    </div>
+  </div>
+  <div id="systemPromptModal" class="modal-shell hidden" role="dialog" aria-modal="true" aria-labelledby="systemPromptModalTitle">
+    <div class="modal-panel material-modal-panel">
+      <div class="modal-head">
+        <div class="modal-title">
+          <strong id="systemPromptModalTitle">系统提示词</strong>
+          <div id="systemPromptModalSub" class="modal-sub"></div>
+        </div>
+        <button id="systemPromptModalCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+      </div>
+      <div id="systemPromptModalBody"></div>
+    </div>
+  </div>
+  <div id="supervisorConfigModal" class="modal-shell hidden" role="dialog" aria-modal="true" aria-labelledby="supervisorConfigTitle">
+    <div class="modal-panel">
+      <div class="modal-head">
+        <div class="modal-title">
+          <strong id="supervisorConfigTitle">配置值守</strong>
+          <div id="supervisorConfigSub" class="modal-sub">设置自动排期、生成目标和告警阈值。</div>
+        </div>
+        <button id="supervisorConfigCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+      </div>
+      <form id="supervisorConfigForm" class="modal-form">
+        <div class="modal-grid">
+          <label class="config-field full">
+            <span class="config-label">自动排期</span>
+            <input id="supervisorScheduleTimesInput" class="config-input" name="scheduleTimes" type="text" placeholder="例如 09:00,13:15">
+          </label>
+          <label class="config-field">
+            <span class="config-label">目标生成数</span>
+            <input id="supervisorTargetPassCountInput" class="config-input" name="targetPassCount" type="number" min="1" step="1">
+          </label>
+          <label class="config-field">
+            <span class="config-label">默认风格</span>
+            <input id="supervisorStyleHintInput" class="config-input" name="styleHint" type="text" placeholder="例如 商务">
+          </label>
+          <label class="config-field">
+            <span class="config-label">轮询秒数</span>
+            <input id="supervisorPollSecondsInput" class="config-input" name="pollSeconds" type="number" min="5" step="1">
+          </label>
+          <label class="config-field">
+            <span class="config-label">最低成功率</span>
+            <input id="supervisorMinPassRateInput" class="config-input" name="minPassRate" type="number" min="0" max="1" step="0.05">
+          </label>
+          <label class="config-field">
+            <span class="config-label">连续低成功告警阈值</span>
+            <input id="supervisorLowPassRunsInput" class="config-input" name="consecutiveLowPassRuns" type="number" min="1" step="1">
+          </label>
+        </div>
+        <label class="config-check">
+          <input id="supervisorAutoBuildSeedInput" name="autoBuildSeedFile" type="checkbox" checked>
+          <span>缺少种子文件时，自动根据最近日报补建</span>
+        </label>
+        <div id="supervisorConfigNote" class="modal-note"></div>
+        <div id="supervisorConfigError" class="modal-error"></div>
+        <div class="modal-actions">
+          <button id="supervisorConfigCancelButton" type="button" class="button-secondary">取消</button>
+          <button id="supervisorConfigSubmitButton" type="submit" class="button-primary">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div id="clearConversationConfirmModal" class="modal-shell hidden" role="dialog" aria-modal="true" aria-labelledby="clearConversationConfirmTitle">
+    <div class="modal-panel">
+      <div class="modal-head">
+        <div class="modal-title">
+          <strong id="clearConversationConfirmTitle">确认清空对话？</strong>
+          <div class="modal-sub">只会清空当前窗口里的文字对话，不会删除任务、结果、素材或媒体文件。</div>
+        </div>
+        <button id="clearConversationConfirmCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+      </div>
+      <div class="modal-note">
+        <div id="clearConversationConfirmCount" class="modal-note-line"></div>
+      </div>
+      <div class="modal-actions">
+        <button id="clearConversationConfirmCancelButton" type="button" class="button-secondary">取消</button>
+        <button id="clearConversationConfirmSubmitButton" type="button" class="button-danger">确认清空</button>
+      </div>
+    </div>
+  </div>
+  <script src="/static/workbench.js?v=20260721-1"></script>
+</body>
+</html>

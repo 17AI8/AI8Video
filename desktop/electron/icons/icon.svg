@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="AI8video">
+  <defs>
+    <linearGradient id="loop" x1="104" y1="92" x2="408" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#35E6FF"/>
+      <stop offset="0.52" stop-color="#6D8BFF"/>
+      <stop offset="1" stop-color="#A76BFF"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#0B1020"/>
+  <path d="M256 238C190 238 146 207 146 160S190 82 256 82s110 31 110 78-44 78-110 78Z" fill="none" stroke="url(#loop)" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M256 430c-66 0-110-31-110-78s44-78 110-78 110 31 110 78-44 78-110 78Z" fill="none" stroke="url(#loop)" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M215 237 297 275" fill="none" stroke="#6D8BFF" stroke-width="34" stroke-linecap="round"/>
+  <path d="m245 214 75 42-75 42Z" fill="#FF806F"/>
+  <circle cx="136" cy="256" r="9" fill="#35E6FF"/>
+  <circle cx="376" cy="256" r="9" fill="#A76BFF"/>
+</svg>

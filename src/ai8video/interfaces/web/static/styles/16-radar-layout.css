@@ -1,0 +1,455 @@
+
+    .hot-radar-source-list .hot-radar-topic-meta {
+      margin-left: auto;
+      color: rgba(229, 231, 235, 0.58);
+      font-size: 11px;
+    }
+
+    .hot-radar-main {
+      min-width: 0;
+      min-height: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 18px;
+    }
+
+    .hot-radar-title-group strong {
+      display: block;
+      color: #fff;
+      font-size: 24px;
+      line-height: 1.2;
+      font-weight: 900;
+    }
+
+    .hot-radar-detail-actions,
+    .hot-radar-filter-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .hot-radar-update-pill {
+      color: var(--hot-radar-muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .hot-radar-action-button,
+    .hot-radar-primary-button,
+    .hot-radar-ghost-button {
+      min-height: 36px;
+      border: 0;
+      border-radius: 12px;
+      padding: 0 14px;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: opacity 0.16s ease, transform 0.16s ease, background 0.16s ease;
+    }
+
+    .hot-radar-action-button,
+    .hot-radar-primary-button {
+      background: linear-gradient(135deg, var(--hot-radar-accent), var(--hot-radar-accent-2));
+      box-shadow: 0 12px 24px rgba(249, 115, 22, 0.22);
+    }
+
+    .hot-radar-ghost-button {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--hot-radar-border);
+      color: rgba(249, 250, 251, 0.9);
+    }
+
+    .hot-radar-action-button:disabled,
+    .hot-radar-primary-button:disabled,
+    .hot-radar-ghost-button:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+      box-shadow: none;
+    }
+
+    .hot-radar-content-grid {
+      min-height: 0;
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) 360px;
+      gap: 18px;
+      overflow: hidden;
+    }
+
+    .hot-radar-hotlist-panel,
+    .hot-radar-detail-panel {
+      min-height: 0;
+      overflow: auto;
+      padding: 16px;
+      border: 1px solid var(--hot-radar-border);
+      border-radius: 18px;
+      background: var(--hot-radar-glass);
+      backdrop-filter: blur(20px);
+    }
+
+    .hot-radar-source-select-wrap {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
+      gap: 10px;
+      color: var(--hot-radar-text);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .hot-radar-filter-toolbar {
+      display: grid;
+      grid-template-columns: minmax(230px, 0.72fr) minmax(260px, 1.28fr) auto auto;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .hot-radar-filter-toolbar .hot-radar-filter-row {
+      display: contents;
+      margin: 0;
+    }
+
+    .hot-radar-source-select {
+      width: 100%;
+      min-height: 40px;
+      padding: 0 12px;
+      border: 1px solid rgba(255, 255, 255, 0.68);
+      border-radius: 10px;
+      background: rgba(248, 250, 255, 0.86);
+      color: var(--hot-radar-text);
+      font: inherit;
+      cursor: pointer;
+      box-shadow: 0 7px 18px rgba(45, 63, 130, 0.08);
+    }
+
+    .hot-radar-source-manager-panel {
+      width: min(620px, calc(100vw - 40px));
+      max-height: min(620px, calc(100vh - 48px));
+      padding: 22px;
+      overflow: auto;
+    }
+
+    .hot-radar-source-manager-list {
+      display: grid;
+      gap: 10px;
+      margin: 18px 0;
+    }
+
+    .hot-radar-source-manager-item,
+    .hot-radar-source-manager-form {
+      display: grid;
+      grid-template-columns: 150px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid rgba(79, 109, 255, 0.14);
+      border-radius: 12px;
+      background: rgba(248, 250, 255, 0.82);
+    }
+
+    .hot-radar-source-manager-item small {
+      min-width: 0;
+      overflow: hidden;
+      color: #64748b;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .hot-radar-source-manager-form {
+      grid-template-columns: 130px 150px minmax(0, 1fr) auto;
+    }
+
+    .hot-radar-source-manager-form input {
+      min-width: 0;
+      min-height: 38px;
+      border: 1px solid rgba(79, 109, 255, 0.18);
+      border-radius: 9px;
+      padding: 0 10px;
+    }
+
+    .hot-radar-filter-row {
+      margin-bottom: 14px;
+    }
+
+    .hot-radar-search-input {
+      flex: 1;
+      min-height: 40px;
+      border: 1px solid var(--hot-radar-border);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      padding: 0 13px;
+      outline: none;
+    }
+
+    .hot-radar-search-input::placeholder {
+      color: rgba(209, 213, 219, 0.54);
+    }
+
+    .hot-radar-topic-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .hot-radar-topic-list .hot-radar-topic-card,
+    .hot-radar-selected-topic {
+      width: 100%;
+      border: 1px solid var(--hot-radar-border);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.07);
+      color: #fff;
+      padding: 14px;
+      display: grid;
+      gap: 8px;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .hot-radar-topic-list .hot-radar-topic-card:hover,
+    .hot-radar-topic-list .hot-radar-topic-card.active {
+      border-color: rgba(251, 146, 60, 0.45);
+      background: rgba(249, 115, 22, 0.14);
+    }
+
+    .hot-radar-topic-title {
+      color: #fff;
+      font-size: 14px;
+      font-weight: 900;
+      line-height: 1.45;
+    }
+
+    .hot-radar-topic-meta,
+    .hot-radar-topic-desc {
+      color: var(--hot-radar-muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .hot-radar-detail-panel {
+      display: grid;
+      align-content: start;
+      gap: 14px;
+    }
+
+    .hot-radar-detail-title {
+      color: #fff;
+      font-size: 16px;
+      font-weight: 900;
+    }
+
+    .hot-radar-summary-output {
+      min-height: 240px;
+      max-height: 340px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      border-radius: 16px;
+      border: 1px solid var(--hot-radar-border);
+      background: rgba(0, 0, 0, 0.18);
+      color: rgba(249, 250, 251, 0.9);
+      padding: 13px;
+      font-size: 13px;
+      line-height: 1.75;
+    }
+
+    #hotRadarModal .modal-close {
+      color: rgba(249, 250, 251, 0.9);
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--hot-radar-border);
+    }
+
+    @media (max-width: 980px) {
+      .hot-radar-app-shell {
+        flex-direction: column;
+      }
+
+      .hot-radar-sidebar {
+        width: 100%;
+        min-width: 0;
+        max-height: 220px;
+        border-right: 0;
+        border-bottom: 1px solid var(--hot-radar-border);
+      }
+
+      .hot-radar-nav,
+      .hot-radar-source-list {
+        display: flex;
+        overflow-x: auto;
+      }
+
+      .hot-radar-content-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* 热点雷达采用AI8video 原生工作台布局，避免复刻后台壳造成多层滚动。 */
+    #hotRadarModal {
+      --hot-radar-surface: #ffffff;
+      --hot-radar-canvas: #f4f7f9;
+      --hot-radar-line: #dfe7e2;
+      --hot-radar-text: #17251d;
+      --hot-radar-muted: #66756c;
+      --hot-radar-accent: #0f6a4e;
+      --hot-radar-accent-soft: #e7f3ed;
+      background: rgba(18, 31, 24, 0.46);
+      backdrop-filter: blur(10px);
+    }
+
+    #hotRadarModal .hot-radar-modal-panel {
+      width: min(1160px, calc(100vw - 32px));
+      height: min(780px, calc(100dvh - 32px));
+      border: 1px solid rgba(223, 231, 226, 0.96);
+      border-radius: 18px;
+      background: var(--hot-radar-canvas);
+      box-shadow: 0 28px 80px rgba(16, 35, 24, 0.22);
+      color: var(--hot-radar-text);
+    }
+
+    #hotRadarModal .hot-radar-app-shell {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      height: 100%;
+      overflow: hidden;
+    }
+
+    #hotRadarModal .hot-radar-sidebar {
+      width: auto;
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
+      gap: 18px;
+      padding: 16px 20px;
+      border: 0;
+      border-bottom: 1px solid var(--hot-radar-line);
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: none;
+    }
+
+    #hotRadarModal .hot-radar-brand {
+      min-width: 210px;
+      padding: 0;
+      display: grid;
+      gap: 7px;
+    }
+
+    #hotRadarModal .hot-radar-brand-main {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #hotRadarModal .hot-radar-modal-actions {
+      position: absolute;
+      z-index: 2;
+      top: 16px;
+      right: 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #hotRadarModal .hot-radar-sidebar {
+      padding-right: 230px;
+    }
+
+    #hotRadarModal .hot-radar-main {
+      grid-template-rows: minmax(0, 1fr);
+    }
+
+    #hotRadarModal .hot-radar-brand-icon {
+      display: grid;
+      width: 36px;
+      height: 36px;
+      place-items: center;
+      border-radius: 10px;
+      background: var(--hot-radar-accent-soft);
+      font-size: 20px;
+    }
+
+    #hotRadarModal .hot-radar-brand h1 {
+      color: var(--hot-radar-text);
+      font-size: 17px;
+    }
+
+    #hotRadarModal .hot-radar-brand p,
+    #hotRadarModal .hot-radar-side-meta,
+    #hotRadarModal .hot-radar-detail-sub,
+    #hotRadarModal .hot-radar-update-pill,
+    #hotRadarModal .hot-radar-topic-meta,
+    #hotRadarModal .hot-radar-topic-desc {
+      color: var(--hot-radar-muted);
+    }
+
+    #hotRadarModal .hot-radar-fetch-route-badge {
+      width: fit-content;
+      border-radius: 999px;
+      background: #f1f5f2;
+      color: var(--hot-radar-muted);
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    #hotRadarModal .hot-radar-nav {
+      display: none;
+    }
+
+    #hotRadarModal .hot-radar-sidebar-footer {
+      min-width: 0;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      overflow: hidden;
+    }
+
+    #hotRadarModal .hot-radar-side-label {
+      color: var(--hot-radar-text);
+      font-size: 12px;
+    }
+
+    #hotRadarModal .hot-radar-source-list {
+      margin-top: 7px;
+      display: flex;
+      gap: 7px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      scrollbar-width: none;
+    }
+
+    #hotRadarModal .hot-radar-source-list::-webkit-scrollbar {
+      display: none;
+    }
+
+    #hotRadarModal .hot-radar-source-list .hot-radar-source-button {
+      min-height: 32px;
+      flex: 0 0 auto;
+      border: 1px solid var(--hot-radar-line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--hot-radar-text);
+      padding: 0 11px;
+      font-size: 12px;
+    }
+
+    #hotRadarModal .hot-radar-source-list .hot-radar-source-button:hover,
+    #hotRadarModal .hot-radar-source-list .hot-radar-source-button.active {
+      border-color: rgba(15, 106, 78, 0.28);
+      background: var(--hot-radar-accent-soft);
+      color: var(--hot-radar-accent);
+      box-shadow: none;
+    }
+
+    #hotRadarModal .hot-radar-main {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      padding: 0;
+      overflow: hidden;
+    }

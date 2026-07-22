@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.python/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.coverage
+
+# Node / browser runtime
+node_modules/
+.playwright-cli/
+desktop/electron/.asar-stage/
+desktop/electron/.asar-stage-clean/
+desktop/electron/dist/
+
+# Editors and operating systems
+.vscode/
+.idea/
+.cursor/
+.codex/
+.agents/
+.claude/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Secrets and local credentials
+.env
+mykey.py
+auth.json
+*.log
+**log.*
+
+# Local runtime state and user data
+temp/
+tmp/
+output/
+logs/
+media_resources/ai8video/
+用户文件夹/
+用户字体/
+AI8video.app/
+
+# Binary delivery artifacts
+*.zip
+*.exe

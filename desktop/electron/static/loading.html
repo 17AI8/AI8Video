@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI8video</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f5f7fb;
+      --panel: rgba(255,255,255,0.86);
+      --text: #101626;
+      --muted: #667085;
+      --line: rgba(16,24,40,0.08);
+      --accent: #4f46e5;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f141f;
+        --panel: rgba(20,28,44,0.88);
+        --text: #eef2ff;
+        --muted: #9aa4b2;
+        --line: rgba(148,163,184,0.18);
+        --accent: #7c8cff;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at top left, rgba(79,70,229,0.14), transparent 30%),
+        radial-gradient(circle at bottom right, rgba(56,189,248,0.12), transparent 28%),
+        var(--bg);
+      color: var(--text);
+    }
+    body {
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .panel {
+      width: min(520px, 100%);
+      padding: 32px 30px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
+    }
+    .brand {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+    .slug {
+      margin-top: 4px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .status {
+      margin-top: 28px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 15px;
+    }
+    .spinner {
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      border: 3px solid rgba(99, 102, 241, 0.18);
+      border-top-color: var(--accent);
+      animation: spin 0.9s linear infinite;
+      flex: 0 0 auto;
+    }
+    .hint {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <section class="panel">
+    <div class="brand">AI8video</div>
+    <div class="slug">AI8video Electron</div>
+    <div class="status">
+      <div class="spinner" aria-hidden="true"></div>
+      <div id="message">正在连接本地工作台...</div>
+    </div>
+    <div class="hint">开发态会继续直连本机 `127.0.0.1` 工作台，所以前端依旧可以边改边看。Electron 只提供桌面窗口和本地服务启动能力。</div>
+  </section>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const message = params.get('message');
+    if (message) {
+      document.getElementById('message').textContent = message;
+    }
+  </script>
+</body>
+</html>

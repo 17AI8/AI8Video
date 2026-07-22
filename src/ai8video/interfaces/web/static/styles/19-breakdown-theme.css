@@ -1,0 +1,348 @@
+    body > .shell > aside.sidebar #scriptMaterialList > div.material-card::after,
+    body > .shell > aside.sidebar #recycleBinList > div.material-card::after,
+    body > .shell > aside.sidebar #assistantToolsList > div:nth-child(2)::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 1px;
+      border-radius: 999px;
+      background: var(--brand-soft);
+      pointer-events: none;
+    }
+
+    body > .shell > aside.sidebar #imageMaterialList > div.material-card::before {
+      top: -12px;
+    }
+
+    body > .shell > aside.sidebar #scriptMaterialList > div.material-card::after,
+    body > .shell > aside.sidebar #recycleBinList > div.material-card::after,
+    body > .shell > aside.sidebar #assistantToolsList > div:nth-child(2)::after {
+      bottom: -12px;
+    }
+
+    body > .shell > aside.sidebar #assistantToolsList > div:nth-child(3),
+    body > .shell > aside.sidebar #assistantToolsList > div:nth-child(1) {
+      padding-top: 10px !important;
+      margin-top: 0 !important;
+    }
+
+    body > .shell > aside.sidebar #assistantToolsList > div:nth-child(2) .material-heading.stacked .material-meta,
+    body > .shell > aside.sidebar #assistantToolsList > div:nth-child(3) .material-heading.stacked .material-meta {
+      display: none !important;
+    }
+
+    body > .shell > aside.sidebar > .sidebar-footer {
+      background: transparent !important;
+      background-image: none !important;
+      box-shadow: none !important;
+    }
+
+    /* 让普通栏目保留独立卡片边界，回收站使用更紧凑的高度。 */
+    body > .shell > aside.sidebar #imageMaterialList > div.material-card,
+    body > .shell > aside.sidebar #scriptMaterialList > div.material-card,
+    body > .shell > aside.sidebar #recycleBinList > div.material-card,
+    body > .shell > aside.sidebar #assistantToolsList > div.material-card {
+      margin: 4px 0 !important;
+      padding: 8px 10px !important;
+      border: 1px solid rgba(255, 255, 255, 0.34) !important;
+      border-radius: 14px !important;
+    }
+
+    body > .shell > aside.sidebar #recycleBinList > div.material-card {
+      margin: 3px 0 20px !important;
+      padding: 6px 10px !important;
+    }
+
+    body > .shell > aside.sidebar #imageMaterialList > div.material-card {
+      margin-top: 20px !important;
+    }
+
+    body > .shell > aside.sidebar #scriptMaterialList > div.material-card,
+    body > .shell > aside.sidebar #assistantToolsList > div:nth-child(2) {
+      margin-bottom: 20px !important;
+    }
+
+    /* 爆款拆解复用热点雷达的蓝紫玻璃工作台：左侧专注观影，右侧集中操作与结果。 */
+    #viralBreakdownModal {
+      --viral-brand: #4f6dff;
+      --viral-brand-strong: #655eea;
+      --viral-brand-violet: #8b5cf6;
+      --viral-text: #1a2242;
+      --viral-muted: #687293;
+      --viral-line: rgba(255, 255, 255, 0.7);
+      --viral-glass: linear-gradient(145deg, rgba(255, 255, 255, 0.76), rgba(231, 239, 255, 0.56));
+      --viral-glass-strong: linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(235, 241, 255, 0.76));
+      --viral-shadow: 0 18px 48px rgba(45, 63, 130, 0.15);
+      background: rgba(24, 31, 62, 0.22);
+      backdrop-filter: blur(16px) saturate(1.12);
+      -webkit-backdrop-filter: blur(16px) saturate(1.12);
+    }
+
+    #viralBreakdownModal .material-modal-panel {
+      border: 1px solid rgba(255, 255, 255, 0.74);
+      background:
+        radial-gradient(circle at 8% 4%, rgba(139, 92, 246, 0.2), transparent 34%),
+        radial-gradient(circle at 92% 8%, rgba(79, 109, 255, 0.24), transparent 36%),
+        linear-gradient(145deg, rgba(246, 249, 255, 0.9), rgba(224, 233, 255, 0.72));
+      color: var(--viral-text);
+      box-shadow:
+        0 32px 90px rgba(32, 43, 92, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.84);
+      backdrop-filter: blur(28px) saturate(1.18);
+      -webkit-backdrop-filter: blur(28px) saturate(1.18);
+    }
+
+    #viralBreakdownModal .modal-head {
+      align-items: flex-start;
+      padding: 19px 22px 15px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.58);
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.28), rgba(231, 239, 255, 0.1));
+    }
+
+    #viralBreakdownModal .modal-title strong,
+    #viralBreakdownModal .material-title {
+      color: var(--viral-text);
+    }
+
+    #viralBreakdownModal .modal-sub,
+    #viralBreakdownModal .material-meta,
+    #viralBreakdownModal .viral-breakdown-inline-field {
+      color: var(--viral-muted);
+    }
+
+    #viralBreakdownModal .modal-close,
+    #viralBreakdownModal .button-secondary,
+    #viralBreakdownModal .viral-breakdown-upload-trigger {
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.78), rgba(231, 239, 255, 0.58));
+      color: #536084;
+      box-shadow:
+        0 7px 18px rgba(45, 63, 130, 0.09),
+        inset 0 1px 0 rgba(255, 255, 255, 0.76);
+    }
+
+    #viralBreakdownModal .modal-close:hover,
+    #viralBreakdownModal .button-secondary:hover,
+    #viralBreakdownModal .viral-breakdown-upload-trigger:hover {
+      border-color: rgba(79, 109, 255, 0.36);
+      background: rgba(255, 255, 255, 0.88);
+      color: var(--viral-brand);
+    }
+
+    #viralBreakdownModal .viral-breakdown-stage {
+      min-height: 0;
+      padding: 14px 18px 12px;
+      overflow: hidden;
+    }
+
+    #viralBreakdownModal .viral-breakdown-workbench {
+      min-height: 0;
+      gap: 0;
+    }
+
+    #viralBreakdownModal .viral-breakdown-workspace-layout {
+      min-height: 0;
+      grid-template-columns: minmax(284px, 0.8fr) minmax(0, 1.2fr);
+      gap: 14px;
+      overflow: hidden;
+      padding: 0;
+    }
+
+    #viralBreakdownModal .viral-breakdown-preview-column {
+      min-height: 0;
+      grid-template-rows: minmax(250px, 1.5fr) minmax(170px, 0.86fr);
+      gap: 14px;
+    }
+
+    #viralBreakdownModal .viral-breakdown-function-column {
+      min-height: 0;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+      grid-template-rows: auto minmax(178px, 1.25fr) minmax(130px, 0.85fr);
+      gap: 14px;
+      align-content: stretch;
+      overflow: hidden;
+    }
+
+    #viralBreakdownModal .viral-breakdown-toolbar,
+    #viralBreakdownModal .viral-breakdown-pane {
+      min-width: 0;
+      border: 1px solid var(--viral-line);
+      background: var(--viral-glass);
+      box-shadow:
+        var(--viral-shadow),
+        inset 0 1px 0 rgba(255, 255, 255, 0.72);
+      backdrop-filter: blur(18px) saturate(1.1);
+      -webkit-backdrop-filter: blur(18px) saturate(1.1);
+    }
+
+    #viralBreakdownModal .viral-breakdown-toolbar {
+      grid-column: 1 / -1;
+      padding: 15px 16px;
+      gap: 11px;
+      border-radius: 18px;
+      background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.8), rgba(225, 234, 255, 0.62)),
+        var(--viral-glass);
+      box-shadow:
+        var(--viral-shadow),
+        inset 3px 0 0 rgba(79, 109, 255, 0.72),
+        inset 0 1px 0 rgba(255, 255, 255, 0.78);
+    }
+
+    #viralBreakdownModal .area-grid {
+      grid-column: 1 / -1;
+    }
+
+    #viralBreakdownModal .area-transcript,
+    #viralBreakdownModal .area-generated {
+      min-height: 0;
+    }
+
+    #viralBreakdownModal .viral-breakdown-pane {
+      gap: 9px;
+      padding: 13px;
+      border-radius: 18px;
+    }
+
+    #viralBreakdownModal .viral-breakdown-pane-body {
+      border: 1px solid rgba(79, 109, 255, 0.14);
+      background: linear-gradient(145deg, rgba(246, 249, 255, 0.8), rgba(229, 237, 255, 0.56));
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.82),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+    }
+
+    #viralBreakdownModal .area-video .viral-breakdown-pane-body,
+    #viralBreakdownModal .area-grid .viral-breakdown-pane-body {
+      background:
+        radial-gradient(circle at 50% 0%, rgba(83, 110, 216, 0.24), transparent 58%),
+        linear-gradient(160deg, #142c4f, #0b1d39);
+      border-color: rgba(255, 255, 255, 0.16);
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+        inset 0 12px 28px rgba(7, 20, 44, 0.36);
+    }
+
+    #viralBreakdownModal .viral-breakdown-text-output,
+    #viralBreakdownModal .viral-breakdown-pane textarea,
+    #viralBreakdownModal .viral-breakdown-script-guess-editor {
+      color: var(--viral-text);
+      border-color: rgba(79, 109, 255, 0.3);
+      background: rgba(247, 250, 255, 0.78);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.88),
+        0 4px 12px rgba(45, 63, 130, 0.05);
+    }
+
+    #viralBreakdownModal .viral-breakdown-inline-field .config-input {
+      border-color: rgba(255, 255, 255, 0.72);
+      background: var(--viral-glass-strong);
+      color: var(--viral-text);
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.38),
+        0 5px 14px rgba(45, 63, 130, 0.06);
+    }
+
+    #viralBreakdownModal .viral-breakdown-inline-field .config-input:focus {
+      border-color: rgba(79, 109, 255, 0.5);
+      box-shadow:
+        inset 0 0 0 1px rgba(79, 109, 255, 0.24),
+        0 0 0 3px rgba(79, 109, 255, 0.12);
+    }
+
+    #viralBreakdownModal #viralBreakdownProcessFramesButton,
+    #viralBreakdownModal #viralBreakdownTranscribeButton,
+    #viralBreakdownModal #viralBreakdownGuessScriptButton {
+      border-color: transparent;
+      background: linear-gradient(135deg, var(--viral-brand) 0%, var(--viral-brand-strong) 52%, var(--viral-brand-violet) 100%);
+      color: #ffffff;
+      box-shadow: 0 10px 24px rgba(79, 109, 255, 0.22);
+    }
+
+    #viralBreakdownModal #viralBreakdownProcessFramesButton:hover,
+    #viralBreakdownModal #viralBreakdownTranscribeButton:hover,
+    #viralBreakdownModal #viralBreakdownGuessScriptButton:hover {
+      color: #ffffff;
+      filter: brightness(1.04);
+      transform: translateY(-1px);
+    }
+
+    #viralBreakdownModal .viral-breakdown-footer {
+      padding: 12px 18px 16px;
+      border-top: 1px solid rgba(255, 255, 255, 0.58);
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.2), rgba(231, 239, 255, 0.08));
+    }
+
+    #viralBreakdownModal .viral-breakdown-footer .material-actions {
+      flex: 0 0 auto;
+    }
+
+    @media (max-width: 920px) {
+      #viralBreakdownModal .viral-breakdown-workspace-layout {
+        grid-template-columns: minmax(250px, 0.78fr) minmax(0, 1.22fr);
+      }
+
+      #viralBreakdownModal .viral-breakdown-function-column {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(180px, 1fr) minmax(140px, 0.78fr) minmax(140px, 0.78fr);
+        overflow: auto;
+        padding-right: 2px;
+      }
+
+      #viralBreakdownModal .viral-breakdown-toolbar,
+      #viralBreakdownModal .area-grid {
+        grid-column: auto;
+      }
+    }
+
+    @media (max-width: 720px) {
+      #viralBreakdownModal .material-modal-panel {
+        width: calc(100vw - 16px);
+        height: calc(100dvh - 16px);
+        border-radius: 18px;
+      }
+
+      #viralBreakdownModal .modal-head,
+      #viralBreakdownModal .viral-breakdown-stage,
+      #viralBreakdownModal .viral-breakdown-footer {
+        padding-inline: 14px;
+      }
+
+      #viralBreakdownModal .viral-breakdown-stage,
+      #viralBreakdownModal .viral-breakdown-workbench,
+      #viralBreakdownModal .viral-breakdown-workspace-layout {
+        overflow: auto;
+      }
+
+      #viralBreakdownModal .viral-breakdown-workspace-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      #viralBreakdownModal .viral-breakdown-preview-column,
+      #viralBreakdownModal .viral-breakdown-function-column {
+        grid-template-rows: none;
+      }
+
+      #viralBreakdownModal .viral-breakdown-preview-column {
+        grid-template-rows: minmax(260px, 1fr) minmax(180px, auto);
+      }
+
+      #viralBreakdownModal .viral-breakdown-toolbar-row {
+        align-items: stretch;
+      }
+
+      #viralBreakdownModal .viral-breakdown-inline-field {
+        flex-basis: 100%;
+      }
+
+      #viralBreakdownModal .viral-breakdown-footer {
+        align-items: flex-end;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .shell {
+        grid-template-columns: 1fr !important;
+      }
+    }

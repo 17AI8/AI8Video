@@ -1,0 +1,453 @@
+    :root {
+      --bg: transparent;
+      --bg-accent: transparent;
+      --panel: rgba(255, 255, 255, 0.88);
+      --line: rgba(20, 35, 24, 0.1);
+      --text: #142318;
+      --muted: #607164;
+      --placeholder: #b8c0bb;
+      --brand: #0f6a4e;
+      --brand-soft: #e3f1ea;
+      --accent: #c45d2d;
+      --blue: #2f6db7;
+      --ok: #118a58;
+      --warn: #b86d1f;
+      --bad: #bf3c2e;
+      --shadow: 0 20px 60px rgba(20, 35, 24, 0.08);
+      --radius: 8px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    #htmlMotionOverlayButton,
+    #htmlMotionOverlayDrawer {
+      display: none !important;
+    }
+    body {
+      color: var(--text);
+      background: transparent;
+      font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      overflow: hidden;
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 540px minmax(0, 1fr);
+      height: 100vh;
+      min-height: 100vh;
+      overflow: hidden;
+      transition: grid-template-columns 220ms ease;
+    }
+
+    .sidebar, .aside {
+      backdrop-filter: blur(14px);
+      background: var(--panel);
+      border-right: 1px solid var(--line);
+      padding: 24px 18px;
+      min-height: 0;
+      overflow: auto;
+    }
+
+    body > .shell > aside.sidebar {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-content: start;
+      gap: 16px;
+    }
+
+    body > .shell > aside.sidebar > .brand,
+    body > .shell > aside.sidebar > #progressPanel,
+    body > .shell > aside.sidebar > .sidebar-footer {
+      grid-column: 1 / -1;
+    }
+
+    body > .shell > aside.sidebar > .sidebar-footer {
+      margin-top: auto;
+    }
+
+    body > .shell > aside.sidebar > #sidebarResourceList,
+    body > .shell > aside.sidebar > #assistantToolsList {
+      display: contents;
+    }
+
+    body > .shell > aside.sidebar > #sidebarResourceList > .material-list {
+      display: contents;
+    }
+
+    body > .shell > aside.sidebar > #sidebarResourceList > #imageMaterialList > div {
+      order: 1;
+    }
+
+    body > .shell > aside.sidebar > #sidebarResourceList > #scriptMaterialList > div {
+      order: 2;
+    }
+
+    body > .shell > aside.sidebar > #assistantToolsList > div:nth-child(1) {
+      order: 3;
+    }
+
+    body > .shell > aside.sidebar > #assistantToolsList > div:nth-child(2) {
+      order: 4;
+    }
+
+    body > .shell > aside.sidebar > #sidebarResourceList > #recycleBinList > div {
+      order: 6;
+      grid-column: 1;
+    }
+
+    body > .shell > aside.sidebar > .brand,
+    body > .shell > aside.sidebar > #progressPanel {
+      order: 0;
+    }
+
+    body > .shell > aside.sidebar > .sidebar-footer {
+      order: 99;
+    }
+
+    body > .shell > aside.sidebar .material-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    body > .shell > aside.sidebar .material-actions > :only-child {
+      grid-column: 1 / -1;
+    }
+
+    body > .shell > aside.sidebar #imageMaterialList .material-add-button,
+    body > .shell > aside.sidebar #scriptMaterialList .material-add-button {
+      display: none;
+    }
+
+    #materialLibraryModal .modal-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    #materialLibraryModal .material-library-title-copy {
+      min-width: 0;
+    }
+
+    #materialLibraryModal .material-library-add-button {
+      flex: 0 0 auto;
+      width: auto;
+      min-height: 32px;
+      padding: 0 12px;
+      white-space: nowrap;
+    }
+
+    .aside {
+      display: none;
+      border-right: 0;
+      border-left: 1px solid var(--line);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .mark {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: block;
+      object-fit: contain;
+      background: transparent;
+      box-shadow: var(--shadow);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-family: "Iowan Old Style", "Source Han Serif SC", "Songti SC", serif;
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .brand p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .session-list, .asset-list, .material-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    #sidebarResourceList {
+      margin-top: 24px;
+      display: grid;
+      gap: 8px;
+    }
+
+    #assistantToolsList {
+      margin-top: 40px;
+    }
+
+    .material-card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.82);
+      box-shadow: var(--shadow);
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+
+    body > .shell > aside.sidebar .material-card {
+      background: transparent;
+    }
+
+    body > .shell > aside.sidebar > #progressPanel > div {
+      background: rgba(255, 255, 255, 0.82);
+    }
+
+    body > .shell > aside.sidebar #imageMaterialList > div.material-card,
+    body > .shell > aside.sidebar #scriptMaterialList > div.material-card,
+    body > .shell > aside.sidebar #recycleBinList > div.material-card,
+    body > .shell > aside.sidebar #assistantToolsList > div.material-card {
+      background: transparent !important;
+    }
+
+    .material-thumb {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      background: rgba(15, 106, 78, 0.08);
+    }
+
+    .material-title {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--text);
+      line-height: 1.35;
+    }
+
+    .material-heading {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .material-heading .material-title {
+      min-width: 0;
+    }
+
+    .material-heading .material-meta {
+      flex: 0 0 auto;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .material-heading.stacked {
+      display: grid;
+      justify-content: start;
+      gap: 2px;
+    }
+
+    .material-heading.stacked .material-meta {
+      text-align: left;
+      white-space: normal;
+    }
+
+    .material-meta, .material-text {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .material-text {
+      display: -webkit-box;
+      -webkit-line-clamp: 5;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .material-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .material-library-button {
+      width: 100%;
+      min-height: 34px;
+      justify-content: center;
+      border-radius: 8px;
+      background: var(--brand-soft);
+      color: var(--brand);
+      box-shadow: none;
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .material-library-button:hover {
+      background: rgba(15, 106, 78, 0.16);
+    }
+
+    .progress-action-button {
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
+      background:
+        linear-gradient(90deg, rgba(113, 215, 173, 0.48), rgba(113, 215, 173, 0.48)) left / var(--progress, 0%) 100% no-repeat,
+        var(--brand-soft);
+    }
+
+    .progress-action-button:hover {
+      background:
+        linear-gradient(90deg, rgba(113, 215, 173, 0.58), rgba(113, 215, 173, 0.58)) left / var(--progress, 0%) 100% no-repeat,
+        rgba(15, 106, 78, 0.16);
+    }
+
+    .progress-action-button.pending::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      width: 42%;
+      background: linear-gradient(90deg, rgba(113, 215, 173, 0), rgba(113, 215, 173, 0.5), rgba(113, 215, 173, 0));
+      animation: progressButtonPulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes progressButtonPulse {
+      0% { transform: translateX(-115%); }
+      100% { transform: translateX(255%); }
+    }
+
+    .material-add-button {
+      width: 100%;
+      min-height: 34px;
+      justify-content: center;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.94);
+      color: var(--blue);
+      border: 1px solid rgba(47, 109, 183, 0.2);
+      box-shadow: none;
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .material-add-button:hover {
+      background: #e8f0fb;
+    }
+
+    #progressPanel .material-add-button {
+      border-color: rgba(79, 109, 255, 0.34);
+    }
+
+    .material-mention-token {
+      display: inline-flex;
+      align-items: center;
+      vertical-align: baseline;
+      min-height: 26px;
+      padding: 0 9px;
+      border-radius: 999px;
+      background: #e8f0fb;
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 900;
+      border: 1px solid rgba(47, 99, 150, 0.18);
+      margin: 0 2px;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+
+    .material-picker {
+      position: absolute;
+      left: 0;
+      right: 74px;
+      bottom: calc(100% + 8px);
+      z-index: 30;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.98);
+      box-shadow: var(--shadow);
+      padding: 8px;
+      display: grid;
+      gap: 6px;
+      max-height: 260px;
+      overflow: auto;
+    }
+
+    .material-picker.hidden {
+      display: none;
+    }
+
+    .material-option {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      padding: 8px;
+      box-shadow: none;
+      text-align: left;
+    }
+
+    .material-option:hover {
+      background: var(--brand-soft);
+      border-color: rgba(15, 106, 78, 0.14);
+    }
+
+    .material-option.selected {
+      background: rgba(17, 138, 88, 0.12);
+      border-color: rgba(17, 138, 88, 0.32);
+    }
+
+    .material-option.selected:hover {
+      background: rgba(17, 138, 88, 0.16);
+    }
+
+    .material-title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .material-selected-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 20px;
+      padding: 0 7px;
+      border-radius: 999px;
+      background: rgba(17, 138, 88, 0.16);
+      color: var(--ok);
+      border: 1px solid rgba(17, 138, 88, 0.28);
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .material-option-thumb {
+      width: 44px;
+      height: 44px;
+      border-radius: 6px;
+      object-fit: cover;
+      background: rgba(15, 106, 78, 0.08);
+      border: 1px solid var(--line);
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-weight: 900;
+      font-size: 12px;
+    }
+
+    .progress-card, .progress-detail-card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.82);
+      box-shadow: var(--shadow);
+    }
