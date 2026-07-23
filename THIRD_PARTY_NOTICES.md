@@ -2,6 +2,8 @@
 
 本项目源码采用 MIT License。以下组件通过包管理器安装或作为外部运行时调用，不复制其项目源码到本仓库；使用和再分发时应同时遵守各自许可证。
 
+本仓库额外分发的字体文件不适用项目 MIT License，而是分别按照其原始许可证分发。完整字体许可证见 [`licenses/SourceHanSerif-OFL-1.1.txt`](licenses/SourceHanSerif-OFL-1.1.txt)。
+
 | 组件 | 锁定或支持版本 | 许可证 | 用途 |
 |---|---:|---|---|
 | HyperFrames | `0.7.59` | Apache-2.0 | HTML 动效检查与渲染 |
@@ -15,6 +17,7 @@
 | sherpa-onnx | `>=1.13` | Apache-2.0 | 可选本地语音合成 |
 | AISHELL-3 | 可选旧版语音模型数据集 | Apache-2.0 | 兼容用户本机已有的 `vits-icefall-zh-aishell3` 模型 |
 | Electron | `31.x` | MIT | 可选桌面侧车 |
+| Source Han Serif SC Bold / Heavy | 当前仓内版本 | SIL OFL-1.1 | 可选本地字幕与花字渲染字体 |
 | electron-builder | `24.x` | MIT | 可选桌面安装包构建 |
 
 项目调用 FFmpeg 与 FFprobe 处理媒体，但仓库不分发其二进制。本机应安装符合部署要求的 FFmpeg 构建；当前 macOS 本地开发运行时使用关闭 `GPL` 和 `nonfree` 的 LGPL 2.1-or-later 构建。
@@ -27,3 +30,4 @@
 - Psycopg：[psycopg.org](https://www.psycopg.org/psycopg3/)
 - FFmpeg：[ffmpeg.org](https://ffmpeg.org/)
 - AISHELL-3：[OpenSLR 93](https://www.openslr.org/93/)
+- Source Han Serif：[adobe-fonts/source-han-serif](https://github.com/adobe-fonts/source-han-serif)

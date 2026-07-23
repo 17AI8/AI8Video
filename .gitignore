@@ -42,7 +42,11 @@ output/
 logs/
 media_resources/ai8video/
 用户文件夹/
-用户字体/
+用户字体/*
+!用户字体/内置字体/
+用户字体/内置字体/*
+!用户字体/内置字体/SourceHanSerifSC-Bold.otf
+!用户字体/内置字体/SourceHanSerifSC-Heavy.otf
 AI8video.app/
 
 # Binary delivery artifacts
