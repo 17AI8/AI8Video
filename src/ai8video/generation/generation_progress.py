@@ -302,20 +302,6 @@ def mark_job_archiving(session_id: str | None, job: QuickVideoJob) -> None:
     )
 
 
-def mark_job_reviewing(session_id: str | None, job: QuickVideoJob) -> None:
-    _update_item(
-        session_id,
-        job.video_index,
-        {
-            "status": "archiving",
-            "statusLabel": "正在审查成片并提炼下一条优化",
-            "jobId": job.job_id,
-            "_clearProviderState": True,
-            "_clearSegmentContext": True,
-        },
-    )
-
-
 def mark_job_html_motion_overlay(
     session_id: str | None,
     job: QuickVideoJob,
@@ -435,7 +421,6 @@ def fail_generation_progress(
     error: Exception | str | None = None,
     *,
     skip_pending: bool = True,
-    pending_error: str | None = None,
 ) -> None:
     normalized_session_id = _normalize_session_id(session_id)
     if not normalized_session_id:
@@ -455,7 +440,7 @@ def fail_generation_progress(
                 if item.get("status") == "pending_submission":
                     item["status"] = "skipped"
                     item["statusLabel"] = "已跳过"
-                    item["error"] = pending_error or "前序视频提交失败，本批次已停止"
+                    item["error"] = "前序视频提交失败，本批次已停止"
                     item["updatedAt"] = _isoformat(now)
         items = progress.get("items") or []
         has_unfinished = any(str(item.get("status") or "").strip() not in _TERMINAL_ITEM_STATUSES for item in items)

@@ -77,7 +77,6 @@ def observe_reviewer_shadow(
     session_id: str | None,
     review_source: str,
     merge_mode: str | None = None,
-    task_scope: str | None = None,
 ) -> None:
     """复用已有后审核或确定性检查证据，不改变生成结果。"""
     batch_id = str(get_current_generation_batch_id() or "").strip()
@@ -94,7 +93,7 @@ def observe_reviewer_shadow(
         )
         _execute_shadow_task(
             AgentTaskSpec(
-                task_id=_reviewer_task_id(batch_id, task_scope),
+                task_id=_reviewer_task_id(batch_id),
                 generation_batch_id=batch_id,
                 session_id=effective_session_id,
                 task_type="semantic_review_shadow",
@@ -103,10 +102,9 @@ def observe_reviewer_shadow(
                     len(videos),
                     source=review_source,
                     merge_mode=merge_mode,
-                    task_scope=task_scope,
                 ),
                 parent_task_id=batch_id,
-                idempotency_key=f"shadow:reviewer:{_normalize_task_scope(task_scope) or 'batch'}:v1",
+                idempotency_key="shadow:reviewer:batch:v1",
                 priority=30,
             ),
             _reviewer_snapshot(videos, review_source=review_source, merge_mode=merge_mode),
@@ -305,20 +303,6 @@ def _reviewer_snapshot(
 
 def _review_item(video: VideoPrompt) -> dict[str, Any]:
     guidance = video.keyword_guidance if isinstance(video.keyword_guidance, dict) else {}
-    generated_review = guidance.get("generated_output_review")
-    if isinstance(generated_review, dict):
-        return {
-            "videoIndex": int(video.index),
-            "promptDigest": _digest(video.prompt),
-            "passes": generated_review.get("passes") is True,
-            "violationCount": 0,
-            "advisoryCount": 0,
-            "issueCount": len(generated_review.get("issues") or []),
-            "improvementCount": len(generated_review.get("improvements") or []),
-            "constraintCount": len(generated_review.get("nextPromptConstraints") or []),
-            "hasNarration": False,
-            "fallback": str(generated_review.get("status") or "") != "completed",
-        }
     post_review = guidance.get("post_review")
     if not isinstance(post_review, dict):
         return {
@@ -352,14 +336,12 @@ def _task_input_snapshot(
     *,
     source: str,
     merge_mode: str | None,
-    task_scope: str | None = None,
 ) -> dict[str, Any]:
     return {
         "observationMode": "shadow",
         "source": str(source or "existing_output").strip() or "existing_output",
         "mergeMode": str(merge_mode or "").strip() or None,
         "videoCount": max(0, int(video_count)),
-        "taskScope": _normalize_task_scope(task_scope) or None,
     }
 
 
@@ -367,16 +349,8 @@ def _planner_task_id(batch_id: str) -> str:
     return f"{batch_id}:planner"
 
 
-def _reviewer_task_id(batch_id: str, task_scope: str | None = None) -> str:
-    scope = _normalize_task_scope(task_scope)
-    return f"{batch_id}:reviewer{':' + scope if scope else ''}"
-
-
-def _normalize_task_scope(value: str | None) -> str:
-    return "".join(
-        character if character.isalnum() or character in "-_" else "-"
-        for character in str(value or "").strip()
-    )[:80]
+def _reviewer_task_id(batch_id: str) -> str:
+    return f"{batch_id}:reviewer"
 
 
 def _digest(value: object) -> str:

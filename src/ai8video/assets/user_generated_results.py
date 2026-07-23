@@ -14,6 +14,10 @@ RESULT_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 RESULT_MEDIA_EXTENSIONS = RESULT_VIDEO_EXTENSIONS | RESULT_IMAGE_EXTENSIONS
 
 
+def is_simulated_user_generated_result_path(source: Path) -> bool:
+    return "dry-model-" in Path(source).name.lower()
+
+
 def ensure_user_generated_result_dir() -> Path:
     ensure_user_file_root()
     USER_GENERATED_RESULT_ROOT.mkdir(parents=True, exist_ok=True)
@@ -234,6 +238,8 @@ def _scan_result_video_files(result_root: Path) -> set[Path]:
     result_files: set[Path] = set()
     for candidate in result_root.rglob("*"):
         if candidate.suffix.lower() not in RESULT_VIDEO_EXTENSIONS or not candidate.is_file():
+            continue
+        if is_simulated_user_generated_result_path(candidate):
             continue
         resolved_candidate = candidate.resolve()
         if resolved_candidate.is_relative_to(result_root):

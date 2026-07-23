@@ -33,7 +33,7 @@
 
     function renderResultReviewSuggestions(result) {
       const advisoryGroups = new Map();
-      const suggestions = collectGeneratedOutputReviewSuggestions(result);
+      const suggestions = [];
       (result?.videos || []).forEach((video) => {
         const review = video?.keyword_guidance?.post_review || {};
         const advisories = Array.isArray(review.userAdvisories) ? review.userAdvisories.filter(Boolean) : [];

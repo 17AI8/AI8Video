@@ -127,53 +127,6 @@ class SpecialistAgentObserverTest(unittest.TestCase):
         self.assertEqual(tasks["reviewer"].state, "cancelled")
         self.assertEqual(reviewer_dependencies, [tasks["planner"].task_id])
 
-    def test_generated_output_reviews_use_distinct_scoped_reviewer_tasks(self) -> None:
-        videos = [
-            VideoPrompt(
-                index=index,
-                title=f"第 {index} 条",
-                prompt=f"提示词 {index}",
-                keyword_guidance={
-                    "generated_output_review": {
-                        "status": "completed",
-                        "passes": index == 1,
-                        "issues": [] if index == 1 else ["主体闪动"],
-                        "improvements": ["保持主体朝向稳定"],
-                        "nextPromptConstraints": ["减少快速转身"],
-                    }
-                },
-            )
-            for index in (1, 2)
-        ]
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            ledger = self._ledger(temporary_directory, "gb-generated-review")
-            with patch.object(specialist_agent_observer, "_TASK_LEDGER", ledger):
-                def observe() -> None:
-                    specialist_agent_observer.observe_planner_shadow(
-                        videos,
-                        session_id="session-shadow",
-                        source_stage="planning_output",
-                    )
-                    for video in videos:
-                        specialist_agent_observer.observe_reviewer_shadow(
-                            [video],
-                            session_id="session-shadow",
-                            review_source="multimodal_contact_sheet",
-                            task_scope=f"generated-{video.index}",
-                        )
-
-                self._with_context("gb-generated-review", "session-shadow", observe)
-            specialist_agent_observer.shutdown_specialist_agent_scheduler(grace_seconds=0.2)
-            first = ledger.agent_tasks.get_task("gb-generated-review:reviewer:generated-1")
-            second = ledger.agent_tasks.get_task("gb-generated-review:reviewer:generated-2")
-
-        self.assertIsNotNone(first)
-        self.assertIsNotNone(second)
-        self.assertEqual(first.input_snapshot["taskScope"], "generated-1")
-        self.assertEqual(second.input_snapshot["taskScope"], "generated-2")
-        self.assertEqual(first.output_snapshot["improvementCount"], 1)
-        self.assertEqual(second.output_snapshot["issueCount"], 1)
-
     def test_observer_storage_failure_is_fail_open(self) -> None:
         broken_ledger = SimpleNamespace(
             agent_tasks=SimpleNamespace(get_task=Mock(side_effect=OSError("database unavailable")))

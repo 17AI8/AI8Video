@@ -343,7 +343,6 @@ class AI8VideoVideoModelSettingsTest(unittest.TestCase):
             ratio="9:16",
             resolution="720x1080",
             resolution_mode="size",
-            seconds=12,
             generate_audio=True,
             service_tier="flex",
             execution_expires_after=86400,
@@ -390,8 +389,6 @@ class AI8VideoVideoModelSettingsTest(unittest.TestCase):
         self.assertNotIn("input_reference", payload)
         self.assertNotIn("images", payload)
         self.assertEqual(payload["size"], "720x1080")
-        self.assertEqual(payload["seconds"], "10")
-        self.assertEqual(payload["duration"], 10)
         self.assertEqual(job.job_id, "task-1")
 
     def test_video_model_http_error_includes_upstream_body(self) -> None:

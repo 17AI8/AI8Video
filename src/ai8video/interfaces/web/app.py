@@ -181,6 +181,7 @@ from ai8video.assets.upload_utils import resolve_upload_filename
 from ai8video.assets.user_generated_results import (
     USER_GENERATED_RESULT_ROOT,
     ensure_user_generated_result_dir,
+    is_simulated_user_generated_result_path,
     migrate_legacy_result_layout,
 )
 from ai8video.assets.user_files import USER_FILE_ROOT
@@ -1352,7 +1353,7 @@ def _user_generated_result_items(limit: int = 50) -> list[dict]:
 
 
 def _is_simulated_user_generated_result(source: Path, record: dict) -> bool:
-    if "dry-model-" in source.name.lower():
+    if is_simulated_user_generated_result_path(source):
         return True
     if (
         record.get("dryRun") is True

@@ -260,7 +260,13 @@ class AI8VideoVideoPromptPlannerTest(unittest.TestCase):
         video = single_prompt_to_video("视频中大量“大字报式文字”，讲AI8video 私域承接", None)[0]
 
         self.assertIn("视频中大量“大字报式文字”", video.prompt)
-        self.assertIn("请先理解用户原文、风格要求和用户可编辑业务模型系统提示词里的视觉要求", video.prompt)
+        self.assertIn("当前用户原文、风格要求、核心主题与用户可编辑业务模型系统提示词都是用户输入", video.prompt)
+
+    def test_single_prompt_records_current_core_topic_as_generation_invariant(self) -> None:
+        video = single_prompt_to_video("生成一条小动物视频", "自然", "小动物")[0]
+
+        self.assertEqual(video.keyword_guidance["explicit_core_keywords"], ["小动物"])
+        self.assertIn("当前用户原文、风格要求、核心主题与用户可编辑业务模型系统提示词都是用户输入", video.prompt)
         self.assertIn("不要用本地固定词表替用户判断内容", video.prompt)
 
     def test_visual_text_rule_is_intent_based_not_keyword_only(self) -> None:

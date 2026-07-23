@@ -300,11 +300,25 @@ def single_prompt_to_video(
     if core_keywords:
         suffix += f"\n核心主题 / 关键词：{core_keywords}。"
     guardrails = (
-        "\n请先理解用户原文、风格要求和用户可编辑业务模型系统提示词里的视觉要求、文字要求、排版要求、镜头要求和禁用要求，并完整落实。"
+        "\n当前用户原文、风格要求、核心主题与用户可编辑业务模型系统提示词都是用户输入，必须合并落实。"
+        "当前主题不能被业务提示词删除，业务提示词中的明确人物、产品、风格和镜头要求也不能被当前主题无故删除；"
+        "只有两者存在无法共存的直接矛盾时，才以当前这轮用户输入处理冲突项。"
         "不要用本地固定词表替用户判断内容；可见视觉内容和人物台词/口播内容必须按用户意图与系统提示词作用域区分。"
     )
     final_prompt = sanitize_internal_fidelity_notes(prompt.strip() + suffix + guardrails)
-    return [VideoPrompt(index=1, title="单条视频", prompt=final_prompt)]
+    keyword_guidance = (
+        {"explicit_core_keywords": [str(core_keywords).strip()]}
+        if str(core_keywords or "").strip()
+        else {}
+    )
+    return [
+        VideoPrompt(
+            index=1,
+            title="单条视频",
+            prompt=final_prompt,
+            keyword_guidance=keyword_guidance,
+        )
+    ]
 
 
 def build_rewrite_prompt(

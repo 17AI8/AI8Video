@@ -39,9 +39,9 @@ def _build_request_interpretation_prompt(text: str) -> str:
   - "core_keywords_followup": 员工正在补充或跳过核心主题/关键词。
   - "unknown": 无法判断。
 - mode: "batch_videos" 或 "single_video"。如果员工要求多条、多个或批量生成视频，或开头写了“10个，重大消息”这类数量 + 主题，填 "batch_videos"；如果明确只要一条，填 "single_video"。
-- video_count: 目标视频数量。员工说“10个，重大消息”“来十条”“生成6个选题”“生成两条视频”都要识别成真实数字，不要擅自截断；普通生成的最多 5 条限制由后续产品策略明确提示。无法确定则填 null。
-- duration_seconds: 单条视频时长秒数。没有明确时填 null；普通多条生成后续会统一固定为每条 10 秒。
-- concurrent_generation: 员工是否明确要求并发/快速/同时提交。明确要求普通/逐条则填 false；未提则填 null；普通多条生成后续会强制逐条迭代。
+- video_count: 目标视频数量。员工说“10个，重大消息”“来十条”“生成6个选题”“生成两条视频”都要识别成数字。无法确定则填 null。
+- duration_seconds: 单条视频时长秒数。没有明确时填 null。
+- concurrent_generation: 员工是否明确要求并发/快速/同时提交。明确要求普通/逐条则填 false；未提则填 null。
 - html_motion_overlay: 员工是否明确要求开启 HTML 动效叠加。明确要求关闭/不用则填 false；明确要求开启/使用则填 true；未提填 null。
 - reference_image_decision: 明确说不用参考图填 false；明确要用参考图/当前参考图/默认参考图填 true；未提填 null。
 - core_keywords: 本轮核心主题或关键词。比如“重大消息”“618 倒计时 5 天”“AI8video 全球发布”等。没有则填 null。

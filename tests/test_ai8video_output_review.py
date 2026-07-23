@@ -57,6 +57,32 @@ class AI8VideoOutputReviewTest(unittest.TestCase):
         self.assertIsNone(reviewed.keyword_guidance["post_review"]["passes"])
         self.assertEqual(reviewed.keyword_guidance["post_review"]["status"], "unavailable")
 
+    def test_review_cannot_replace_explicit_current_topic_with_business_template(self) -> None:
+        original_prompt = "小动物在草地上追逐落叶。"
+        video = VideoPrompt(
+            index=1,
+            title="小动物",
+            prompt=original_prompt,
+            keyword_guidance={"explicit_core_keywords": ["小动物"]},
+        )
+        raw = """[{
+          "index": 1,
+          "passes": true,
+          "corrected_video_prompt": "美女在卧室介绍翻译软件。",
+          "narration_text": "翻译软件真方便。",
+          "violations": [],
+          "user_advisories": []
+        }]"""
+
+        reviewed = review_final_outputs([video], llm=lambda _prompt: raw)[0]
+
+        self.assertEqual(reviewed.prompt, original_prompt)
+        self.assertFalse(reviewed.keyword_guidance["post_review"]["passes"])
+        self.assertIn(
+            "后审核结果偏离本轮显式核心主题，已保留审核前提示词",
+            reviewed.keyword_guidance["post_review"]["violations"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

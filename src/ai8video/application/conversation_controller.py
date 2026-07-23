@@ -32,10 +32,6 @@ from ai8video.media.motion.html_motion_overlay import default_html_motion_overla
 from ai8video.batch.daily_batch_runner import DailyBatchRunner
 from ai8video.core.models import ChatReply, ConversationState, VideoPrompt, ParsedRequest
 from ai8video.generation.pipeline import AI8VideoPipeline
-from ai8video.generation.iterative_batch_policy import (
-    ITERATIVE_VIDEO_DURATION_SECONDS,
-    MAX_ITERATIVE_VIDEO_COUNT,
-)
 from ai8video.application.request_interpreter import interpret_generation_request_with_ai
 from ai8video.media.video_merge_mode import load_video_merge_mode, normalize_video_merge_mode
 
@@ -62,8 +58,7 @@ class AI8VideoConversationController:
     def get_welcome_reply(self) -> ChatReply:
         return ChatReply(
             text=(
-                "把提示词、脚本素材或批量视频需求直接发我；普通批量单轮最多 5 条，"
-                "每条固定 10 秒，并会逐条审查后优化下一条。"
+                "把提示词、脚本素材或批量视频需求直接发我；批量生成请写清目标视频数量。"
                 "参考图可以下一句再给。如果暂时不用参考图，直接回复“不用参考图”。\n"
                 "如果要批量跑量，也可以直接说“今天先跑两条商务风”，"
                 "再把候选内容逐行发我，或者一次性发“候选：A；B；C”。"
@@ -130,10 +125,6 @@ class AI8VideoConversationController:
 
         self._merge_message(state, text, control_text=control_text, ai_interpretation=ai_interpretation)
 
-        policy_reply = self._apply_iterative_batch_policy(state, material_context)
-        if policy_reply is not None:
-            return policy_reply
-
         if not state.draft.raw_text:
             state.awaiting = "raw_text"
             return ChatReply(
@@ -151,7 +142,7 @@ class AI8VideoConversationController:
             state.awaiting = "video_count"
             return ChatReply(
                 text=self._prepend_material_receipt(
-                    "收到素材了。你希望生成几条独立 10 秒视频？直接回复 1 到 5 之间的数字。",
+                    "收到素材了。你希望生成几条独立视频？直接回复“6 条”或只回数字都可以。",
                     material_context,
                 ),
                 stage="collecting",
@@ -226,36 +217,6 @@ class AI8VideoConversationController:
         if failed:
             return f"{prefix}本轮 {failed} 条生成失败，下面是结果。"
         return f"{prefix}本轮已经完成视频方案规划、传图、创建任务和归档，下面是结果。"
-
-    def _apply_iterative_batch_policy(
-        self,
-        state: ConversationState,
-        material_context: dict | None,
-    ) -> ChatReply | None:
-        if state.draft.mode != "batch_videos":
-            state.draft.iterative_generation = False
-            return None
-        count = int(state.draft.video_count or 0)
-        if count < 1:
-            return None
-        if count > MAX_ITERATIVE_VIDEO_COUNT:
-            state.draft.iterative_generation = False
-            state.awaiting = "video_count"
-            return ChatReply(
-                text=self._prepend_material_receipt(
-                    f"普通批量单轮最多生成 {MAX_ITERATIVE_VIDEO_COUNT} 条独立 10 秒视频。"
-                    "请回复 1 到 5 之间的数量；系统不会先提交多余任务。",
-                    material_context,
-                ),
-                stage="collecting",
-                awaiting=state.awaiting,
-                draft=state.draft,
-                meta={"operation": "collect", "validation": "iterative_batch_limit"},
-            )
-        state.draft.duration_seconds = ITERATIVE_VIDEO_DURATION_SECONDS
-        state.draft.concurrent_generation = False
-        state.draft.iterative_generation = True
-        return None
 
     def _handle_content_completion_followup(
         self,
@@ -840,8 +801,6 @@ class AI8VideoConversationController:
         return f"{base}\n\n{extra}"
 
     def _run_generation_request(self, request: ParsedRequest, *, progress_session_id: str | None = None):
-        if request.iterative_generation:
-            return self.pipeline.run_request(request, progress_session_id=progress_session_id)
         mode = normalize_video_merge_mode(self._merge_mode_loader())
         if mode in {"merge2", "merge4"}:
             return self._merged_video_pipeline(mode).run_request(request, progress_session_id=progress_session_id)
@@ -916,7 +875,6 @@ class AI8VideoConversationController:
             resolution=draft_request.resolution,
             preset=draft_request.preset,
             concurrent_generation=draft_request.concurrent_generation,
-            iterative_generation=False,
             html_motion_overlay_enabled=draft_request.html_motion_overlay_enabled,
         )
 
@@ -956,10 +914,7 @@ class AI8VideoConversationController:
         if state.draft.mode == "batch_videos":
             count = state.draft.video_count or 1
             style = f"，风格偏 {state.draft.style_hint}" if state.draft.style_hint else ""
-            return (
-                f"好，我会基于这份素材规划 {count} 条独立 10 秒视频{style}，"
-                "按逐条生成、审查成片、优化下一条的顺序执行"
-            )
+            return f"好，我会基于这份素材规划 {count} 条独立视频{style}"
         style = f"，风格偏 {state.draft.style_hint}" if state.draft.style_hint else ""
         return f"好，我会先按单条视频来处理{style}"
 
@@ -982,9 +937,6 @@ class AI8VideoConversationController:
 
     @staticmethod
     def _apply_default_generation_mode(state: ConversationState) -> None:
-        if state.draft.iterative_generation:
-            state.draft.concurrent_generation = False
-            return
         if state.draft.concurrent_generation is not None:
             return
         state.draft.concurrent_generation = default_concurrent_generation_enabled()

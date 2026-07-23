@@ -256,13 +256,12 @@ class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
         self.assertNotEqual(reply.meta.get("operation"), "batch_run")
         self.assertEqual(captured["request"].video_count, 5)
         self.assertEqual(captured["request"].mode, "batch_videos")
-        self.assertFalse(captured["request"].concurrent_generation)
-        self.assertTrue(captured["request"].iterative_generation)
+        self.assertTrue(captured["request"].concurrent_generation)
         read_full.assert_not_called()
         self.assertIn("剧本参考《2.docx》相关知识段（Top 1）", captured["request"].raw_text)
         self.assertIn("全球发布倒计时", captured["request"].raw_text)
 
-    def test_control_message_rejects_existing_form_count_above_iterative_limit(self) -> None:
+    def test_control_message_uses_selected_script_reference_and_existing_form_state(self) -> None:
         captured: dict[str, ParsedRequest] = {}
 
         class FakePipeline:
@@ -296,12 +295,14 @@ class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
                 patch("ai8video.knowledge.default_script_reference.read_script_material_text", return_value="参考剧本正文：AI8video 全球发布倒计时。"):
             reply = agent.handle_message(session_id, "开始生成")
 
-        self.assertEqual(reply.stage, "collecting")
-        self.assertEqual(reply.awaiting, "video_count")
-        self.assertIn("最多生成 5 条", reply.text)
-        self.assertNotIn("request", captured)
+        self.assertEqual(reply.stage, "completed")
+        self.assertNotEqual(reply.awaiting, "raw_text")
+        self.assertEqual(captured["request"].video_count, 15)
+        self.assertTrue(captured["request"].concurrent_generation)
+        self.assertIn("剧本参考《2.docx》内容", captured["request"].raw_text)
+        self.assertIn("AI8video 全球发布倒计时", captured["request"].raw_text)
 
-    def test_default_script_reference_rejects_ai_count_above_iterative_limit_before_keywords(self) -> None:
+    def test_default_script_reference_skips_manual_keyword_confirmation_when_ai_requests_it(self) -> None:
         captured: dict[str, ParsedRequest] = {}
 
         class FakePipeline:
@@ -356,11 +357,11 @@ class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
                 patch("ai8video.application.conversation_controller.enabled_default_reference_image_options", return_value={}):
             reply = agent.handle_message("script-ref-ai-keywords", "30")
 
-        self.assertEqual(reply.stage, "collecting")
-        self.assertEqual(reply.awaiting, "video_count")
+        self.assertEqual(reply.stage, "completed")
+        self.assertIsNone(reply.awaiting)
         self.assertNotEqual(reply.awaiting, "core_keywords")
-        self.assertIn("最多生成 5 条", reply.text)
-        self.assertNotIn("request", captured)
+        self.assertIn("剧本参考《2.docx》内容", captured["request"].raw_text)
+        self.assertIsNone(captured["request"].core_keywords)
 
 
 if __name__ == "__main__":

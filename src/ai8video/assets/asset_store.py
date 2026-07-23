@@ -75,8 +75,6 @@ class JsonlAssetStore:
             "htmlMotionOverlay": None if archive is None else archive.meta.get("htmlMotionOverlay"),
             "usage": job.usage,
             "prompt": sanitize_internal_fidelity_notes(video.prompt),
-            "keywordGuidance": video.keyword_guidance,
-            "generatedOutputReview": (video.keyword_guidance or {}).get("generated_output_review"),
             "request": {
                 "mode": request.mode,
                 "videoCount": request.video_count,
@@ -85,7 +83,6 @@ class JsonlAssetStore:
                 "ratio": request.ratio,
                 "resolution": request.resolution,
                 "preset": request.preset,
-                "iterativeGeneration": request.iterative_generation,
                 "htmlMotionOverlayEnabled": request.html_motion_overlay_enabled,
             },
             "firstFrame": None if first_frame is None else first_frame.__dict__,
