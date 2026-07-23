@@ -5,8 +5,11 @@ import os
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
 from unittest.mock import patch
 
+from ai8video.batch.task_ledger import TaskLedger
+from ai8video.generation import generation_progress, merged_video_pipeline, prompt_trace
 from ai8video.interfaces import cli as cli_module
 from ai8video.application.ai8video_chat_service import (
     handle_chat_via_ai8video,
@@ -29,11 +32,38 @@ class AI8VideoAI8VideoBridgeTest(unittest.TestCase):
             "ai8video.application.conversation_controller.AI8VideoConversationController._interpret_request_with_ai",
             return_value=None,
         )
+        self.llm_patcher = patch(
+            "ai8video.generation.pipeline.build_openai_compat_llm",
+            return_value=None,
+        )
+        self.trace_patcher = patch.object(
+            prompt_trace,
+            "TRACE_PATH",
+            Path(self.tempdir.name) / "prompt_traces.jsonl",
+        )
+        self.ledger_patcher = patch.object(
+            generation_progress,
+            "_TASK_LEDGER",
+            TaskLedger(Path(self.tempdir.name) / "task_ledger.sqlite3"),
+        )
+        self.merge_temp_patcher = patch.object(
+            merged_video_pipeline,
+            "MERGE_TEMP_MEDIA_DIR",
+            Path(self.tempdir.name) / "merge_temp",
+        )
         self.default_script_reference_patcher.start()
         self.ai_interpreter_patcher.start()
+        self.llm_patcher.start()
+        self.trace_patcher.start()
+        self.ledger_patcher.start()
+        self.merge_temp_patcher.start()
         get_runtime(refresh=True)
 
     def tearDown(self) -> None:
+        self.merge_temp_patcher.stop()
+        self.ledger_patcher.stop()
+        self.trace_patcher.stop()
+        self.llm_patcher.stop()
         self.ai_interpreter_patcher.stop()
         self.default_script_reference_patcher.stop()
         for key, value in self.env_backup.items():
@@ -53,11 +83,15 @@ class AI8VideoAI8VideoBridgeTest(unittest.TestCase):
         ]
 
     def test_runtime_chat_defaults_to_no_reference_when_tab_has_no_selection(self) -> None:
-        payload = handle_chat_message(
-            session_id="employee-a",
-            message="给我一条老板在会议室开会风格的短视频提示词，10秒。",
-            refresh=True,
-        )
+        with patch(
+            "ai8video.assets.video_asset_archiver.ensure_user_generated_result_dir",
+            side_effect=AssertionError("dry-run must not access user generated results"),
+        ):
+            payload = handle_chat_message(
+                session_id="employee-a",
+                message="给我一条老板在会议室开会风格的短视频提示词，10秒。",
+                refresh=True,
+            )
 
         self.assertEqual(payload["reply"]["stage"], "completed")
         self.assertIsNone(payload["reply"]["awaiting"])

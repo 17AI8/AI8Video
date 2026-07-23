@@ -216,6 +216,22 @@ class AI8VideoUserGeneratedResultsTest(unittest.TestCase):
         self.assertEqual(result["orphanResults"][0]["relativePath"], "video/orphan.mp4")
         self.assertEqual(result["orphanResults"][0]["conflicts"], ["result_without_asset"])
 
+    def test_reconciliation_ignores_dry_run_placeholder_results(self) -> None:
+        generated_root = self.root / "用户生成结果"
+        placeholder = generated_root / "video" / "01-demo-dry-model-1-a.mp4"
+        placeholder.parent.mkdir(parents=True)
+        placeholder.write_bytes(b"placeholder")
+
+        result = user_generated_results.build_generation_result_reconciliation(
+            {"generationBatchId": "gb-real", "items": []},
+            [],
+            result_root=generated_root,
+        )
+
+        self.assertEqual(result["summary"]["availableResults"], 0)
+        self.assertEqual(result["summary"]["conflicts"], 0)
+        self.assertEqual(result["orphanResults"], [])
+
     def test_reconciliation_does_not_treat_historical_asset_result_as_orphan(self) -> None:
         generated_root = self.root / "用户生成结果"
         historical_file = generated_root / "video" / "historical.mp4"

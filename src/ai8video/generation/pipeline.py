@@ -7,6 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from ai8video.batch.specialist_agent_observer import observe_planner_shadow
 from ai8video.generation.video_prompt_planner import (
     LLMCallable,
     expand_batch_seed_messages_with_ai,
@@ -96,6 +97,11 @@ class AI8VideoPipeline:
             )
         else:
             videos = single_prompt_to_video(request.raw_text, request.style_hint, request.core_keywords)
+        observe_planner_shadow(
+            videos,
+            session_id=progress_session_id,
+            source_stage="planning_output",
+        )
         return self._run_videos(request, videos, progress_session_id=progress_session_id)
 
     def rewrite_video(

@@ -117,10 +117,70 @@ class AI8VideoBusinessPromptTest(unittest.TestCase):
         self.assertEqual(result, "沙滩场景最终提示词。")
         self.assertEqual(len(model_inputs), 2)
         self.assertIn("当前任务补充约束", model_inputs[0])
-        self.assertIn("工具栏配置是本次生成的最高业务约束", model_inputs[0])
+        self.assertIn("本轮用户原文、核心主题、明确风格和业务模型系统提示词都是用户输入", model_inputs[0])
         self.assertIn("必须泳装和沙滩", model_inputs[0])
-        self.assertIn("不得删除、替换、弱化或反转工具栏", model_inputs[0])
+        self.assertIn("任何一方都不能换掉另一方", model_inputs[0])
         self.assertIn("必须泳装和沙滩", model_inputs[1])
+
+    def test_explicit_core_topic_guard_rejects_cross_task_template_replacement(self) -> None:
+        model_inputs = []
+
+        def fake_llm(prompt: str) -> str:
+            model_inputs.append(prompt)
+            return (
+                '{"passes": true, "final_prompt": "美女介绍翻译软件。", "notes": "错误换题"}'
+                if "最终出站审校模型" in prompt
+                else '{"final_prompt": "美女介绍翻译软件。", "notes": "错误换题"}'
+            )
+
+        source = "生成一条小动物视频。\n核心主题 / 关键词：小动物。"
+        with tempfile.TemporaryDirectory() as tempdir:
+            prompt_path = Path(tempdir) / "business-prompt.txt"
+            with patch.object(business_prompt, "BUSINESS_PROMPT_PATH", prompt_path):
+                business_prompt.write_business_prompt("第一人称自拍，美女介绍翻译软件。")
+                result = business_prompt.finalize_video_prompt_with_ai(
+                    source,
+                    llm=fake_llm,
+                    keyword_guidance={"explicit_core_keywords": ["小动物"]},
+                )
+
+        self.assertEqual(result, source)
+        self.assertEqual(len(model_inputs), 2)
+        self.assertIn("本轮原始候选", model_inputs[1])
+        self.assertIn("小动物", model_inputs[1])
+
+    def test_current_topic_and_saved_business_prompt_can_coexist(self) -> None:
+        merged = "自拍镜头中，美女抱着小动物演示翻译软件。"
+
+        def fake_llm(prompt: str) -> str:
+            if "最终出站审校模型" in prompt:
+                return f'{{"passes": true, "final_prompt": "{merged}", "notes": "约束共存"}}'
+            return f'{{"final_prompt": "{merged}", "notes": "约束共存"}}'
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            prompt_path = Path(tempdir) / "business-prompt.txt"
+            with patch.object(business_prompt, "BUSINESS_PROMPT_PATH", prompt_path):
+                business_prompt.write_business_prompt("第一人称自拍，美女介绍翻译软件。")
+                result = business_prompt.finalize_video_prompt_with_ai(
+                    "生成一条小动物视频。",
+                    llm=fake_llm,
+                    keyword_guidance={"explicit_core_keywords": ["小动物"]},
+                )
+
+        self.assertEqual(result, merged)
+
+    def test_explicit_core_topic_guard_requires_every_declared_keyword(self) -> None:
+        source = "小动物在草地上玩耍，并展示翻译软件。"
+        candidate = "小动物在草地上玩耍。"
+
+        guarded, preserved = business_prompt.enforce_explicit_core_keywords(
+            source,
+            candidate,
+            keyword_guidance={"explicit_core_keywords": ["小动物", "翻译软件"]},
+        )
+
+        self.assertFalse(preserved)
+        self.assertEqual(guarded, source)
 
     def test_local_safety_guard_requires_explicit_toolbar_override(self) -> None:
         candidate = "美女身材特写。结尾：邀请好友，立享返佣！"

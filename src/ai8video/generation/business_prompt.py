@@ -129,13 +129,13 @@ def build_business_prompt_rewrite_prompt(
 {task_constraint_block}
 
 AI8video 固定质量要求：
-1. 最终提示词不得出现内部补丁说明，例如“品牌保真、信息保真、口播保真、已按系统提示词过滤”等。
-2. 精确理解系统提示词的作用域：只处理系统提示词明确禁止、要求删除或要求改写的内容；不要把相近概念、上下位概念、翻译、简称、同类词或上下文标签一起误删。
-3. 不要把本轮未要求的身份、声线、性别、品牌、日期、画面元素或禁用项强塞进最终提示词；如果候选里已有这类内容，也必须先判断它是否来自用户输入、参考剧本或系统提示词。
-4. 如果系统提示词只是约束某个字段、某个位置或某种表述，不要误删字段名、结构标签或未被禁止的正文内容。
-5. 保留可拍摄性：最终提示词仍要包含镜头、人物动作、表情、情绪、运镜和可直接口播的中文台词。
-6. 输出前自检一次：最终提示词是否仍包含模型自己识别出的违背系统提示词或候选约束的内容；如有，重写为自然可拍表达，不要追加解释性补丁。
-7. 如果提供了来源摘要和关键词指导，它们来自上游 AI 文本理解；你要尽可能保留其中的高价值关键词和必保事实。只有当系统提示词、候选本身或可拍摄性明确不适合时才改写或省略，并在 notes 里说明。
+1. 候选提示词、来源摘要、关键词指导和用户可编辑业务模型系统提示词都是用户输入，必须合并全部能够共存的明确约束。
+2. 不得用业务提示词删除当前主题、主体、物种、产品、场景或明确风格，也不得因为当前主题就无故删除业务提示词中的人物、产品、风格、镜头或禁用要求；只有无法共存的直接矛盾才以当前这轮输入处理冲突项。
+3. 最终提示词不得出现内部补丁说明，例如“品牌保真、信息保真、口播保真、已按系统提示词过滤”等。
+4. 精确理解系统提示词的作用域：只处理与当前主题兼容且明确要求的内容；不要把相近概念、上下位概念、翻译、简称、同类词或上下文标签一起误删。
+5. 不要从历史默认值或模型臆测中补入“当前输入与业务提示词均未要求”的身份、声线、性别、品牌、日期、画面元素或营销主张。
+6. 保留可拍摄性：最终提示词仍要包含镜头、主体动作、情绪、运镜和用户需要的台词或环境声。
+7. 输出前自检一次：同时判断是否完整保留本轮主题、显式核心关键词和可共存的业务提示词要求；任何一方被无故删除都要重新合并。
 
 只返回严格 JSON 对象，不要解释。格式：
 {{
@@ -182,13 +182,13 @@ def build_business_prompt_batch_rewrite_prompt(
 {task_constraint_block}
 
 关键解释规则：
-1. 精确理解系统提示词的作用域：只处理系统提示词明确禁止、要求删除或要求改写的内容；不要把相近概念、上下位概念、翻译、简称、同类词或上下文标签一起误删。
-2. 如果系统提示词只是禁止某个字段、某个位置或某种表述里的内容，不要误删字段名、结构标签或未被禁止的正文内容。
-3. 对每条候选提示词先做一次内部自检：它是否仍然包含系统提示词明确禁止的内容；如果有，用符合原意且可拍摄的表达重写，而不是追加解释性补丁。
-4. 不要把本轮未要求的身份、声线、性别、品牌、日期、画面元素或禁用项强塞进最终提示词；如果候选里已有这类内容，也必须先判断它是否来自用户输入、参考剧本或系统提示词。
+1. 每条候选提示词、source_summary 和 keyword_guidance 来自上游 AI 文本理解；它们和用户可编辑业务模型系统提示词都是用户输入，对每条视频合并全部能够共存的明确约束。
+2. 不得用业务提示词把候选换题，也不得无故丢弃业务提示词中的人物、产品、风格、镜头或禁用要求；只有无法共存的直接矛盾才以当前候选处理冲突项。
+3. 对每条候选先自检是否同时保留其显式核心关键词和可共存的业务要求；不得把整批改成同一种内容。
+4. 不要从历史默认值或模型臆测中补入“当前候选与业务提示词均未要求”的身份、声线、性别、品牌、日期、画面元素或营销主张。
 5. 最终提示词不得出现内部补丁说明，例如“品牌保真、信息保真、口播保真、已按系统提示词过滤”等。
-6. 保留整批差异：每条要保留不同来源段、不同主题和不同场景，不要把整批改成同一种表达。
-7. 每条输入里的 source_summary 和 keyword_guidance 来自上游 AI 文本理解；最终提示词要尽可能保留其中的高价值关键词、专名、日期和必保事实。只有当系统提示词、候选本身或可拍摄性明确不适合时才改写或省略，并在 notes 里说明。
+6. 精确理解兼容约束的作用域，不要误删未被限制的正文内容。
+7. 保留整批差异：每条要保留不同来源段、主题和场景。
 
 只返回严格 JSON 数组，不要解释。数组长度必须等于输入条数。格式：
 [
@@ -210,23 +210,25 @@ def build_business_prompt_validation_prompt(
     *,
     prompt_kind: str = "video",
     task_constraints: str | None = None,
+    source_text: str | None = None,
+    keyword_guidance: dict | None = None,
 ) -> str:
     business_prompt = read_business_prompt()
     kind_label = "视频模型提示词" if prompt_kind == "video" else "图片图生图提示词"
     task_constraint_block = _task_constraint_block(task_constraints)
     return f"""你是AI8video 的最终出站审校模型。
 
-你必须从 AI 文本理解角度判断候选{kind_label}是否完整遵守“用户可编辑业务模型系统提示词”。不要用固定词表、不要机械删词、不要只看表面字符；要理解禁用要求的真实作用域，包括台词、口播、画面、标题、品牌、日期、活动词、logo、App界面、可见文字等不同语义位置。
+你必须从 AI 文本理解角度比较“本轮原始候选”和“待审校提示词”，确保待审校结果没有偏离用户当前输入。不要用固定词表、不要机械删词、不要只看表面字符。
 
 用户可编辑业务模型系统提示词：
 {business_prompt or "（用户未填写额外系统提示词）"}
 {task_constraint_block}
 
 审校要求：
-1. 如果候选内容已经遵守系统提示词，返回 passes=true，并原样返回 final_prompt。
-2. 如果候选内容仍违反系统提示词，返回 passes=false，并把 final_prompt 改写成可直接提交给{kind_label}的安全版本。
-3. 改写时保留可拍摄性、镜头、动作、情绪和自然中文台词；不要追加“已过滤、按规则处理、系统提示词”等解释性补丁。
-4. 只处理系统提示词真正禁止或要求改写的内容；不要把相近概念、上下位概念、翻译、简称、结构标签或未被禁止的正文内容一起误删。
+1. 本轮原始候选、关键词指导和用户可编辑业务模型系统提示词都是用户输入。待审校结果必须合并全部能够共存的明确约束。
+2. 不能把“小动物”等当前主题删掉，也不能因为加入当前主题就无故删除业务提示词中的人物、产品、风格或镜头要求；只有无法共存的直接矛盾才以当前候选处理冲突项。
+3. 如果待审校内容同时保留本轮意图和可共存的业务要求，返回 passes=true，并原样返回 final_prompt。
+4. 改写时保留可拍摄性、镜头、动作、情绪和需要的台词或环境声；不要追加内部处理说明。
 
 只返回严格 JSON 对象，不要解释。格式：
 {{
@@ -235,7 +237,13 @@ def build_business_prompt_validation_prompt(
   "notes": "一句话说明是否修正以及原因"
 }}
 
-候选{kind_label}：
+本轮原始候选：
+{source_text or text}
+
+本轮显式关键词指导：
+{json.dumps(keyword_guidance or {}, ensure_ascii=False)}
+
+待审校{kind_label}：
 {text}
 """
 
@@ -305,8 +313,21 @@ def finalize_video_prompt_with_ai(
             video_index=video_index,
             prompt_kind=prompt_kind,
             task_constraints=task_constraints,
+            source_text=base,
+            keyword_guidance=keyword_guidance,
         )
-        return _apply_custom_safety_guard(validated_prompt, task_constraints)
+        guarded_prompt, preserved = enforce_explicit_core_keywords(
+            base,
+            validated_prompt,
+            keyword_guidance,
+        )
+        if not preserved:
+            append_prompt_trace(
+                "business_prompt_intent_guard_rejected",
+                session_id=trace_session_id,
+                payload={"videoIndex": video_index, "promptKind": prompt_kind},
+            )
+        return _apply_custom_safety_guard(guarded_prompt, task_constraints)
     except Exception as exc:
         append_prompt_trace(
             "business_prompt_model_error",
@@ -413,13 +434,24 @@ def _finalize_video_prompt_batch(
             if not prompt:
                 raise ValueError(f"business prompt model returned empty final_prompt for video {video.index}")
             cleaned_prompt = _minimal_internal_prompt_guard(prompt)
+            guarded_prompt, preserved = enforce_explicit_core_keywords(
+                video.prompt,
+                cleaned_prompt,
+                video.keyword_guidance,
+            )
+            if not preserved:
+                append_prompt_trace(
+                    "business_prompt_intent_guard_rejected",
+                    session_id=trace_session_id,
+                    payload={"videoIndex": video.index, "promptKind": prompt_kind},
+                )
             finalized.append(VideoPrompt(
                 index=video.index,
                 title=finalize_title(
                     str(item.get("title") or video.title),
                     task_constraints=task_constraints,
                 ),
-                prompt=cleaned_prompt,
+                prompt=guarded_prompt,
                 source_summary=video.source_summary,
                 keyword_guidance={
                     **(video.keyword_guidance or {}),
@@ -489,6 +521,8 @@ def _validate_business_prompt_with_ai(
     video_index: int | None = None,
     prompt_kind: str = "video",
     task_constraints: str | None = None,
+    source_text: str | None = None,
+    keyword_guidance: dict | None = None,
 ) -> str:
     base = _minimal_internal_prompt_guard(text)
     if not base:
@@ -497,6 +531,8 @@ def _validate_business_prompt_with_ai(
         base,
         prompt_kind=prompt_kind,
         task_constraints=task_constraints,
+        source_text=source_text,
+        keyword_guidance=keyword_guidance,
     )
     append_prompt_trace(
         "business_prompt_validation_model_input",
@@ -546,10 +582,9 @@ def _task_constraint_block(task_constraints: str | None) -> str:
         return (
             "\n当前任务补充约束：\n"
             f"{normalized}\n\n"
-            "用户可编辑业务模型系统提示词和工具栏配置是本次生成的最高业务约束；"
-            "参考图与修图设定同样属于工具栏配置。当前任务补充约束只能补充未定义的热点、剧情、"
-            "连续叙事和拍摄细节，不得删除、替换、弱化或反转工具栏中的明确要求。"
-            "如果补充约束与工具栏要求冲突，保留工具栏要求；只有用户明确写出“本次覆盖工具栏设置”时才允许覆盖。"
+            "本轮用户原文、核心主题、明确风格和业务模型系统提示词都是用户输入，必须合并可共存约束，任何一方都不能换掉另一方。"
+            "参考图与修图等工具栏配置仍是本次任务的明确约束。当前任务补充约束用于补足时长、连续叙事和拍摄细节，"
+            "不得删除、替换或弱化本轮用户输入；只有用户明确写出“本次覆盖工具栏设置”时才允许覆盖工具栏配置。"
         )
     return (
         "\n当前任务附加高优先级约束：\n"
@@ -557,6 +592,31 @@ def _task_constraint_block(task_constraints: str | None) -> str:
         "用户已经明确要求本次覆盖工具栏设置，因此只在本次任务内优先服从这条约束；"
         "不要修改工具栏配置文件，任务结束后也不得把覆盖规则写回用户设置。"
     )
+
+
+def enforce_explicit_core_keywords(
+    source_text: str,
+    candidate_text: str,
+    keyword_guidance: dict | None = None,
+) -> tuple[str, bool]:
+    terms = _explicit_core_keywords(source_text, keyword_guidance)
+    candidate = str(candidate_text or "").strip()
+    if not terms or all(term.casefold() in candidate.casefold() for term in terms):
+        return candidate, True
+    return str(source_text or "").strip(), False
+
+
+def _explicit_core_keywords(source_text: str, keyword_guidance: dict | None) -> list[str]:
+    values = []
+    guidance = keyword_guidance if isinstance(keyword_guidance, dict) else {}
+    raw_guidance = guidance.get("explicit_core_keywords")
+    if isinstance(raw_guidance, list):
+        values.extend(raw_guidance)
+    values.extend(
+        re.findall(r"(?m)^核心主题\s*/\s*关键词[：:]\s*([^。\n]+)", str(source_text or ""))
+    )
+    normalized = [str(value).strip() for value in values if 1 < len(str(value).strip()) <= 80]
+    return list(dict.fromkeys(normalized))
 
 
 def _apply_custom_safety_guard(text: str, task_constraints: str | None) -> str:

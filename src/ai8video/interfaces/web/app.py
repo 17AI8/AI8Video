@@ -141,6 +141,10 @@ from ai8video.media.video_text_overlay import (
 )
 from ai8video.batch.batch_seed_file import resolve_batch_seed_file_path
 from ai8video.batch.live_preflight import SAFE_PREFLIGHT_CHECKS, run_preflight_checks
+from ai8video.batch.specialist_agent_observer import (
+    shutdown_specialist_agent_scheduler,
+    start_specialist_agent_scheduler,
+)
 from ai8video.assets.asset_maintenance import AssetMaintenanceService
 from ai8video.assets.asset_store import JsonlAssetStore
 from ai8video.integrations.llm_provider import build_openai_compat_llm
@@ -177,6 +181,7 @@ from ai8video.assets.upload_utils import resolve_upload_filename
 from ai8video.assets.user_generated_results import (
     USER_GENERATED_RESULT_ROOT,
     ensure_user_generated_result_dir,
+    is_simulated_user_generated_result_path,
     migrate_legacy_result_layout,
 )
 from ai8video.assets.user_files import USER_FILE_ROOT
@@ -1304,6 +1309,8 @@ def _user_generated_result_items(limit: int = 50) -> list[dict]:
         restored_record = load_restored_result_metadata(root, relative_key)
         asset_record = asset_by_archive_key.get(relative_key) or asset_by_archive_name.get(source.name) or {}
         record = _merge_user_generated_records(restored_record, asset_record)
+        if _is_simulated_user_generated_result(source, record):
+            continue
         stat = source.stat()
         item = {
             **record,
@@ -1343,6 +1350,26 @@ def _user_generated_result_items(limit: int = 50) -> list[dict]:
     )
     bounded_limit = max(1, min(200, int(limit or 50)))
     return items[:bounded_limit]
+
+
+def _is_simulated_user_generated_result(source: Path, record: dict) -> bool:
+    if is_simulated_user_generated_result_path(source):
+        return True
+    if (
+        record.get("dryRun") is True
+        or str(record.get("archiveStatus") or "").strip().lower() == "simulated"
+    ):
+        return True
+    for key in ("usage", "generationMeta", "archiveMeta"):
+        metadata = record.get(key)
+        if not isinstance(metadata, dict):
+            continue
+        if (
+            metadata.get("dryRun") is True
+            or str(metadata.get("mode") or "").strip().lower() == "simulated"
+        ):
+            return True
+    return False
 
 
 def _find_user_generated_cover_key(root: Path, video_relative_key: str) -> str:
@@ -7123,7 +7150,30 @@ def main() -> int:
         "archiveBackend": health["archiveBackend"],
         "archiveLocalDir": health["archiveLocalDir"],
     }, ensure_ascii=False))
-    run(app=app, host="127.0.0.1", port=port, debug=False, reloader=False, server=ThreadingWSGIRefServer)
+    try:
+        try:
+            start_specialist_agent_scheduler()
+        except Exception as exc:
+            logging.warning(
+                "specialist agent scheduler startup failed error_type=%s",
+                exc.__class__.__name__,
+            )
+        run(
+            app=app,
+            host="127.0.0.1",
+            port=port,
+            debug=False,
+            reloader=False,
+            server=ThreadingWSGIRefServer,
+        )
+    finally:
+        try:
+            shutdown_specialist_agent_scheduler()
+        except Exception as exc:
+            logging.warning(
+                "specialist agent scheduler shutdown failed error_type=%s",
+                exc.__class__.__name__,
+            )
     return 0
 
 

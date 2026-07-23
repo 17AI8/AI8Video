@@ -39,6 +39,10 @@ from ai8video.assets.user_generated_results import build_generation_result_recon
 from ai8video.assets.user_recycle_bin import humanize_failed_video_reason
 
 
+class _RuntimePayloadError(RuntimeError):
+    """运行时以错误 payload 返回，而不是抛出异常。"""
+
+
 class _AI8VideoSession:
     def __init__(self, session_id: str):
         self.session_id = session_id
@@ -466,17 +470,21 @@ class _AI8VideoSession:
                     elif runtime_error is not None:
                         self.latest_error = runtime_error
             if generation_batch_id:
-                execution_state = "cancelled" if cancel_event and cancel_event.is_set() else (
-                    "failed" if runtime_error is not None else "completed"
+                cancelled = bool(cancel_event and cancel_event.is_set())
+                execution_error = None if cancelled else (
+                    runtime_error or _runtime_payload_error(payload)
+                )
+                execution_state = "cancelled" if cancelled else (
+                    "failed" if execution_error is not None else "completed"
                 )
                 record_generation_execution(
                     session_id=self.session_id,
                     generation_batch_id=generation_batch_id,
                     execution_state=execution_state,
                     worker_id=worker_id,
-                    cancel_requested=bool(cancel_event and cancel_event.is_set()),
+                    cancel_requested=cancelled,
                     result_snapshot=_execution_result_snapshot(payload),
-                    error=runtime_error,
+                    error=execution_error,
                 )
             queue_item = {
                 "done": True,
@@ -826,6 +834,22 @@ def _execution_result_snapshot(payload: dict | None) -> dict | None:
         "hasResult": isinstance(result, dict),
         "videoCount": len(result.get("videos") or []) if isinstance(result, dict) else 0,
     }
+
+
+def _runtime_payload_error(payload: dict | None) -> _RuntimePayloadError | None:
+    if not isinstance(payload, dict):
+        return None
+    reply = payload.get("reply") if isinstance(payload.get("reply"), dict) else {}
+    stage = str(reply.get("stage") or payload.get("status") or "").strip().lower()
+    error_payload = payload.get("error")
+    if stage not in {"error", "failed"} and not error_payload:
+        return None
+    if isinstance(error_payload, dict):
+        raw_message = str(error_payload.get("message") or "").strip()
+    else:
+        raw_message = str(error_payload or "").strip()
+    raw_message = raw_message or str(reply.get("text") or "").strip() or "运行时返回失败结果"
+    return _RuntimePayloadError(humanize_failed_video_reason(raw_message)[:500])
 
 
 def _timeout_without_generation_payload(session_id: str) -> dict:

@@ -4,7 +4,11 @@ import json
 import re
 from typing import Any, Callable
 
-from ai8video.generation.business_prompt import read_business_prompt
+from ai8video.batch.specialist_agent_observer import observe_reviewer_shadow
+from ai8video.generation.business_prompt import (
+    enforce_explicit_core_keywords,
+    read_business_prompt,
+)
 from ai8video.media.local_tts import extract_dialogue_text, prepare_narration_text
 from ai8video.core.models import VideoPrompt
 from ai8video.generation.prompt_trace import append_prompt_trace
@@ -22,20 +26,36 @@ def review_final_outputs(
     if not videos:
         return []
     if llm is None:
-        return [_fallback_video(video) for video in videos]
+        reviewed = [_fallback_video(video) for video in videos]
+        review_source = "post_review_fallback"
+    else:
+        reviewed, review_source = _review_with_model(videos, llm, trace_session_id)
+    observe_reviewer_shadow(
+        reviewed,
+        session_id=trace_session_id,
+        review_source=review_source,
+    )
+    return reviewed
+
+
+def _review_with_model(
+    videos: list[VideoPrompt],
+    llm: LLMCallable,
+    trace_session_id: str | None,
+) -> tuple[list[VideoPrompt], str]:
     prompt = _build_review_prompt(videos)
     append_prompt_trace("output_review_model_input", session_id=trace_session_id, payload={"prompt": prompt})
     try:
         raw = llm(prompt)
         append_prompt_trace("output_review_model_output", session_id=trace_session_id, payload={"raw": raw})
-        return _apply_review(videos, raw)
+        return _apply_review(videos, raw), "post_review_model"
     except Exception as exc:
         append_prompt_trace(
             "output_review_model_error",
             session_id=trace_session_id,
             payload={"errorType": exc.__class__.__name__, "error": str(exc)},
         )
-        return [_fallback_video(video) for video in videos]
+        return [_fallback_video(video) for video in videos], "post_review_fallback"
 
 
 def _build_review_prompt(videos: list[VideoPrompt]) -> str:
@@ -52,8 +72,8 @@ def _build_review_prompt(videos: list[VideoPrompt]) -> str:
 规则：
 1. narration_text 只能包含观众实际听到的台词或画外音，禁止出现 source_summary、选材说明、审核说明、脚本编号来源或 notes。
 2. corrected_video_prompt 必须保留镜头与可拍摄性，同时修正违反系统提示词或明显容易触发内容审核的表达。
-3. 用户系统提示词是最高业务约束。即使某项要求可能提高上游内容审核风险，也不得擅自删除、弱化或替换；必须写入 user_advisories 提醒用户。只有系统提示词明确授权“自动安全改写”时，才可以修改该项要求。
-4. 只修正与用户系统提示词冲突的内容、内部字段泄漏、明显逻辑错误和非用户指定的风险表达。
+3. 候选提示词和用户系统提示词都是用户输入。必须保留候选的主题、主体、物种、场景、显式关键词，也必须保留能够共存的系统提示词人物、产品、风格、镜头和禁用要求。
+4. 不得擅自删除、弱化或替换任何一方，也不得让任何一方换掉另一方；只有无法共存的直接矛盾才以当前候选处理冲突项。其余只修正内部字段泄漏、明显逻辑错误和非用户指定的风险表达。
 5. user_advisories 默认必须是空数组。只有风险确实需要用户权衡、可能改变用户决策时才填写；不要为了证明做过审核而生成空泛建议。同批相同风险使用完全相同的简短表述，供界面合并展示。
 6. passes 表示原输入是否无需修改；即使 passes=false，也必须返回修正结果。
 7. 只返回严格 JSON 数组：
@@ -73,15 +93,23 @@ def _apply_review(videos: list[VideoPrompt], raw: str) -> list[VideoPrompt]:
 
 
 def _reviewed_video(video: VideoPrompt, item: dict[str, Any]) -> VideoPrompt:
-    prompt = str(item.get("corrected_video_prompt") or "").strip()
-    if not prompt:
+    candidate_prompt = str(item.get("corrected_video_prompt") or "").strip()
+    if not candidate_prompt:
         raise ValueError(f"第 {video.index} 条后审核缺少 corrected_video_prompt")
+    prompt, preserved = enforce_explicit_core_keywords(
+        video.prompt,
+        candidate_prompt,
+        video.keyword_guidance,
+    )
     narration = prepare_narration_text(str(item.get("narration_text") or ""))
     guidance = dict(video.keyword_guidance or {})
+    violations = _string_list(item.get("violations"))
+    if not preserved:
+        violations.append("后审核结果偏离本轮显式核心主题，已保留审核前提示词")
     guidance["post_review"] = {
-        "passes": bool(item.get("passes")),
+        "passes": bool(item.get("passes")) and preserved,
         "narrationText": narration,
-        "violations": _string_list(item.get("violations")),
+        "violations": violations,
         "userAdvisories": _string_list(item.get("user_advisories")),
     }
     return VideoPrompt(
@@ -97,7 +125,8 @@ def _fallback_video(video: VideoPrompt) -> VideoPrompt:
     narration = prepare_narration_text(extract_dialogue_text(video.prompt))
     guidance = dict(video.keyword_guidance or {})
     guidance["post_review"] = {
-        "passes": True,
+        "passes": None,
+        "status": "unavailable",
         "narrationText": narration,
         "violations": [],
         "userAdvisories": [],

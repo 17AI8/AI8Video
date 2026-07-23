@@ -60,7 +60,7 @@ class GenerationTaskRunnerTest(unittest.TestCase):
         self.assertTrue(runner.join(old_task.generation_batch_id, timeout=1))
         self.assertEqual(old_task.state, "cancelled")
 
-    def test_cancel_releases_single_concurrency_slot_before_target_returns(self) -> None:
+    def test_cancelled_target_holds_concurrency_slot_until_it_returns(self) -> None:
         runner = GenerationTaskRunner(max_concurrency=1)
         first_started = threading.Event()
         release_first = threading.Event()
@@ -79,11 +79,12 @@ class GenerationTaskRunnerTest(unittest.TestCase):
         self.assertFalse(second_started.wait(timeout=0.1))
 
         self.assertTrue(runner.cancel(first.generation_batch_id))
-        self.assertTrue(second_started.wait(timeout=1))
-        self.assertTrue(runner.join(second.generation_batch_id, timeout=1))
+        self.assertFalse(second_started.wait(timeout=0.1))
 
         release_first.set()
         self.assertTrue(runner.join(first.generation_batch_id, timeout=1))
+        self.assertTrue(second_started.wait(timeout=1))
+        self.assertTrue(runner.join(second.generation_batch_id, timeout=1))
         self.assertTrue(first.slot_released)
         self.assertEqual(first.state, "cancelled")
 

@@ -8,6 +8,10 @@ from dataclasses import replace
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from ai8video.batch.specialist_agent_observer import (
+    observe_planner_shadow,
+    observe_reviewer_shadow,
+)
 from ai8video.generation.video_prompt_planner import LLMCallable, single_prompt_to_video, plan_video_prompts_with_ai
 from ai8video.generation.business_prompt import (
     _apply_custom_safety_guard,
@@ -95,6 +99,12 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             )
         else:
             videos = single_prompt_to_video(planning_text, final_request.style_hint, final_request.core_keywords)
+        observe_planner_shadow(
+            videos,
+            session_id=progress_session_id,
+            source_stage="merged_planning_output",
+            merge_mode=self._merge_mode,
+        )
         return self._run_final_videos(
             final_request,
             videos,
@@ -130,6 +140,12 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             task_constraints=task_constraints,
         )
         ordered_videos = sorted(final_videos, key=lambda item: item.index)
+        observe_reviewer_shadow(
+            ordered_videos,
+            session_id=progress_session_id,
+            review_source="deterministic_finalization",
+            merge_mode=self._merge_mode,
+        )
         for video in ordered_videos:
             self._trace_merged_final_video_prompt(request, video, progress_session_id, segment_duration_seconds)
 
