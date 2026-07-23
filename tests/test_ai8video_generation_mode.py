@@ -24,7 +24,7 @@ class AI8VideoGenerationModeTest(unittest.TestCase):
                 self.assertTrue(status["concurrentGeneration"])
                 self.assertTrue(generation_mode.default_concurrent_generation_enabled())
 
-    def test_conversation_controller_uses_default_concurrent_mode_when_user_does_not_choose(self) -> None:
+    def test_iterative_batch_overrides_default_concurrent_mode(self) -> None:
         captured: dict[str, ParsedRequest] = {}
 
         class FakePipeline:
@@ -47,7 +47,8 @@ class AI8VideoGenerationModeTest(unittest.TestCase):
             reply = agent.handle_message("generation-default-concurrent", message)
 
         self.assertEqual(reply.stage, "completed")
-        self.assertTrue(captured["request"].concurrent_generation)
+        self.assertFalse(captured["request"].concurrent_generation)
+        self.assertTrue(captured["request"].iterative_generation)
 
     def test_conversation_controller_explicit_normal_mode_overrides_default_concurrent_mode(self) -> None:
         captured: dict[str, ParsedRequest] = {}

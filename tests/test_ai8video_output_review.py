@@ -54,6 +54,8 @@ class AI8VideoOutputReviewTest(unittest.TestCase):
 
         self.assertEqual(_local_tts_narration_text(None, reviewed), "邀请好友，立享返佣")
         self.assertTrue(reviewed.keyword_guidance["post_review"]["fallback"])
+        self.assertIsNone(reviewed.keyword_guidance["post_review"]["passes"])
+        self.assertEqual(reviewed.keyword_guidance["post_review"]["status"], "unavailable")
 
 
 if __name__ == "__main__":

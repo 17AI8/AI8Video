@@ -195,6 +195,15 @@ class VideoAssetArchiver:
                 status="disabled",
                 meta=extra_meta or {},
             )
+        if self.config.dry_run:
+            return self._simulate_archive(
+                request,
+                video,
+                job,
+                outcome,
+                backend,
+                extra_meta=extra_meta,
+            )
         if backend == "s3":
             return self._archive_local_file_to_s3(
                 source,
@@ -316,6 +325,8 @@ class VideoAssetArchiver:
         job: QuickVideoJob,
         outcome: GenerationOutcome,
         backend: str,
+        *,
+        extra_meta: dict[str, Any] | None = None,
     ) -> ArchivedAsset:
         archive_key = self._build_video_key(job, video)
         manifest_path = self.local_root / f"{job.job_id}-manifest.json"
@@ -327,6 +338,7 @@ class VideoAssetArchiver:
             "job": job.__dict__,
             "generation": outcome.__dict__,
             "archiveKey": archive_key,
+            "archiveMeta": extra_meta or {},
             "createdAt": datetime.now(timezone.utc).isoformat(),
         }
         with manifest_path.open("w", encoding="utf-8") as fh:
@@ -341,6 +353,7 @@ class VideoAssetArchiver:
             manifest_path=str(manifest_path),
             meta={
                 "reason": "当前是 dry-run 或签名 videoUrl 不可用，已写入模拟归档清单",
+                **(extra_meta or {}),
             },
         )
 

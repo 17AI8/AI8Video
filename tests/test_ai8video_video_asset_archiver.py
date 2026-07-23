@@ -128,6 +128,34 @@ class AI8VideoVideoAssetArchiverTest(unittest.TestCase):
         )
         self.assertEqual(archiver._resolve_backend(), "local")
 
+    def test_dry_run_local_file_archive_never_writes_user_generated_results(self) -> None:
+        source = self.root / "merged-dry-run.mp4"
+        source.write_bytes(b"placeholder")
+        archiver = VideoAssetArchiver(
+            self._build_config(
+                dry_run=True,
+                archive_backend="local",
+            )
+        )
+
+        with patch(
+            "ai8video.assets.video_asset_archiver.ensure_user_generated_result_dir",
+            side_effect=AssertionError("dry-run must not access user generated results"),
+        ):
+            archived = archiver.archive_local_file(
+                source,
+                self._sample_request(),
+                self._sample_video(),
+                self._sample_job(),
+                self._sample_generation_outcome(),
+                extra_meta={"mergeMode": "merge2"},
+            )
+
+        self.assertEqual(archived.status, "simulated")
+        self.assertTrue(source.is_file())
+        self.assertTrue(Path(archived.manifest_path).is_file())
+        self.assertEqual(archived.meta["mergeMode"], "merge2")
+
     def test_archive_s3_returns_public_urls_and_uploads_manifest(self) -> None:
         config = self._build_config(archive_backend="s3")
         archiver = VideoAssetArchiver(config)

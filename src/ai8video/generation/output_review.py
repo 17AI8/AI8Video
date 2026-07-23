@@ -4,6 +4,7 @@ import json
 import re
 from typing import Any, Callable
 
+from ai8video.batch.specialist_agent_observer import observe_reviewer_shadow
 from ai8video.generation.business_prompt import read_business_prompt
 from ai8video.media.local_tts import extract_dialogue_text, prepare_narration_text
 from ai8video.core.models import VideoPrompt
@@ -22,20 +23,36 @@ def review_final_outputs(
     if not videos:
         return []
     if llm is None:
-        return [_fallback_video(video) for video in videos]
+        reviewed = [_fallback_video(video) for video in videos]
+        review_source = "post_review_fallback"
+    else:
+        reviewed, review_source = _review_with_model(videos, llm, trace_session_id)
+    observe_reviewer_shadow(
+        reviewed,
+        session_id=trace_session_id,
+        review_source=review_source,
+    )
+    return reviewed
+
+
+def _review_with_model(
+    videos: list[VideoPrompt],
+    llm: LLMCallable,
+    trace_session_id: str | None,
+) -> tuple[list[VideoPrompt], str]:
     prompt = _build_review_prompt(videos)
     append_prompt_trace("output_review_model_input", session_id=trace_session_id, payload={"prompt": prompt})
     try:
         raw = llm(prompt)
         append_prompt_trace("output_review_model_output", session_id=trace_session_id, payload={"raw": raw})
-        return _apply_review(videos, raw)
+        return _apply_review(videos, raw), "post_review_model"
     except Exception as exc:
         append_prompt_trace(
             "output_review_model_error",
             session_id=trace_session_id,
             payload={"errorType": exc.__class__.__name__, "error": str(exc)},
         )
-        return [_fallback_video(video) for video in videos]
+        return [_fallback_video(video) for video in videos], "post_review_fallback"
 
 
 def _build_review_prompt(videos: list[VideoPrompt]) -> str:
@@ -97,7 +114,8 @@ def _fallback_video(video: VideoPrompt) -> VideoPrompt:
     narration = prepare_narration_text(extract_dialogue_text(video.prompt))
     guidance = dict(video.keyword_guidance or {})
     guidance["post_review"] = {
-        "passes": True,
+        "passes": None,
+        "status": "unavailable",
         "narrationText": narration,
         "violations": [],
         "userAdvisories": [],

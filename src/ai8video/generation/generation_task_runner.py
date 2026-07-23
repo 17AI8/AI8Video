@@ -104,7 +104,6 @@ class GenerationTaskRunner:
                 return False
             task.cancel_event.set()
             self._set_state(task, "cancel_requested")
-            self._release_slot_if_owned(task)
             return True
 
     def cancel_active(self, *, except_batch_id: str | None = None) -> list[str]:
@@ -116,7 +115,6 @@ class GenerationTaskRunner:
                     continue
                 task.cancel_event.set()
                 self._set_state(task, "cancel_requested")
-                self._release_slot_if_owned(task)
                 cancelled.append(batch_id)
         return cancelled
 

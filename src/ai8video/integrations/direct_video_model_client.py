@@ -50,7 +50,7 @@ class AI8VideoModelClient:
         text: str,
         video_index: int = 1,
         first_frame: FirstFrameAsset | None = None,
-        duration_seconds: int | None = 10,
+        duration_seconds: int | None = None,
         ratio: str = "9:16",
         resolution: str = "480p",
         preset: str = "custom",
@@ -60,7 +60,7 @@ class AI8VideoModelClient:
     ) -> QuickVideoJob:
         del panel_count, platform, device_id
         settings = self._load_current_settings()
-        seconds = settings.seconds if duration_seconds in (None, 10) else duration_seconds
+        seconds = settings.seconds if duration_seconds is None else int(duration_seconds)
         if not self.config.dry_run and self.guard.forced_duration_seconds > 0:
             seconds = self.guard.forced_duration_seconds
         ratio = settings.ratio if ratio in ("", "9:16", None) else ratio

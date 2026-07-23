@@ -126,10 +126,12 @@ class AI8VideoConversationControllerGenerationSummaryTest(unittest.TestCase):
         request = pipeline.run_request.call_args.args[0]
         self.assertEqual(request.video_count, 2)
         self.assertEqual(request.duration_seconds, 10)
+        self.assertTrue(request.iterative_generation)
+        self.assertFalse(request.concurrent_generation)
         self.assertEqual(request.reference_image, "/tmp/612.png")
         self.assertEqual(request.core_keywords, "全球发布倒计时")
 
-    def test_concurrent_generation_choice_is_passed_to_pipeline(self) -> None:
+    def test_multi_video_generation_forces_serial_iteration_even_when_concurrency_is_requested(self) -> None:
         pipeline = Mock()
         pipeline.run_request.return_value = self._build_result()
         agent = self._agent(pipeline)
@@ -142,8 +144,24 @@ class AI8VideoConversationControllerGenerationSummaryTest(unittest.TestCase):
         self.assertEqual(reply.stage, "completed")
         pipeline.run_request.assert_called_once()
         request = pipeline.run_request.call_args.args[0]
-        self.assertTrue(request.concurrent_generation)
+        self.assertFalse(request.concurrent_generation)
+        self.assertTrue(request.iterative_generation)
         self.assertEqual(request.core_keywords, "6月18日全球发布倒计时、私域资产")
+
+    def test_six_video_request_is_rejected_before_pipeline_submission(self) -> None:
+        pipeline = Mock()
+        agent = self._agent(pipeline)
+
+        reply = agent.handle_message(
+            "generation-over-limit",
+            "生成 6 个 10s 短视频，老板商务风。核心主题：私域资产。参考图：/tmp/612.png",
+        )
+
+        self.assertEqual(reply.stage, "collecting")
+        self.assertEqual(reply.awaiting, "video_count")
+        self.assertEqual(reply.meta["validation"], "iterative_batch_limit")
+        self.assertIn("最多生成 5 条", reply.text)
+        pipeline.run_request.assert_not_called()
 
     def test_html_motion_setting_is_snapshotted_into_generation_request(self) -> None:
         pipeline = Mock()

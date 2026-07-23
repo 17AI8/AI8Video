@@ -366,10 +366,10 @@
       els.resultModal.classList.toggle('hidden', !visible);
       const gallery = buildResultFolderGalleryModel(getActiveSession());
       const completedCount = getPlayableResultItems(gallery).length;
-      els.resultModalTitle.textContent = '生成结果';
+      els.resultModalTitle.textContent = '全部生成结果';
       els.resultModalSub.textContent = completedCount
-        ? `${completedCount} 个结果`
-        : '当前没有生成结果。';
+        ? `结果目录中 ${completedCount} 个成片`
+        : '结果目录当前没有成片。';
       els.resultModalOpenFolderButton.disabled = false;
       els.resultModalOpenFolderButton.dataset.archiveKey = '';
       els.resultModalOpenFolderButton.dataset.localPath = '';

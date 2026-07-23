@@ -1664,6 +1664,37 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertEqual(first["items"][0]["userGeneratedCoverKey"], cover_rel.as_posix())
         self.assertEqual(second["items"], [])
 
+    def test_api_user_generated_results_hides_dry_run_placeholder_videos(self) -> None:
+        generated_root = self.root / "用户生成结果"
+        real_video = generated_root / "video" / "real-result.mp4"
+        dry_video = generated_root / "video" / "01-demo-merge2-dry-model-1-a-dry-model-1-b.mp4"
+        real_video.parent.mkdir(parents=True, exist_ok=True)
+        real_video.write_bytes(b"real")
+        dry_video.write_bytes(b"placeholder")
+
+        request_backup = ai8video_web.request
+        ai8video_web.request = SimpleNamespace(
+            method="GET",
+            query=SimpleNamespace(get=lambda key, default="200": default),
+        )
+        try:
+            with patch.object(
+                ai8video_web,
+                "ensure_user_generated_result_dir",
+                return_value=generated_root.resolve(),
+            ):
+                body = ai8video_web.api_user_generated_results()
+        finally:
+            ai8video_web.request = request_backup
+
+        self.assertEqual([item["userGeneratedKey"] for item in body["items"]], ["video/real-result.mp4"])
+
+    def test_result_modal_identifies_global_result_folder_view(self) -> None:
+        source = read_static_source()
+
+        self.assertIn("els.resultModalTitle.textContent = '全部生成结果';", source)
+        self.assertIn("结果目录中 ${completedCount} 个成片", source)
+
     def test_api_user_recycle_bin_lists_failed_tasks_with_existing_videos(self) -> None:
         recycle_root = self.root / "回收站"
         failed_folder = recycle_root / "20260618-112233-01-demo-job-a"
@@ -5476,8 +5507,15 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
         self.assertIn("const boundedExpected = backendItems.length", html)
         self.assertIn("? Math.max(1, expectedCount || backendItems.length)", html)
-        self.assertIn(": Math.max(1, Math.min(12, expectedCount || 2));", html)
+        self.assertIn(": Math.max(1, Math.min(5, expectedCount || 2));", html)
         self.assertNotIn("backendItems.slice(0, boundedExpected).map", html)
+
+    def test_static_result_cards_surface_generated_review_and_applied_iteration_feedback(self) -> None:
+        html = read_static_source()
+
+        self.assertIn("function collectGeneratedOutputReviewSuggestions(result)", html)
+        self.assertIn("成片问题：", html)
+        self.assertIn("已吸收第 ${iteration.sourceVideoIndex} 条成片反馈后再生成", html)
 
     def test_static_clear_conversation_removes_all_chat_messages_only_locally(self) -> None:
         html = read_static_source()

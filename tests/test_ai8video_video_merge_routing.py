@@ -10,9 +10,11 @@ from ai8video.core.models import VideoPrompt, ParsedRequest, PipelineResult, Qui
 class _NormalPipeline:
     def __init__(self) -> None:
         self.called = 0
+        self.requests: list[ParsedRequest] = []
 
     def run_request(self, request: ParsedRequest, *, progress_session_id: str | None = None) -> PipelineResult:
         self.called += 1
+        self.requests.append(request)
         return PipelineResult(
             request=request,
             videos=[VideoPrompt(index=1, title="普通", prompt=request.raw_text)],
@@ -120,7 +122,7 @@ class AI8VideoVideoMergeRoutingTest(unittest.TestCase):
 
         self.assertEqual(normal.called, 0)
 
-    def test_merge2_chat_flow_keeps_pre_generation_tabs_in_normal_mode(self) -> None:
+    def test_merge2_chat_flow_routes_iterative_batch_to_direct_pipeline(self) -> None:
         normal = _NormalPipeline()
         merged = _MergedPipeline()
         agent = AI8VideoConversationController(
@@ -146,9 +148,9 @@ class AI8VideoVideoMergeRoutingTest(unittest.TestCase):
             reply = agent.handle_message("merge2-tabs-normal", "2个")
 
         self.assertEqual(reply.stage, "completed")
-        self.assertEqual(normal.called, 0)
-        self.assertEqual(merged.called, 1)
-        request = merged.requests[0]
+        self.assertEqual(normal.called, 1)
+        self.assertEqual(merged.called, 0)
+        request = normal.requests[0]
         self.assertIn("剧本参考《2.docx》内容", request.raw_text)
         self.assertEqual(request.reference_image, "/tmp/default.png")
         self.assertEqual(request.reference_image_transform_options, {
@@ -157,8 +159,9 @@ class AI8VideoVideoMergeRoutingTest(unittest.TestCase):
             "autoChangePose": True,
         })
         self.assertFalse(request.concurrent_generation)
+        self.assertTrue(request.iterative_generation)
 
-    def test_merge2_chat_flow_keeps_pre_generation_tabs_in_concurrent_mode(self) -> None:
+    def test_merge2_chat_flow_forces_iterative_batch_serial_when_default_is_concurrent(self) -> None:
         normal = _NormalPipeline()
         merged = _MergedPipeline()
         agent = AI8VideoConversationController(
@@ -184,9 +187,9 @@ class AI8VideoVideoMergeRoutingTest(unittest.TestCase):
             reply = agent.handle_message("merge2-tabs-concurrent", "2个")
 
         self.assertEqual(reply.stage, "completed")
-        self.assertEqual(normal.called, 0)
-        self.assertEqual(merged.called, 1)
-        request = merged.requests[0]
+        self.assertEqual(normal.called, 1)
+        self.assertEqual(merged.called, 0)
+        request = normal.requests[0]
         self.assertIn("剧本参考《2.docx》内容", request.raw_text)
         self.assertEqual(request.reference_image, "/tmp/default.png")
         self.assertEqual(request.reference_image_transform_options, {
@@ -194,7 +197,8 @@ class AI8VideoVideoMergeRoutingTest(unittest.TestCase):
             "autoChangeBackground": False,
             "autoChangePose": True,
         })
-        self.assertTrue(request.concurrent_generation)
+        self.assertFalse(request.concurrent_generation)
+        self.assertTrue(request.iterative_generation)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from ai8video.batch.specialist_agent_observer import observe_planner_shadow, observe_reviewer_shadow
+from ai8video.generation.adaptive_batch_runner import AdaptiveBatchRunner
 from ai8video.generation.video_prompt_planner import (
     LLMCallable,
     expand_batch_seed_messages_with_ai,
@@ -27,6 +29,7 @@ from ai8video.generation.generation_progress import (
     mark_job_archiving,
     mark_job_failed,
     mark_job_preparing_first_frame,
+    mark_job_reviewing,
     mark_job_polling,
     mark_job_submitting,
     mark_job_submitted,
@@ -41,6 +44,8 @@ from ai8video.integrations.direct_video_model_client import AI8VideoModelClient
 from ai8video.core.models import ArchivedAsset, VideoPrompt, FirstFrameAsset, ParsedRequest, PipelineResult, QuickVideoJob, GenerationOutcome
 from ai8video.generation.prompt_trace import append_prompt_trace
 from ai8video.generation.output_review import review_final_outputs
+from ai8video.generation.generated_output_reviewer import GeneratedOutputReviewer
+from ai8video.generation.iterative_batch_policy import normalize_iterative_batch_request
 from ai8video.generation.reference_image_preprocessor import (
     TRANSFORMED_REFERENCE_DIR,
     ReferenceImagePreprocessor,
@@ -72,6 +77,7 @@ class AI8VideoPipeline:
         self.client = AI8VideoModelClient(self.config)
         self.asset_store = JsonlAssetStore(self.config.asset_store_path)
         self.archiver = VideoAssetArchiver(self.config)
+        self.generated_output_reviewer = GeneratedOutputReviewer(self.config)
         self.reference_image_preprocessor = ReferenceImagePreprocessor(self.config, llm=self.llm)
 
     def run_from_message(self, message: str, *, progress_session_id: str | None = None) -> PipelineResult:
@@ -79,6 +85,7 @@ class AI8VideoPipeline:
         return self.run_request(request, progress_session_id=progress_session_id)
 
     def run_request(self, request: ParsedRequest, *, progress_session_id: str | None = None) -> PipelineResult:
+        request = normalize_iterative_batch_request(request)
         allow_mock_planning = self.config.dry_run
         task_constraints = self._reference_task_constraints(request)
         if request.mode == "batch_videos":
@@ -90,12 +97,18 @@ class AI8VideoPipeline:
                 request.style_hint,
                 request.core_keywords,
                 task_constraints=task_constraints,
+                final_duration_seconds=request.duration_seconds,
                 llm=self.llm,
                 allow_mock=allow_mock_planning,
                 trace_session_id=progress_session_id,
             )
         else:
             videos = single_prompt_to_video(request.raw_text, request.style_hint, request.core_keywords)
+        observe_planner_shadow(
+            videos,
+            session_id=progress_session_id,
+            source_stage="planning_output",
+        )
         return self._run_videos(request, videos, progress_session_id=progress_session_id)
 
     def rewrite_video(
@@ -184,6 +197,12 @@ class AI8VideoPipeline:
         *,
         progress_session_id: str | None = None,
     ) -> PipelineResult:
+        if request.iterative_generation:
+            return AdaptiveBatchRunner(self).run(
+                request,
+                videos,
+                progress_session_id=progress_session_id,
+            )
         if not self.config.dry_run and self.client.guard.forced_duration_seconds > 0:
             request.duration_seconds = self.client.guard.forced_duration_seconds
         if not self.config.dry_run:
@@ -647,6 +666,25 @@ class AI8VideoPipeline:
                 error=str(exc),
                 meta={"reason": "归档或后处理失败，不创建成功结果"},
             )
+        if request.iterative_generation and archive.status in {"archived", "stored", "simulated", "disabled"}:
+            mark_job_reviewing(progress_session_id, completed_job)
+            review = self._review_generated_output(
+                request,
+                video,
+                completed_job,
+                archive,
+                progress_session_id,
+            )
+            guidance = dict(video.keyword_guidance or {})
+            guidance["generated_output_review"] = review
+            video.keyword_guidance = guidance
+            outcome.meta = {**(outcome.meta or {}), "generatedOutputReview": review}
+            observe_reviewer_shadow(
+                [video],
+                session_id=progress_session_id,
+                review_source=str(review.get("reviewSource") or "generated_output_review"),
+                task_scope=f"generated-{video.index}",
+            )
         asset_record = self.asset_store.append(request, video, completed_job, outcome, first_frame, archive)
         if archive.status in {"archived", "stored", "simulated", "disabled"}:
             mark_job_succeeded(progress_session_id, completed_job, asset_record)
@@ -659,6 +697,32 @@ class AI8VideoPipeline:
                 asset_record=asset_record,
             )
         return outcome, archive, asset_record
+
+    def _review_generated_output(
+        self,
+        request: ParsedRequest,
+        video: VideoPrompt,
+        completed_job: QuickVideoJob,
+        archive: ArchivedAsset,
+        progress_session_id: str | None,
+    ) -> dict[str, object]:
+        reviewer = getattr(self, "generated_output_reviewer", None)
+        if reviewer is None:
+            return {
+                "status": "unavailable",
+                "passes": None,
+                "issues": ["成片 Reviewer 尚未初始化"],
+                "improvements": [],
+                "nextPromptConstraints": [],
+                "expectedDurationSeconds": request.duration_seconds,
+                "reviewSource": "unavailable",
+            }
+        return reviewer.review(
+            archive.local_path or completed_job.local_video_path,
+            video,
+            expected_duration_seconds=int(request.duration_seconds or 10),
+            trace_session_id=progress_session_id,
+        )
 
     def _prepare_video_first_frame(
         self,
@@ -763,6 +827,7 @@ class AI8VideoPipeline:
                     "resolution": request.resolution,
                     "preset": request.preset,
                     "concurrentGeneration": request.concurrent_generation,
+                    "iterativeGeneration": request.iterative_generation,
                     "htmlMotionOverlayEnabled": request.html_motion_overlay_enabled,
                     "hasReferenceImage": bool(request.reference_image),
                     "referenceImageTransformOptions": request.reference_image_transform_options,

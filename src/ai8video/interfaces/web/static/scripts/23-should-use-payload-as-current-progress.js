@@ -208,7 +208,7 @@
       );
       const boundedExpected = backendItems.length
         ? Math.max(1, expectedCount || backendItems.length)
-        : Math.max(1, Math.min(12, expectedCount || 2));
+        : Math.max(1, Math.min(5, expectedCount || 2));
       const backendJobIds = new Set(backendItems.map((item) => String(item.jobId || '').trim()).filter(Boolean));
       const preSubmitPlanning = isPreSubmitPlanningProgress(backendProgress);
       const recentItems = backendJobIds.size
@@ -490,5 +490,5 @@
       if (!match) return 1;
       const raw = match[1];
       const parsed = parseShortChineseNumber(raw);
-      return Math.max(1, Math.min(12, parsed || 1));
+      return Math.max(1, Math.min(5, parsed || 1));
     }
