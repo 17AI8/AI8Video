@@ -413,10 +413,29 @@
         'tts-output': '会删除 TTS 输出目录里的配音音频中间产物，已有结果视频不会被删除。确定清理吗？',
         'merge-temp': '会清空视频合并临时媒体目录，已有结果视频不会被删除。确定清理吗？',
         'reference-temp': '会删除参考图图生图临时结果，素材库里的参考图不会被删除。确定清理吗？',
+        'extension-archive': '会删除不在生成结果列表中展示的延长视频归档及其封面、预览图。确定清理吗？',
+        'extension-frames': '会删除延长功能保存的截帧、修图结果和状态文件。确定清理吗？',
+        'html-motion-work': '会删除失败后保留的 HTML 动效诊断工作目录。确定清理吗？',
+        'html-motion-reviews': '会删除 HTML 动效审核候选缓存，成品视频不会被删除。确定清理吗？',
+        'restored-metadata': '只会删除没有对应结果视频的恢复元数据。确定清理吗？',
+        'result-junk': '只会删除结果目录中的系统杂项文件。确定清理吗？',
         manifests: '只会删除没有对应结果视频的孤儿归档元数据。确定清理吗？',
         'asset-index': '会从资产索引中压缩移除已经没有结果视频的孤儿记录。确定清理吗？',
         'recycle-bin': '会清空失败任务回收站里的媒体和记录。确定清理吗？',
       }[String(kind || '')] || '确定清理这个中间产物分类吗？';
+    }
+
+    async function refreshArchiveCleanupViews(data) {
+      state.archiveArtifacts = data.archiveArtifacts || state.archiveArtifacts || null;
+      await refreshAuthSettings();
+      await refreshUserGeneratedResults();
+      await refreshRecycleBin();
+      renderStatus();
+      renderProgress();
+      renderProgressModal();
+      renderResultModal();
+      renderRecycleBin();
+      renderRecycleBinModal();
     }
 
     async function cleanupArchiveArtifact(trigger, kind) {
@@ -437,24 +456,35 @@
         if (!res.ok || data?.ok === false) {
           throw buildRequestError(data);
         }
-        state.archiveArtifacts = data.archiveArtifacts || state.archiveArtifacts || null;
         const deletedCount = Number(data.deletedCount || data.removedCount || 0);
         state.settingsModal.videoModelNotice = deletedCount
           ? `已清理 ${deletedCount} 项`
           : '没有需要清理的项目';
-        await refreshAuthSettings();
-        await refreshUserGeneratedResults();
-        await refreshRecycleBin();
-        renderStatus();
-        renderProgress();
-        renderProgressModal();
-        renderResultModal();
-        renderRecycleBin();
-        renderRecycleBinModal();
+        await refreshArchiveCleanupViews(data);
       } finally {
         state.settingsModal.cleaningArchiveArtifactKind = '';
         renderSettingsModal();
         if (trigger) trigger.textContent = previous;
+      }
+    }
+
+    async function cleanupAllArchiveArtifacts(trigger) {
+      const confirmed = window.confirm('会清理归档中的中间产物、孤儿记录和失败任务；仍在生成结果中展示的视频、有效封面和预览图不会被删除。确定继续吗？');
+      if (!confirmed) return;
+      state.settingsModal.cleaningArchiveAll = true;
+      renderSettingsModal();
+      try {
+        const res = await fetch('/api/archive-artifacts/cleanup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind: 'all' }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.ok === false) throw buildRequestError(data);
+        await refreshArchiveCleanupViews(data);
+      } finally {
+        state.settingsModal.cleaningArchiveAll = false;
+        renderSettingsModal();
       }
     }
 

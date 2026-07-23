@@ -55,23 +55,93 @@
       position: relative;
       isolation: isolate;
       display: flex;
-      flex-direction: column-reverse;
-      gap: 6px;
+      flex-direction: column;
+      gap: 4px;
       margin: 2px 0 12px;
       padding: 4px 0;
-      max-height: 78px;
-      overflow-y: auto;
       border: 0;
-      background: linear-gradient(90deg, transparent 9px, #94a3b8 9px, #94a3b8 10px, transparent 10px);
-      scrollbar-width: thin;
-      scrollbar-color: rgba(99, 102, 241, 0.36) transparent;
+      overflow-anchor: none;
     }
 
     .agent-step-details::before { display: none; }
 
+    .agent-step-details-latest,
+    .agent-step-details-history {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+      background: linear-gradient(90deg, transparent 9px, #94a3b8 9px, #94a3b8 10px, transparent 10px);
+    }
+
+    .agent-step-details-latest {
+      overflow-anchor: none;
+    }
+
+    .agent-step-details-history {
+      max-height: 180px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(99, 102, 241, 0.36) transparent;
+      padding-top: 2px;
+    }
+
+    .agent-step-details-drawer {
+      display: grid;
+      grid-template-rows: 0fr;
+      opacity: 0;
+      pointer-events: none;
+      overflow-anchor: none;
+      transition: grid-template-rows 280ms ease, opacity 220ms ease;
+    }
+
+    .agent-step-details.is-expanded .agent-step-details-drawer {
+      grid-template-rows: 1fr;
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .agent-step-details-drawer-slot {
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .agent-step-details-toggle {
+      align-self: flex-start;
+      margin: 0 0 0 17px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: #3158e2;
+      font: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.4;
+      cursor: pointer;
+    }
+
+    .agent-step-details-toggle:hover {
+      color: #1d4ed8;
+      text-decoration: underline;
+    }
+
+    .agent-step-details-toggle:focus-visible {
+      outline: 2px solid rgba(49, 88, 226, 0.35);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .agent-step-details-drawer {
+        transition: none;
+      }
+    }
+
     .agent-video-results { margin-top: 10px; }
     .agent-video-results .result-notify-strip { margin-top: 0; }
     .agent-video-results .result-notify-meta { display: none; }
+
 
     .agent-step-detail {
       position: relative;

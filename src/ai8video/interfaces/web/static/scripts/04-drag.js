@@ -353,11 +353,19 @@
 
     document.getElementById('viralBreakdownVideoSelect')?.addEventListener('change', (event) => {
       state.viralBreakdown.selectedVideoKey = String(event.target?.value || '');
+      state.viralBreakdown.activeTab = 'grid';
       state.viralBreakdown.error = '';
       if (!state.viralBreakdown.loading) {
         state.viralBreakdown.notice = state.viralBreakdown.selectedVideoKey ? '已切换当前视频。' : state.viralBreakdown.notice;
       }
       renderViralBreakdownWorkbench();
+    });
+
+    document.getElementById('viralBreakdownModal')?.addEventListener('click', (event) => {
+      const tabTrigger = event.target.closest('[data-viral-breakdown-tab]');
+      if (!tabTrigger) return;
+      event.preventDefault();
+      activateViralBreakdownTab(tabTrigger.getAttribute('data-viral-breakdown-tab'));
     });
 
     document.getElementById('viralBreakdownIntervalInput')?.addEventListener('change', (event) => {
@@ -410,8 +418,23 @@
     });
 
 
-    document.getElementById('hotRadarKeywordInput')?.addEventListener('change', async (event) => {
-      state.hotRadar.keyword = String(event.target?.value || '').trim();
+    document.getElementById('hotRadarKeywordInput')?.addEventListener('change', async () => {
+      await submitHotRadarKeywordSearch();
+    });
+
+    document.getElementById('hotRadarKeywordInput')?.addEventListener('keydown', async (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      await submitHotRadarKeywordSearch();
+    });
+
+    document.getElementById('hotRadarSearchButton')?.addEventListener('click', async () => {
+      await submitHotRadarKeywordSearch();
+    });
+
+    async function submitHotRadarKeywordSearch() {
+      const input = document.getElementById('hotRadarKeywordInput');
+      state.hotRadar.keyword = String(input?.value || '').trim();
       persistHotRadarViewState(state.hotRadar);
       resetHotRadarGeneratedContent();
       try {
@@ -422,7 +445,7 @@
         state.hotRadar.error = error?.message || String(error);
         renderHotRadarWorkbench();
       }
-    });
+    }
 
     document.getElementById('hotRadarRefreshButton')?.addEventListener('click', async () => {
       try {
@@ -451,6 +474,7 @@
       state.hotRadar.selectedCategory = '';
       state.hotRadar.selectedSourceId = '';
       state.hotRadar.selectedTopicId = '';
+      state.hotRadar.expandedTopicId = '';
       state.hotRadar.keyword = '';
       persistHotRadarViewState(state.hotRadar);
       resetHotRadarGeneratedContent();

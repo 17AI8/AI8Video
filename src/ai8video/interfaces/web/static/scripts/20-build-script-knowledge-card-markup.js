@@ -1,44 +1,77 @@
+    function getScriptKnowledgeActiveTab() {
+      const tab = String(state.scriptKnowledge.activeTab || 'sections').trim();
+      return ['sections', 'edit', 'source'].includes(tab) ? tab : 'sections';
+    }
+
     function buildScriptKnowledgeCardMarkup(item) {
       const active = Number(item?.id || 0) === Number(state.scriptKnowledge.selectedId || 0);
       const title = item?.title || item?.stem || item?.name || '未命名剧本';
       const preview = item?.matchedExcerpt || item?.summary || item?.preview || '暂无摘要';
       const tags = buildScriptKnowledgeTagsMarkup(item?.tags || []);
       const score = Number(item?.score || 0);
-      const scoreCopy = score > 0 ? ` · 匹配 ${score.toFixed(2)}` : '';
-      const matchedHeading = String(item?.matchedHeading || '').trim();
-      const matchMarkup = matchedHeading
-        ? `<span class="script-knowledge-meta">命中知识段：${escapeHtml(matchedHeading)}</span>`
-        : '';
+      const scoreCopy = score > 0 ? `<span>匹配 ${score.toFixed(2)}</span>` : '';
       return `
         <button type="button" class="script-knowledge-list-card${active ? ' is-active' : ''}"
           data-script-knowledge-document="${Number(item?.id || 0)}">
           <span class="script-knowledge-list-title">${escapeHtml(title)}</span>
-          ${matchMarkup}
-          <span class="script-knowledge-list-preview">${escapeHtml(normalizeMaterialPreview(preview))}</span>
           ${tags}
-          <span class="script-knowledge-meta">${Number(item?.sectionCount || 0)} 个知识段 · ${escapeHtml(formatFileSize(item?.sizeBytes || 0) || '0 B')}${scoreCopy}</span>
+          <span class="script-knowledge-list-preview">${escapeHtml(normalizeMaterialPreview(preview))}</span>
+          <span class="script-knowledge-list-foot">
+            <span>${Number(item?.sectionCount || 0)} 段</span>
+            <span>${escapeHtml(formatFileSize(item?.sizeBytes || 0) || '0 B')}</span>
+            ${scoreCopy}
+          </span>
         </button>
       `;
     }
 
     function buildScriptKnowledgeTagsMarkup(tags) {
       const values = Array.isArray(tags) ? tags.filter(Boolean).slice(0, 6) : [];
-      if (!values.length) return '<span class="script-knowledge-meta">未设置标签</span>';
+      if (!values.length) return '<span class="script-knowledge-tags is-empty"><span class="script-knowledge-tag is-empty">未设标签</span></span>';
       return `<span class="script-knowledge-tags">${values.map((tag) => `<span class="script-knowledge-tag">${escapeHtml(tag)}</span>`).join('')}</span>`;
+    }
+
+    function buildScriptKnowledgeTabButton(tab, label, activeTab) {
+      const active = tab === activeTab;
+      return `
+        <button
+          type="button"
+          class="script-knowledge-tab${active ? ' is-active' : ''}"
+          data-script-knowledge-tab="${tab}"
+          aria-selected="${active ? 'true' : 'false'}"
+        >${label}</button>
+      `;
     }
 
     function buildScriptKnowledgeDetailMarkup(detail) {
       if (!detail) {
-        return '<div class="script-knowledge-empty">选择左侧剧本，查看原文、知识段和元数据。</div>';
+        return '<div class="script-knowledge-empty"><strong>选择左侧剧本</strong><p>可阅读知识段、编辑信息，或查看原文。</p></div>';
       }
       const isSelected = String(state.scriptReference?.item?.relativePath || '') === String(detail.relativePath || '');
       const sections = Array.isArray(detail.sections) ? detail.sections : [];
+      const activeTab = getScriptKnowledgeActiveTab();
+      const sectionPanel = sections.length
+        ? `<div class="script-knowledge-section-list">${sections.map(buildScriptKnowledgeSectionMarkup).join('')}</div>`
+        : buildScriptKnowledgeIngestionMarkup();
       return `
         <div class="script-knowledge-detail-inner">
           ${buildScriptKnowledgeDetailHeadMarkup(detail, isSelected)}
-          ${buildScriptKnowledgeFormMarkup(detail)}
-          <div><strong>知识段</strong><div class="script-knowledge-section-list">${sections.map(buildScriptKnowledgeSectionMarkup).join('')}</div></div>
-          <div><strong>原始正文</strong><pre class="script-knowledge-source">${escapeHtml(String(detail.content || '').slice(0, 30000))}</pre></div>
+          <div class="script-knowledge-tabs" role="tablist" aria-label="剧本详情分区">
+            ${buildScriptKnowledgeTabButton('sections', '知识段', activeTab)}
+            ${buildScriptKnowledgeTabButton('edit', '编辑信息', activeTab)}
+            ${buildScriptKnowledgeTabButton('source', '原文', activeTab)}
+          </div>
+          <div class="script-knowledge-panels">
+            <div class="script-knowledge-panel${activeTab === 'sections' ? ' is-active' : ''}" data-script-knowledge-panel="sections">
+              ${sectionPanel}
+            </div>
+            <div class="script-knowledge-panel${activeTab === 'edit' ? ' is-active' : ''}" data-script-knowledge-panel="edit">
+              ${buildScriptKnowledgeFormMarkup(detail)}
+            </div>
+            <div class="script-knowledge-panel${activeTab === 'source' ? ' is-active' : ''}" data-script-knowledge-panel="source">
+              <pre class="script-knowledge-source">${escapeHtml(String(detail.content || '').slice(0, 30000))}</pre>
+            </div>
+          </div>
         </div>
       `;
     }
@@ -51,11 +84,23 @@
             <div class="script-knowledge-meta">${escapeHtml(detail.relativePath || '')} · ${Number(detail.sectionCount || 0)} 个知识段</div>
           </div>
           <div class="script-knowledge-detail-actions">
+            <button type="button" class="button-primary" data-script-knowledge-ingest="${Number(detail.id || 0)}">${state.scriptKnowledge.ingesting ? '知识入库中' : '知识入库'}</button>
             <button type="button" class="button-secondary" data-script-knowledge-reference="${escapeHtml(detail.relativePath || '')}">${isSelected ? '已设为剧本参考' : '设为剧本参考'}</button>
             <button type="button" class="material-wall-delete-button" data-delete-user-material-kind="script" data-delete-user-material-path="${escapeHtml(detail.relativePath || '')}" data-delete-user-material-name="${escapeHtml(detail.name || '')}">删除</button>
           </div>
         </div>
       `;
+    }
+
+    function buildScriptKnowledgeIngestionMarkup() {
+      const job = state.scriptKnowledge.ingestionJob;
+      const events = Array.isArray(job?.events) ? job.events : [];
+      if (!state.scriptKnowledge.ingesting && !events.length) {
+        return '<div class="script-knowledge-empty is-inline"><strong>尚未知识入库</strong><p>点击上方“知识入库”，后台会建立目录、知识段与检索索引。</p></div>';
+      }
+      const body = events.map((event) => `<p class="script-knowledge-ingestion-line is-${escapeHtml(event.kind || 'step')}" data-stage="${escapeHtml(event.stage || '')}">${escapeHtml(event.text || '')}</p>`).join('');
+      const title = job?.state === 'failed' ? '知识入库失败' : job?.state === 'succeeded' ? '知识入库完成' : '正在知识入库';
+      return `<div class="script-knowledge-ingestion"><strong>${title}</strong><div class="script-knowledge-ingestion-stream">${body || '<p>正在准备任务…</p>'}</div></div>`;
     }
 
     function buildScriptKnowledgeFormMarkup(detail) {
@@ -64,16 +109,16 @@
         <div class="script-knowledge-form">
           <label class="script-knowledge-field">知识标题<input id="scriptKnowledgeTitleInput" value="${escapeHtml(detail.title || detail.stem || '')}" maxlength="200"></label>
           <label class="script-knowledge-field">标签（用逗号分隔）<input id="scriptKnowledgeTagsInput" value="${escapeHtml(tags)}" maxlength="500" placeholder="行业，人物，场景，钩子"></label>
-          <label class="script-knowledge-field">摘要<textarea id="scriptKnowledgeSummaryInput" maxlength="2000" placeholder="说明这份剧本适合什么场景">${escapeHtml(detail.summary || '')}</textarea></label>
-          <div class="script-knowledge-detail-actions"><button type="button" class="button-primary" data-script-knowledge-save>${state.scriptKnowledge.saving ? '保存中' : '保存元数据'}</button></div>
+          <label class="script-knowledge-field is-wide">摘要<textarea id="scriptKnowledgeSummaryInput" maxlength="2000" placeholder="说明这份剧本适合什么场景">${escapeHtml(detail.summary || '')}</textarea></label>
+          <div class="script-knowledge-detail-actions is-wide"><button type="button" class="button-primary" data-script-knowledge-save>${state.scriptKnowledge.saving ? '保存中' : '保存元数据'}</button></div>
         </div>
       `;
     }
 
     function buildScriptKnowledgeSectionMarkup(section, index) {
       const heading = section?.heading || `知识段 ${index + 1}`;
-      const preview = normalizeMaterialPreview(section?.content || '').slice(0, 220);
-      return `<div class="script-knowledge-section"><strong>${escapeHtml(heading)}</strong><span>${escapeHtml(preview)}</span></div>`;
+      const content = normalizeMaterialPreview(section?.content || '');
+      return `<div class="script-knowledge-section"><strong>${escapeHtml(heading)}</strong><span>${escapeHtml(content || '（空段落）')}</span></div>`;
     }
 
     function getMaterialMentionName(item) {

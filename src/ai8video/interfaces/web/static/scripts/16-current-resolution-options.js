@@ -155,6 +155,7 @@
       state.settingsModal.videoModelNotice = '';
       state.settingsModal.refreshingArchive = false;
       state.settingsModal.regeneratingPreviews = false;
+      state.settingsModal.cleaningArchiveAll = false;
       renderSettingsModal();
       renderVideoParamsModal();
     }
@@ -495,4 +496,3 @@
         renderHtmlMotionOverlayDrawer();
       }
     }
-

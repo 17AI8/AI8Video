@@ -4,7 +4,7 @@ import os
 import re
 from typing import Any
 
-from ai8video.knowledge.script_knowledge import get_script_knowledge_store, synchronize_script_knowledge
+from ai8video.knowledge.script_knowledge import get_script_knowledge_store, register_script_knowledge_sources
 from ai8video.knowledge.script_knowledge_rerank import RerankLLM, rerank_candidates
 
 
@@ -21,7 +21,7 @@ def retrieve_reference_context(
     recall_limit = _bounded_env_int("AI8VIDEO_SCRIPT_RECALL_TOP_K", 20, 5, 30)
     inject_top_k = _bounded_env_int("AI8VIDEO_SCRIPT_INJECT_TOP_K", 5, 1, 10)
     try:
-        synchronize_script_knowledge()
+        register_script_knowledge_sources()
         store = get_script_knowledge_store()
         status = store.status()
         if not status.get("available"):

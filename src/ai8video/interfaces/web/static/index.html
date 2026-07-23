@@ -7,14 +7,14 @@
   <link rel="icon" type="image/webp" href="/static/images/ai8video-avatar.webp?v=20260723-0739">
   <link rel="stylesheet" href="/static/script-knowledge.css?v=20260721-1">
   <!-- Updated: 2026-06-23 15:17 CST - 花字调色预览连体按钮圆角修正 -->
-  <link rel="stylesheet" href="/static/workbench.css?v=20260723-2">
+  <link rel="stylesheet" href="/static/workbench.css?v=20260723-12">
 </head>
 <body>
   <div class="shell">
     <aside class="sidebar">
       <div class="brand">
         <img class="mark" src="/static/images/ai8video-avatar.webp?v=20260723-0739" alt="AI8video 头像" width="40" height="40">
-        <div>
+        <div class="brand-copy" hidden>
           <h1 id="brandName">AI8video</h1>
           <p id="brandSlug">批量创作助手</p>
         </div>
@@ -138,7 +138,6 @@
         </div>
         <div class="script-knowledge-toolbar-actions">
           <span id="scriptKnowledgeStatus" class="script-knowledge-status">检查数据库</span>
-          <button id="scriptKnowledgeSyncButton" type="button" class="button-secondary">同步索引</button>
         </div>
       </div>
       <div id="materialLibraryWall" class="material-wall"></div>
@@ -162,13 +161,49 @@
     </div>
   </div>
   <div id="viralBreakdownModal" class="modal-shell hidden" role="dialog" aria-modal="true" aria-labelledby="viralBreakdownTitle">
-    <div class="modal-panel material-modal-panel">
+    <div class="modal-panel material-modal-panel viral-breakdown-modal-panel">
       <div class="modal-head">
         <div class="modal-title">
           <strong id="viralBreakdownTitle">爆款拆解微短剧观影台</strong>
-          <div class="modal-sub">先上传一个视频到本机爆款拆解文件夹，再做抽帧拼宫格和 Whisper 台词识别。</div>
+          <div class="modal-sub">本地抽帧拼宫格 · Whisper 台词 · 猜剧本</div>
         </div>
         <button id="viralBreakdownCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+      </div>
+      <div class="viral-breakdown-toolbar viral-breakdown-glass-card">
+        <div class="viral-breakdown-toolbar-row">
+          <div class="material-heading stacked">
+            <div class="material-title">爆款拆解</div>
+            <div id="viralBreakdownArchiveMeta" class="material-meta">0 个视频 · 0 B</div>
+          </div>
+          <div class="material-actions">
+            <label id="viralBreakdownUploadButton" class="button-secondary viral-breakdown-upload-trigger" for="viralBreakdownUploadInput" role="button" tabindex="0">上传视频</label>
+            <button id="viralBreakdownOpenFolderButton" type="button" class="button-secondary">打开文件夹</button>
+          </div>
+        </div>
+        <div class="viral-breakdown-toolbar-row">
+          <label class="viral-breakdown-inline-field">
+            <span>当前视频</span>
+            <select id="viralBreakdownVideoSelect" class="config-input compact"></select>
+          </label>
+          <label class="viral-breakdown-inline-field">
+            <span>截图间隔(秒)</span>
+            <input id="viralBreakdownIntervalInput" type="number" min="0.2" max="60" step="0.1" value="1" class="config-input compact">
+          </label>
+          <label class="viral-breakdown-inline-field">
+            <span>宫格比例</span>
+            <select id="viralBreakdownTargetRatio" class="config-input compact">
+              <option value="16:9">16:9</option>
+              <option value="9:16">9:16</option>
+              <option value="1:1">1:1</option>
+            </select>
+          </label>
+          <div class="viral-breakdown-toolbar-actions">
+            <button id="viralBreakdownProcessFramesButton" type="button" class="button-secondary">拆解画面</button>
+            <button id="viralBreakdownTranscribeButton" type="button" class="material-library-button">分析台词</button>
+            <button id="viralBreakdownGuessScriptButton" type="button" class="material-library-button">猜剧本</button>
+          </div>
+        </div>
+        <div id="viralBreakdownStatusText" class="viral-breakdown-status">上传视频后可抽帧拼宫格、识别台词并猜剧本。</div>
       </div>
       <div id="viralBreakdownVideoStage" class="viral-breakdown-stage">
         <section class="viral-breakdown-workbench">
@@ -176,86 +211,67 @@
             <div class="viral-breakdown-preview-column">
               <article class="viral-breakdown-pane viral-breakdown-glass-card area-video">
                 <div class="material-heading">
-                  <div class="material-title">预览区</div>
+                  <div class="material-title">预览</div>
                   <div id="viralBreakdownOriginalMeta" class="material-meta"></div>
                 </div>
                 <div id="viralBreakdownOriginalPane" class="viral-breakdown-pane-body"></div>
               </article>
-              <article class="viral-breakdown-pane viral-breakdown-glass-card viral-breakdown-script-guess-card">
-                <div class="material-heading">
-                  <div class="material-heading stacked">
-                    <div class="material-title">猜剧本结果</div>
-                    <div id="viralBreakdownScriptGuessMeta" class="material-meta"></div>
-                  </div>
-                </div>
-                <div id="viralBreakdownScriptGuessPane" class="viral-breakdown-pane-body"></div>
-              </article>
             </div>
-            <div class="viral-breakdown-function-column">
-              <div class="viral-breakdown-toolbar viral-breakdown-glass-card">
-                <div class="viral-breakdown-toolbar-row">
-                  <div class="material-heading stacked">
-                    <div class="material-title">爆款拆解归档</div>
-                    <div id="viralBreakdownArchiveMeta" class="material-meta">0 个视频 · 0 B</div>
-                  </div>
-                  <div class="material-actions">
-                    <label id="viralBreakdownUploadButton" class="button-secondary viral-breakdown-upload-trigger" for="viralBreakdownUploadInput" role="button" tabindex="0">上传视频</label>
-                    <button id="viralBreakdownOpenFolderButton" type="button" class="button-secondary">打开文件夹</button>
-                  </div>
-                </div>
-                <div class="viral-breakdown-toolbar-row">
-                  <label class="viral-breakdown-inline-field">
-                    <span>当前视频</span>
-                    <select id="viralBreakdownVideoSelect" class="config-input compact"></select>
-                  </label>
-                  <label class="viral-breakdown-inline-field">
-                    <span>截图间隔(秒)</span>
-                    <input id="viralBreakdownIntervalInput" type="number" min="0.2" max="60" step="0.1" value="1" class="config-input compact">
-                  </label>
-                  <label class="viral-breakdown-inline-field">
-                    <span>宫格比例</span>
-                    <select id="viralBreakdownTargetRatio" class="config-input compact">
-                      <option value="16:9">16:9</option>
-                      <option value="9:16">9:16</option>
-                      <option value="1:1">1:1</option>
-                    </select>
-                  </label>
-                  <button id="viralBreakdownProcessFramesButton" type="button" class="button-secondary">拆解画面</button>
-                  <button id="viralBreakdownTranscribeButton" type="button" class="material-library-button">分析台词</button>
-                  <button id="viralBreakdownGuessScriptButton" type="button" class="material-library-button">猜剧本</button>
-                </div>
-                <div id="viralBreakdownStatusText" class="modal-sub">上传一个视频后，可以本地按间隔抽帧并智能拼成宫格图，再调用 Whisper 识别台词。</div>
+            <div class="viral-breakdown-detail-column">
+              <div class="viral-breakdown-tabs" role="tablist" aria-label="拆解结果分区">
+                <button type="button" class="viral-breakdown-tab is-active" data-viral-breakdown-tab="grid" aria-selected="true">拼接宫格</button>
+                <button type="button" class="viral-breakdown-tab" data-viral-breakdown-tab="transcript" aria-selected="false">识别台词</button>
+                <button type="button" class="viral-breakdown-tab" data-viral-breakdown-tab="script" aria-selected="false">猜剧本</button>
+                <button type="button" class="viral-breakdown-tab" data-viral-breakdown-tab="generated" aria-selected="false">生成结果</button>
               </div>
-              <article class="viral-breakdown-pane viral-breakdown-glass-card area-grid">
-                <div class="material-heading">
-                  <div class="material-title">拼接宫格图</div>
-                  <div id="viralBreakdownGridMeta" class="material-meta"></div>
+              <div class="viral-breakdown-panels">
+                <div class="viral-breakdown-panel is-active" data-viral-breakdown-panel="grid">
+                  <article class="viral-breakdown-pane viral-breakdown-glass-card area-grid">
+                    <div class="material-heading">
+                      <div class="material-title">拼接宫格图</div>
+                      <div id="viralBreakdownGridMeta" class="material-meta"></div>
+                    </div>
+                    <div id="viralBreakdownGridPane" class="viral-breakdown-pane-body"></div>
+                  </article>
                 </div>
-                <div id="viralBreakdownGridPane" class="viral-breakdown-pane-body"></div>
-              </article>
-              <article class="viral-breakdown-pane viral-breakdown-glass-card area-transcript">
-                <div class="material-heading">
-                  <div class="material-heading stacked">
-                    <div class="material-title">识别到的台词</div>
-                    <div id="viralBreakdownTranscriptMeta" class="material-meta"></div>
-                  </div>
-                  <button id="viralBreakdownSaveTranscriptButton" type="button" class="button-secondary">已保存</button>
+                <div class="viral-breakdown-panel" data-viral-breakdown-panel="transcript">
+                  <article class="viral-breakdown-pane viral-breakdown-glass-card area-transcript">
+                    <div class="material-heading">
+                      <div class="material-heading stacked">
+                        <div class="material-title">识别到的台词</div>
+                        <div id="viralBreakdownTranscriptMeta" class="material-meta"></div>
+                      </div>
+                      <button id="viralBreakdownSaveTranscriptButton" type="button" class="button-secondary">已保存</button>
+                    </div>
+                    <div id="viralBreakdownTranscriptPane" class="viral-breakdown-pane-body"></div>
+                  </article>
                 </div>
-                <div id="viralBreakdownTranscriptPane" class="viral-breakdown-pane-body"></div>
-              </article>
-              <article class="viral-breakdown-pane viral-breakdown-glass-card area-generated">
-                <div class="material-heading">
-                  <div class="material-title">用户生成的视频</div>
-                  <div id="viralBreakdownGeneratedMeta" class="material-meta">暂无</div>
+                <div class="viral-breakdown-panel" data-viral-breakdown-panel="script">
+                  <article class="viral-breakdown-pane viral-breakdown-glass-card viral-breakdown-script-guess-card">
+                    <div class="material-heading">
+                      <div class="material-heading stacked">
+                        <div class="material-title">猜剧本结果</div>
+                        <div id="viralBreakdownScriptGuessMeta" class="material-meta"></div>
+                      </div>
+                    </div>
+                    <div id="viralBreakdownScriptGuessPane" class="viral-breakdown-pane-body"></div>
+                  </article>
                 </div>
-                <div id="viralBreakdownGeneratedPane" class="viral-breakdown-pane-body"></div>
-              </article>
+                <div class="viral-breakdown-panel" data-viral-breakdown-panel="generated">
+                  <article class="viral-breakdown-pane viral-breakdown-glass-card area-generated">
+                    <div class="material-heading">
+                      <div class="material-title">用户生成的视频</div>
+                      <div id="viralBreakdownGeneratedMeta" class="material-meta">暂无</div>
+                    </div>
+                    <div id="viralBreakdownGeneratedPane" class="viral-breakdown-pane-body"></div>
+                  </article>
+                </div>
+              </div>
             </div>
           </div>
         </section>
       </div>
       <div class="viral-breakdown-footer">
-        <div class="modal-sub">当前版本只做本地上传、抽帧拼宫格、Whisper 识别和四窗预览，不会在这里直接触发真实视频生成。</div>
         <div class="material-actions">
           <button id="viralBreakdownCancelButton" type="button" class="button-secondary">关闭</button>
         </div>
@@ -274,10 +290,22 @@
           <div class="hot-radar-brand">
             <div class="hot-radar-brand-main">
               <span class="hot-radar-brand-icon" aria-hidden="true">
-                <svg viewBox="0 0 48 48" width="30" height="30" role="img">
-                  <defs><linearGradient id="hotRadarFlameGradient" x1="8" y1="40" x2="38" y2="8"><stop stop-color="#4f6dff"/><stop offset="0.55" stop-color="#8b5cf6"/><stop offset="1" stop-color="#ff7a59"/></linearGradient></defs>
-                  <path fill="url(#hotRadarFlameGradient)" d="M27.8 4.8c1.1 7.2-3.2 10.6-6.2 14.2-2.1 2.5-3.3 5-1.8 8.2 1.1-3.2 3.5-5 6.1-7.2 5.3 4.1 8.2 8.8 7.4 14.2-.7 5.5-5.1 9.4-11.1 9.4-7.6 0-12.8-5-12.8-12.3 0-7.4 4.8-12.4 9.3-16.8 3.6-3.5 6.8-6.5 9.1-9.7Z"/>
-                  <path fill="#fff" fill-opacity=".9" d="M23.7 39.1c-3.3 0-5.7-2.2-5.7-5.4 0-2.8 1.7-5 4.1-7.3.1 3 1.9 4.2 3.1 5.8 1.8 2.5 1.1 6.9-1.5 6.9Z"/>
+                <svg viewBox="0 0 48 48" width="28" height="28" role="img">
+                  <defs>
+                    <linearGradient id="hotRadarMarkGradient" x1="8" y1="40" x2="40" y2="8">
+                      <stop stop-color="#4f6dff"/>
+                      <stop offset="0.55" stop-color="#8b5cf6"/>
+                      <stop offset="1" stop-color="#ff7a59"/>
+                    </linearGradient>
+                  </defs>
+                  <circle cx="24" cy="24" r="17" fill="none" stroke="url(#hotRadarMarkGradient)" stroke-width="2" opacity=".28"/>
+                  <circle cx="24" cy="24" r="12" fill="none" stroke="url(#hotRadarMarkGradient)" stroke-width="2" opacity=".48"/>
+                  <circle cx="24" cy="24" r="7" fill="none" stroke="url(#hotRadarMarkGradient)" stroke-width="2" opacity=".72"/>
+                  <path fill="url(#hotRadarMarkGradient)" opacity=".34" d="M24 24V7.2A16.8 16.8 0 0 1 39.5 18.4Z"/>
+                  <path fill="none" stroke="url(#hotRadarMarkGradient)" stroke-width="2" stroke-linecap="round" d="M24 24 36.8 14.2"/>
+                  <circle cx="36.8" cy="14.2" r="2.4" fill="url(#hotRadarMarkGradient)"/>
+                  <circle cx="24" cy="24" r="3.4" fill="url(#hotRadarMarkGradient)"/>
+                  <circle cx="24" cy="24" r="1.45" fill="#fff" fill-opacity=".92"/>
                 </svg>
               </span>
               <div>
@@ -296,28 +324,21 @@
                   <select id="hotRadarSourceSelect" class="hot-radar-source-select" aria-label="切换热点来源"></select>
                 </label>
                 <div class="hot-radar-filter-row">
-                  <input id="hotRadarKeywordInput" class="hot-radar-search-input" placeholder="搜索热点，例如 AI / 出海 / 短视频">
+                  <div class="hot-radar-search-group">
+                    <input id="hotRadarKeywordInput" class="hot-radar-search-input" placeholder="搜索热点，例如 AI / 出海 / 短视频">
+                    <button id="hotRadarSearchButton" type="button" class="hot-radar-search-button" aria-label="搜索热点" title="搜索">
+                      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+                        <circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"></circle>
+                        <path d="M16.2 16.2 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+                      </svg>
+                    </button>
+                  </div>
                   <button id="hotRadarClearButton" type="button" class="hot-radar-ghost-button">清空筛选</button>
                   <button id="hotRadarColumnToggleButton" type="button" class="hot-radar-ghost-button" aria-pressed="false">单列</button>
                 </div>
               </div>
               <div id="hotRadarTopicList" class="hot-radar-topic-list"></div>
             </section>
-            <aside class="hot-radar-detail-panel">
-              <div class="hot-radar-detail-head">
-                <div>
-                  <div class="hot-radar-detail-title">AI 摘要与转选题</div>
-                  <div id="hotRadarDetailMeta" class="hot-radar-detail-sub">热点摘要</div>
-                </div>
-              </div>
-              <div id="hotRadarSelectedTopic" class="hot-radar-topic-card hot-radar-selected-topic"></div>
-              <div class="hot-radar-detail-actions">
-                <button id="hotRadarSummaryButton" type="button" class="hot-radar-primary-button">AI 摘要</button>
-                <button id="hotRadarPromptButton" type="button" class="hot-radar-ghost-button">转成拆解提示词</button>
-                <button id="hotRadarFillPromptButton" type="button" class="hot-radar-ghost-button">填入对话框</button>
-              </div>
-              <div id="hotRadarSummaryOutput" class="hot-radar-summary-output">选择一个热点后，可生成摘要、拍摄角度和AI8video 业务切入点。</div>
-            </aside>
           </section>
         </main>
       </div>
@@ -494,6 +515,6 @@
       </div>
     </div>
   </div>
-  <script src="/static/workbench.js?v=20260723-6"></script>
+  <script src="/static/workbench.js?v=20260723-18"></script>
 </body>
 </html>

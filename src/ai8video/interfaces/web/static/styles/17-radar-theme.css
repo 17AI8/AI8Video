@@ -28,28 +28,24 @@
     #hotRadarModal .hot-radar-content-grid {
       min-height: 0;
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(300px, 350px);
-      align-items: start;
+      grid-template-columns: minmax(0, 1fr);
+      align-items: stretch;
       gap: 16px;
       padding: 16px;
-      overflow: auto;
+      overflow: hidden;
     }
 
-    #hotRadarModal .hot-radar-hotlist-panel,
-    #hotRadarModal .hot-radar-detail-panel {
+    #hotRadarModal .hot-radar-hotlist-panel {
       min-height: 0;
-      overflow: visible;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
       padding: 16px;
       border: 1px solid var(--hot-radar-line);
       border-radius: 14px;
       background: var(--hot-radar-surface);
       box-shadow: 0 8px 22px rgba(35, 60, 45, 0.06);
       backdrop-filter: none;
-    }
-
-    #hotRadarModal .hot-radar-detail-panel {
-      position: sticky;
-      top: 0;
     }
 
     #hotRadarModal .hot-radar-search-input {
@@ -64,15 +60,66 @@
       color: #9aa69f;
     }
 
+    #hotRadarModal .hot-radar-search-group {
+      border: 1px solid rgba(255, 255, 255, 0.68);
+      border-radius: 9px;
+      background: var(--hot-radar-glass-strong);
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.38),
+        0 7px 18px rgba(45, 63, 130, 0.07);
+    }
+
+    #hotRadarModal .hot-radar-search-group:focus-within {
+      border-color: rgba(79, 109, 255, 0.48);
+      box-shadow:
+        inset 0 0 0 1px rgba(79, 109, 255, 0.28),
+        0 0 0 3px rgba(79, 109, 255, 0.12);
+    }
+
+    #hotRadarModal .hot-radar-search-group .hot-radar-search-input {
+      border: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    #hotRadarModal .hot-radar-search-group .hot-radar-search-input:focus {
+      border: 0;
+      box-shadow: none;
+    }
+
+    #hotRadarModal button.hot-radar-search-button {
+      border-left: 1px solid rgba(79, 109, 255, 0.14);
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(231, 239, 255, 0.72));
+      color: var(--hot-radar-brand, #4f6dff);
+    }
+
+    #hotRadarModal button.hot-radar-search-button:hover {
+      color: var(--hot-radar-brand-strong, #3b52d6);
+      background: rgba(239, 243, 255, 0.98);
+    }
+
     #hotRadarModal .hot-radar-topic-list {
       position: relative;
+      flex: 1 1 auto;
+      min-height: 0;
       gap: 9px;
+      overflow-x: hidden;
+      overflow-y: auto;
       transition: opacity 180ms ease, transform 180ms ease, filter 180ms ease;
     }
 
     #hotRadarModal .hot-radar-topic-list.is-two-columns {
+      display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       align-items: start;
+      gap: 9px;
+    }
+
+    #hotRadarModal .hot-radar-topic-column {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      min-width: 0;
     }
 
     #hotRadarModal .hot-radar-topic-list.is-switching {
@@ -144,10 +191,13 @@
       #hotRadarModal .hot-radar-topic-list.is-two-columns {
         grid-template-columns: minmax(0, 1fr);
       }
+
+      #hotRadarModal .hot-radar-topic-column {
+        display: contents;
+      }
     }
 
-    #hotRadarModal .hot-radar-topic-list .hot-radar-topic-card,
-    #hotRadarModal .hot-radar-selected-topic {
+    #hotRadarModal .hot-radar-topic-list .hot-radar-topic-card {
       border: 1px solid var(--hot-radar-line);
       border-radius: 11px;
       background: #fff;
@@ -162,31 +212,8 @@
       background: var(--hot-radar-accent-soft);
     }
 
-    #hotRadarModal .hot-radar-topic-title,
-    #hotRadarModal .hot-radar-detail-title {
+    #hotRadarModal .hot-radar-topic-title {
       color: var(--hot-radar-text);
-    }
-
-    #hotRadarModal .hot-radar-detail-actions {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
-    }
-
-    #hotRadarModal #hotRadarFillPromptButton {
-      grid-column: 1 / -1;
-    }
-
-    #hotRadarModal .hot-radar-summary-output {
-      min-height: 180px;
-      max-height: none;
-      overflow: visible;
-      border: 1px solid var(--hot-radar-line);
-      border-radius: 11px;
-      background: #f7faf8;
-      color: var(--hot-radar-text);
-      padding: 12px;
-      line-height: 1.65;
     }
 
     #hotRadarModal .viral-breakdown-empty {
@@ -217,12 +244,8 @@
       }
 
       #hotRadarModal .hot-radar-content-grid {
-        grid-template-columns: minmax(0, 1fr) minmax(260px, 300px);
+        grid-template-columns: minmax(0, 1fr);
         padding: 12px;
-      }
-
-      #hotRadarModal .hot-radar-detail-panel {
-        position: sticky;
       }
     }
 
@@ -233,23 +256,13 @@
         text-align: right;
       }
 
-      #hotRadarModal .hot-radar-filter-row,
-      #hotRadarModal .hot-radar-detail-actions {
+      #hotRadarModal .hot-radar-filter-row {
         display: grid;
         grid-template-columns: 1fr;
       }
 
-      #hotRadarModal #hotRadarFillPromptButton {
-        grid-column: auto;
-      }
-
       #hotRadarModal .hot-radar-content-grid {
         grid-template-columns: 1fr;
-      }
-
-      #hotRadarModal .hot-radar-detail-panel {
-        position: static;
-        order: -1;
       }
     }
     /* 热点雷达复用AI8video 蓝紫玻璃设计系统，布局与数据逻辑保持独立。 */
@@ -392,6 +405,13 @@
         0 0 0 3px rgba(79, 109, 255, 0.12);
     }
 
+    #hotRadarModal .hot-radar-search-group .hot-radar-search-input,
+    #hotRadarModal .hot-radar-search-group .hot-radar-search-input:focus {
+      border: 0;
+      box-shadow: none;
+      background: transparent;
+    }
+
     #hotRadarModal .hot-radar-topic-card,
     #hotRadarModal .hot-radar-summary-output {
       border: 1px solid rgba(255, 255, 255, 0.68);
@@ -418,8 +438,7 @@
         inset 3px 0 0 var(--hot-radar-brand);
     }
 
-    #hotRadarModal .hot-radar-list-panel,
-    #hotRadarModal .hot-radar-detail-panel {
+    #hotRadarModal .hot-radar-list-panel {
       border-radius: 18px;
     }
 

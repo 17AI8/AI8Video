@@ -81,14 +81,13 @@
   min-height: 0;
   height: 100%;
   display: grid;
-  grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.55fr);
+  grid-template-columns: 300px minmax(0, 1fr);
   gap: 12px;
 }
 
 .script-knowledge-list,
 .script-knowledge-detail {
   min-height: 0;
-  overflow: auto;
   border: 1px solid rgba(79, 109, 255, 0.14);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.72);
@@ -97,15 +96,16 @@
 .script-knowledge-list {
   display: grid;
   align-content: start;
-  gap: 8px;
-  padding: 10px;
+  gap: 6px;
+  padding: 8px;
+  overflow: auto;
 }
 
 .script-knowledge-list-card {
   width: 100%;
   display: grid;
-  gap: 7px;
-  padding: 12px;
+  gap: 5px;
+  padding: 10px 11px;
   border: 1px solid transparent;
   border-radius: 10px;
   background: rgba(238, 243, 255, 0.72);
@@ -131,11 +131,12 @@
   overflow: hidden;
   color: var(--muted);
   font-size: 12px;
-  line-height: 1.55;
+  line-height: 1.45;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 1;
 }
 
+.script-knowledge-list-foot,
 .script-knowledge-meta,
 .script-knowledge-tags {
   display: flex;
@@ -146,24 +147,45 @@
   font-size: 11px;
 }
 
+.script-knowledge-list-foot {
+  gap: 8px;
+}
+
+.script-knowledge-list-foot span + span::before {
+  content: '·';
+  margin-right: 8px;
+  opacity: 0.55;
+}
+
 .script-knowledge-tag {
   display: inline-flex;
   align-items: center;
-  min-height: 22px;
-  padding: 0 8px;
+  min-height: 20px;
+  padding: 0 7px;
   border-radius: 999px;
   background: rgba(79, 109, 255, 0.1);
   color: #4964dc;
   font-weight: 800;
 }
 
+.script-knowledge-tag.is-empty {
+  background: rgba(120, 130, 155, 0.1);
+  color: var(--muted);
+  font-weight: 600;
+}
+
 .script-knowledge-detail {
-  padding: 16px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+  padding: 0;
 }
 
 .script-knowledge-detail-inner {
+  min-height: 0;
+  height: 100%;
   display: grid;
-  gap: 14px;
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .script-knowledge-detail-head {
@@ -171,6 +193,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  padding: 14px 16px 10px;
 }
 
 .script-knowledge-detail-actions {
@@ -180,9 +203,57 @@
   flex-wrap: wrap;
 }
 
+.script-knowledge-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 12px;
+  border-bottom: 1px solid rgba(79, 109, 255, 0.12);
+}
+
+.script-knowledge-tab {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: none;
+}
+
+.script-knowledge-tab:hover {
+  color: var(--text);
+}
+
+.script-knowledge-tab.is-active {
+  color: #4964dc;
+  border-bottom-color: #4964dc;
+}
+
+.script-knowledge-panels {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.script-knowledge-panel {
+  display: none;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 16px 16px;
+}
+
+.script-knowledge-panel.is-active {
+  display: block;
+}
+
 .script-knowledge-form {
   display: grid;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px 12px;
 }
 
 .script-knowledge-field {
@@ -191,6 +262,11 @@
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
+}
+
+.script-knowledge-field.is-wide,
+.script-knowledge-detail-actions.is-wide {
+  grid-column: 1 / -1;
 }
 
 .script-knowledge-field input,
@@ -210,14 +286,12 @@
 }
 
 .script-knowledge-field textarea {
-  min-height: 76px;
+  min-height: 96px;
   padding: 10px 11px;
   resize: vertical;
 }
 
 .script-knowledge-source {
-  max-height: 260px;
-  overflow: auto;
   margin: 0;
   padding: 12px;
   border-radius: 10px;
@@ -230,11 +304,11 @@
 
 .script-knowledge-section-list {
   display: grid;
-  gap: 7px;
+  gap: 8px;
 }
 
 .script-knowledge-section {
-  padding: 10px 12px;
+  padding: 11px 12px;
   border-left: 3px solid rgba(79, 109, 255, 0.34);
   border-radius: 0 8px 8px 0;
   background: rgba(238, 243, 255, 0.68);
@@ -242,24 +316,71 @@
 
 .script-knowledge-section strong {
   display: block;
-  margin-bottom: 4px;
-  font-size: 12px;
+  margin-bottom: 5px;
+  font-size: 13px;
 }
 
 .script-knowledge-section span {
   color: var(--muted);
   font-size: 12px;
-  line-height: 1.55;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .script-knowledge-empty {
   display: grid;
-  place-items: center;
+  place-content: center;
+  gap: 6px;
   min-height: 180px;
   padding: 20px;
   color: var(--muted);
   text-align: center;
   line-height: 1.7;
+}
+
+.script-knowledge-empty strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.script-knowledge-empty p {
+  margin: 0;
+}
+
+.script-knowledge-empty.is-inline {
+  min-height: 120px;
+}
+
+.script-knowledge-ingestion {
+  display: grid;
+  gap: 10px;
+  min-height: 120px;
+  padding: 18px;
+  color: var(--muted);
+}
+
+.script-knowledge-ingestion > strong {
+  color: var(--text);
+}
+
+.script-knowledge-ingestion-stream {
+  max-height: 300px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid rgba(91, 105, 255, 0.15);
+  border-radius: 12px;
+  background: rgba(245, 247, 255, 0.72);
+}
+
+.script-knowledge-ingestion-line {
+  margin: 0 0 7px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.script-knowledge-ingestion-line.is-delta {
+  color: #5662c9;
 }
 
 @media (max-width: 760px) {
@@ -281,6 +402,14 @@
 
   .script-knowledge-layout {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(180px, 0.75fr) minmax(260px, 1.25fr);
+    grid-template-rows: minmax(160px, 0.7fr) minmax(280px, 1.3fr);
+  }
+
+  .script-knowledge-form {
+    grid-template-columns: 1fr;
+  }
+
+  .script-knowledge-tabs {
+    overflow-x: auto;
   }
 }

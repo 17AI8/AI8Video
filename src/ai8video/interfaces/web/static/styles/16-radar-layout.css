@@ -74,15 +74,16 @@
       min-height: 0;
       flex: 1;
       display: grid;
-      grid-template-columns: minmax(0, 1.35fr) 360px;
+      grid-template-columns: minmax(0, 1fr);
       gap: 18px;
       overflow: hidden;
     }
 
-    .hot-radar-hotlist-panel,
-    .hot-radar-detail-panel {
+    .hot-radar-hotlist-panel {
       min-height: 0;
-      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
       padding: 16px;
       border: 1px solid var(--hot-radar-border);
       border-radius: 18px;
@@ -101,6 +102,7 @@
     }
 
     .hot-radar-filter-toolbar {
+      flex: 0 0 auto;
       display: grid;
       grid-template-columns: minmax(230px, 0.72fr) minmax(260px, 1.28fr) auto auto;
       align-items: center;
@@ -190,9 +192,58 @@
       color: rgba(209, 213, 219, 0.54);
     }
 
-    .hot-radar-topic-list {
+    .hot-radar-search-group {
       display: grid;
+      grid-template-columns: minmax(0, 1fr) 40px;
+      align-items: stretch;
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--hot-radar-border, rgba(255, 255, 255, 0.68));
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .hot-radar-search-group .hot-radar-search-input {
+      width: 100%;
+      min-width: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    .hot-radar-search-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      min-height: 38px;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      border-left: 1px solid rgba(79, 109, 255, 0.16);
+      border-radius: 0;
+      background: rgba(255, 255, 255, 0.72);
+      color: #4f6dff;
+      box-shadow: none;
+      cursor: pointer;
+    }
+
+    .hot-radar-search-button:hover {
+      color: #3b52d6;
+      background: rgba(239, 243, 255, 0.96);
+      filter: none;
+      transform: none;
+    }
+
+    .hot-radar-topic-list {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: grid;
+      align-content: start;
       gap: 12px;
+      overflow-x: hidden;
+      overflow-y: auto;
     }
 
     .hot-radar-topic-list .hot-radar-topic-card,

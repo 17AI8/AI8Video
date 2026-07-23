@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import threading
@@ -23,13 +24,12 @@ from ai8video.knowledge.script_knowledge_text import (
     normalize_query as _normalize_query,
     normalize_tags as _normalize_tags,
     preview as _preview,
-    split_sections as _split_sections,
 )
 
 
 DATABASE_URL_ENV = "AI8VIDEO_SCRIPT_DATABASE_URL"
 DEFAULT_DATABASE_URL = "postgresql:///ai8video"
-SCRIPT_INDEX_VERSION = 2
+SCRIPT_INDEX_VERSION = 3
 
 
 class ScriptKnowledgeUnavailable(RuntimeError):
@@ -85,46 +85,6 @@ class ScriptKnowledgeStore:
             "readyCount": int(row.get("ready") or 0),
             "error": "",
         }
-
-    def sync_sources(
-        self,
-        sources: list[dict[str, Any]],
-        content_reader: Callable[[str | Path], str],
-    ) -> dict[str, int]:
-        self.initialize()
-        stats = {"indexed": 0, "unchanged": 0, "removed": 0}
-        with self._connect() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT relative_path, size_bytes, source_modified_at, index_version "
-                "FROM ai8_script_documents"
-            )
-            known = {str(row["relative_path"]): row for row in cursor.fetchall()}
-            current_paths: set[str] = set()
-            for source in sources:
-                relative_path = str(source.get("relativePath") or "").strip()
-                if not relative_path:
-                    continue
-                current_paths.add(relative_path)
-                if _source_is_unchanged(source, known.get(relative_path)):
-                    stats["unchanged"] += 1
-                    continue
-                content = content_reader(str(source.get("path") or ""))
-                self._upsert_document(cursor, source, content)
-                stats["indexed"] += 1
-            stale_paths = set(known) - current_paths
-            if stale_paths:
-                cursor.execute(
-                    "DELETE FROM ai8_script_documents WHERE relative_path = ANY(%s)",
-                    (list(stale_paths),),
-                )
-                stats["removed"] = len(stale_paths)
-        return stats
-
-    def upsert_source(self, source: dict[str, Any], content: str) -> dict[str, Any]:
-        self.initialize()
-        with self._connect() as connection, connection.cursor() as cursor:
-            document_id = self._upsert_document(cursor, source, content)
-        return self.get_document(document_id)
 
     def remove_document(self, relative_path: str) -> bool:
         self.initialize()
@@ -218,6 +178,86 @@ class ScriptKnowledgeStore:
                 raise KeyError("剧本文档不存在")
         return self.get_document(document_id)
 
+    def replace_document_tree(
+        self,
+        document_id: int,
+        tree: dict[str, Any],
+        leaves: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        self.initialize()
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE ai8_script_documents SET title = %s, summary = %s, tags = %s, "
+                "metadata = metadata || %s::jsonb, index_status = 'ready', index_version = %s, "
+                "indexed_at = NOW(), updated_at = NOW() WHERE id = %s RETURNING id",
+                (
+                    str(tree.get("title") or ""),
+                    str(tree.get("summary") or ""),
+                    _normalize_tags(list(tree.get("tags") or [])),
+                    json.dumps({"knowledgeTree": tree.get("tree") or [], "ingestion": "llm_tree"}),
+                    SCRIPT_INDEX_VERSION,
+                    int(document_id),
+                ),
+            )
+            if not cursor.fetchone():
+                raise KeyError("剧本文档不存在")
+            cursor.execute("DELETE FROM ai8_script_sections WHERE document_id = %s", (int(document_id),))
+            for section_order, leaf in enumerate(leaves):
+                heading = str(leaf.get("heading") or "知识段")
+                content = str(leaf.get("content") or "")
+                cursor.execute(
+                    "INSERT INTO ai8_script_sections "
+                    "(document_id, section_order, heading, content, char_count, search_terms) "
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
+                    (
+                        int(document_id),
+                        section_order,
+                        heading,
+                        content,
+                        len(content),
+                        _build_search_terms(f"{heading} {content}"),
+                    ),
+                )
+        return self.get_document(document_id)
+
+    def register_sources(
+        self,
+        sources: list[dict[str, Any]],
+        content_reader: Callable[[str | Path], str],
+    ) -> dict[str, int]:
+        self.initialize()
+        stats = {"registered": 0, "unchanged": 0, "removed": 0}
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute("SELECT relative_path, size_bytes, source_modified_at, index_version FROM ai8_script_documents")
+            known = {str(row["relative_path"]): row for row in cursor.fetchall()}
+            current_paths: set[str] = set()
+            for source in sources:
+                relative_path = str(source.get("relativePath") or "").strip()
+                if not relative_path:
+                    continue
+                current_paths.add(relative_path)
+                known_source = known.get(relative_path)
+                if _source_matches(source, known_source):
+                    if int(known_source.get("index_version") or 0) < SCRIPT_INDEX_VERSION:
+                        self._mark_document_pending(cursor, relative_path)
+                        stats["registered"] += 1
+                        continue
+                    stats["unchanged"] += 1
+                    continue
+                content = content_reader(str(source.get("path") or ""))
+                self._register_document(cursor, source, content)
+                stats["registered"] += 1
+            stale_paths = set(known) - current_paths
+            if stale_paths:
+                cursor.execute("DELETE FROM ai8_script_documents WHERE relative_path = ANY(%s)", (list(stale_paths),))
+                stats["removed"] = len(stale_paths)
+        return stats
+
+    def register_source(self, source: dict[str, Any], content: str) -> int:
+        self.initialize()
+        with self._connect() as connection, connection.cursor() as cursor:
+            return self._register_document(cursor, source, content)
+
     def _upsert_document(self, cursor: Any, source: dict[str, Any], content: str) -> int:
         relative_path = str(source.get("relativePath") or "").strip()
         name = str(source.get("name") or Path(relative_path).name).strip()
@@ -225,7 +265,6 @@ class ScriptKnowledgeStore:
         source_mtime = float(source.get("modifiedAt") or 0)
         size_bytes = int(source.get("sizeBytes") or len(content.encode("utf-8")))
         content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
-        status = "ready" if content.strip() else "empty"
         cursor.execute(
             _upsert_document_sql(),
             (
@@ -239,28 +278,28 @@ class ScriptKnowledgeStore:
                 _preview(content),
                 size_bytes,
                 source_mtime,
-                status,
+                "pending",
                 SCRIPT_INDEX_VERSION,
                 Path(name).stem,
             ),
         )
         document_id = int(cursor.fetchone()["id"])
-        cursor.execute("DELETE FROM ai8_script_sections WHERE document_id = %s", (document_id,))
-        for section_order, section in enumerate(_split_sections(content)):
-            cursor.execute(
-                "INSERT INTO ai8_script_sections "
-                "(document_id, section_order, heading, content, char_count, search_terms) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                (
-                    document_id,
-                    section_order,
-                    section["heading"],
-                    section["content"],
-                    len(section["content"]),
-                    _build_search_terms(f"{name} {section['heading']} {section['content']}"),
-                ),
-            )
         return document_id
+
+    def _register_document(self, cursor: Any, source: dict[str, Any], content: str) -> int:
+        document_id = self._upsert_document(cursor, source, content)
+        cursor.execute("DELETE FROM ai8_script_sections WHERE document_id = %s", (document_id,))
+        return document_id
+
+    def _mark_document_pending(self, cursor: Any, relative_path: str) -> None:
+        cursor.execute(
+            "UPDATE ai8_script_documents SET index_status = 'pending', index_version = %s, "
+            "indexed_at = NOW(), updated_at = NOW() WHERE relative_path = %s RETURNING id",
+            (SCRIPT_INDEX_VERSION, relative_path),
+        )
+        row = cursor.fetchone()
+        if row:
+            cursor.execute("DELETE FROM ai8_script_sections WHERE document_id = %s", (int(row["id"]),))
 
     def _connect(self) -> Any:
         if self._connector:
@@ -295,17 +334,17 @@ def script_knowledge_payload(query: str = "", *, limit: int = 100) -> dict[str, 
     status = store.status()
     if not status["available"]:
         return {"ok": False, "status": status, "items": [], "query": str(query or "")}
-    sync_result = synchronize_script_knowledge()
+    sync_result = register_script_knowledge_sources()
     items = store.search(query, limit=limit) if str(query or "").strip() else store.list_documents(limit=limit)
     return {"ok": True, "status": store.status(), "sync": sync_result, "items": items, "query": str(query or "")}
 
 
-def synchronize_script_knowledge() -> dict[str, int]:
+def register_script_knowledge_sources() -> dict[str, int]:
     from ai8video.assets.user_materials import list_script_material_sources, read_script_material_text
 
     store = get_script_knowledge_store()
     sources = list_script_material_sources()
-    return store.sync_sources(sources, lambda path: read_script_material_text(path, limit=None))
+    return store.register_sources(sources, lambda path: read_script_material_text(path, limit=None))
 
 
 def index_script_path(path: str | Path, *, root: str | Path) -> dict[str, Any]:
@@ -321,7 +360,10 @@ def index_script_path(path: str | Path, *, root: str | Path) -> dict[str, Any]:
         "sizeBytes": stat.st_size,
         "modifiedAt": stat.st_mtime,
     }
-    return get_script_knowledge_store().upsert_source(source, read_script_material_text(target, limit=None))
+    store = get_script_knowledge_store()
+    store.register_source(source, read_script_material_text(target, limit=None))
+    documents = store.list_documents(limit=500)
+    return next(item for item in documents if item["relativePath"] == source["relativePath"])
 
 
 def remove_script_knowledge_document(relative_path: str) -> dict[str, Any]:
@@ -394,13 +436,12 @@ def _dedupe_search_rows(rows: list[dict[str, Any]], limit: int) -> list[dict[str
     return results
 
 
-def _source_is_unchanged(source: dict[str, Any], known: dict[str, Any] | None) -> bool:
+def _source_matches(source: dict[str, Any], known: dict[str, Any] | None) -> bool:
     if not known:
         return False
     return (
         int(source.get("sizeBytes") or 0) == int(known.get("size_bytes") or 0)
         and abs(float(source.get("modifiedAt") or 0) - float(known.get("source_modified_at") or 0)) < 0.001
-        and int(known.get("index_version") or 0) == SCRIPT_INDEX_VERSION
     )
 
 

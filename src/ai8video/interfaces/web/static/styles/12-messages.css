@@ -1,9 +1,25 @@
     .message.text-cleared .result-notify-failed-mark,
+    .message.text-cleared .result-notify-deleted-mark,
     .message.text-cleared .progress-overview-row strong,
     .message.text-cleared .progress-overview-value,
     .message.text-cleared .pending-card-head,
     .message.text-cleared .pinned-progress-banner-head {
       display: none !important;
+    }
+
+    .message.is-welcome-leave-overlay {
+      position: fixed;
+      z-index: 40;
+      margin: 0;
+      pointer-events: none;
+      opacity: 1;
+      transform: translateY(0);
+      transition: opacity 0.28s ease, transform 0.28s ease;
+    }
+
+    .message.is-welcome-leave-overlay.is-leaving {
+      opacity: 0;
+      transform: translateY(-8px);
     }
 
     .message.pinned-progress {
@@ -33,13 +49,6 @@
       box-shadow: 0 10px 24px rgba(20, 35, 24, 0.1);
     }
 
-    .message.user .avatar {
-      background: linear-gradient(135deg, #202b20, #495848);
-      color: #fff;
-      font-size: 15px;
-      box-shadow: none;
-    }
-
     .message.user {
       grid-template-columns: minmax(0, 1fr) 44px;
     }
@@ -47,20 +56,40 @@
     .message.user .avatar {
       grid-column: 2;
       grid-row: 1;
+      background: linear-gradient(135deg, #202b20, #495848);
+      color: #fff;
+      font-size: 15px;
+      box-shadow: none;
     }
 
     .message.user .bubble {
       grid-column: 1;
       grid-row: 1;
       justify-self: end;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       width: fit-content;
+      min-width: calc(3em + 36px);
       max-width: min(100%, 680px);
+      text-align: center;
+    }
+
+    .message.user .bubble > p {
+      margin: 0;
+      width: 100%;
+      text-align: center;
     }
 
     .bubble {
       padding: 16px 18px;
       line-height: 1.72;
       font-size: 15px;
+    }
+
+    /* 气泡相对头像略下移，顶部与头像错开 */
+    .message:not(.pinned-progress) > .bubble {
+      margin-top: 20px;
     }
 
     .message:not(.user) .bubble {
@@ -295,32 +324,41 @@
       }
     }
 
-    .force-cancel-button {
+    button.force-cancel-button {
       appearance: none;
-      border: 1px solid rgba(196, 67, 51, 0.28);
-      border-radius: 8px;
-      background: #fff3f1;
-      color: #b33424;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 32px;
+      padding: 0 12px;
+      border: 1px solid rgba(255, 255, 255, 0.64);
+      border-radius: 14px;
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.82) 0%, rgba(255, 232, 230, 0.68) 100%);
+      color: #b42318;
+      box-shadow: 0 6px 18px rgba(45, 63, 130, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.45);
       cursor: pointer;
+      font: inherit;
       font-size: 12px;
       font-weight: 800;
       line-height: 1;
-      min-height: 36px;
-      padding: 0 12px;
       white-space: nowrap;
     }
 
-    .force-cancel-button:hover {
-      background: #ffe7e2;
-      border-color: rgba(196, 67, 51, 0.42);
+    button.force-cancel-button:hover:not(:disabled) {
+      filter: brightness(1.02);
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 220, 216, 0.8) 100%);
+      border-color: rgba(210, 38, 38, 0.22);
+      color: #9f1f14;
+      box-shadow: 0 8px 20px rgba(180, 50, 40, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.5);
     }
 
-    .force-cancel-button:disabled {
+    button.force-cancel-button:disabled {
       cursor: wait;
       opacity: 0.62;
+      filter: none;
     }
 
-    #progressModal .force-cancel-button {
+    #progressModal button.force-cancel-button {
       min-height: 30px;
       min-width: 96px;
     }
@@ -485,4 +523,34 @@
       color: var(--text);
       white-space: pre-wrap;
       word-break: break-word;
+      scrollbar-width: thin;
+      scrollbar-color: #4f6dff transparent;
+    }
+
+    .composer-editor::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .composer-editor::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .composer-editor::-webkit-scrollbar-thumb {
+      border-radius: 999px;
+      background: linear-gradient(180deg, #7b93ff, #4f6dff);
+    }
+
+    .composer #sendButton {
+      align-self: end;
+      width: 62px;
+      min-height: 44px;
+      height: 44px;
+      max-height: 44px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      white-space: nowrap;
+      flex-shrink: 0;
     }

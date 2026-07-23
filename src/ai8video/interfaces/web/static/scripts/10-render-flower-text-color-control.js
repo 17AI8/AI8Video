@@ -391,18 +391,6 @@
       renderResultModal();
     }
 
-    function formatMediaTime(seconds) {
-      if (!Number.isFinite(seconds) || seconds < 0) return '00:00';
-      const total = Math.floor(seconds);
-      const hours = Math.floor(total / 3600);
-      const minutes = Math.floor((total % 3600) / 60);
-      const secs = total % 60;
-      if (hours > 0) {
-        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-      }
-      return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-    }
-
     const VIDEO_PREVIEW_ICONS = {
       play: '<path d="M8 5.2v13.6L19 12 8 5.2Z"/>',
       pause: '<path d="M7 5h3.5v14H7zm6.5 0H17v14h-3.5z"/>',
@@ -411,6 +399,8 @@
       muted: '<path d="M11 5 6.2 9H3v6h3.2L11 19V5z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/>',
       mic: '<path d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 18v3"/><path d="M8.5 21h7"/>',
       edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>',
+      chevron: '<path d="m6 9 6 6 6-6"/>',
+      extend: '<g transform="rotate(-45 12 12)"><path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z"/></g>',
       sparkles: '<path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/><path d="m5.6 5.6 2.1 2.1"/><path d="m16.3 16.3 2.1 2.1"/><path d="m16.3 5.6-2.1 2.1"/><path d="m5.6 16.3 2.1-2.1"/><circle cx="12" cy="12" r="2.2"/>',
       check: '<path d="M20 7 9.5 17.5 4 12"/>',
       trash: '<path d="M3 6h18"/><path d="M8 6V4.8A1.8 1.8 0 0 1 9.8 3h4.4A1.8 1.8 0 0 1 16 4.8V6"/><path d="M19 6v13.2A1.8 1.8 0 0 1 17.2 21H6.8A1.8 1.8 0 0 1 5 19.2V6"/><path d="M10 10.5v6"/><path d="M14 10.5v6"/>',
@@ -457,7 +447,6 @@
       const playPauseButton = els.videoPreviewBody.querySelector('[data-video-preview-action="toggle-play"]');
       const restartButton = els.videoPreviewBody.querySelector('[data-video-preview-action="restart"]');
       const muteButton = els.videoPreviewBody.querySelector('[data-video-preview-action="toggle-mute"]');
-      const timeLabel = els.videoPreviewBody.querySelector('[data-video-preview-time]');
       const syncControls = () => {
         if (playPauseButton) {
           const paused = video.paused;
@@ -466,9 +455,6 @@
         if (muteButton) {
           const muted = video.muted || video.volume === 0;
           setVideoPreviewButtonState(muteButton, muted ? 'muted' : 'volume', muted ? '取消静音' : '静音');
-        }
-        if (timeLabel) {
-          timeLabel.textContent = `${formatMediaTime(video.currentTime)} / ${formatMediaTime(video.duration)}`;
         }
       };
       playPauseButton?.addEventListener('click', () => {
@@ -486,7 +472,7 @@
         video.muted = !video.muted;
         syncControls();
       });
-      ['loadedmetadata', 'timeupdate', 'play', 'pause', 'volumechange', 'ended'].forEach((eventName) => {
+      ['loadedmetadata', 'play', 'pause', 'volumechange', 'ended'].forEach((eventName) => {
         video.addEventListener(eventName, syncControls);
       });
       syncControls();

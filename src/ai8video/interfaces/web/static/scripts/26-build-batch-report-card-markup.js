@@ -344,11 +344,53 @@
       const session = {
         id: 's-' + Math.random().toString(36).slice(2, 10),
         title,
-        messages: [{ role: 'assistant', payload: { ...WELCOME_PAYLOAD } }],
+        messages: [{ role: 'assistant', welcome: true, payload: { ...WELCOME_PAYLOAD } }],
       };
       state.sessions.unshift(session);
       persistSessions();
       return session;
+    }
+
+    function isWelcomeMessage(message) {
+      if (!message || message.role !== 'assistant') return false;
+      if (message.welcome) return true;
+      if (String(message.payload?.meta?.operation || '').trim() === 'welcome') return true;
+      const text = String(message.payload?.text || message.text || '');
+      return text.startsWith(`我是${BRAND_NAME}。`) && String(message.payload?.stage || '') === 'collecting';
+    }
+
+    function stripStaleWelcomeMessages(session) {
+      const messages = session?.messages;
+      if (!Array.isArray(messages) || messages.length < 2) return false;
+      if (!messages.some((message) => !isWelcomeMessage(message))) return false;
+      const next = messages.filter((message) => !isWelcomeMessage(message));
+      if (next.length === messages.length) return false;
+      session.messages = next;
+      return true;
+    }
+
+    function takeWelcomeMessageNode(session) {
+      const index = (session?.messages || []).findIndex((message) => isWelcomeMessage(message));
+      if (index < 0) return null;
+      const node = els.messages?.children?.[index] || null;
+      session.messages = session.messages.filter((message) => !isWelcomeMessage(message));
+      return node;
+    }
+
+    function playWelcomeLeaveOverlay(sourceNode) {
+      if (!sourceNode || !sourceNode.getBoundingClientRect) return;
+      const rect = sourceNode.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const overlay = sourceNode.cloneNode(true);
+      overlay.classList.add('is-welcome-leave-overlay');
+      overlay.style.top = `${rect.top}px`;
+      overlay.style.left = `${rect.left}px`;
+      overlay.style.width = `${rect.width}px`;
+      document.body.appendChild(overlay);
+      window.requestAnimationFrame(() => {
+        overlay.classList.add('is-leaving');
+      });
+      window.setTimeout(() => overlay.remove(), 320);
     }
 
     function buildAssistantPayload(data, sessionId) {

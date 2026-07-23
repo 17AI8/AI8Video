@@ -284,6 +284,21 @@
       });
     }
 
+    function hasActiveVideoPreviewExtensionState(userGeneratedKey) {
+      const key = String(userGeneratedKey || '').trim();
+      return Boolean(key && loadVideoPreviewExtensionStates()[key]?.active);
+    }
+
+    async function discardDetachedVideoPreviewExtensionResult(leftKey, rightKey) {
+      const res = await fetch('/api/user-generated-results/extension-state/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leftKey: String(leftKey || '').trim(), rightKey: String(rightKey || '').trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.error || '清理已删除延长任务的结果失败');
+    }
+
     async function deleteVideoPreviewExtensionState(userGeneratedKey, button) {
       const key = String(userGeneratedKey || '').trim();
       const stageGrid = els.videoPreviewBody?.querySelector('.video-preview-stage-grid');
@@ -291,13 +306,7 @@
       const savedState = loadVideoPreviewExtensionStates()[key] || {};
       button.disabled = true;
       try {
-        const res = await fetch('/api/user-generated-results/extension-state/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ leftKey: key, rightKey: savedState.rightVideoKey || '' }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.ok) throw new Error(data.error || '删除延长内容失败');
+        await discardDetachedVideoPreviewExtensionResult(key, savedState.rightVideoKey || '');
         persistVideoPreviewExtensionState(key, null);
         stageGrid.querySelector('.video-preview-extension-stage')?.remove();
         stageGrid.querySelector('.video-preview-merge-control')?.remove();
@@ -310,10 +319,11 @@
           extendButton.disabled = false;
           setVideoPreviewButtonLabel(extendButton, '延长');
         }
+        button.disabled = false;
         await refreshUserGeneratedResults();
       } catch (error) {
         button.disabled = false;
-        window.alert(error?.message || '删除延长内容失败');
+        window.alert(error?.message || '删除右侧延长内容失败');
       }
     }
 
@@ -337,6 +347,7 @@
         </div>
       `);
       const editor = els.videoPreviewBody.querySelector('[data-video-preview-prompt-editor]');
+      showVideoPreviewPopover(editor);
       const textarea = editor.querySelector('[data-video-prompt-textarea]');
       const status = editor.querySelector('[data-video-prompt-status]');
       const saveButton = editor.querySelector('[data-save-video-prompt]');
@@ -453,6 +464,10 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.ok || data.status !== 'completed') return false;
+        if (!hasActiveVideoPreviewExtensionState(key)) {
+          await discardDetachedVideoPreviewExtensionResult(key, data.userGeneratedKey);
+          return true;
+        }
         updateVideoPreviewExtensionState(key, {
           generating: false,
           generationCompletedAt: new Date().toISOString(),

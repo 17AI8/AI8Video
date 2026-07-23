@@ -23,15 +23,9 @@
         padding: 12px;
       }
 
-      #hotRadarModal .hot-radar-detail-panel {
-        position: static;
-        order: -1;
-      }
-
-      #hotRadarModal .hot-radar-summary-output {
-        min-height: 120px;
-        max-height: 240px;
-        overflow: auto;
+      #hotRadarModal .hot-radar-hotlist-panel {
+        padding: 12px;
+        border-radius: 14px;
       }
     }
 
@@ -78,8 +72,7 @@
         display: none;
       }
 
-      #hotRadarModal .hot-radar-hotlist-panel,
-      #hotRadarModal .hot-radar-detail-panel {
+      #hotRadarModal .hot-radar-hotlist-panel {
         padding: 12px;
         border-radius: 14px;
       }
@@ -90,12 +83,8 @@
         gap: 6px;
       }
 
-      #hotRadarModal .hot-radar-detail-actions {
-        grid-template-columns: minmax(0, 1fr);
-      }
-
-      #hotRadarModal #hotRadarFillPromptButton {
-        grid-column: auto;
+      #hotRadarModal .hot-radar-search-group {
+        grid-column: 1 / -1;
       }
     }
 
@@ -108,13 +97,8 @@
 
     #hotRadarModal .hot-radar-hotlist-panel {
       min-width: 0;
-      flex: 999 1 520px;
-    }
-
-    #hotRadarModal .hot-radar-detail-panel {
-      min-width: min(100%, 300px);
-      max-width: 350px;
-      flex: 1 1 300px;
+      flex: 1 1 auto;
+      width: 100%;
     }
 
     #hotRadarModal .hot-radar-content-grid > * {
@@ -131,12 +115,117 @@
 
     #hotRadarModal #hotRadarTopicList {
       width: 100%;
-      overflow: hidden;
+      overflow-x: hidden;
+      overflow-y: auto;
     }
 
     #hotRadarModal #hotRadarTopicList .hot-radar-topic-card {
       width: 100%;
       overflow: hidden;
+      gap: 0;
+      padding: 9px 12px;
+      transition:
+        padding 280ms ease,
+        gap 280ms ease,
+        border-color 180ms ease,
+        background 180ms ease,
+        box-shadow 180ms ease;
+    }
+
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-card.is-expanded {
+      gap: 8px;
+      padding: 12px;
+    }
+
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-title {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-card.is-expanded .hot-radar-topic-title {
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-details {
+      max-height: 0;
+      opacity: 0;
+      overflow: hidden;
+      transition: max-height 280ms ease, opacity 220ms ease;
+    }
+
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-card.is-expanded .hot-radar-topic-details {
+      max-height: 340px;
+      opacity: 1;
+    }
+
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-details-inner {
+      display: grid;
+      gap: 10px;
+      padding-top: 8px;
+    }
+
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-preview {
+      max-height: 220px;
+      overflow: auto;
+      display: grid;
+      align-content: start;
+      gap: 8px;
+      padding-right: 4px;
+      scrollbar-color: rgba(124, 92, 246, 0.92) transparent;
+      scrollbar-width: thin;
+    }
+
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-preview::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-preview::-webkit-scrollbar-thumb {
+      border-radius: 999px;
+      background: linear-gradient(180deg, #9f7aea, #6d5dfc);
+    }
+
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-actions .hot-radar-primary-button,
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-actions .hot-radar-ghost-button {
+      min-height: 34px;
+      width: 100%;
+      padding: 0 10px;
+      font-size: 12px;
+    }
+
+    #hotRadarModal #hotRadarTopicList .hot-radar-summary-output {
+      min-height: 0;
+      margin: 0;
+      padding: 10px;
+      border: 1px solid rgba(79, 109, 255, 0.14);
+      border-radius: 10px;
+      background: rgba(248, 250, 255, 0.88);
+      color: var(--hot-radar-muted);
+      font-size: 12px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    @media (max-width: 900px) {
+      #hotRadarModal #hotRadarTopicList .hot-radar-topic-actions {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #hotRadarModal #hotRadarTopicList .hot-radar-topic-card,
+      #hotRadarModal #hotRadarTopicList .hot-radar-topic-details {
+        transition: none;
+      }
     }
 
     #hotRadarModal #hotRadarTopicList .hot-radar-topic-title,
@@ -154,73 +243,38 @@
         overflow: hidden;
       }
 
-      #hotRadarModal .hot-radar-hotlist-panel,
-      #hotRadarModal .hot-radar-detail-panel {
+      #hotRadarModal .hot-radar-hotlist-panel {
         align-self: stretch;
         block-size: auto;
         min-block-size: 0;
         max-block-size: none;
         box-sizing: border-box;
-      }
-
-      #hotRadarModal .hot-radar-hotlist-panel {
-        overflow: auto;
-      }
-
-      #hotRadarModal .hot-radar-detail-panel {
         display: flex;
         flex-direction: column;
         overflow: hidden;
-        gap: 10px;
       }
 
-      #hotRadarModal .hot-radar-detail-head {
-        flex: 0 0 auto;
-      }
-
-      #hotRadarModal .hot-radar-selected-topic {
-        flex: 0 0 220px;
-        block-size: 220px;
-        overflow: auto;
-        box-sizing: border-box;
-      }
-
-      #hotRadarModal .hot-radar-detail-actions {
-        flex: 0 0 80px;
-        box-sizing: border-box;
-      }
-
-      #hotRadarModal .hot-radar-summary-output {
-        flex: 0 0 200px;
-        block-size: 200px;
+      #hotRadarModal #hotRadarTopicList {
+        flex: 1 1 auto;
         min-block-size: 0;
-        max-block-size: none;
-        overflow: auto;
-        box-sizing: border-box;
+        overflow-x: hidden;
+        overflow-y: auto;
       }
 
-      #hotRadarModal .hot-radar-hotlist-panel,
-      #hotRadarModal .hot-radar-selected-topic,
-      #hotRadarModal .hot-radar-summary-output {
+      #hotRadarModal #hotRadarTopicList {
         scrollbar-color: rgba(124, 92, 246, 0.92) transparent;
         scrollbar-width: thin;
       }
 
-      #hotRadarModal .hot-radar-hotlist-panel::-webkit-scrollbar,
-      #hotRadarModal .hot-radar-selected-topic::-webkit-scrollbar,
-      #hotRadarModal .hot-radar-summary-output::-webkit-scrollbar {
+      #hotRadarModal #hotRadarTopicList::-webkit-scrollbar {
         width: 6px;
       }
 
-      #hotRadarModal .hot-radar-hotlist-panel::-webkit-scrollbar-track,
-      #hotRadarModal .hot-radar-selected-topic::-webkit-scrollbar-track,
-      #hotRadarModal .hot-radar-summary-output::-webkit-scrollbar-track {
+      #hotRadarModal #hotRadarTopicList::-webkit-scrollbar-track {
         background: transparent;
       }
 
-      #hotRadarModal .hot-radar-hotlist-panel::-webkit-scrollbar-thumb,
-      #hotRadarModal .hot-radar-selected-topic::-webkit-scrollbar-thumb,
-      #hotRadarModal .hot-radar-summary-output::-webkit-scrollbar-thumb {
+      #hotRadarModal #hotRadarTopicList::-webkit-scrollbar-thumb {
         border-radius: 999px;
         background: linear-gradient(180deg, #9f7aea, #6d5dfc);
       }
@@ -244,9 +298,7 @@
       color: var(--hot-radar-brand);
     }
 
-    #hotRadarModal #hotRadarTopicList .hot-radar-topic-card,
-    #hotRadarModal .hot-radar-selected-topic,
-    #hotRadarModal .hot-radar-summary-output {
+    #hotRadarModal #hotRadarTopicList .hot-radar-topic-card {
       border-color: rgba(255, 255, 255, 0.68);
       background: linear-gradient(145deg, rgba(255, 255, 255, 0.74), rgba(235, 241, 255, 0.54));
       box-shadow:
@@ -268,8 +320,7 @@
         inset 3px 0 0 var(--hot-radar-brand-violet);
     }
 
-    #hotRadarModal .hot-radar-hotlist-panel,
-    #hotRadarModal .hot-radar-detail-panel {
+    #hotRadarModal .hot-radar-hotlist-panel {
       background: var(--hot-radar-glass);
     }
 

@@ -427,25 +427,38 @@
       z-index: 6;
       display: grid;
       transform: translate(-50%, -50%);
-      border-radius: 10px;
-      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.24);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 12px;
+      overflow: hidden;
+      background: rgba(15, 28, 43, 0.92);
+      box-shadow: none;
     }
 
     .video-preview-merge-control button {
-      min-width: 68px;
+      min-width: 76px;
       min-height: 32px;
-      border: 1px solid rgba(255, 255, 255, 0.32);
-      background: #0f1c2b;
-      color: #fff;
+      border: 0;
+      background: transparent;
+      color: rgba(247, 251, 255, 0.92);
       font-size: 12px;
-      font-weight: 900;
+      font-weight: 800;
+      cursor: pointer;
     }
 
-    .video-preview-merge-control button:first-child { border-radius: 10px 10px 0 0; }
-    .video-preview-merge-control button:nth-child(2) { border-radius: 0 0 10px 10px; }
+    .video-preview-merge-control button + button {
+      border-top: 1px solid rgba(255, 255, 255, 0.16);
+    }
+
+    .video-preview-merge-control button:hover,
+    .video-preview-merge-control button.is-open {
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .video-preview-merge-control button:first-child { border-radius: 0; }
+    .video-preview-merge-control button:nth-child(2) { border-radius: 0; }
     .video-preview-merge-control button:disabled {
       cursor: not-allowed;
-      opacity: 1;
-      background: #0f1c2b;
-      color: rgba(255, 255, 255, 0.58);
+      opacity: 0.55;
+      background: transparent;
+      color: rgba(247, 251, 255, 0.55);
     }

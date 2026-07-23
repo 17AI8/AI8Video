@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 
 import requests
 
@@ -16,6 +17,7 @@ def build_openai_compat_llm(
     system_prompt: str = "你是严格遵守 JSON 输出要求的短视频规划模型。",
     stream: bool = True,
     transport_retry_count: int = 0,
+    on_delta: Callable[[str], None] | None = None,
 ):
     if not config.has_llm():
         return None
@@ -23,7 +25,7 @@ def build_openai_compat_llm(
     def _call(prompt: str) -> str:
         for attempt in range(max(0, transport_retry_count) + 1):
             try:
-                return _request_completion(config, prompt, system_prompt, stream, timeout_seconds)
+                return _request_completion(config, prompt, system_prompt, stream, timeout_seconds, on_delta)
             except requests.RequestException as exc:
                 if attempt >= transport_retry_count or not _should_retry_transport_error(exc):
                     raise RuntimeError(_transport_error_message(exc, attempt)) from exc
@@ -38,6 +40,7 @@ def _request_completion(
     system_prompt: str,
     stream: bool,
     timeout_seconds: int | None,
+    on_delta: Callable[[str], None] | None,
 ) -> str:
     response = api_request(
         "POST",
@@ -60,7 +63,7 @@ def _request_completion(
     )
     _raise_for_llm_http_error(response)
     if stream and _is_event_stream_response(response):
-        return _read_openai_chat_stream(response)
+        return _read_openai_chat_stream(response, on_delta=on_delta)
     data = response.json()
     choices = data.get("choices") or []
     if not choices:
@@ -159,7 +162,7 @@ def _is_event_stream_response(response) -> bool:
     return "text/event-stream" in content_type
 
 
-def _read_openai_chat_stream(response) -> str:
+def _read_openai_chat_stream(response, *, on_delta: Callable[[str], None] | None = None) -> str:
     chunks: list[str] = []
     for raw_line in response.iter_lines(decode_unicode=False):
         if isinstance(raw_line, bytes):
@@ -182,6 +185,8 @@ def _read_openai_chat_stream(response) -> str:
         content = delta.get("content")
         if isinstance(content, str):
             chunks.append(content)
+            if on_delta is not None:
+                on_delta(content)
     text = "".join(chunks).strip()
     if text:
         return text

@@ -82,6 +82,7 @@ from ai8video.generation.generation_mode import (
     update_generation_mode,
 )
 from ai8video.media.motion.html_motion_overlay import (
+    HTML_MOTION_DIR,
     apply_html_motion_overlay,
     build_html_motion_llm,
     html_motion_overlay_status,
@@ -93,6 +94,7 @@ from ai8video.media.motion.html_motion_overlay import (
     update_html_motion_safe_zone,
 )
 from ai8video.media.motion.html_motion_review import (
+    HTML_MOTION_REVIEW_ROOT,
     confirm_html_motion_review,
     html_motion_review_status,
     prepare_html_motion_review,
@@ -166,7 +168,10 @@ from ai8video.knowledge.script_knowledge import (
     index_script_path,
     remove_script_knowledge_document,
     script_knowledge_payload,
-    synchronize_script_knowledge,
+)
+from ai8video.knowledge.script_knowledge_ingestion import (
+    script_knowledge_ingestion_status,
+    start_script_knowledge_ingestion,
 )
 from ai8video.assets.upload_utils import resolve_upload_filename
 from ai8video.assets.user_generated_results import (
@@ -176,6 +181,7 @@ from ai8video.assets.user_generated_results import (
 )
 from ai8video.assets.user_files import USER_FILE_ROOT
 from ai8video.assets.user_recycle_bin import (
+    RESTORED_RESULT_METADATA_DIR,
     USER_RECYCLE_BIN_ROOT,
     delete_restored_result_metadata,
     delete_failed_video_tasks,
@@ -294,19 +300,6 @@ def api_script_knowledge():
         return {"ok": False, "error": _script_knowledge_error(exc), "items": []}
 
 
-@app.route("/api/script-knowledge/sync", method=["POST", "OPTIONS"])
-def api_script_knowledge_sync():
-    if request.method == "OPTIONS":
-        return HTTPResponse(status=204)
-    try:
-        sync_result = synchronize_script_knowledge()
-        store = get_script_knowledge_store()
-        return {"ok": True, "sync": sync_result, "status": store.status()}
-    except Exception as exc:
-        response.status = 503
-        return {"ok": False, "error": _script_knowledge_error(exc)}
-
-
 @app.route("/api/script-knowledge/<document_id:int>", method=["GET", "POST", "OPTIONS"])
 def api_script_knowledge_document(document_id: int):
     if request.method == "OPTIONS":
@@ -334,6 +327,19 @@ def api_script_knowledge_document(document_id: int):
     except ValueError as exc:
         response.status = 400
         return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        response.status = 503
+        return {"ok": False, "error": _script_knowledge_error(exc)}
+
+
+@app.route("/api/script-knowledge/<document_id:int>/ingest", method=["GET", "POST", "OPTIONS"])
+def api_script_knowledge_ingest(document_id: int):
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    try:
+        if request.method == "GET":
+            return {"ok": True, "job": script_knowledge_ingestion_status(document_id)}
+        return {"ok": True, "job": start_script_knowledge_ingestion(document_id, AI8VideoConfig.from_env())}
     except Exception as exc:
         response.status = 503
         return {"ok": False, "error": _script_knowledge_error(exc)}
@@ -1146,7 +1152,7 @@ def user_material_flower_watermark(relative_path: str):
 def user_generated_result_media(relative_path: str):
     if request.method == "OPTIONS":
         return HTTPResponse(status=204)
-    root = ensure_user_generated_result_dir()
+    root = ensure_user_generated_result_dir().resolve()
     clean_path = str(relative_path or "").strip().lstrip("/")
     target = (root / clean_path).resolve()
     if not target.is_file() and Path(clean_path).suffix.lower() in USER_GENERATED_VIDEO_EXTENSIONS:
@@ -1204,9 +1210,79 @@ def _archive_roots() -> list[Path]:
     return roots
 
 
+def _move_user_generated_result_file(root: Path, source_key: str, target_key: str) -> bool:
+    source = (root / source_key).resolve()
+    target = (root / target_key).resolve()
+    if not _is_within(root, source) or not _is_within(root, target) or not source.is_file():
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        return False
+    shutil.move(str(source), str(target))
+    return True
+
+
+def _migrate_legacy_extension_results(root: Path, asset_store: JsonlAssetStore) -> None:
+    legacy_records = asset_store.read_all()
+    legacy_video_keys = [
+        path.relative_to(root).as_posix()
+        for path in (root / "video").glob("*-延长-task_*")
+        if path.is_file() and path.suffix.lower() in USER_GENERATED_VIDEO_EXTENSIONS
+    ]
+    has_legacy_record = any(
+        str(record.get("archiveKey") or "").startswith("video/")
+        and str(record.get("videoTitle") or "").endswith("-延长")
+        and (root / str(record.get("archiveKey"))).is_file()
+        for record in legacy_records
+    )
+    if not has_legacy_record and not legacy_video_keys:
+        return
+
+    def migrate(records: list[dict]) -> None:
+        for record in records:
+            archive_key = str(record.get("archiveKey") or "").strip()
+            title = str(record.get("videoTitle") or "").strip()
+            if not archive_key.startswith("video/") or not title.endswith("-延长"):
+                continue
+            extension_key = f"extensions/{archive_key}"
+            if not _move_user_generated_result_file(root, archive_key, extension_key):
+                continue
+            preview_key = find_preview_key(root, archive_key)
+            cover_key = str(record.get("archiveCoverKey") or _find_user_generated_cover_key(root, archive_key)).strip()
+            if preview_key:
+                _move_user_generated_result_file(root, preview_key, f"extensions/{preview_key}")
+            if cover_key:
+                _move_user_generated_result_file(root, cover_key, f"extensions/{cover_key}")
+            record["archiveKey"] = extension_key
+            record["archiveUrl"] = extension_key
+            record["archiveLocalPath"] = str((root / extension_key).resolve())
+            if preview_key:
+                record["userGeneratedPreviewKey"] = f"extensions/{preview_key}"
+            if cover_key:
+                record["archiveCoverKey"] = f"extensions/{cover_key}"
+                record["archiveCoverUrl"] = f"extensions/{cover_key}"
+                record["archiveLocalCoverPath"] = str((root / "extensions" / cover_key).resolve())
+            archive_meta = record.get("archiveMeta") if isinstance(record.get("archiveMeta"), dict) else {}
+            record["archiveMeta"] = {**archive_meta, "artifactKind": "extension"}
+
+    asset_store.mutate_records(migrate)
+    for archive_key in legacy_video_keys:
+        extension_key = f"extensions/{archive_key}"
+        if not _move_user_generated_result_file(root, archive_key, extension_key):
+            continue
+        preview_key = find_preview_key(root, archive_key)
+        cover_key = _find_user_generated_cover_key(root, archive_key)
+        if preview_key:
+            _move_user_generated_result_file(root, preview_key, f"extensions/{preview_key}")
+        if cover_key:
+            _move_user_generated_result_file(root, cover_key, f"extensions/{cover_key}")
+
+
 def _user_generated_result_items(limit: int = 50) -> list[dict]:
     config = AI8VideoConfig.from_env()
     asset_store = JsonlAssetStore(config.asset_store_path)
+    root = ensure_user_generated_result_dir().resolve()
+    _migrate_legacy_extension_results(root, asset_store)
     asset_records = asset_store.read_all()
     asset_by_archive_key = {
         str(item.get("archiveKey") or "").strip(): item
@@ -1218,12 +1294,13 @@ def _user_generated_result_items(limit: int = 50) -> list[dict]:
         for item in asset_records
         if Path(str(item.get("archiveKey") or "")).name
     }
-    root = ensure_user_generated_result_dir()
     items: list[dict] = []
     for source in root.rglob("*"):
         if not source.is_file() or source.suffix.lower() not in USER_GENERATED_VIDEO_EXTENSIONS:
             continue
         relative_key = source.relative_to(root).as_posix()
+        if relative_key.startswith("extensions/video/"):
+            continue
         restored_record = load_restored_result_metadata(root, relative_key)
         asset_record = asset_by_archive_key.get(relative_key) or asset_by_archive_name.get(source.name) or {}
         record = _merge_user_generated_records(restored_record, asset_record)
@@ -1846,7 +1923,13 @@ def _regenerate_user_generated_html_motion(
         status="succeeded",
         prompt=prompt,
     )
-    llm = build_html_motion_llm(AI8VideoConfig.from_env())
+    llm = build_html_motion_llm(
+        AI8VideoConfig.from_env(),
+        on_delta=(
+            lambda chunk: stage_callback("generating", {"streamDelta": chunk})
+            if stage_callback is not None else None
+        ),
+    )
     flower_settings = video_text_overlay_status()
     motion_text_style = {
         "textColor": flower_settings.get("textColor"),
@@ -2147,6 +2230,7 @@ def _generate_extension_video(
         index=1,
         title=f"{str(record.get('videoTitle') or Path(relative_key).stem).strip()}-延长",
         prompt=prompt,
+        archive_subdir="extensions/video",
     )
     result = AI8VideoPipeline(config=AI8VideoConfig.from_env()).retry_video(
         request_snapshot,
@@ -2515,6 +2599,75 @@ def _path_stats_direct(path: Path, extensions: set[str] | None = None) -> dict[s
     }
 
 
+def _selected_files_stats(path: Path, files: list[Path]) -> dict[str, int | str]:
+    root = path.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    file_count = 0
+    total_bytes = 0
+    for item in files:
+        if not item.is_file():
+            continue
+        file_count += 1
+        try:
+            total_bytes += item.stat().st_size
+        except OSError:
+            continue
+    return {
+        "path": str(root),
+        "fileCount": file_count,
+        "sizeBytes": total_bytes,
+        "display": f"{file_count} 个 · {_format_bytes(total_bytes)}",
+    }
+
+
+def _html_motion_work_files() -> list[Path]:
+    root = HTML_MOTION_DIR.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    return [
+        item
+        for work_dir in root.iterdir()
+        if work_dir.is_dir() and work_dir.name.startswith("render-")
+        for item in work_dir.rglob("*")
+        if item.is_file()
+    ]
+
+
+def _restored_metadata_root() -> Path:
+    return (ensure_user_generated_result_dir() / RESTORED_RESULT_METADATA_DIR).resolve()
+
+
+def _restored_metadata_video_path(path: Path) -> Path:
+    root = ensure_user_generated_result_dir().resolve()
+    metadata_root = _restored_metadata_root()
+    try:
+        payload = normalize_legacy_video_payload(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, json.JSONDecodeError):
+        payload = {}
+    relative_key = str(payload.get("userGeneratedKey") or "").strip() if isinstance(payload, dict) else ""
+    if not relative_key:
+        relative_key = path.relative_to(metadata_root).with_suffix("").as_posix()
+    candidate = (root / relative_key).resolve()
+    return candidate if candidate.is_relative_to(root) else root / ".invalid-restored-metadata"
+
+
+def _restored_metadata_stats() -> dict[str, int | str]:
+    root = _restored_metadata_root()
+    stats = _path_stats_recursive(root, {".json"})
+    orphan_count = sum(1 for item in root.rglob("*.json") if not _restored_metadata_video_path(item).is_file())
+    stats["orphanCount"] = orphan_count
+    stats["display"] = f"{stats['fileCount']} 个 · {_format_bytes(int(stats['sizeBytes']))} · 孤儿 {orphan_count}"
+    return stats
+
+
+ARCHIVE_RESULT_JUNK_NAMES = {".DS_Store"}
+
+
+def _result_junk_stats() -> dict[str, int | str]:
+    root = ensure_user_generated_result_dir().resolve()
+    files = [root / name for name in ARCHIVE_RESULT_JUNK_NAMES if (root / name).is_file()]
+    return _selected_files_stats(root, files)
+
+
 def _archive_manifest_root() -> Path:
     configured = Path(AI8VideoConfig.from_env().archive_local_dir)
     if not configured.is_absolute():
@@ -2652,23 +2805,37 @@ def _archive_intermediate_artifacts_status() -> dict[str, Any]:
     if int(cover_stats.get("orphanCount") or 0):
         cover_stats["display"] = f"{cover_stats['fileCount']} 张 · {_format_bytes(int(cover_stats['sizeBytes']))} · 孤儿 {cover_stats['orphanCount']}"
     preview_stats = _folder_stats(root / PREVIEW_DIR_NAME, USER_GENERATED_IMAGE_EXTENSIONS)
+    extension_stats = _path_stats_recursive(root / "extensions")
+    extension_frame_stats = _path_stats_recursive(root / "extension-frame")
+    html_motion_work_stats = _selected_files_stats(HTML_MOTION_DIR, _html_motion_work_files())
+    html_motion_review_stats = _path_stats_recursive(HTML_MOTION_REVIEW_ROOT)
     tts_stats = _path_stats_recursive(local_tts_output_dir(), ARCHIVE_ARTIFACT_AUDIO_EXTENSIONS)
     merge_stats = _path_stats_recursive(MERGE_TEMP_MEDIA_DIR, ARCHIVE_ARTIFACT_ALL_EXTENSIONS)
     reference_stats = _path_stats_recursive(TRANSFORMED_REFERENCE_DIR, USER_GENERATED_IMAGE_EXTENSIONS)
     recycle_stats = _path_stats_recursive(ensure_user_recycle_bin_dir(), {".mp4", ".mov", ".m4v", ".json"})
+    items = {
+        "result-videos": {**video_stats, "label": "结果视频", "cleanup": "none"},
+        "covers": {**cover_stats, "label": "封面图", "cleanup": "orphan-covers"},
+        "previews": {**preview_stats, "label": "预览图", "cleanup": "regenerate"},
+        "extension-archive": {**extension_stats, "label": "延长视频归档", "cleanup": "clear"},
+        "extension-frames": {**extension_frame_stats, "label": "延长截帧缓存", "cleanup": "clear"},
+        "html-motion-work": {**html_motion_work_stats, "label": "HTML 动效失败工作目录", "cleanup": "clear"},
+        "html-motion-reviews": {**html_motion_review_stats, "label": "HTML 动效审核缓存", "cleanup": "clear"},
+        "restored-metadata": {**_restored_metadata_stats(), "label": "结果恢复元数据", "cleanup": "orphan-restored-metadata"},
+        "result-junk": {**_result_junk_stats(), "label": "结果目录杂项", "cleanup": "junk"},
+        "tts-output": {**tts_stats, "label": "TTS 配音输出", "cleanup": "clear"},
+        "merge-temp": {**merge_stats, "label": "视频合并临时媒体", "cleanup": "clear"},
+        "reference-temp": {**reference_stats, "label": "参考图图生图临时结果", "cleanup": "clear"},
+        "manifests": {**_manifest_stats(), "label": "归档元数据", "cleanup": "orphan-manifests"},
+        "asset-index": {**_asset_index_stats(), "label": "资产索引", "cleanup": "asset-index-orphans"},
+        "recycle-bin": {**recycle_stats, "label": "失败任务回收站", "cleanup": "clear"},
+    }
+    total_bytes = sum(int(item.get("sizeBytes") or 0) for item in items.values())
     return {
         "ok": True,
-        "items": {
-            "result-videos": {**video_stats, "label": "结果视频", "cleanup": "none"},
-            "covers": {**cover_stats, "label": "封面图", "cleanup": "orphan-covers"},
-            "previews": {**preview_stats, "label": "预览图", "cleanup": "regenerate"},
-            "tts-output": {**tts_stats, "label": "TTS 配音输出", "cleanup": "clear"},
-            "merge-temp": {**merge_stats, "label": "视频合并临时媒体", "cleanup": "clear"},
-            "reference-temp": {**reference_stats, "label": "参考图图生图临时结果", "cleanup": "clear"},
-            "manifests": {**_manifest_stats(), "label": "归档元数据", "cleanup": "orphan-manifests"},
-            "asset-index": {**_asset_index_stats(), "label": "资产索引", "cleanup": "asset-index-orphans"},
-            "recycle-bin": {**recycle_stats, "label": "失败任务回收站", "cleanup": "clear"},
-        },
+        "items": items,
+        "totalBytes": total_bytes,
+        "totalDisplay": _format_bytes(total_bytes),
     }
 
 
@@ -2715,6 +2882,69 @@ def _cleanup_asset_index_orphans() -> dict[str, Any]:
         "kind": "asset-index-orphans",
         "deletedCount": removed_count,
         "remainingCount": remaining_count,
+    }
+
+
+def _cleanup_orphan_restored_metadata() -> dict[str, Any]:
+    root = _restored_metadata_root()
+    deleted: list[str] = []
+    removed_bytes = 0
+    for item in root.rglob("*.json"):
+        if _restored_metadata_video_path(item).is_file():
+            continue
+        try:
+            removed_bytes += item.stat().st_size
+        except OSError:
+            pass
+        deleted.append(item.relative_to(root).as_posix())
+        item.unlink()
+    _prune_empty_dirs(root)
+    return {
+        "ok": True,
+        "kind": "orphan-restored-metadata",
+        "deletedCount": len(deleted),
+        "removedBytes": removed_bytes,
+        "removedDisplay": _format_bytes(removed_bytes),
+        "deleted": deleted[:50],
+    }
+
+
+def _cleanup_result_junk() -> dict[str, Any]:
+    root = ensure_user_generated_result_dir().resolve()
+    removed_bytes = 0
+    deleted: list[str] = []
+    for name in ARCHIVE_RESULT_JUNK_NAMES:
+        item = root / name
+        if not item.is_file():
+            continue
+        removed_bytes += item.stat().st_size
+        deleted.append(name)
+        item.unlink()
+    return {
+        "ok": True,
+        "kind": "result-junk",
+        "deletedCount": len(deleted),
+        "removedBytes": removed_bytes,
+        "removedDisplay": _format_bytes(removed_bytes),
+        "deleted": deleted,
+    }
+
+
+def _cleanup_html_motion_work_dirs() -> dict[str, Any]:
+    root = HTML_MOTION_DIR.resolve()
+    files = _html_motion_work_files()
+    removed_bytes = sum(item.stat().st_size for item in files if item.is_file())
+    work_dirs = [item for item in root.iterdir() if item.is_dir() and item.name.startswith("render-")]
+    for work_dir in work_dirs:
+        if work_dir.parent.resolve() == root:
+            shutil.rmtree(work_dir)
+    return {
+        "ok": True,
+        "kind": "html-motion-work",
+        "deletedCount": len(files),
+        "removedBytes": removed_bytes,
+        "removedDisplay": _format_bytes(removed_bytes),
+        "deleted": [item.name for item in work_dirs[:50]],
     }
 
 
@@ -2765,6 +2995,12 @@ def _archive_artifact_root(kind: str) -> Path:
         "result-videos": ensure_user_generated_result_dir() / "video",
         "covers": ensure_user_generated_result_dir() / "cover",
         "previews": ensure_user_generated_result_dir() / PREVIEW_DIR_NAME,
+        "extension-archive": ensure_user_generated_result_dir() / "extensions",
+        "extension-frames": ensure_user_generated_result_dir() / "extension-frame",
+        "html-motion-work": HTML_MOTION_DIR,
+        "html-motion-reviews": HTML_MOTION_REVIEW_ROOT,
+        "restored-metadata": _restored_metadata_root(),
+        "result-junk": ensure_user_generated_result_dir(),
         "tts-output": local_tts_output_dir(),
         "merge-temp": MERGE_TEMP_MEDIA_DIR,
         "reference-temp": TRANSFORMED_REFERENCE_DIR,
@@ -2779,10 +3015,24 @@ def _archive_artifact_root(kind: str) -> Path:
 
 def _cleanup_archive_artifacts(kind: str) -> dict[str, Any]:
     normalized = str(kind or "").strip()
+    if normalized == "all":
+        return _cleanup_all_archive_artifacts()
     if normalized == "covers":
         return _cleanup_orphan_covers()
     if normalized == "previews":
         return regenerate_previews_for_videos(ensure_user_generated_result_dir(), USER_GENERATED_VIDEO_EXTENSIONS)
+    if normalized == "extension-archive":
+        return _cleanup_directory_contents(ensure_user_generated_result_dir() / "extensions", kind=normalized)
+    if normalized == "extension-frames":
+        return _cleanup_directory_contents(ensure_user_generated_result_dir() / "extension-frame", kind=normalized)
+    if normalized == "html-motion-work":
+        return _cleanup_html_motion_work_dirs()
+    if normalized == "html-motion-reviews":
+        return _cleanup_directory_contents(HTML_MOTION_REVIEW_ROOT, kind=normalized)
+    if normalized == "restored-metadata":
+        return _cleanup_orphan_restored_metadata()
+    if normalized == "result-junk":
+        return _cleanup_result_junk()
     if normalized == "tts-output":
         return _cleanup_directory_contents(local_tts_output_dir(), kind=normalized, extensions=ARCHIVE_ARTIFACT_AUDIO_EXTENSIONS)
     if normalized == "merge-temp":
@@ -2796,6 +3046,37 @@ def _cleanup_archive_artifacts(kind: str) -> dict[str, Any]:
     if normalized == "recycle-bin":
         return _cleanup_directory_contents(ensure_user_recycle_bin_dir(), kind=normalized, extensions={".mp4", ".mov", ".m4v", ".json"})
     raise ValueError("unknown artifact kind")
+
+
+ARCHIVE_ONE_CLICK_CLEANUP_KINDS = (
+    "extension-archive",
+    "extension-frames",
+    "html-motion-work",
+    "html-motion-reviews",
+    "restored-metadata",
+    "result-junk",
+    "tts-output",
+    "merge-temp",
+    "reference-temp",
+    "recycle-bin",
+    "covers",
+    "manifests",
+    "asset-index",
+)
+
+
+def _cleanup_all_archive_artifacts() -> dict[str, Any]:
+    results = [_cleanup_archive_artifacts(kind) for kind in ARCHIVE_ONE_CLICK_CLEANUP_KINDS]
+    deleted_count = sum(int(item.get("deletedCount") or 0) for item in results)
+    removed_bytes = sum(int(item.get("removedBytes") or 0) for item in results)
+    return {
+        "ok": True,
+        "kind": "all",
+        "deletedCount": deleted_count,
+        "removedBytes": removed_bytes,
+        "removedDisplay": _format_bytes(removed_bytes),
+        "results": results,
+    }
 
 
 
@@ -3169,6 +3450,54 @@ def api_auth_settings():
             "AI8VIDEO_ARCHIVE_PREVIEW_DIR",
             archive_items["previews"]["display"],
             f"用户文件夹/用户生成结果/{PREVIEW_DIR_NAME}",
+            sensitive=False,
+            category="归档",
+        ),
+        _settings_field(
+            "延长视频归档",
+            "AI8VIDEO_ARCHIVE_EXTENSION_DIR",
+            archive_items["extension-archive"]["display"],
+            "用户文件夹/用户生成结果/extensions",
+            sensitive=False,
+            category="归档",
+        ),
+        _settings_field(
+            "延长截帧缓存",
+            "AI8VIDEO_ARCHIVE_EXTENSION_FRAME_DIR",
+            archive_items["extension-frames"]["display"],
+            "用户文件夹/用户生成结果/extension-frame",
+            sensitive=False,
+            category="归档",
+        ),
+        _settings_field(
+            "HTML 动效失败工作目录",
+            "AI8VIDEO_ARCHIVE_HTML_MOTION_WORK_DIR",
+            archive_items["html-motion-work"]["display"],
+            "用户文件夹/HTML动效/render-*",
+            sensitive=False,
+            category="归档",
+        ),
+        _settings_field(
+            "HTML 动效审核缓存",
+            "AI8VIDEO_ARCHIVE_HTML_MOTION_REVIEW_DIR",
+            archive_items["html-motion-reviews"]["display"],
+            "用户文件夹/HTML动效/reviews",
+            sensitive=False,
+            category="归档",
+        ),
+        _settings_field(
+            "结果恢复元数据",
+            "AI8VIDEO_ARCHIVE_RESTORED_METADATA_DIR",
+            archive_items["restored-metadata"]["display"],
+            "用户文件夹/用户生成结果/.restored-meta",
+            sensitive=False,
+            category="归档",
+        ),
+        _settings_field(
+            "结果目录杂项",
+            "AI8VIDEO_ARCHIVE_RESULT_JUNK",
+            archive_items["result-junk"]["display"],
+            "用户文件夹/用户生成结果",
             sensitive=False,
             category="归档",
         ),

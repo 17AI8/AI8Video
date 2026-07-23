@@ -65,7 +65,9 @@
             : '已保存';
       }
       if (statusText) {
-        statusText.textContent = state.viralBreakdown.error || state.viralBreakdown.notice || '';
+        const status = state.viralBreakdown.error || state.viralBreakdown.notice || '';
+        statusText.textContent = status;
+        statusText.classList.toggle('is-error', Boolean(state.viralBreakdown.error));
       }
       if (originalMeta) {
         originalMeta.textContent = currentItem ? `${currentItem.sizeLabel || humanizeByteSize(currentItem.sizeBytes || 0)}` : '';
@@ -135,8 +137,36 @@
       if (generatedPane) {
         generatedPane.innerHTML = currentItem?.generatedVideoUrl
           ? `<video src="${escapeHtml(String(currentItem.generatedVideoUrl || ''))}" controls playsinline preload="metadata"></video>`
-          : '<div class="viral-breakdown-empty">这里预留给后续基于拆解结果生成的用户视频，当前版本先显示空态。</div>';
+          : '<div class="viral-breakdown-empty">暂无生成结果</div>';
       }
+      syncViralBreakdownActiveTab();
+    }
+
+    function getViralBreakdownActiveTab() {
+      const tab = String(state.viralBreakdown.activeTab || 'grid').trim();
+      return ['grid', 'transcript', 'script', 'generated'].includes(tab) ? tab : 'grid';
+    }
+
+    function activateViralBreakdownTab(tabName) {
+      const tab = ['grid', 'transcript', 'script', 'generated'].includes(String(tabName || ''))
+        ? String(tabName)
+        : 'grid';
+      state.viralBreakdown.activeTab = tab;
+      syncViralBreakdownActiveTab();
+    }
+
+    function syncViralBreakdownActiveTab() {
+      const tab = getViralBreakdownActiveTab();
+      const root = document.getElementById('viralBreakdownModal');
+      if (!root) return;
+      root.querySelectorAll('[data-viral-breakdown-tab]').forEach((button) => {
+        const active = button.getAttribute('data-viral-breakdown-tab') === tab;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      root.querySelectorAll('[data-viral-breakdown-panel]').forEach((panel) => {
+        panel.classList.toggle('is-active', panel.getAttribute('data-viral-breakdown-panel') === tab);
+      });
     }
 
     function beginViralBreakdownUpload() {
@@ -410,7 +440,7 @@
         items,
         title: kind === 'script' ? '剧本知识库' : '图片素材库',
         sub: kind === 'script'
-          ? 'PostgreSQL 词法检索 · pg_trgm + tsvector · 无 Embedding'
+          ? '检索并引用本地剧本知识'
           : `${items.length} 个图片素材，点击卡片可插入到当前对话。`,
         emptyText: kind === 'script'
           ? '还没有剧本知识。点右上角添加 TXT、Markdown 或 DOCX。'
@@ -426,12 +456,10 @@
       const statusModel = getScriptKnowledgeStatusModel();
       els.scriptKnowledgeStatus.textContent = statusModel.text;
       els.scriptKnowledgeStatus.classList.toggle('is-error', statusModel.error);
-      els.scriptKnowledgeSyncButton.disabled = knowledge.syncing || knowledge.loading;
-      els.scriptKnowledgeSyncButton.textContent = knowledge.syncing ? '同步中' : '同步索引';
       els.materialLibraryWall.innerHTML = buildScriptKnowledgeLayoutMarkup();
       if (knowledge.resetDetailScroll) {
-        const detailPanel = els.materialLibraryWall.querySelector('.script-knowledge-detail');
-        if (detailPanel) detailPanel.scrollTop = 0;
+        const panel = els.materialLibraryWall.querySelector('.script-knowledge-panel.is-active');
+        if (panel) panel.scrollTop = 0;
         knowledge.resetDetailScroll = false;
       }
     }
@@ -439,7 +467,7 @@
     function getScriptKnowledgeStatusModel() {
       const knowledge = state.scriptKnowledge;
       const status = knowledge.status || {};
-      if (knowledge.syncing) return { text: '正在同步索引', error: false };
+      if (knowledge.ingesting) return { text: '正在知识入库', error: false };
       if (knowledge.loading) return { text: '正在检索', error: false };
       if (!status.available) {
         const databaseMissing = String(status.error || '').toLowerCase().includes('database "ai8video" does not exist');
@@ -471,7 +499,7 @@
       }
       if (!state.scriptKnowledge.status?.available) {
         const localCount = Number(state.userMaterials?.scriptCount || 0);
-        return `<div class="script-knowledge-empty">PostgreSQL 当前不可用。<br>${localCount} 份原始剧本仍安全保存在本地文件夹，数据库恢复后点“同步索引”即可重建。</div>`;
+        return `<div class="script-knowledge-empty">PostgreSQL 当前不可用。<br>${localCount} 份原始剧本仍安全保存在本地文件夹，数据库恢复后可再次执行知识入库。</div>`;
       }
       if (!items.length) {
         const copy = state.scriptKnowledge.query

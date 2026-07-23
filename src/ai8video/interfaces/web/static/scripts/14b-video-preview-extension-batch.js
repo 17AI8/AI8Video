@@ -353,6 +353,10 @@
         }));
         const videos = results.filter((item) => item.status === 'fulfilled').map((item) => item.value);
         const failed = results.filter((item) => item.status === 'rejected');
+        if (!hasActiveVideoPreviewExtensionState(userGeneratedKey)) {
+          await Promise.allSettled(videos.map((video) => discardDetachedVideoPreviewExtensionResult(userGeneratedKey, video.userGeneratedKey)));
+          return;
+        }
         if (videos.length) showVideoPreviewBatchVideos(stageGrid, videos);
         results.forEach((item, index) => {
           if (item.status === 'rejected') {

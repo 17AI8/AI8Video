@@ -237,6 +237,7 @@
       const rawStatus = String(item?.status || '').trim();
       const postProcessing = isPostProcessingProgressItem(item);
       const status = postProcessing ? 'archiving' : rawStatus;
+      const historicalSnapshot = Boolean(item?.historicalSnapshot);
       const videoIndex = Number(item?.videoIndex || 0) || index + 1;
       const title = cleanDisplayText(item?.title, `视频 ${videoIndex}`);
       const stage = formatGenerationProgressStatus(item);
@@ -254,7 +255,8 @@
         providerStatus: item?.providerStatus || '',
         segmentStatus: Array.isArray(item?.segmentStatus) ? item.segmentStatus : [],
         percent: generationProgressPercent(item),
-        pending: postProcessing || !isTerminalProgressStatus(status),
+        pending: !historicalSnapshot && (postProcessing || !isTerminalProgressStatus(status)),
+        historicalSnapshot,
         hasLocalAsset: item?.hasLocalAsset !== false,
       };
     }
@@ -295,10 +297,9 @@
       const ratioLabel = buildResultRatioLabel(item);
       if (isDeletedOrMissing) {
         return `
-          <div class="result-notify-card failed ${resultNotifyRatioClass(item)}">
+          <div class="result-notify-card deleted ${resultNotifyRatioClass(item)}" title="已生成，文件已删除">
             <div class="result-notify-preview">
-              <div class="result-notify-failed-mark" aria-hidden="true">×</div>
-              <div class="result-notify-progress"><span style="--progress-width: 100%"></span></div>
+              <div class="result-notify-deleted-mark" aria-hidden="true">已删除</div>
             </div>
             <div class="result-notify-meta">
               <div class="result-notify-title">${renderHoverScrollText(title)}</div>
@@ -354,7 +355,7 @@
           </div>
         `;
       }
-      const isTerminal = isTerminalProgressStatus(status);
+      const isTerminal = isTerminalProgressStatus(status) || Boolean(item?.historicalSnapshot);
       const processingClass = isPostProcessingProgressStatus(status) ? ' processing-placeholder' : '';
       return `
         <div class="result-notify-card ${resultNotifyRatioClass(item)}">

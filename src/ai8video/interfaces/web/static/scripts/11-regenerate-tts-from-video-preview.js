@@ -57,7 +57,7 @@
     async function persistOpenTtsEditorBeforeHtmlMotion(userGeneratedKey) {
       const popover = els.videoPreviewBody?.querySelector('[data-video-preview-tts-editor]');
       const textarea = popover?.querySelector('[data-video-preview-tts-textarea]');
-      if (!popover || popover.classList.contains('hidden') || !textarea || textarea.disabled) return;
+      if (!popover || !popover.classList.contains('is-open') || !textarea || textarea.disabled) return;
       const res = await fetch('/api/user-generated-results/tts-narration', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -254,11 +254,87 @@
     }
 
     function setHtmlMotionPreviewStatus(message, status = '') {
-      const element = els.videoPreviewBody?.querySelector('[data-video-preview-html-motion-status]');
-      if (!element) return;
-      element.textContent = message || '';
-      if (status) element.dataset.status = status;
-      else delete element.dataset.status;
+      if (!state.videoPreviewModal) return;
+      const currentTask = state.videoPreviewModal.htmlMotionTaskSnapshot || {};
+      state.videoPreviewModal.htmlMotionTaskSnapshot = {
+        ...currentTask,
+        message: String(message || ''),
+        status: String(status || currentTask.status || ''),
+      };
+      renderHtmlMotionPreviewDrawer();
+    }
+
+    function toggleHtmlMotionPreviewDrawer() {
+      if (!state.videoPreviewModal) return;
+      state.videoPreviewModal.htmlMotionDetailsOpen = !state.videoPreviewModal.htmlMotionDetailsOpen;
+      renderHtmlMotionPreviewDrawer();
+    }
+
+    function updateHtmlMotionPreviewTaskSnapshot(data, options = {}) {
+      if (!state.videoPreviewModal) return;
+      const currentTask = state.videoPreviewModal.htmlMotionTaskSnapshot || {};
+      // 进度文案由 setHtmlMotionPreviewStatus 维护，避免轮询用接口原文盖掉导致数字闪烁
+      state.videoPreviewModal.htmlMotionTaskSnapshot = {
+        ...currentTask,
+        status: String(data?.taskStatus || data?.status || currentTask.status || ''),
+        phase: String(data?.taskPhase || data?.phase || ''),
+        elapsedSeconds: Number(data?.elapsedSeconds || 0),
+        phaseElapsedSeconds: Number(data?.phaseElapsedSeconds || 0),
+        phaseTimings: data?.phaseTimings || {},
+        retryCount: Number(data?.retryCount || 0),
+        retryLimit: Number(data?.retryLimit || 0),
+        auditResult: String(data?.auditResult || ''),
+        streamText: String(data?.streamText || ''),
+        attemptTraces: Array.isArray(data?.attemptTraces) ? data.attemptTraces : [],
+      };
+      if (options.render === false) return;
+      renderHtmlMotionPreviewDrawer();
+    }
+
+    function syncHtmlMotionDrawerWidth() {
+      const drawer = els.videoPreviewBody?.querySelector('[data-video-preview-html-motion-drawer]');
+      const confirmButton = els.videoPreviewBody?.querySelector('[data-video-preview-action="confirm-html-motion"]');
+      if (!drawer || !confirmButton) return;
+      const width = Math.round(confirmButton.getBoundingClientRect().right - drawer.getBoundingClientRect().left);
+      const next = width > 0 ? `${width}px` : '';
+      if (next && drawer.style.width !== next) drawer.style.width = next;
+    }
+
+    function renderHtmlMotionPreviewDrawer() {
+      const drawer = els.videoPreviewBody?.querySelector('[data-video-preview-html-motion-drawer]');
+      const toggles = drawer?.querySelectorAll('[data-video-preview-html-motion-toggle]');
+      const summary = drawer?.querySelector('[data-video-preview-html-motion-summary]');
+      const detail = drawer?.querySelector('[data-video-preview-html-motion-detail]');
+      if (!drawer || !toggles?.length || !summary || !detail) return;
+      const task = state.videoPreviewModal?.htmlMotionTaskSnapshot || {};
+      const hasTask = Boolean(task.message || task.phase || task.status || task.streamText || task.retryCount || task.attemptTraces?.length);
+      const open = !!state.videoPreviewModal?.htmlMotionDetailsOpen;
+      const wasExpanded = drawer.classList.contains('has-task') || drawer.classList.contains('is-open');
+      const shouldExpand = hasTask || open;
+      const nextMessage = task.message || '';
+      if (summary.textContent !== nextMessage) summary.textContent = nextMessage;
+      summary.hidden = !hasTask;
+      toggles.forEach((toggle) => {
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        toggle.setAttribute('aria-label', `${open ? '收起' : '展开'}任务详情`);
+      });
+      if (shouldExpand && !wasExpanded) {
+        drawer.classList.remove('has-task', 'is-open');
+        void drawer.offsetHeight;
+      }
+      drawer.classList.toggle('has-task', hasTask);
+      drawer.classList.toggle('is-open', open);
+      syncHtmlMotionDrawerWidth();
+      if (!open) return;
+      const streamText = hasTask
+        ? String(task.streamText || '').trim()
+        : '任务开始后，这里会显示流式输出。';
+      const displayStream = streamText || '等待 AI 返回结果…';
+      if (detail.dataset.streamText === displayStream) return;
+      detail.dataset.streamText = displayStream;
+      const shouldStick = detail.scrollHeight - detail.scrollTop - detail.clientHeight < 16;
+      detail.innerHTML = `<pre class="video-preview-html-motion-stream">${escapeHtml(displayStream)}</pre>`;
+      if (shouldStick) detail.scrollTop = detail.scrollHeight;
     }
 
     function formatHtmlMotionElapsed(seconds) {
@@ -310,16 +386,9 @@
     function buildHtmlMotionSuccessStatus(timing, overlay = null) {
       const total = formatHtmlMotionElapsed(timing.elapsedSeconds);
       const summary = formatHtmlMotionPhaseSummary(timing.phaseTimings);
-      const timeline = overlay?.timeline && typeof overlay.timeline === 'object' ? overlay.timeline : {};
-      const turns = Number(timeline.agentTurns);
-      const harness = String(timeline.harness || overlay?.harness || '').trim();
-      const reviewedJson = harness.includes('v5-reviewed-json');
-      const agentBit = Number.isFinite(turns) && turns > 0
-        ? ` · AI 审核 ${turns} 次${reviewedJson ? '（JSON）' : ''}`
-        : (reviewedJson ? ' · AI 审核（JSON）' : '');
       return summary
-        ? `预览已生成 · 总耗时 ${total}（${summary}）${agentBit}`
-        : `预览已生成 · 总耗时 ${total}${agentBit}，确认后才会替换正式视频`;
+        ? `预览已生成 · 总耗时 ${total}（${summary}）`
+        : `预览已生成 · 总耗时 ${total}，确认后才会替换正式视频`;
     }
 
     function buildHtmlMotionFailureStatus(message, timing) {
@@ -401,6 +470,7 @@
           throw buildRequestError(data);
         }
         const status = String(data?.taskStatus || data?.status || '').toLowerCase();
+        updateHtmlMotionPreviewTaskSnapshot(data, { render: false });
         const phase = String(data?.taskPhase || data?.phase || status);
         const timing = resolveHtmlMotionTiming(data, startedAtMs);
         const retryCount = Number(data?.retryCount || 0);
@@ -454,8 +524,9 @@
           if (status === 'cancelled') return data;
           throw new Error(reason);
         }
+        const pollDelay = phase === 'generating' ? 250 : 1000;
         await new Promise((resolve) => {
-          state.videoPreviewModal.htmlMotionPollTimer = setTimeout(resolve, 1000);
+          state.videoPreviewModal.htmlMotionPollTimer = setTimeout(resolve, pollDelay);
         });
         return poll();
       };
@@ -495,4 +566,3 @@
         confirmButton.disabled = true;
       }
     }
-

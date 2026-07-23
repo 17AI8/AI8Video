@@ -186,6 +186,29 @@
       box-shadow: none;
     }
 
+    .result-notify-card.deleted .result-notify-preview {
+      background: linear-gradient(180deg, #fff1f0, #ffe2de);
+      border-color: rgba(220, 80, 60, 0.28);
+      box-shadow: none;
+    }
+
+    .result-notify-card.deleted .result-notify-preview::after {
+      display: none;
+    }
+
+    .result-notify-deleted-mark {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      display: grid;
+      place-items: center;
+      color: #c2410c;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      line-height: 1;
+    }
+
     .result-notify-card.failed .result-notify-ratio-badge {
       background: #d9573a;
     }

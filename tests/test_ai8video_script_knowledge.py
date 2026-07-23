@@ -11,11 +11,32 @@ from ai8video.knowledge.script_knowledge import (
     ScriptKnowledgeStore,
     _build_search_terms,
     _build_ts_query,
-    _split_sections,
+)
+from ai8video.knowledge.script_knowledge_ingestion import (
+    flatten_tree_leaves,
+    parse_tree_result,
 )
 
 
 class ScriptKnowledgeTextTest(unittest.TestCase):
+    def test_tree_result_keeps_hierarchical_leaf_paths(self) -> None:
+        result = parse_tree_result(
+            '{"title":"产品资料","summary":"测试","tags":["产品"],"tree":['
+            '{"title":"功能","children":[{"title":"支付沉淀","content":"支付完成后沉淀客户。"}]}]}'
+        )
+
+        leaves = flatten_tree_leaves(result["tree"])
+
+        self.assertEqual(leaves, [{
+            "heading": "功能 / 支付沉淀",
+            "content": "支付完成后沉淀客户。",
+            "path": ["功能", "支付沉淀"],
+        }])
+
+    def test_tree_result_rejects_non_json_output(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "有效 JSON"):
+            parse_tree_result("这是普通回答")
+
     def test_build_search_terms_adds_chinese_bigrams(self) -> None:
         terms = _build_search_terms("跨境私域 AI8")
 
@@ -29,27 +50,6 @@ class ScriptKnowledgeTextTest(unittest.TestCase):
 
         self.assertIn("全球", query)
         self.assertIn(" | ", query)
-
-    def test_split_sections_keeps_chunks_bounded(self) -> None:
-        content = "\n\n".join([f"第{index}段。" + "内容" * 180 for index in range(8)])
-
-        sections = _split_sections(content)
-
-        self.assertGreater(len(sections), 2)
-        self.assertTrue(all(len(section["content"]) <= 1200 for section in sections))
-
-    def test_split_sections_prefers_numbered_script_boundaries(self) -> None:
-        content = (
-            "项目说明\n适合发布预热。\n"
-            "脚本1《第一个钩子》\n【前3秒】先制造冲突。\n【正文】给出答案。\n"
-            "脚本2《第二个钩子》\n【前3秒】提出问题。\n【正文】完成收口。"
-        )
-
-        sections = _split_sections(content)
-
-        self.assertEqual([item["heading"] for item in sections[1:]], ["脚本1《第一个钩子》", "脚本2《第二个钩子》"])
-        self.assertNotIn("脚本1《第一个钩子》", sections[1]["content"])
-        self.assertIn("【正文】给出答案。", sections[1]["content"])
 
     def test_source_scan_does_not_read_document_previews(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
@@ -83,7 +83,7 @@ class ScriptKnowledgePostgresTest(unittest.TestCase):
         with psycopg.connect(self.database_url) as connection, connection.cursor() as cursor:
             cursor.execute("DELETE FROM ai8_script_documents")
 
-    def test_sync_search_metadata_and_remove(self) -> None:
+    def test_register_tree_search_metadata_and_remove(self) -> None:
         content = "跨境客户需要沉淀到私域。\n\n六月十八日全球发布，开场使用倒计时钩子。"
         sources = [{
             "name": "全球发布.md",
@@ -93,7 +93,18 @@ class ScriptKnowledgePostgresTest(unittest.TestCase):
             "modifiedAt": 100.0,
         }]
 
-        sync_result = self.store.sync_sources(sources, lambda _: content)
+        register_result = self.store.register_sources(sources, lambda _: content)
+        pending = self.store.list_documents()[0]
+        self.store.replace_document_tree(
+            pending["id"],
+            {
+                "title": "跨境私域发布脚本",
+                "summary": "面向跨境团队的发布预热",
+                "tags": ["跨境", "发布"],
+                "tree": [{"title": "全球发布", "content": content}],
+            },
+            [{"heading": "全球发布", "content": content}],
+        )
         results = self.store.search("私域", limit=5)
         sections = self.store.search_sections("全球发布", relative_path="活动/全球发布.md", limit=20)
         document = self.store.get_document(results[0]["id"])
@@ -103,10 +114,10 @@ class ScriptKnowledgePostgresTest(unittest.TestCase):
             summary="面向跨境团队的发布预热",
             tags=["跨境", "发布"],
         )
-        unchanged = self.store.sync_sources(sources, lambda _: self.fail("不应重复读取正文"))
-        removed = self.store.sync_sources([], lambda _: "")
+        unchanged = self.store.register_sources(sources, lambda _: self.fail("不应重复读取正文"))
+        removed = self.store.register_sources([], lambda _: "")
 
-        self.assertEqual(sync_result["indexed"], 1)
+        self.assertEqual(register_result["registered"], 1)
         self.assertEqual(results[0]["name"], "全球发布.md")
         self.assertGreater(len(sections), 0)
         self.assertEqual(sections[0]["relativePath"], "活动/全球发布.md")

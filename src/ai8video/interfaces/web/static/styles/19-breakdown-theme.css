@@ -132,7 +132,7 @@
 
     #viralBreakdownModal .viral-breakdown-stage {
       min-height: 0;
-      padding: 14px 18px 12px;
+      padding: 12px 18px;
       overflow: hidden;
     }
 
@@ -141,9 +141,24 @@
       gap: 0;
     }
 
+    #viralBreakdownModal .viral-breakdown-toolbar {
+      margin: 0 18px;
+      border: 1px solid var(--viral-line);
+      background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.8), rgba(225, 234, 255, 0.62)),
+        var(--viral-glass);
+      box-shadow:
+        var(--viral-shadow),
+        inset 3px 0 0 rgba(79, 109, 255, 0.72),
+        inset 0 1px 0 rgba(255, 255, 255, 0.78);
+      backdrop-filter: blur(18px) saturate(1.1);
+      -webkit-backdrop-filter: blur(18px) saturate(1.1);
+      border-radius: 18px;
+    }
+
     #viralBreakdownModal .viral-breakdown-workspace-layout {
       min-height: 0;
-      grid-template-columns: minmax(284px, 0.8fr) minmax(0, 1.2fr);
+      grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr);
       gap: 14px;
       overflow: hidden;
       padding: 0;
@@ -151,23 +166,11 @@
 
     #viralBreakdownModal .viral-breakdown-preview-column {
       min-height: 0;
-      grid-template-rows: minmax(250px, 1.5fr) minmax(170px, 0.86fr);
-      gap: 14px;
+      grid-template-rows: minmax(0, 1fr);
     }
 
-    #viralBreakdownModal .viral-breakdown-function-column {
-      min-height: 0;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
-      grid-template-rows: auto minmax(178px, 1.25fr) minmax(130px, 0.85fr);
-      gap: 14px;
-      align-content: stretch;
-      overflow: hidden;
-    }
-
-    #viralBreakdownModal .viral-breakdown-toolbar,
-    #viralBreakdownModal .viral-breakdown-pane {
-      min-width: 0;
-      border: 1px solid var(--viral-line);
+    #viralBreakdownModal .viral-breakdown-detail-column {
+      border-color: var(--viral-line);
       background: var(--viral-glass);
       box-shadow:
         var(--viral-shadow),
@@ -176,33 +179,22 @@
       -webkit-backdrop-filter: blur(18px) saturate(1.1);
     }
 
-    #viralBreakdownModal .viral-breakdown-toolbar {
-      grid-column: 1 / -1;
-      padding: 15px 16px;
-      gap: 11px;
+    #viralBreakdownModal .viral-breakdown-pane {
+      min-width: 0;
+      gap: 9px;
+      padding: 4px;
       border-radius: 18px;
-      background:
-        linear-gradient(145deg, rgba(255, 255, 255, 0.8), rgba(225, 234, 255, 0.62)),
-        var(--viral-glass);
+    }
+
+    #viralBreakdownModal .area-video {
+      border: 1px solid var(--viral-line);
+      background: var(--viral-glass);
       box-shadow:
         var(--viral-shadow),
-        inset 3px 0 0 rgba(79, 109, 255, 0.72),
-        inset 0 1px 0 rgba(255, 255, 255, 0.78);
-    }
-
-    #viralBreakdownModal .area-grid {
-      grid-column: 1 / -1;
-    }
-
-    #viralBreakdownModal .area-transcript,
-    #viralBreakdownModal .area-generated {
-      min-height: 0;
-    }
-
-    #viralBreakdownModal .viral-breakdown-pane {
-      gap: 9px;
+        inset 0 1px 0 rgba(255, 255, 255, 0.72);
+      backdrop-filter: blur(18px) saturate(1.1);
+      -webkit-backdrop-filter: blur(18px) saturate(1.1);
       padding: 13px;
-      border-radius: 18px;
     }
 
     #viralBreakdownModal .viral-breakdown-pane-body {
@@ -222,6 +214,11 @@
       box-shadow:
         inset 0 0 0 1px rgba(255, 255, 255, 0.06),
         inset 0 12px 28px rgba(7, 20, 44, 0.36);
+    }
+
+    #viralBreakdownModal button.viral-breakdown-tab.is-active {
+      color: var(--viral-brand);
+      border-bottom-color: var(--viral-brand);
     }
 
     #viralBreakdownModal .viral-breakdown-text-output,
@@ -269,9 +266,10 @@
     }
 
     #viralBreakdownModal .viral-breakdown-footer {
-      padding: 12px 18px 16px;
+      padding: 10px 18px 14px;
       border-top: 1px solid rgba(255, 255, 255, 0.58);
       background: linear-gradient(145deg, rgba(255, 255, 255, 0.2), rgba(231, 239, 255, 0.08));
+      justify-content: flex-end;
     }
 
     #viralBreakdownModal .viral-breakdown-footer .material-actions {
@@ -280,19 +278,8 @@
 
     @media (max-width: 920px) {
       #viralBreakdownModal .viral-breakdown-workspace-layout {
-        grid-template-columns: minmax(250px, 0.78fr) minmax(0, 1.22fr);
-      }
-
-      #viralBreakdownModal .viral-breakdown-function-column {
         grid-template-columns: minmax(0, 1fr);
-        grid-template-rows: auto minmax(180px, 1fr) minmax(140px, 0.78fr) minmax(140px, 0.78fr);
-        overflow: auto;
-        padding-right: 2px;
-      }
-
-      #viralBreakdownModal .viral-breakdown-toolbar,
-      #viralBreakdownModal .area-grid {
-        grid-column: auto;
+        grid-template-rows: minmax(220px, 0.72fr) minmax(280px, 1.28fr);
       }
     }
 
@@ -309,6 +296,10 @@
         padding-inline: 14px;
       }
 
+      #viralBreakdownModal .viral-breakdown-toolbar {
+        margin: 0 14px;
+      }
+
       #viralBreakdownModal .viral-breakdown-stage,
       #viralBreakdownModal .viral-breakdown-workbench,
       #viralBreakdownModal .viral-breakdown-workspace-layout {
@@ -317,15 +308,6 @@
 
       #viralBreakdownModal .viral-breakdown-workspace-layout {
         grid-template-columns: minmax(0, 1fr);
-      }
-
-      #viralBreakdownModal .viral-breakdown-preview-column,
-      #viralBreakdownModal .viral-breakdown-function-column {
-        grid-template-rows: none;
-      }
-
-      #viralBreakdownModal .viral-breakdown-preview-column {
-        grid-template-rows: minmax(260px, 1fr) minmax(180px, auto);
       }
 
       #viralBreakdownModal .viral-breakdown-toolbar-row {
@@ -337,7 +319,7 @@
       }
 
       #viralBreakdownModal .viral-breakdown-footer {
-        align-items: flex-end;
+        align-items: stretch;
       }
     }
 

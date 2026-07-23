@@ -1,17 +1,37 @@
     document.getElementById('hotRadarModal')?.addEventListener('click', async (event) => {
-      const topicButton = event.target?.closest?.('[data-hot-radar-topic-id]');
+      const actionButton = event.target?.closest?.('[data-hot-radar-action]');
       try {
-        if (topicButton) {
-          state.hotRadar.selectedTopicId = String(topicButton.getAttribute('data-hot-radar-topic-id') || '');
-          state.hotRadar.summaryText = '';
-          state.hotRadar.promptText = '';
-          persistHotRadarViewState(state.hotRadar);
-          renderHotRadarWorkbench();
+        if (actionButton) {
+          event.preventDefault();
+          event.stopPropagation();
+          const card = actionButton.closest('[data-hot-radar-topic-id]');
+          const topicId = String(card?.getAttribute?.('data-hot-radar-topic-id') || '');
+          if (topicId) {
+            state.hotRadar.selectedTopicId = topicId;
+            state.hotRadar.expandedTopicId = topicId;
+            persistHotRadarViewState(state.hotRadar);
+          }
+          const action = String(actionButton.getAttribute('data-hot-radar-action') || '');
+          if (action === 'summary') await summarizeSelectedHotRadarTopic();
+          else if (action === 'prompt') await buildSelectedHotRadarPrompt();
+          else if (action === 'fill') fillHotRadarPromptIntoComposer();
+          return;
+        }
+        if (event.target?.closest?.('.hot-radar-topic-preview, .hot-radar-topic-actions')) return;
+        const topicCard = event.target?.closest?.('[data-hot-radar-topic-id]');
+        if (topicCard) {
+          event.preventDefault();
+          selectHotRadarTopicCard(topicCard);
         }
       } catch (error) {
         console.error(error);
         state.hotRadar.loading = false;
+        state.hotRadar.summarizing = false;
+        state.hotRadar.promptBuilding = false;
         state.hotRadar.error = error?.message || String(error);
+        if (actionButton?.getAttribute('data-hot-radar-action') === 'summary') {
+          state.hotRadar.summaryText = state.hotRadar.error;
+        }
         renderHotRadarWorkbench();
       }
     });
@@ -22,34 +42,22 @@
     });
 
     els.messages?.addEventListener('click', (event) => {
+      const toggle = event.target?.closest?.('[data-agent-step-details-toggle]');
+      if (toggle) {
+        event.preventDefault();
+        const root = toggle.closest('.agent-step-details');
+        const detailsKey = String(
+          root?.getAttribute('data-agent-step-details')
+          || toggle.getAttribute('data-agent-step-details-toggle')
+          || ''
+        ).trim();
+        toggleAgentStepDetailsExpanded(detailsKey);
+        applyAgentStepDetailsExpanded(detailsKey, root);
+        return;
+      }
       const button = event.target?.closest?.('[data-retry-generation-video]');
       if (button) retryFailedGenerationVideo(button);
     });
-
-    document.getElementById('hotRadarSummaryButton')?.addEventListener('click', async () => {
-      try {
-        await summarizeSelectedHotRadarTopic();
-      } catch (error) {
-        console.error(error);
-        state.hotRadar.summarizing = false;
-        state.hotRadar.error = error?.message || String(error);
-        state.hotRadar.summaryText = state.hotRadar.error;
-        renderHotRadarWorkbench();
-      }
-    });
-
-    document.getElementById('hotRadarPromptButton')?.addEventListener('click', async () => {
-      try {
-        await buildSelectedHotRadarPrompt();
-      } catch (error) {
-        console.error(error);
-        state.hotRadar.promptBuilding = false;
-        state.hotRadar.error = error?.message || String(error);
-        renderHotRadarWorkbench();
-      }
-    });
-
-    document.getElementById('hotRadarFillPromptButton')?.addEventListener('click', fillHotRadarPromptIntoComposer);
 
     document.getElementById('hotRadarCloseButton')?.addEventListener('click', closeHotRadarModal);
 
@@ -323,6 +331,7 @@
       if (!id) return;
       if (Number(state.scriptKnowledge.selectedId || 0) !== id) {
         state.scriptKnowledge.resetDetailScroll = true;
+        state.scriptKnowledge.activeTab = 'sections';
       }
       state.scriptKnowledge.selectedId = id;
       if (options.renderAfter !== false) renderMaterialLibraryModal();
@@ -339,22 +348,45 @@
       if (options.renderAfter !== false) renderMaterialLibraryModal();
     }
 
-    async function syncScriptKnowledge() {
-      if (state.scriptKnowledge.syncing) return;
-      state.scriptKnowledge.syncing = true;
+    async function startScriptKnowledgeIngestion(documentId) {
+      const id = Number(documentId || state.scriptKnowledge.detail?.id || 0);
+      if (!id || state.scriptKnowledge.ingesting) return;
+      state.scriptKnowledge.ingesting = true;
+      state.scriptKnowledge.ingestionJob = { documentId: id, state: 'queued', events: [] };
       state.scriptKnowledge.error = '';
       renderMaterialLibraryModal();
       try {
-        const res = await fetch('/api/script-knowledge/sync', { method: 'POST' });
+        const res = await fetch(`/api/script-knowledge/${id}/ingest`, { method: 'POST' });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data?.ok === false) throw buildRequestError(data);
-        await refreshUserMaterials();
-        await refreshScriptKnowledge({ preserveSelection: true });
-        renderUserMaterials();
+        state.scriptKnowledge.ingestionJob = data.job || state.scriptKnowledge.ingestionJob;
+        pollScriptKnowledgeIngestion(id);
       } catch (error) {
         state.scriptKnowledge.error = formatScriptKnowledgeError(error?.message || String(error));
-      } finally {
-        state.scriptKnowledge.syncing = false;
+        state.scriptKnowledge.ingesting = false;
+        renderMaterialLibraryModal();
+      }
+    }
+
+    async function pollScriptKnowledgeIngestion(documentId) {
+      window.clearTimeout(state.scriptKnowledge.ingestionTimer);
+      try {
+        const res = await fetch(`/api/script-knowledge/${documentId}/ingest`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.ok === false) throw buildRequestError(data);
+        const job = data.job || {};
+        state.scriptKnowledge.ingestionJob = job;
+        state.scriptKnowledge.ingesting = ['queued', 'running'].includes(job.state);
+        renderMaterialLibraryModal();
+        if (state.scriptKnowledge.ingesting) {
+          state.scriptKnowledge.ingestionTimer = window.setTimeout(() => pollScriptKnowledgeIngestion(documentId), 280);
+          return;
+        }
+        if (job.state === 'succeeded') await refreshScriptKnowledge({ preserveSelection: true });
+        if (job.state === 'failed') state.scriptKnowledge.error = formatScriptKnowledgeError(job.error || '知识入库失败');
+      } catch (error) {
+        state.scriptKnowledge.ingesting = false;
+        state.scriptKnowledge.error = formatScriptKnowledgeError(error?.message || String(error));
         renderMaterialLibraryModal();
       }
     }
@@ -391,12 +423,37 @@
       return { title, summary, tags };
     }
 
+    function activateScriptKnowledgeTab(tabName) {
+      const tab = ['sections', 'edit', 'source'].includes(String(tabName || ''))
+        ? String(tabName)
+        : 'sections';
+      state.scriptKnowledge.activeTab = tab;
+      const root = els.materialLibraryWall;
+      if (!root) return;
+      root.querySelectorAll('[data-script-knowledge-tab]').forEach((button) => {
+        const active = button.getAttribute('data-script-knowledge-tab') === tab;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      root.querySelectorAll('[data-script-knowledge-panel]').forEach((panel) => {
+        panel.classList.toggle('is-active', panel.getAttribute('data-script-knowledge-panel') === tab);
+      });
+    }
+
     async function handleScriptKnowledgeModalClick(event) {
       if (state.materialModal.kind !== 'script') return false;
+      const tabTrigger = event.target.closest('[data-script-knowledge-tab]');
+      if (tabTrigger) {
+        event.preventDefault();
+        event.stopPropagation();
+        activateScriptKnowledgeTab(tabTrigger.getAttribute('data-script-knowledge-tab'));
+        return true;
+      }
       const documentTrigger = event.target.closest('[data-script-knowledge-document]');
       const referenceTrigger = event.target.closest('[data-script-knowledge-reference]');
       const saveTrigger = event.target.closest('[data-script-knowledge-save]');
-      if (!documentTrigger && !referenceTrigger && !saveTrigger) return false;
+      const ingestTrigger = event.target.closest('[data-script-knowledge-ingest]');
+      if (!documentTrigger && !referenceTrigger && !saveTrigger && !ingestTrigger) return false;
       event.preventDefault();
       event.stopPropagation();
       if (documentTrigger) {
@@ -406,6 +463,10 @@
       if (referenceTrigger) {
         await selectScriptReference(referenceTrigger.getAttribute('data-script-knowledge-reference') || '');
         renderMaterialLibraryModal();
+        return true;
+      }
+      if (ingestTrigger) {
+        await startScriptKnowledgeIngestion(ingestTrigger.getAttribute('data-script-knowledge-ingest'));
         return true;
       }
       await saveScriptKnowledgeMetadata();

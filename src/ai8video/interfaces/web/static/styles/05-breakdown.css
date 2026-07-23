@@ -46,13 +46,8 @@
     .viral-breakdown-footer {
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: flex-end;
       gap: 16px;
-    }
-
-    .viral-breakdown-footer .modal-sub {
-      min-width: 0;
-      flex: 1 1 auto;
     }
 
     .viral-breakdown-primary-button {
@@ -69,24 +64,32 @@
       min-height: 0;
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 0;
       height: 100%;
       overflow: hidden;
     }
 
     .viral-breakdown-toolbar {
-      padding: 14px 18px;
+      margin: 0 18px;
+      padding: 12px 16px;
       display: grid;
-      gap: 12px;
+      gap: 10px;
       flex-shrink: 0;
     }
 
     .viral-breakdown-toolbar-row {
       display: flex;
       flex-wrap: wrap;
-      gap: 12px;
+      gap: 10px 12px;
       align-items: center;
       justify-content: space-between;
+    }
+
+    .viral-breakdown-toolbar-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
     }
 
     .viral-breakdown-inline-field {
@@ -124,31 +127,109 @@
       text-decoration: none;
     }
 
+    .viral-breakdown-status {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      max-width: 100%;
+      padding: 0 10px;
+      border-radius: 999px;
+      background: rgba(24, 160, 88, 0.1);
+      color: #0b7a43;
+      font-size: 12px;
+      font-weight: 800;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .viral-breakdown-status:empty {
+      display: none;
+    }
+
+    .viral-breakdown-status.is-error {
+      background: rgba(210, 38, 38, 0.1);
+      color: #b42318;
+    }
+
     .viral-breakdown-workspace-layout {
       flex: 1;
       min-height: 0;
       display: grid;
-      grid-template-columns: minmax(0, 0.82fr) minmax(360px, 1.18fr);
-      gap: 16px;
-      padding-bottom: 4px;
-      overflow: auto;
-      align-content: start;
-    }
-
-    .viral-breakdown-preview-column,
-    .viral-breakdown-function-column {
-      min-height: 0;
-      display: grid;
-      gap: 16px;
-    }
-
-    .viral-breakdown-preview-column {
-      grid-template-rows: minmax(0, 2fr) minmax(0, 1fr);
+      grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr);
+      gap: 14px;
+      overflow: hidden;
       align-content: stretch;
     }
 
-    .viral-breakdown-script-guess-card {
+    .viral-breakdown-preview-column,
+    .viral-breakdown-detail-column {
       min-height: 0;
+      display: grid;
+      gap: 0;
+    }
+
+    .viral-breakdown-preview-column {
+      grid-template-rows: minmax(0, 1fr);
+    }
+
+    .viral-breakdown-detail-column {
+      grid-template-rows: auto minmax(0, 1fr);
+      overflow: hidden;
+      border: 1px solid rgba(79, 109, 255, 0.14);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.66);
+    }
+
+    .viral-breakdown-tabs {
+      display: flex;
+      gap: 4px;
+      padding: 0 10px;
+      border-bottom: 1px solid rgba(79, 109, 255, 0.12);
+      overflow-x: auto;
+    }
+
+    button.viral-breakdown-tab {
+      min-height: 38px;
+      padding: 0 12px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 800;
+      box-shadow: none;
+      white-space: nowrap;
+    }
+
+    button.viral-breakdown-tab:hover {
+      color: var(--text);
+      filter: none;
+      transform: none;
+    }
+
+    button.viral-breakdown-tab.is-active {
+      color: #4964dc;
+      border-bottom-color: #4964dc;
+    }
+
+    .viral-breakdown-panels {
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .viral-breakdown-panel {
+      display: none;
+      height: 100%;
+      min-height: 0;
+      overflow: auto;
+      padding: 10px;
+    }
+
+    .viral-breakdown-panel.is-active {
+      display: block;
     }
 
     .viral-breakdown-script-guess-editor {
@@ -203,82 +284,53 @@
       overflow: hidden;
     }
 
-    .viral-breakdown-script-guess-card {
+    .viral-breakdown-script-guess-card,
+    .viral-breakdown-pane.area-grid,
+    .viral-breakdown-pane.area-transcript,
+    .viral-breakdown-pane.area-generated {
+      min-height: 0;
       height: 100%;
       overflow: hidden;
+      border: 0;
+      box-shadow: none;
+      background: transparent;
     }
 
-    .viral-breakdown-script-guess-card .viral-breakdown-pane-body {
+    .viral-breakdown-script-guess-card .viral-breakdown-pane-body,
+    .viral-breakdown-pane.area-grid .viral-breakdown-pane-body,
+    .viral-breakdown-pane.area-transcript .viral-breakdown-pane-body,
+    .viral-breakdown-pane.area-generated .viral-breakdown-pane-body {
       flex: 1 1 auto;
       min-height: 0;
     }
 
-    .viral-breakdown-function-column {
-      grid-template-rows: auto minmax(180px, 0.9fr) minmax(180px, 1fr) minmax(160px, 0.8fr);
-      align-content: start;
-      overflow: auto;
-      padding-right: 2px;
-      min-width: 0;
-    }
-
     .viral-breakdown-pane {
       min-height: 0;
-      padding: 14px;
+      padding: 4px;
       display: flex;
       flex-direction: column;
       gap: 10px;
       border-radius: 16px;
     }
 
-    @media (max-width: 1080px) {
-      .viral-breakdown-workspace-layout {
-        grid-template-columns: minmax(0, 1fr) minmax(260px, 0.88fr);
-      }
-
-      .viral-breakdown-toolbar {
-        padding: 12px 14px;
-      }
-
-      .viral-breakdown-toolbar-row {
-        gap: 10px;
-      }
+    .viral-breakdown-pane.area-generated .viral-breakdown-empty {
+      min-height: 96px;
     }
 
     @media (max-width: 980px) {
-      #viralBreakdownModal > .material-modal-panel {
+      #viralBreakdownModal > .material-modal-panel,
+      #viralBreakdownModal > .viral-breakdown-modal-panel {
         width: min(calc(100vw - 24px), 100%);
         max-height: calc(100vh - 24px);
-        height: auto;
-        padding: 14px;
-        gap: 12px;
-        overflow: auto;
-        grid-template-rows: auto auto auto;
+      }
+
+      .viral-breakdown-toolbar {
+        margin-inline: 14px;
       }
 
       .viral-breakdown-workspace-layout {
-        grid-template-columns: minmax(0, 1fr) minmax(220px, 0.78fr);
-        gap: 12px;
-      }
-
-      .viral-breakdown-stage,
-      .viral-breakdown-workbench {
-        min-height: auto;
-        height: auto;
-        overflow: visible;
-      }
-
-      .viral-breakdown-preview-column,
-      .viral-breakdown-function-column {
-        grid-template-rows: auto;
-      }
-
-      .viral-breakdown-function-column {
-        overflow: visible;
-        padding-right: 0;
-      }
-
-      .viral-breakdown-toolbar-row {
-        align-items: stretch;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(220px, 0.7fr) minmax(280px, 1.3fr);
       }
 
       .viral-breakdown-inline-field {
@@ -287,18 +339,13 @@
     }
 
     @media (max-width: 760px) {
-      #viralBreakdownModal > .material-modal-panel {
+      #viralBreakdownModal > .material-modal-panel,
+      #viralBreakdownModal > .viral-breakdown-modal-panel {
         width: min(calc(100vw - 16px), 100%);
         max-height: calc(100vh - 16px);
         height: auto;
-        padding: 12px;
-        gap: 10px;
         overflow: auto;
-        grid-template-rows: auto auto auto;
-      }
-
-      .viral-breakdown-workspace-layout {
-        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto auto auto auto;
       }
 
       .viral-breakdown-stage,
@@ -308,96 +355,20 @@
         overflow: visible;
       }
 
-      .viral-breakdown-preview-column,
-      .viral-breakdown-function-column {
-        grid-template-rows: auto;
+      .viral-breakdown-workspace-layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(200px, 38vh) minmax(280px, auto);
+        overflow: visible;
       }
 
-      .viral-breakdown-toolbar .material-actions {
+      .viral-breakdown-toolbar .material-actions,
+      .viral-breakdown-toolbar-actions {
         width: 100%;
       }
 
       .viral-breakdown-toolbar .button-secondary,
       .viral-breakdown-toolbar .material-library-button {
         flex: 1 1 0;
-      }
-    }
-
-    @media (max-width: 560px) {
-      #viralBreakdownModal .material-modal-panel {
-        width: min(calc(100vw - 12px), 100%);
-        height: min(calc(100vh - 12px), 100%);
-        border-radius: 16px;
-      }
-
-      #viralBreakdownModal > .material-modal-panel {
-        max-height: calc(100vh - 12px);
-        height: auto;
-        padding: 10px;
-        gap: 8px;
-        overflow: auto;
-        grid-template-rows: auto auto auto;
-      }
-
-      #viralBreakdownModal .modal-head {
-        align-items: flex-start;
-        gap: 8px;
-      }
-
-      #viralBreakdownModal .modal-title {
-        min-width: 0;
-      }
-
-      .viral-breakdown-workbench {
-        gap: 10px;
-      }
-
-      .viral-breakdown-toolbar {
-        padding: 10px 12px;
-        gap: 10px;
-      }
-
-      .viral-breakdown-toolbar-row {
-        gap: 8px;
-      }
-
-      .viral-breakdown-inline-field {
-        min-width: 0;
-        flex-basis: 100%;
-        flex-direction: column;
-        align-items: stretch;
-        gap: 4px;
-        font-size: 12px;
-      }
-
-      .viral-breakdown-pane {
-        padding: 10px;
-        gap: 6px;
-      }
-
-      .viral-breakdown-pane.area-video .viral-breakdown-pane-body {
-        min-height: clamp(120px, 22vh, 168px);
-      }
-
-      .viral-breakdown-pane.area-grid .viral-breakdown-pane-body,
-      .viral-breakdown-pane.area-transcript .viral-breakdown-pane-body,
-      .viral-breakdown-pane.area-generated .viral-breakdown-pane-body {
-        min-height: 84px;
-      }
-
-      .viral-breakdown-footer {
-        display: grid;
-        gap: 10px;
-      }
-
-      .viral-breakdown-footer .modal-sub {
-        font-size: 12px;
-        line-height: 1.45;
-      }
-
-      .viral-breakdown-footer .material-actions,
-      .viral-breakdown-footer .material-actions > * {
-        width: 100%;
       }
     }
 

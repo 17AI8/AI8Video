@@ -211,7 +211,7 @@ class VideoAssetArchiver:
         self.local_root.mkdir(parents=True, exist_ok=True)
         result_root = ensure_user_generated_result_dir()
         video_name = Path(self._build_video_key(job, video)).name
-        result_video_key = f"video/{video_name}"
+        result_video_key = self._result_video_key(video, video_name)
         result_video = result_root / result_video_key
         result_video.parent.mkdir(parents=True, exist_ok=True)
         if source.resolve() != result_video.resolve():
@@ -243,7 +243,7 @@ class VideoAssetArchiver:
             )
 
         cover_name = Path(self._build_cover_key(job, video)).name
-        cover_key = f"cover/{cover_name}"
+        cover_key = self._result_cover_key(result_video_key, cover_name)
         result_cover = result_root / cover_key
         result_cover.parent.mkdir(parents=True, exist_ok=True)
         cover_generation_meta = self._extract_cover_frame(result_video, result_cover)
@@ -290,6 +290,21 @@ class VideoAssetArchiver:
                 **(extra_meta or {}),
             },
         )
+
+    @staticmethod
+    def _result_video_key(video: VideoPrompt, filename: str) -> str:
+        subdir = Path(str(video.archive_subdir or "video").strip() or "video")
+        if subdir.is_absolute() or ".." in subdir.parts:
+            raise ValueError("用户生成结果归档目录无效")
+        return (subdir / filename).as_posix()
+
+    @staticmethod
+    def _result_cover_key(video_key: str, filename: str) -> str:
+        parts = list(Path(video_key).parts)
+        if "video" not in parts:
+            return (Path("cover") / filename).as_posix()
+        video_index = parts.index("video")
+        return (Path(*parts[:video_index], "cover") / filename).as_posix()
 
     def _resolve_backend(self) -> str:
         return self.config.resolved_archive_backend()
@@ -360,7 +375,7 @@ class VideoAssetArchiver:
             raise
         result_root = ensure_user_generated_result_dir()
         video_name = Path(self._build_video_key(job, video)).name
-        result_video_key = f"video/{video_name}"
+        result_video_key = self._result_video_key(video, video_name)
         result_video = result_root / result_video_key
         result_video.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(video_temp_path), result_video)
@@ -372,14 +387,14 @@ class VideoAssetArchiver:
         if job.cover_image_url:
             cover_temp, _cover_meta = self._download_to_tempfile(job.cover_image_url, suffix=".jpg")
             cover_name = Path(self._build_cover_key(job, video)).name
-            cover_key = f"cover/{cover_name}"
+            cover_key = self._result_cover_key(result_video_key, cover_name)
             result_cover = result_root / cover_key
             result_cover.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(cover_temp, result_cover)
             cover_url = self._display_url("local", cover_key)
         else:
             cover_name = Path(self._build_cover_key(job, video)).name
-            cover_key = f"cover/{cover_name}"
+            cover_key = self._result_cover_key(result_video_key, cover_name)
             result_cover = result_root / cover_key
             result_cover.parent.mkdir(parents=True, exist_ok=True)
             cover_generation_meta = self._extract_cover_frame(result_video, result_cover)

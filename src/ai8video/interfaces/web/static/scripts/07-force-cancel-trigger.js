@@ -52,6 +52,17 @@
         await refreshArchiveSettings();
         return;
       }
+      const cleanupArchiveAllTrigger = event.target.closest('[data-cleanup-archive-all]');
+      if (cleanupArchiveAllTrigger) {
+        event.preventDefault();
+        try {
+          await cleanupAllArchiveArtifacts(cleanupArchiveAllTrigger);
+        } catch (error) {
+          console.error(error);
+          window.alert(error?.message || '一键清理归档失败');
+        }
+        return;
+      }
       const openArchiveArtifactTrigger = event.target.closest('[data-open-archive-artifact]');
       if (openArchiveArtifactTrigger) {
         event.preventDefault();

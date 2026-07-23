@@ -260,6 +260,17 @@
     }
 
     #composer #sendButton {
+      align-self: end;
+      width: 62px;
+      min-height: 44px;
+      height: 44px;
+      max-height: 44px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      white-space: nowrap;
       background: var(--composer-sidebar-surface);
       color: #4f6dff;
       border: 1px solid var(--composer-sidebar-border);

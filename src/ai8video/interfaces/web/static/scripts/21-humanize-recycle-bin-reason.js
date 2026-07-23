@@ -383,6 +383,7 @@
 
     function renderMessages() {
       const session = getActiveSession();
+      if (stripStaleWelcomeMessages(session)) persistSessions();
       renderClearConversationButton(session);
       const scroller = els.messages.parentElement;
       const distanceFromBottom = Math.max(0, scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight);
@@ -394,18 +395,22 @@
       }
       session.messages.forEach((message, messageIndex) => {
         const wrap = document.createElement('div');
-        wrap.className = 'message' + (message.role === 'user' ? ' user' : '') + (message.textCleared ? ' text-cleared' : '');
+        wrap.className = 'message'
+          + (message.role === 'user' ? ' user' : '')
+          + (message.textCleared ? ' text-cleared' : '')
+          + (isWelcomeMessage(message) ? ' is-welcome' : '');
         const avatar = message.role === 'user' ? '我' : '讯';
         wrap.innerHTML = `<div class="avatar">${avatar}</div><div class="bubble"></div>`;
         const bubble = wrap.querySelector('.bubble');
         if (message.role === 'user') {
           bubble.innerHTML = `<p>${escapeHtml(message.text)}</p>`;
         } else if (message.error) {
-          bubble.innerHTML = `<p>本次请求失败：${escapeHtml(message.error)}</p>`;
+          bubble.innerHTML = `<p>本次请求失败：${escapeHtml(formatNetworkError(message.error))}</p>`;
         } else {
           bubble.innerHTML = renderAssistantPayload(message.payload, {
             sessionId: session.id,
             messageIndex,
+            messageCount: session.messages.length,
           });
           bubble.classList.toggle(
             'pending-only',

@@ -127,13 +127,18 @@ def html_motion_runtime_status() -> dict[str, Any]:
     }
 
 
-def build_html_motion_llm(config: AI8VideoConfig):
+def build_html_motion_llm(
+    config: AI8VideoConfig,
+    *,
+    on_delta: Callable[[str], None] | None = None,
+):
     llm = build_openai_compat_llm(
         config,
         timeout_seconds=HTML_MOTION_LLM_TIMEOUT_SECONDS,
         stream=True,
         transport_retry_count=0,
         system_prompt=HTML_MOTION_SYSTEM_PROMPT,
+        on_delta=on_delta,
     )
     return None if llm is None else lambda prompt: _run_llm_race(llm, prompt)
 

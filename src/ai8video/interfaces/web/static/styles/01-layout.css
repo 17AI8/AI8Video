@@ -150,6 +150,10 @@
       margin-bottom: 20px;
     }
 
+    .brand-copy[hidden] {
+      display: none !important;
+    }
+
     .mark {
       width: 40px;
       height: 40px;

@@ -46,7 +46,6 @@
         <div class="settings-row">
           <div class="settings-row-main">
             <span class="settings-row-title">${escapeHtml(field.label || envName)}</span>
-            <span class="settings-row-env">${escapeHtml(envName)} · ${escapeHtml(field.source || 'missing')}</span>
           </div>
           ${rowValue}
           ${rowActions}
@@ -283,6 +282,12 @@
         AI8VIDEO_ARCHIVE_RESULT_VIDEO_DIR: 'result-videos',
         AI8VIDEO_ARCHIVE_COVER_DIR: 'covers',
         AI8VIDEO_ARCHIVE_PREVIEW_DIR: 'previews',
+        AI8VIDEO_ARCHIVE_EXTENSION_DIR: 'extension-archive',
+        AI8VIDEO_ARCHIVE_EXTENSION_FRAME_DIR: 'extension-frames',
+        AI8VIDEO_ARCHIVE_HTML_MOTION_WORK_DIR: 'html-motion-work',
+        AI8VIDEO_ARCHIVE_HTML_MOTION_REVIEW_DIR: 'html-motion-reviews',
+        AI8VIDEO_ARCHIVE_RESTORED_METADATA_DIR: 'restored-metadata',
+        AI8VIDEO_ARCHIVE_RESULT_JUNK: 'result-junk',
         AI8VIDEO_ARCHIVE_TTS_OUTPUT_DIR: 'tts-output',
         AI8VIDEO_ARCHIVE_MERGE_TEMP_DIR: 'merge-temp',
         AI8VIDEO_ARCHIVE_REFERENCE_TEMP_DIR: 'reference-temp',
@@ -297,6 +302,12 @@
         AI8VIDEO_ARCHIVE_TTS_OUTPUT_DIR: '清理配音输出',
         AI8VIDEO_ARCHIVE_MERGE_TEMP_DIR: '清理临时媒体',
         AI8VIDEO_ARCHIVE_REFERENCE_TEMP_DIR: '清理临时图片',
+        AI8VIDEO_ARCHIVE_EXTENSION_DIR: '清理延长视频',
+        AI8VIDEO_ARCHIVE_EXTENSION_FRAME_DIR: '清理延长截帧',
+        AI8VIDEO_ARCHIVE_HTML_MOTION_WORK_DIR: '清理失败工作目录',
+        AI8VIDEO_ARCHIVE_HTML_MOTION_REVIEW_DIR: '清理审核缓存',
+        AI8VIDEO_ARCHIVE_RESTORED_METADATA_DIR: '清理孤儿恢复元数据',
+        AI8VIDEO_ARCHIVE_RESULT_JUNK: '清理目录杂项',
         AI8VIDEO_ARCHIVE_MANIFEST_DIR: '清理孤儿元数据',
         AI8VIDEO_ARCHIVE_ASSET_INDEX: '压缩孤儿记录',
         AI8VIDEO_ARCHIVE_RECYCLE_BIN_DIR: '清空回收站',
@@ -495,4 +506,3 @@
       if (raw === 'size' || raw === 'ratio') return raw;
       return /^\d{3,4}x\d{3,4}$/i.test(String(settings?.resolution || '')) ? 'size' : 'ratio';
     }
-

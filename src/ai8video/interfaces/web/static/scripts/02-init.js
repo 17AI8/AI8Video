@@ -21,6 +21,8 @@
       pruneSettledPendingProgressFromSessions();
       persistSessions();
       await refreshHealth();
+      await recoverSessionsAfterReload();
+      persistSessions();
       await refreshAuthSettings();
       await refreshVideoModelSettings();
       await refreshAssets();
@@ -70,9 +72,6 @@
       refreshScriptKnowledge({ preserveSelection: false });
     });
 
-    els.scriptKnowledgeSyncButton?.addEventListener('click', async () => {
-      await syncScriptKnowledge();
-    });
 
     els.recycleBinCloseButton.addEventListener('click', () => {
       closeRecycleBinModal();
@@ -497,4 +496,3 @@
       state.defaultReferenceDrawer.customPromptComposing = false;
       scheduleDefaultReferenceCustomPromptSave(textarea.value || '');
     });
-

@@ -81,7 +81,7 @@ class ScriptKnowledgeRerankTest(unittest.TestCase):
         store.status.return_value = {"available": True}
         store.search_sections.return_value = _candidates(20)
         with patch(
-            "ai8video.knowledge.script_knowledge_context.synchronize_script_knowledge",
+            "ai8video.knowledge.script_knowledge_context.register_script_knowledge_sources",
             return_value={"unchanged": 1},
         ), patch(
             "ai8video.knowledge.script_knowledge_context.get_script_knowledge_store",

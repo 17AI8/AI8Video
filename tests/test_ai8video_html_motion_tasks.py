@@ -123,6 +123,25 @@ class HtmlMotionTaskServiceTest(unittest.TestCase):
         self.assertIn("审核结果：问句缺少真实痛点", snapshot["message"])
         self.assertEqual(snapshot["attemptTraces"][0]["attempt"], 1)
 
+    def test_snapshot_exposes_bounded_llm_stream_text(self) -> None:
+        service = HtmlMotionTaskService()
+        release = threading.Event()
+
+        def target(*, stage_callback, **_kwargs):
+            stage_callback("generating", {"streamDelta": '{\"audit\":'})
+            stage_callback("generating", {"streamDelta": '{\"passed\":true}'})
+            release.wait(1)
+            return {"htmlMotionOverlay": {"status": "preview_ready"}}
+
+        task = service.submit("video/stream.mp4", target)
+        deadline = time.monotonic() + 1
+        snapshot = service.get(task["taskId"])
+        while not snapshot["streamText"] and time.monotonic() < deadline:
+            time.sleep(0.01)
+            snapshot = service.get(task["taskId"])
+        release.set()
+        self.assertEqual(snapshot["streamText"], '{\"audit\":{\"passed\":true}')
+
 
 def _wait_for_terminal(service: HtmlMotionTaskService, task_id: str, timeout: float = 2.0) -> dict:
     deadline = time.monotonic() + timeout

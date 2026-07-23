@@ -107,9 +107,31 @@
       }
     }
 
+    function placeVideoPreviewPopover(popover) {
+      const body = els.videoPreviewBody;
+      const controls = body?.querySelector('.video-preview-controls');
+      if (!popover || !body || !controls) return;
+      const gap = 6;
+      const offset = Math.max(0, body.getBoundingClientRect().bottom - controls.getBoundingClientRect().top) + gap;
+      popover.style.bottom = `${Math.round(offset)}px`;
+    }
+
+    function showVideoPreviewPopover(popover) {
+      if (!popover) return;
+      placeVideoPreviewPopover(popover);
+      popover.classList.remove('is-open');
+      void popover.offsetWidth;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          placeVideoPreviewPopover(popover);
+          popover.classList.add('is-open');
+        });
+      });
+    }
+
     function closeVideoPreviewTtsEditor() {
       const popover = els.videoPreviewBody?.querySelector('[data-video-preview-tts-editor]');
-      popover?.classList.add('hidden');
+      popover?.classList.remove('is-open');
     }
 
     async function openTtsNarrationEditorFromVideoPreview(userGeneratedKey) {
@@ -148,7 +170,7 @@
         status.classList.remove('is-working', 'is-success', 'is-error');
         if (tone) status.classList.add(`is-${tone}`);
       };
-      popover.classList.remove('hidden');
+      showVideoPreviewPopover(popover);
       setTtsStatus('正在读取台词');
       if (textarea) {
         textarea.value = '';

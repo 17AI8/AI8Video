@@ -22,6 +22,10 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.ok) throw new Error(data.error || '生成延长视频失败');
+        if (!hasActiveVideoPreviewExtensionState(userGeneratedKey)) {
+          await discardDetachedVideoPreviewExtensionResult(userGeneratedKey, data.userGeneratedKey);
+          return;
+        }
         updateVideoPreviewExtensionState(userGeneratedKey, {
           generating: false,
           generationCompletedAt: new Date().toISOString(),
@@ -68,6 +72,8 @@
         stageGrid.querySelector('.video-preview-extension-stage')?.remove();
         stageGrid.querySelector('.video-preview-merge-control')?.remove();
         stageGrid.querySelector('.video-preview-merge-settings')?.remove();
+        const deleteExtensionButton = stageGrid.querySelector('[data-video-preview-action="delete-extension"]');
+        if (deleteExtensionButton) deleteExtensionButton.disabled = false;
         const extensionStage = document.createElement('div');
         extensionStage.className = 'video-preview-extension-stage';
         const framePreview = video.cloneNode(true);
@@ -111,12 +117,12 @@
             <button type="button" data-video-preview-merge disabled>待生成</button>
             <button type="button" data-video-preview-merge-settings-toggle>设置</button>
           </div>
-          <div class="video-preview-merge-settings hidden">
+          <div class="video-preview-merge-settings">
             <div class="video-preview-merge-mode" role="radiogroup" aria-label="合并模式">
               <label><input type="radio" name="video-preview-merge-mode" value="direct" ${savedState?.mergeMode === 'continuation' ? '' : 'checked'}>直接合并</label>
               <label><input type="radio" name="video-preview-merge-mode" value="continuation" ${savedState?.mergeMode === 'continuation' ? 'checked' : ''}>延续合并</label>
             </div>
-            <label>合并视频名称<input data-video-preview-merge-name value="${escapeHtml(String(savedState?.outputName || els.videoPreviewTitle?.textContent || '延长合并视频'))}"></label>
+            <p class="video-preview-merge-tip" data-video-preview-merge-tip>${savedState?.mergeMode === 'continuation' ? '右视频续接到左视频截图处' : '直接拼接左右两个视频'}</p>
           </div>
         `);
         stageGrid.classList.add('extension-active');
@@ -130,11 +136,20 @@
         }
         state.videoPreviewModal = { ...(state.videoPreviewModal || {}), frameRepairPrompt: String(savedState?.frameRepairPrompt || '') };
         renderVideoPreviewFrameRepairActions();
-        const nameInput = stageGrid.querySelector('[data-video-preview-merge-name]');
+        const defaultOutputName = String(els.videoPreviewTitle?.textContent || '延长合并视频').trim();
+        const mergeTip = stageGrid.querySelector('[data-video-preview-merge-tip]');
+        const mergeTips = {
+          direct: '直接拼接左右两个视频',
+          continuation: '右视频续接到左视频截图处',
+        };
+        const syncMergeTip = () => {
+          const mode = String(stageGrid.querySelector('[name="video-preview-merge-mode"]:checked')?.value || 'direct');
+          if (mergeTip) mergeTip.textContent = mergeTips[mode] || mergeTips.direct;
+        };
         const saveState = () => persistVideoPreviewExtensionState(key, {
           active: true,
           frameTime: video.currentTime,
-          outputName: String(nameInput?.value || '').trim(),
+          outputName: defaultOutputName,
           mergeMode: String(stageGrid.querySelector('[name="video-preview-merge-mode"]:checked')?.value || 'direct'),
           frameKey: String(stageGrid.dataset.extensionFrameKey || '').trim(),
           frameUrl: String(stageGrid.dataset.extensionFrameUrl || '').trim(),
@@ -148,10 +163,13 @@
           batchMode: isVideoPreviewExtensionBatchMode(stageGrid),
           batchFrames: readVideoPreviewExtensionBatchFrames(stageGrid),
         });
-        nameInput?.addEventListener('input', saveState);
         stageGrid.querySelectorAll('[name="video-preview-merge-mode"]').forEach((input) => {
-          input.addEventListener('change', saveState);
+          input.addEventListener('change', () => {
+            syncMergeTip();
+            saveState();
+          });
         });
+        syncMergeTip();
         saveState();
         syncVideoPreviewMergeAvailability();
         setVideoPreviewButtonLabel(button, '重新截取');
@@ -206,7 +224,7 @@
       const rightKey = String(rightStage?.dataset.videoKey || '').trim();
       const normalizedLeftKey = String(leftKey || stageGrid?.dataset.leftVideoKey || '').trim();
       if (!normalizedLeftKey || !rightKey || button?.disabled) return;
-      const outputName = String(stageGrid.querySelector('[data-video-preview-merge-name]')?.value || '延长合并视频').trim();
+      const outputName = String(els.videoPreviewTitle?.textContent || '延长合并视频').trim();
       const mergeMode = String(stageGrid.querySelector('[name="video-preview-merge-mode"]:checked')?.value || 'direct');
       const splitTime = Number(stageGrid.dataset.extensionFrameTime || 0);
       button.disabled = true;
@@ -257,68 +275,76 @@
           <div class="video-preview-stage">
             <video class="video-preview-large" controls autoplay playsinline preload="metadata" ${cover ? `poster="${escapeHtml(cover)}"` : ''} src="${escapeHtml(src)}"></video>
             <span class="video-preview-extend-actions">
-              <button type="button" class="video-preview-button video-preview-extend-button" data-video-preview-action="extend-video" data-icon="sparkles" data-video-user-generated-key="${escapeHtml(userGeneratedKey)}" ${userGeneratedKey ? '' : 'disabled'}>${videoPreviewButtonInnerHtml('sparkles', '延长')}</button>
-              <button type="button" class="video-preview-button video-preview-extension-close-button" data-video-preview-action="delete-extension" aria-label="删除延长内容">×</button>
+              <button type="button" class="video-preview-button video-preview-extend-button" data-video-preview-action="extend-video" data-icon="extend" data-video-user-generated-key="${escapeHtml(userGeneratedKey)}" ${userGeneratedKey ? '' : 'disabled'}>${videoPreviewButtonInnerHtml('extend', '延长')}</button>
+              <button type="button" class="video-preview-button video-preview-extension-close-button" data-video-preview-action="delete-extension" data-icon="trash" aria-label="删除右侧延长内容">${videoPreviewButtonInnerHtml('trash', '')}</button>
             </span>
           </div>
         </div>
         <button type="button" class="video-preview-nav-button next" data-video-preview-action="next" ${hasPlaylistNav ? '' : 'disabled'}>下一个</button>
         <div class="video-preview-controls">
-          <div class="video-preview-control-group">
-            <span class="video-preview-html-motion-status" data-video-preview-html-motion-status aria-live="polite"></span>
-            <span class="video-preview-split-button" role="group" aria-label="播放控制">
-              <button type="button" class="video-preview-button" data-video-preview-action="toggle-play" data-icon="pause">${videoPreviewButtonInnerHtml('pause', '暂停')}</button>
-              <button type="button" class="video-preview-button" data-video-preview-action="restart" data-icon="replay">${videoPreviewButtonInnerHtml('replay', '重播')}</button>
-              <button type="button" class="video-preview-button" data-video-preview-action="toggle-mute" data-icon="volume">${videoPreviewButtonInnerHtml('volume', '静音')}</button>
-            </span>
-            <span class="video-preview-split-button" role="group" aria-label="TTS 配音">
-              <button
-                type="button"
-                class="video-preview-button"
-                data-video-preview-action="regenerate-tts"
-                data-icon="mic"
-                data-video-user-generated-key="${escapeHtml(userGeneratedKey)}"
-                ${userGeneratedKey ? '' : 'disabled'}
-              >${videoPreviewButtonInnerHtml('mic', '重新生成TTS配音')}</button>
-              <button
-                type="button"
-                class="video-preview-button"
-                data-video-preview-action="edit-tts-text"
-                data-icon="edit"
-                data-video-user-generated-key="${escapeHtml(userGeneratedKey)}"
-                ${userGeneratedKey ? '' : 'disabled'}
-              >${videoPreviewButtonInnerHtml('edit', '修改台词')}</button>
-            </span>
-            <span class="video-preview-split-button" role="group" aria-label="HTML 动效预览与烧录">
-              <button
-                type="button"
-                class="video-preview-button"
-                data-video-preview-action="regenerate-html-motion"
-                data-icon="sparkles"
-                data-video-user-generated-key="${escapeHtml(userGeneratedKey)}"
-                ${userGeneratedKey ? '' : 'disabled'}
-              >${videoPreviewButtonInnerHtml('sparkles', '重新生成 HTML 动效')}</button>
-              <button
-                type="button"
-                class="video-preview-button"
-                data-video-preview-action="confirm-html-motion"
-                data-icon="check"
-                data-video-user-generated-key="${escapeHtml(userGeneratedKey)}"
-                disabled
-              >${videoPreviewButtonInnerHtml('check', '确认烧录')}</button>
-            </span>
+          <div class="video-preview-html-motion-drawer" data-video-preview-html-motion-drawer>
+            <div class="video-preview-html-motion-drawer-slot">
+              <button type="button" class="video-preview-html-motion-status" data-video-preview-html-motion-toggle data-video-preview-html-motion-status aria-label="展开任务详情" aria-expanded="false" aria-controls="videoPreviewHtmlMotionDrawer">
+                ${videoPreviewIconSvg('chevron')}<span class="video-preview-button-label video-preview-html-motion-summary" data-video-preview-html-motion-summary aria-live="polite" hidden></span>
+              </button>
+            </div>
+            <div id="videoPreviewHtmlMotionDrawer" class="video-preview-html-motion-detail" data-video-preview-html-motion-detail></div>
           </div>
-          <div class="video-preview-side-actions">
-            <div class="video-preview-time" data-video-preview-time>00:00 / 00:00</div>
-            ${userGeneratedKey ? `
-              <button
-                type="button"
-                class="video-preview-button danger"
-                data-video-preview-action="delete-video"
-                data-icon="trash"
-                data-video-user-generated-key="${escapeHtml(userGeneratedKey)}"
-              >${videoPreviewButtonInnerHtml('trash', '删除视频')}</button>
-            ` : ''}
+          <div class="video-preview-controls-row">
+            <div class="video-preview-control-group">
+              <span class="video-preview-split-button" role="group" aria-label="播放控制">
+                <button type="button" class="video-preview-button" data-video-preview-action="toggle-play" data-icon="pause">${videoPreviewButtonInnerHtml('pause', '暂停')}</button>
+                <button type="button" class="video-preview-button" data-video-preview-action="restart" data-icon="replay">${videoPreviewButtonInnerHtml('replay', '重播')}</button>
+                <button type="button" class="video-preview-button" data-video-preview-action="toggle-mute" data-icon="volume">${videoPreviewButtonInnerHtml('volume', '静音')}</button>
+              </span>
+              <span class="video-preview-split-button" role="group" aria-label="TTS 配音">
+                <button
+                  type="button"
+                  class="video-preview-button"
+                  data-video-preview-action="regenerate-tts"
+                  data-icon="mic"
+                  data-video-user-generated-key="${escapeHtml(userGeneratedKey)}"
+                  ${userGeneratedKey ? '' : 'disabled'}
+                >${videoPreviewButtonInnerHtml('mic', '重新生成TTS配音')}</button>
+                <button
+                  type="button"
+                  class="video-preview-button"
+                  data-video-preview-action="edit-tts-text"
+                  data-icon="edit"
+                  data-video-user-generated-key="${escapeHtml(userGeneratedKey)}"
+                  ${userGeneratedKey ? '' : 'disabled'}
+                >${videoPreviewButtonInnerHtml('edit', '修改台词')}</button>
+              </span>
+              <span class="video-preview-split-button" role="group" aria-label="HTML 动效预览与烧录">
+                <button
+                  type="button"
+                  class="video-preview-button"
+                  data-video-preview-action="regenerate-html-motion"
+                  data-icon="sparkles"
+                  data-video-user-generated-key="${escapeHtml(userGeneratedKey)}"
+                  ${userGeneratedKey ? '' : 'disabled'}
+                >${videoPreviewButtonInnerHtml('sparkles', '重新生成 HTML 动效')}</button>
+                <button
+                  type="button"
+                  class="video-preview-button"
+                  data-video-preview-action="confirm-html-motion"
+                  data-icon="check"
+                  data-video-user-generated-key="${escapeHtml(userGeneratedKey)}"
+                  disabled
+                >${videoPreviewButtonInnerHtml('check', '确认烧录')}</button>
+              </span>
+            </div>
+            <div class="video-preview-side-actions">
+              ${userGeneratedKey ? `
+                <button
+                  type="button"
+                  class="video-preview-button danger"
+                  data-video-preview-action="delete-video"
+                  data-icon="trash"
+                  data-video-user-generated-key="${escapeHtml(userGeneratedKey)}"
+                >${videoPreviewButtonInnerHtml('trash', '删除视频')}</button>
+              ` : ''}
+            </div>
           </div>
         </div>
       `;
@@ -351,7 +377,12 @@
       });
       els.videoPreviewBody.querySelector('.video-preview-stage-grid')?.addEventListener('click', (event) => {
         if (event.target?.closest?.('[data-video-preview-merge-settings-toggle]')) {
-          els.videoPreviewBody.querySelector('.video-preview-merge-settings')?.classList.toggle('hidden');
+          const settings = els.videoPreviewBody.querySelector('.video-preview-merge-settings');
+          const toggle = event.target.closest('[data-video-preview-merge-settings-toggle]');
+          if (!settings || !toggle) return;
+          const open = !settings.classList.contains('is-open');
+          settings.classList.toggle('is-open', open);
+          toggle.classList.toggle('is-open', open);
           return;
         }
         const mergeButton = event.target?.closest?.('[data-video-preview-merge]');
@@ -373,6 +404,9 @@
         }
         void regenerateHtmlMotionFromVideoPreview(userGeneratedKey, regenerateHtmlMotionButton, confirmHtmlMotionButton);
       });
+      els.videoPreviewBody.querySelectorAll('[data-video-preview-html-motion-toggle]').forEach((button) => {
+        button.addEventListener('click', () => toggleHtmlMotionPreviewDrawer());
+      });
       confirmHtmlMotionButton?.addEventListener('click', () => {
         confirmHtmlMotionFromVideoPreview(userGeneratedKey, confirmHtmlMotionButton);
       });
@@ -393,10 +427,14 @@
         index: playlistIndex,
         htmlMotionTaskId: '',
         htmlMotionPollTimer: null,
+        htmlMotionTaskSnapshot: null,
+        htmlMotionDetailsOpen: false,
         htmlMotionSubmitting: false,
         htmlMotionCancelRequested: false,
       };
       els.videoPreviewModal.classList.remove('hidden');
+      renderHtmlMotionPreviewDrawer();
+      requestAnimationFrame(() => syncHtmlMotionDrawerWidth());
       restoreVideoPreviewExtensionState(video, userGeneratedKey, extendVideoButton);
       // Resume in-flight backend job if any; otherwise sync finished preview.
       void resumeHtmlMotionFromVideoPreview(
@@ -429,6 +467,8 @@
         index: 0,
         htmlMotionTaskId: '',
         htmlMotionPollTimer: null,
+        htmlMotionTaskSnapshot: null,
+        htmlMotionDetailsOpen: false,
       };
       els.videoPreviewModal.classList.add('hidden');
       els.videoPreviewBody.innerHTML = '';
@@ -479,12 +519,20 @@
         return '<div class="empty">当前没有可显示的鉴权信息。</div>';
       }
       const group = groups.find((item) => item.label === activeCategory) || groups[0];
+      const archiveArtifacts = state.archiveArtifacts || state.authSettings?.archiveArtifacts || {};
+      const archiveTotal = String(archiveArtifacts.totalDisplay || '0 B');
       return `
         <div class="settings-grid">
           <section class="settings-section">
             <div class="settings-section-head">
               <div class="settings-section-title">${escapeHtml(group.label)}</div>
-              ${group.label === '归档' ? `<button type="button" class="settings-section-refresh" data-refresh-archive-settings ${state.settingsModal.refreshingArchive ? 'disabled' : ''}>${state.settingsModal.refreshingArchive ? '刷新中' : '刷新'}</button>` : ''}
+              ${group.label === '归档' ? `
+                <div class="settings-section-actions">
+                  <button type="button" class="settings-section-refresh" data-refresh-archive-settings ${state.settingsModal.refreshingArchive || state.settingsModal.cleaningArchiveAll ? 'disabled' : ''}>${state.settingsModal.refreshingArchive ? '刷新中' : '刷新'}</button>
+                  <span class="settings-archive-total">总占用 ${escapeHtml(archiveTotal)}</span>
+                  <button type="button" class="settings-section-cleanup" data-cleanup-archive-all ${state.settingsModal.cleaningArchiveAll ? 'disabled' : ''}>${state.settingsModal.cleaningArchiveAll ? '清理中' : '一键清理'}</button>
+                </div>
+              ` : ''}
             </div>
             ${group.fields.map((field) => buildSettingsRowMarkup(field)).join('')}
           </section>

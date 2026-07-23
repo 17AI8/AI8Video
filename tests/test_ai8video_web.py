@@ -235,7 +235,13 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("--hot-radar-brand: #4f6dff", source)
         self.assertIn("backdrop-filter: blur(28px) saturate(1.18)", source)
         self.assertIn("@media (max-width: 820px)", source)
-        self.assertIn("#hotRadarModal .hot-radar-detail-panel {\n        position: static;\n        order: -1;", source)
+        self.assertNotIn('id="hotRadarSelectedTopic"', source)
+        self.assertNotIn('class="hot-radar-detail-panel"', modal_source)
+        self.assertIn('hot-radar-topic-preview', source)
+        self.assertIn('data-hot-radar-action="summary"', source)
+        self.assertIn('data-hot-radar-action="prompt"', source)
+        self.assertIn('data-hot-radar-action="fill"', source)
+        self.assertIn('data-hot-radar-summary-output', source)
         self.assertIn("#hotRadarModal #hotRadarTopicList .hot-radar-topic-meta", source)
         self.assertIn('class="hot-radar-topic-meta-item"', source)
         self.assertIn("flex-wrap: wrap", source)
@@ -245,6 +251,16 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("统一热点雷达实际控件的蓝紫玻璃状态", source)
         self.assertIn('id="hotRadarSourceSelect"', source)
         self.assertIn('class="hot-radar-filter-toolbar"', source)
+        self.assertIn('hot-radar-topic-details', source)
+        self.assertIn('function selectHotRadarTopicCard(topicCard)', source)
+        self.assertIn('function buildHotRadarTopicListMarkup(items, hotRadar, twoColumns)', source)
+        self.assertIn('hot-radar-topic-column', source)
+        self.assertIn('is-expanded', source)
+        self.assertIn("#hotRadarModal #hotRadarTopicList .hot-radar-topic-details {\n      max-height: 0;\n      opacity: 0;\n      overflow: hidden;", source)
+        self.assertIn("#hotRadarModal #hotRadarTopicList .hot-radar-topic-preview {\n      max-height: 220px;\n      overflow: auto;", source)
+        self.assertIn("#hotRadarModal .hot-radar-content-grid {\n      min-height: 0;\n      display: grid;\n      grid-template-columns: minmax(0, 1fr);", source)
+        self.assertIn("#hotRadarModal .hot-radar-hotlist-panel {\n      min-height: 0;\n      display: flex;\n      flex-direction: column;\n      overflow: hidden;", source)
+        self.assertIn("#hotRadarModal #hotRadarTopicList {\n        flex: 1 1 auto;\n        min-block-size: 0;\n        overflow-x: hidden;\n        overflow-y: auto;\n      }", source)
         self.assertIn("grid-template-columns: minmax(230px, 0.72fr) minmax(260px, 1.28fr) auto auto", source)
         self.assertIn('id="hotRadarColumnToggleButton"', source)
         self.assertIn("HOT_RADAR_COLUMN_COUNT_STORAGE_KEY", source)
@@ -264,8 +280,23 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn(".video-preview-extend-actions", source)
         self.assertIn('data-video-preview-action="delete-extension"', source)
         self.assertIn("async function deleteVideoPreviewExtensionState(userGeneratedKey, button)", source)
+        self.assertIn("#videoPreviewBody .video-preview-stage-grid.extension-active .video-preview-extension-close-button { display: inline-flex; }", source)
+        self.assertNotIn("extension-has-video", source)
+        self.assertNotIn("if (!String(savedState.rightVideoKey || '').trim() || !String(savedState.rightVideoUrl || '').trim()) return;", source)
+        self.assertIn('aria-label="删除右侧延长内容"', source)
+        self.assertIn("function hasActiveVideoPreviewExtensionState(userGeneratedKey)", source)
+        self.assertIn("async function discardDetachedVideoPreviewExtensionResult(leftKey, rightKey)", source)
+        self.assertIn("if (deleteExtensionButton) deleteExtensionButton.disabled = false;", source)
         self.assertIn("function setVideoPreviewMainControlsDisabled(disabled)", source)
         self.assertIn("data-extension-disabled-before", source)
+        self.assertIn("messageCount: session.messages.length", source)
+        self.assertIn("const historicalPending = Number(context.messageIndex) < Number(context.messageCount) - 1;", source)
+        self.assertIn("这是较早消息的进度记录，不再显示为执行中。", source)
+        self.assertIn("pending-card${historicalPending ? ' is-history' : ''}", source)
+        self.assertIn("function buildHistoricalPendingSnapshot(pending = {})", source)
+        self.assertIn("isActive: !historicalPending", source)
+        self.assertIn("historicalSnapshot: true", source)
+        self.assertIn("if (item?.historicalSnapshot) return buildProgressStatusResultItem(item, index);", source)
         self.assertIn('data-video-preview-action="edit-video-prompt"', source)
         self.assertIn("async function openVideoPromptEditor(userGeneratedKey)", source)
         self.assertIn("async function generateVideoPreviewExtension(userGeneratedKey, button)", source)
@@ -314,7 +345,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("#hotRadarModal #hotRadarTopicList .hot-radar-topic-card.active", source)
         self.assertIn("--hot-radar-surface: #ffffff", source)
         self.assertIn("grid-template-rows: minmax(0, 1fr)", source)
-        self.assertIn("grid-template-columns: minmax(0, 1fr) minmax(300px, 350px)", source)
+        self.assertIn("grid-template-columns: minmax(0, 1fr)", source)
         self.assertIn("HOT_RADAR_SNAPSHOT_STORAGE_KEY", source)
         self.assertIn("function loadHotRadarSnapshot()", source)
         self.assertIn("function persistHotRadarSnapshot(hotRadar)", source)
@@ -329,12 +360,12 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             modal_source.index('id="hotRadarCloseButton"'),
             modal_source.index('class="hot-radar-app-shell"'),
         )
-        self.assertIn('<div id="hotRadarDetailMeta" class="hot-radar-detail-sub">热点摘要</div>', modal_source)
+        self.assertNotIn('<div id="hotRadarDetailMeta" class="hot-radar-detail-sub">热点摘要</div>', modal_source)
         self.assertIn("公开热点聚合与选题工作台", modal_source)
         self.assertIn("热点来源", modal_source)
         self.assertNotIn('class="hot-radar-sidebar-footer"', modal_source)
         self.assertNotIn('id="hotRadarFetchRouteBadge"', modal_source)
-        self.assertIn('id="hotRadarFlameGradient"', modal_source)
+        self.assertIn('id="hotRadarMarkGradient"', modal_source)
         self.assertIn('id="hotRadarSourceManagerModal"', source)
         self.assertIn('value="__add_source__">＋ 新增数据源…', source)
         self.assertIn("selectedValue === '__add_source__'", source)
@@ -685,11 +716,41 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("animation: resultMetaHoverScroll 5s linear infinite alternate", source)
         self.assertIn("@keyframes resultMetaHoverScroll", source)
 
+    def test_html_motion_progress_expands_to_stream_drawer(self) -> None:
+        source = read_static_source()
+
+        self.assertIn('data-video-preview-html-motion-toggle', source)
+        self.assertIn('data-video-preview-html-motion-detail', source)
+        self.assertIn('data-video-preview-html-motion-status', source)
+        self.assertIn('video-preview-html-motion-summary', source)
+        self.assertIn('function updateHtmlMotionPreviewTaskSnapshot(data, options = {})', source)
+        self.assertIn('updateHtmlMotionPreviewTaskSnapshot(data, { render: false })', source)
+        self.assertIn('避免轮询用接口原文盖掉导致数字闪烁', source)
+        self.assertIn('streamText', source)
+        self.assertIn('height: 260px;', source)
+        self.assertIn('resize: vertical;', source)
+        self.assertIn('transition: height 220ms ease', source)
+        self.assertIn('.video-preview-html-motion-drawer.has-task,', source)
+        self.assertIn('video-preview-html-motion-drawer-slot', source)
+        self.assertIn('grid-template-rows: 0fr;', source)
+        self.assertIn('grid-template-rows: 1fr;', source)
+        self.assertIn('function syncHtmlMotionDrawerWidth()', source)
+        self.assertIn('confirm-html-motion', source)
+        self.assertIn("data-video-preview-action=\"confirm-html-motion\"", source)
+        self.assertIn('overflow-wrap: anywhere;', source)
+        self.assertIn('border-radius: 12px 12px 0 0;', source)
+        self.assertIn('border-radius: 0 0 12px 12px;', source)
+        self.assertIn('border-bottom-width: 0;', source)
+        self.assertIn('video-preview-controls-row', source)
+        self.assertNotIn('border-radius: 8px 8px 0 0;', source)
+        self.assertNotIn('width: 196px;', source)
+
     def test_tts_ai_working_status_uses_green(self) -> None:
         source = read_static_source()
 
         self.assertIn(".video-preview-tts-status.is-working", source)
-        self.assertIn("color: #15803d;", source)
+        self.assertIn("color: #9ff3cb;", source)
+        self.assertIn("background: rgba(15, 28, 43, 0.96);", source)
         self.assertIn("setTtsStatus(options.statusText, 'working')", source)
         self.assertIn("setTtsStatus(message.includes('台词已删除') ? '台词已删除' : message, 'error')", source)
 
@@ -4492,9 +4553,9 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
     def test_static_pending_message_renders_agent_step_chain(self) -> None:
         html = read_static_source()
 
-        self.assertIn("function renderAgentStepChain(pending = {})", html)
+        self.assertIn("function renderAgentStepChain(pending = {}, options = {})", html)
         self.assertIn("function buildAgentStepChainModel(pending = {})", html)
-        self.assertIn("${renderAgentStepChain(pending)}", html)
+        self.assertIn("${renderAgentStepChain(displayedPending, { messageIndex: context.messageIndex })}", html)
         self.assertIn("理解需求", html)
         self.assertIn("规划任务", html)
         self.assertIn("提交生成", html)
@@ -4503,12 +4564,31 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn(".agent-step-chain", html)
         self.assertIn(".agent-step-details", html)
         self.assertIn("agent-step-detail-marker", html)
-        self.assertIn("flex-direction: column-reverse", html)
-        self.assertIn("max-height: 78px;", html)
+        self.assertIn(".agent-step-details-drawer", html)
+        self.assertIn("grid-template-rows: 0fr", html)
+        self.assertIn(".agent-step-details.is-expanded .agent-step-details-drawer", html)
+        self.assertIn("grid-template-rows: 1fr", html)
+        self.assertIn("max-height: 180px", html)
+        self.assertIn("agent-step-details-toggle", html)
+        self.assertIn("data-agent-step-details-toggle", html)
+        self.assertIn("展开全部 · ${events.length}", html)
+        self.assertIn("agentStepDetailsExpanded", html)
+        self.assertIn("function buildAgentStepDetailsKey(sessionId, messageIndex)", html)
+        self.assertIn("function toggleAgentStepDetailsExpanded(detailsKey)", html)
+        self.assertIn("function applyAgentStepDetailsExpanded(detailsKey, rootEl = null)", html)
+        self.assertIn("toggle.closest('.agent-step-details')", html)
+        self.assertIn("agent-step-details-drawer-slot", html)
+        self.assertIn("const historyEvents = events.slice(1);", html)
+        self.assertIn("renderAgentStepChain(displayedPending, { messageIndex: context.messageIndex })", html)
+        self.assertIn("${drawer}", html)
+        self.assertIn("${toggle}", html)
+        self.assertIn("toggle.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })", html)
+        self.assertIn("overflow-anchor: none", html)
+        self.assertNotIn("scroller.scrollTop += delta", html)
         self.assertIn(".agent-step-details::before", html)
         self.assertIn(".message:not(.user) .bubble", html)
         self.assertIn("width: 70%;", html)
-        self.assertIn("function renderAgentExecutionEvents(pending = {})", html)
+        self.assertIn("function renderAgentExecutionEvents(pending = {}, options = {})", html)
         self.assertIn("function collapseAgentPollingEvents(rawEvents)", html)
         self.assertIn("const latestStatusIndex = new Map();", html)
         self.assertIn("const eventKey = status ? `${videoIndex}:${segmentIndex}:${status}:${eventKind}` : '';", html)
@@ -4519,7 +4599,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("if (payload.meta?.operation === 'pending' || hasAgentProgress)", html)
         self.assertIn("if (isGeneratedResult && summary && !hasAgentProgress)", html)
         self.assertIn("const generatingStatuses = new Set(['submitting', 'preparing_first_frame', 'submitted', 'polling']);", html)
-        self.assertIn("status === 'polling' && Number.isFinite(Number(event.providerProgress))", html)
+        self.assertIn("status === 'polling' && Number.isFinite(Number(event?.providerProgress))", html)
         self.assertIn("index === 0 && !['succeeded', 'completed'].includes(status)", html)
         self.assertIn("本轮已结束：已生成 ${done}/${total}，失败 ${failed} 条。", html)
         self.assertIn("本机视频后处理编码器不兼容，开头裁剪失败", html)
@@ -4528,7 +4608,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn('class="pending-card-status"', html)
         self.assertIn("function renderAgentVideoThumbnails(pending = {})", html)
         self.assertIn("String(progress.status || '').trim() === 'planning'", html)
-        self.assertIn("if (planning) return '';", html)
+        self.assertIn("if (planning && !submitted) return '';", html)
+        self.assertIn("if (!submitted) return '';", html)
         self.assertIn("${renderProgressResultStrip([], pendingCount)}", html)
         self.assertIn("return buildProgressStatusResultItem(item, index);", html)
         self.assertIn("function humanizePublicExecutionStatus(value)", html)
@@ -4583,7 +4664,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("（${summary} · 当前 ${phase}）", html)
         self.assertIn("preview_ready", html)
         self.assertIn("data-video-preview-html-motion-status", html)
-        self.assertIn(".video-preview-controls {\n      display: flex;\n      align-items: flex-end;", html)
+        self.assertIn("video-preview-controls-row", html)
+        self.assertIn(".video-preview-controls {\n      position: relative;\n      display: flex;\n      flex-direction: column;", html)
         self.assertIn(".video-preview-side-actions {", html)
         self.assertIn("min-height: 32px;", html)
         self.assertIn("重新生成TTS配音", html)
@@ -4812,6 +4894,30 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertTrue(updated["manual"])
         self.assertEqual(prompt, "恢复后的原始视频提示词。")
         self.assertEqual(source, "asset.generationMeta.segmentPrompt")
+
+    def test_legacy_extension_results_move_out_of_main_result_list(self) -> None:
+        result_root = self.root / "用户生成结果"
+        video_path = result_root / "video" / "demo-extension.mp4"
+        preview_path = result_root / "preview" / "demo-extension.jpg"
+        video_path.parent.mkdir(parents=True)
+        preview_path.parent.mkdir(parents=True)
+        video_path.write_bytes(b"video")
+        preview_path.write_bytes(b"preview")
+        JsonlAssetStore(self.root / "assets.jsonl").rewrite_all([{
+            "archiveKey": "video/demo-extension.mp4",
+            "archiveLocalPath": str(video_path),
+            "videoTitle": "演示视频-延长",
+        }])
+
+        with patch.object(ai8video_web, "ensure_user_generated_result_dir", return_value=result_root):
+            items = ai8video_web._user_generated_result_items(limit=10)
+
+        self.assertEqual(items, [])
+        self.assertTrue((result_root / "extensions" / "video" / "demo-extension.mp4").is_file())
+        self.assertTrue((result_root / "extensions" / "preview" / "demo-extension.jpg").is_file())
+        record = JsonlAssetStore(self.root / "assets.jsonl").read_all()[0]
+        self.assertEqual(record["archiveKey"], "extensions/video/demo-extension.mp4")
+        self.assertEqual(record["archiveMeta"]["artifactKind"], "extension")
 
     def test_empty_saved_tts_narration_returns_deleted_state(self) -> None:
         result_root = self.root / "用户生成结果"
@@ -5126,6 +5232,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
         self.assertIn("data-open-archive-artifact", html)
         self.assertIn("data-cleanup-archive-artifact", html)
+        self.assertIn("data-cleanup-archive-all", html)
+        self.assertIn("总占用 ${escapeHtml(archiveTotal)}", html)
         self.assertIn("/api/archive-artifacts/open", html)
         self.assertIn("/api/archive-artifacts/cleanup", html)
         self.assertIn("AI8VIDEO_ARCHIVE_TTS_OUTPUT_DIR: '清理配音输出'", html)
@@ -5134,6 +5242,26 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("AI8VIDEO_ARCHIVE_MANIFEST_DIR: '清理孤儿元数据'", html)
         self.assertIn("AI8VIDEO_ARCHIVE_ASSET_INDEX: '压缩孤儿记录'", html)
         self.assertIn("AI8VIDEO_ARCHIVE_RECYCLE_BIN_DIR: '清空回收站'", html)
+        self.assertIn("AI8VIDEO_ARCHIVE_EXTENSION_DIR: '清理延长视频'", html)
+        self.assertIn("AI8VIDEO_ARCHIVE_EXTENSION_FRAME_DIR: '清理延长截帧'", html)
+        self.assertIn("AI8VIDEO_ARCHIVE_HTML_MOTION_WORK_DIR: '清理失败工作目录'", html)
+        self.assertIn("AI8VIDEO_ARCHIVE_HTML_MOTION_REVIEW_DIR: '清理审核缓存'", html)
+
+    def test_archive_one_click_cleanup_runs_every_registered_cleanup(self) -> None:
+        effects = [
+            {"ok": True, "kind": kind, "deletedCount": 1, "removedBytes": 10}
+            for kind in ai8video_web.ARCHIVE_ONE_CLICK_CLEANUP_KINDS
+        ]
+
+        with patch.object(ai8video_web, "_cleanup_archive_artifacts", side_effect=effects) as cleanup:
+            result = ai8video_web._cleanup_all_archive_artifacts()
+
+        self.assertEqual(
+            [call.args[0] for call in cleanup.call_args_list],
+            list(ai8video_web.ARCHIVE_ONE_CLICK_CLEANUP_KINDS),
+        )
+        self.assertEqual(result["deletedCount"], len(effects))
+        self.assertEqual(result["removedBytes"], len(effects) * 10)
 
     def test_archive_paths_normalize_legacy_flat_key_to_video_root(self) -> None:
         result_root = self.root / "用户生成结果"
@@ -5196,6 +5324,12 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("AI8VIDEO_ARCHIVE_MANIFEST_DIR", env_names)
         self.assertIn("AI8VIDEO_ARCHIVE_ASSET_INDEX", env_names)
         self.assertIn("AI8VIDEO_ARCHIVE_RECYCLE_BIN_DIR", env_names)
+        self.assertIn("AI8VIDEO_ARCHIVE_EXTENSION_DIR", env_names)
+        self.assertIn("AI8VIDEO_ARCHIVE_EXTENSION_FRAME_DIR", env_names)
+        self.assertIn("AI8VIDEO_ARCHIVE_HTML_MOTION_WORK_DIR", env_names)
+        self.assertIn("AI8VIDEO_ARCHIVE_HTML_MOTION_REVIEW_DIR", env_names)
+        self.assertIn("AI8VIDEO_ARCHIVE_RESTORED_METADATA_DIR", env_names)
+        self.assertIn("AI8VIDEO_ARCHIVE_RESULT_JUNK", env_names)
 
     def test_archive_artifact_cleanup_clears_tts_and_merge_temp_files(self) -> None:
         tts_dir = self.root / "tts-output"
@@ -5245,10 +5379,12 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("const ratioField = resolutionMode === 'ratio' ?", html)
         self.assertIn("data-toggle-setting-secret", html)
         self.assertIn("settings-secret-toggle", html)
+        self.assertNotIn("settings-row-env", html)
+        self.assertNotIn("field.source || 'missing'", html)
         self.assertNotIn("真实生成已就绪", html)
         self.assertNotIn("checkboxMarkup('watermark', '加水印', settings.watermark)", html)
 
-    def test_static_deleted_progress_card_uses_failed_cross_style(self) -> None:
+    def test_static_deleted_progress_card_uses_soft_deleted_style(self) -> None:
         html = read_static_source()
 
         self.assertIn(".result-notify-play.terminal-placeholder[aria-hidden=\"true\"] span::before", html)
@@ -5267,12 +5403,15 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("return '后台处理中';", html)
         self.assertIn("processingClass = isPostProcessingProgressStatus(status)", html)
         self.assertIn("if (isDeletedOrMissing) {", html)
-        self.assertIn('class="result-notify-card failed ${resultNotifyRatioClass(item)}"', html)
-        self.assertIn("<div class=\"result-notify-failed-mark\" aria-hidden=\"true\">×</div>", html)
+        self.assertIn('class="result-notify-card deleted ${resultNotifyRatioClass(item)}"', html)
+        self.assertIn('class="result-notify-deleted-mark" aria-hidden="true">已删除</div>', html)
+        self.assertIn(".result-notify-card.deleted .result-notify-preview", html)
+        self.assertIn(".result-notify-deleted-mark", html)
         self.assertIn("result-notify-play${isTerminal ? ' terminal-placeholder' : processingClass}", html)
         self.assertIn("已生成，文件已删除", html)
         self.assertNotIn("已生成，文件已删除或未落盘", html)
         self.assertNotIn("deleted-placeholder", html)
+        self.assertNotIn('<div class="result-notify-failed-mark" aria-hidden="true">×</div>', html)
 
     def test_static_brand_uses_round_webp_avatar(self) -> None:
         from PIL import Image, features
@@ -5357,6 +5496,11 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("session.title = NEW_SESSION_TITLE;", html)
         self.assertIn("persistSessions();", html)
         self.assertNotIn("/api/clear-conversation", html)
+        self.assertIn("function takeWelcomeMessageNode(session)", html)
+        self.assertIn("function playWelcomeLeaveOverlay(sourceNode)", html)
+        self.assertIn("playWelcomeLeaveOverlay(welcomeNode);", html)
+        self.assertIn(".message.is-welcome-leave-overlay", html)
+        self.assertIn("meta: { operation: 'welcome' }", html)
 
     def test_static_session_cache_compacts_and_never_breaks_user_actions(self) -> None:
         html = read_static_source()
@@ -5599,7 +5743,13 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("剧本知识库", html)
         self.assertIn("data-script-knowledge-document", html)
         self.assertIn("/api/script-knowledge", html)
-        self.assertIn("PostgreSQL 词法检索 · pg_trgm + tsvector · 无 Embedding", html)
+        self.assertIn("检索并引用本地剧本知识", html)
+        self.assertIn("data-script-knowledge-tab", html)
+        self.assertIn("data-script-knowledge-panel", html)
+        self.assertIn("data-script-knowledge-ingest", html)
+        self.assertIn("/api/script-knowledge/${id}/ingest", html)
+        self.assertIn("正在知识入库", html)
+        self.assertNotIn('id="scriptKnowledgeSyncButton"', html)
         self.assertNotIn(
             "? '后台真实进度'",
             html,

@@ -56,10 +56,12 @@
 
       const session = getActiveSession();
       const pendingPayload = buildLocalPendingPayload(session.id, value);
+      const welcomeNode = takeWelcomeMessageNode(session);
       session.messages.push({ role: 'user', text: value });
       session.messages.push({ role: 'assistant', payload: pendingPayload });
       session.title = summarizeTitle(value);
       persistSessions();
+      playWelcomeLeaveOverlay(welcomeNode);
       render();
 
       clearMessageEditor();
@@ -108,7 +110,13 @@
         render();
       } catch (error) {
         clearGenerationProgress();
-        replaceLocalPendingPayload(session, { error: error.message || String(error) });
+        const last = session?.messages?.at?.(-1);
+        const keepPending = isTransientChatTransportError(error)
+          && last?.role === 'assistant'
+          && isPendingPayload(last.payload);
+        if (!keepPending) {
+          replaceLocalPendingPayload(session, { error: formatNetworkError(error) });
+        }
         persistSessions();
         render();
       } finally {
@@ -278,6 +286,82 @@
         error.payload = data;
       }
       return error;
+    }
+
+    function formatNetworkError(error) {
+      const raw = String(error?.message || error || '').trim();
+      const lower = raw.toLowerCase();
+      if (!raw || lower === 'failed to fetch' || lower.includes('networkerror') || lower.includes('load failed')) {
+        return '无法连接本地服务（127.0.0.1:18720）。请确认工作台服务仍在运行后重试。';
+      }
+      if (lower.includes('abort')) return '请求已中断，请重试。';
+      return raw;
+    }
+
+    function isTransientChatTransportError(error) {
+      const name = String(error?.name || '').trim().toLowerCase();
+      if (name === 'aborterror') return true;
+      const raw = String(error?.message || error || '').trim().toLowerCase();
+      return !raw
+        || raw === 'failed to fetch'
+        || raw.includes('networkerror')
+        || raw.includes('load failed')
+        || raw.includes('abort')
+        || raw.includes('network request failed');
+    }
+
+    function isStoredTransportFailureMessage(value) {
+      const text = String(value || '').trim();
+      if (!text) return false;
+      if (text.includes('无法连接本地服务') || text.includes('请求已中断')) return true;
+      const lower = text.toLowerCase();
+      return lower === 'failed to fetch'
+        || lower.includes('networkerror')
+        || lower.includes('load failed');
+    }
+
+    async function recoverSessionsAfterReload() {
+      const sessions = Array.isArray(state.sessions) ? state.sessions : [];
+      let changed = false;
+      for (const session of sessions) {
+        const last = session?.messages?.at?.(-1);
+        if (!last || last.role !== 'assistant' || !isStoredTransportFailureMessage(last.error)) continue;
+        const recovered = await tryRecoverSessionAfterTransportFailure(
+          session,
+          getLatestUserRequestText(session),
+        );
+        if (recovered) changed = true;
+      }
+      return changed;
+    }
+
+    async function tryRecoverSessionAfterTransportFailure(session, requestText) {
+      const sessionId = String(session?.id || '').trim();
+      const last = session?.messages?.at?.(-1);
+      if (!sessionId || !last || last.role !== 'assistant') return false;
+      try {
+        const res = await fetch(buildChatStatusUrl(sessionId, session));
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data || typeof data !== 'object') return false;
+        if (data.status !== 'pending' && data.reply) {
+          delete last.error;
+          last.payload = buildAssistantPayload(data, sessionId);
+          return true;
+        }
+        if (data.status === 'pending' || data.generationProgress) {
+          const pendingPayload = buildLocalPendingPayload(sessionId, requestText);
+          pendingPayload.pendingStatus = {
+            ...(pendingPayload.pendingStatus || {}),
+            ...extractPendingStatus(data, sessionId),
+          };
+          delete last.error;
+          last.payload = pendingPayload;
+          return true;
+        }
+      } catch (error) {
+        console.error(error);
+      }
+      return false;
     }
 
     function wait(ms) {

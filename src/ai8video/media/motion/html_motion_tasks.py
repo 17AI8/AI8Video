@@ -38,6 +38,7 @@ class HtmlMotionTask:
     retry_reason: str = ""
     audit_result: str = ""
     attempt_traces: list[dict[str, Any]] = field(default_factory=list)
+    stream_text: str = ""
 
     def snapshot(self) -> dict[str, Any]:
         now = time.time()
@@ -60,6 +61,7 @@ class HtmlMotionTask:
             "retryReason": self.retry_reason,
             "auditResult": self.audit_result,
             "attemptTraces": list(self.attempt_traces),
+            "streamText": self.stream_text,
             "result": self.result,
             "error": self.error,
         }
@@ -192,6 +194,10 @@ class HtmlMotionTaskService:
 
     def _set_phase_from_event(self, task: HtmlMotionTask, phase: str, event: dict[str, Any] | None) -> None:
         payload = event or {}
+        stream_delta = payload.get("streamDelta")
+        if isinstance(stream_delta, str) and stream_delta:
+            with self._lock:
+                _append_stream_text(task, stream_delta)
         retry_count = int(payload.get("retryCount") or 0)
         retry_limit = int(payload.get("retryLimit") or 0)
         retry_reason = str(payload.get("retryReason") or "").strip()
@@ -205,6 +211,7 @@ class HtmlMotionTaskService:
                 task.audit_result = audit_result
                 if isinstance(attempt_trace, dict):
                     task.attempt_traces.append(dict(attempt_trace))
+                    _append_stream_text(task, f"\n\n—— 第 {retry_count + 1} 次方案 ——\n")
         retry_message = (
             f"审核结果：{audit_result}・正在第 {retry_count}/{retry_limit} 次重试"
             if retry_count > 0 else ""
@@ -264,6 +271,15 @@ def _close_current_phase(task: HtmlMotionTask, now: float) -> None:
     if elapsed <= 0:
         return
     task.phase_timings[phase] = _round_seconds(task.phase_timings.get(phase, 0.0) + elapsed)
+
+
+def _append_stream_text(task: HtmlMotionTask, value: str) -> None:
+    limit = 16_000
+    text = task.stream_text + value
+    if len(text) <= limit:
+        task.stream_text = text
+        return
+    task.stream_text = text[: limit - 8] + "\n…已截断"
 
 
 def _apply_phase_locked(

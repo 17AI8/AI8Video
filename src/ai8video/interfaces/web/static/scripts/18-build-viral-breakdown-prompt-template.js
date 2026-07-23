@@ -88,6 +88,105 @@
       state.hotRadar.promptText = '';
     }
 
+    function buildHotRadarTopicCardMarkup(item, hotRadar) {
+      const id = String(item?.id || '');
+      const selected = id === String(hotRadar.selectedTopicId || '');
+      const expanded = id === String(hotRadar.expandedTopicId || '');
+      const rank = Number(item?.rank || 0) || '-';
+      const title = escapeHtml(String(item?.title || '未命名热点'));
+      const sourceName = escapeHtml(String(item?.sourceName || '未知来源'));
+      const heat = escapeHtml(String(item?.heat || '-'));
+      const description = escapeHtml(String(item?.description || '暂无摘要'));
+      const unavailableReason = String(hotRadar.unavailableReason || '').trim();
+      const summaryText = expanded
+        ? escapeHtml(String(
+          hotRadar.summaryText || hotRadar.promptText || unavailableReason
+          || '展开后可生成摘要、拍摄角度和 AI8video 业务切入点。'
+        ))
+        : '';
+      const summarizing = expanded && !!hotRadar.summarizing;
+      const promptBuilding = expanded && !!hotRadar.promptBuilding;
+      const canFill = expanded && !!(hotRadar.promptText || hotRadar.summaryText);
+      return `<div class="hot-radar-topic-card${selected ? ' active' : ''}${expanded ? ' is-expanded' : ''}" role="button" tabindex="0" data-hot-radar-topic-id="${escapeHtml(id)}" aria-expanded="${expanded ? 'true' : 'false'}"><div class="hot-radar-topic-title">#${rank} ${title}</div><div class="hot-radar-topic-details"><div class="hot-radar-topic-details-inner"><div class="hot-radar-topic-preview"><div class="hot-radar-topic-meta"><span class="hot-radar-topic-meta-item">${sourceName}</span><span class="hot-radar-topic-meta-item">热度 ${heat}</span></div><div class="hot-radar-topic-desc">${description}</div><div class="hot-radar-summary-output" data-hot-radar-summary-output>${summaryText}</div></div><div class="hot-radar-topic-actions"><button type="button" class="hot-radar-primary-button" data-hot-radar-action="summary"${summarizing ? ' disabled' : ''}>${summarizing ? '摘要中...' : 'AI 摘要'}</button><button type="button" class="hot-radar-ghost-button" data-hot-radar-action="prompt"${promptBuilding ? ' disabled' : ''}>${promptBuilding ? '生成中...' : '转成拆解提示词'}</button><button type="button" class="hot-radar-ghost-button" data-hot-radar-action="fill"${canFill ? '' : ' disabled'}>填入对话框</button></div></div></div></div>`;
+    }
+
+    function buildHotRadarTopicListMarkup(items, hotRadar, twoColumns) {
+      if (!items.length) {
+        return `<div class="viral-breakdown-empty">${hotRadar.loading ? '正在拉取热榜...' : '暂无热点，尝试刷新热榜。'}</div>`;
+      }
+      if (!twoColumns) {
+        return items.map((item) => buildHotRadarTopicCardMarkup(item, hotRadar)).join('');
+      }
+      const left = items.filter((_, index) => index % 2 === 0)
+        .map((item) => buildHotRadarTopicCardMarkup(item, hotRadar)).join('');
+      const right = items.filter((_, index) => index % 2 === 1)
+        .map((item) => buildHotRadarTopicCardMarkup(item, hotRadar)).join('');
+      return `<div class="hot-radar-topic-column" data-hot-radar-column="0">${left}</div><div class="hot-radar-topic-column" data-hot-radar-column="1">${right}</div>`;
+    }
+
+    function syncHotRadarTopicCardStates(topicList, hotRadar) {
+      if (!topicList) return;
+      topicList.querySelectorAll('.hot-radar-topic-card[data-hot-radar-topic-id]').forEach((card) => {
+        const id = String(card.getAttribute('data-hot-radar-topic-id') || '');
+        const selected = id === String(hotRadar.selectedTopicId || '');
+        const expanded = id === String(hotRadar.expandedTopicId || '');
+        card.classList.toggle('active', selected);
+        card.classList.toggle('is-expanded', expanded);
+        card.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      });
+    }
+
+    function renderHotRadarDetailPane(hotRadar = state.hotRadar || {}) {
+      const topicList = document.getElementById('hotRadarTopicList');
+      if (!topicList) return;
+      const expandedId = String(hotRadar.expandedTopicId || '');
+      const selectedTopic = getSelectedHotRadarTopic();
+      const unavailableReason = String(hotRadar.unavailableReason || '').trim();
+      const summaryText = String(
+        hotRadar.summaryText || hotRadar.promptText || unavailableReason
+        || '展开后可生成摘要、拍摄角度和 AI8video 业务切入点。'
+      );
+      topicList.querySelectorAll('.hot-radar-topic-card[data-hot-radar-topic-id]').forEach((card) => {
+        const id = String(card.getAttribute('data-hot-radar-topic-id') || '');
+        const expanded = id === expandedId;
+        const output = card.querySelector('[data-hot-radar-summary-output]');
+        const summaryButton = card.querySelector('[data-hot-radar-action="summary"]');
+        const promptButton = card.querySelector('[data-hot-radar-action="prompt"]');
+        const fillButton = card.querySelector('[data-hot-radar-action="fill"]');
+        if (output) output.textContent = expanded ? summaryText : '';
+        if (summaryButton) {
+          summaryButton.disabled = !expanded || !selectedTopic || !!hotRadar.summarizing;
+          summaryButton.textContent = hotRadar.summarizing && expanded ? '摘要中...' : 'AI 摘要';
+        }
+        if (promptButton) {
+          promptButton.disabled = !expanded || !selectedTopic || !!hotRadar.promptBuilding;
+          promptButton.textContent = hotRadar.promptBuilding && expanded ? '生成中...' : '转成拆解提示词';
+        }
+        if (fillButton) {
+          fillButton.disabled = !expanded || !(hotRadar.promptText || hotRadar.summaryText);
+        }
+      });
+    }
+
+    function selectHotRadarTopicCard(topicCard) {
+      const hotRadar = state.hotRadar;
+      const topicId = String(topicCard?.getAttribute?.('data-hot-radar-topic-id') || '');
+      if (!topicId) return;
+      const collapsing = String(hotRadar.expandedTopicId || '') === topicId
+        && topicCard.classList.contains('is-expanded');
+      hotRadar.selectedTopicId = topicId;
+      hotRadar.expandedTopicId = collapsing ? '' : topicId;
+      if (!collapsing) resetHotRadarGeneratedContent();
+      persistHotRadarViewState(hotRadar);
+      const topicList = document.getElementById('hotRadarTopicList');
+      if (topicList?.contains?.(topicCard)) {
+        syncHotRadarTopicCardStates(topicList, hotRadar);
+        renderHotRadarDetailPane(hotRadar);
+        return;
+      }
+      renderHotRadarWorkbench();
+    }
+
     function getSelectedHotRadarTopic() {
       const items = Array.isArray(state.hotRadar?.items) ? state.hotRadar.items : [];
       const selectedTopicId = String(state.hotRadar?.selectedTopicId || '');
@@ -183,23 +282,13 @@
 
     function renderHotRadarWorkbench() {
       const hotRadar = state.hotRadar || {};
-      const detailMeta = document.getElementById('hotRadarDetailMeta');
       const sourceSelect = document.getElementById('hotRadarSourceSelect');
       const listMeta = document.getElementById('hotRadarListMeta');
       const topicList = document.getElementById('hotRadarTopicList');
       const keywordInput = document.getElementById('hotRadarKeywordInput');
-      const summaryButton = document.getElementById('hotRadarSummaryButton');
-      const promptButton = document.getElementById('hotRadarPromptButton');
-      const fillPromptButton = document.getElementById('hotRadarFillPromptButton');
       const columnToggleButton = document.getElementById('hotRadarColumnToggleButton');
-      const selectedTopicCard = document.getElementById('hotRadarSelectedTopic');
-      const summaryOutput = document.getElementById('hotRadarSummaryOutput');
-      const selectedTopic = getSelectedHotRadarTopic();
       const sources = Array.isArray(hotRadar.sources) ? hotRadar.sources : [];
       const unavailableReason = String(hotRadar.unavailableReason || '').trim();
-      if (detailMeta) {
-        detailMeta.textContent = unavailableReason || (hotRadar.stale ? '实时拉取失败，当前展示最近一次真实缓存' : '热点摘要');
-      }
       if (keywordInput && document.activeElement !== keywordInput) keywordInput.value = String(hotRadar.keyword || '');
       renderHotRadarSourceSelect(hotRadar, sources, sourceSelect);
       if (listMeta) {
@@ -210,11 +299,17 @@
       }
       if (topicList) {
         const items = Array.isArray(hotRadar.items) ? hotRadar.items : [];
+        if (
+          hotRadar.expandedTopicId
+          && !items.some((item) => String(item?.id || '') === String(hotRadar.expandedTopicId || ''))
+        ) {
+          hotRadar.expandedTopicId = '';
+        }
         const twoColumns = Number(hotRadar.columnCount) === 2;
         topicList.classList.toggle('is-two-columns', twoColumns);
         topicList.classList.toggle('is-switching', !!hotRadar.loading);
         topicList.setAttribute('aria-busy', hotRadar.loading ? 'true' : 'false');
-        topicList.innerHTML = items.map((item) => `<button type="button" class="hot-radar-topic-card ${String(item.id || '') === String(hotRadar.selectedTopicId || '') ? 'active' : ''}" data-hot-radar-topic-id="${escapeHtml(String(item.id || ''))}"><div class="hot-radar-topic-title">#${Number(item.rank || 0) || '-'} ${escapeHtml(String(item.title || '未命名热点'))}</div><div class="hot-radar-topic-meta"><span class="hot-radar-topic-meta-item">${escapeHtml(String(item.sourceName || '未知来源'))}</span><span class="hot-radar-topic-meta-item">热度 ${escapeHtml(String(item.heat || '-'))}</span></div><div class="hot-radar-topic-desc">${escapeHtml(String(item.description || '暂无摘要'))}</div></button>`).join('') || `<div class="viral-breakdown-empty">${hotRadar.loading ? '正在拉取热榜...' : '暂无热点，尝试刷新热榜。'}</div>`;
+        topicList.innerHTML = buildHotRadarTopicListMarkup(items, hotRadar, twoColumns);
       }
       if (columnToggleButton) {
         const twoColumns = Number(hotRadar.columnCount) === 2;
@@ -222,19 +317,7 @@
         columnToggleButton.setAttribute('aria-pressed', twoColumns ? 'true' : 'false');
         columnToggleButton.title = twoColumns ? '切换为单列显示' : '切换为双列显示';
       }
-      if (selectedTopicCard) {
-        selectedTopicCard.innerHTML = selectedTopic ? `<div class="hot-radar-topic-title">${escapeHtml(String(selectedTopic.title || '未命名热点'))}</div><div class="hot-radar-topic-meta">${escapeHtml(String(selectedTopic.sourceName || '未知来源'))} · 排名 #${escapeHtml(String(selectedTopic.rank || '-'))}</div><div class="hot-radar-topic-desc">${escapeHtml(String(selectedTopic.description || '暂无摘要'))}</div>` : '<div class="viral-breakdown-empty">先选择一个热点。</div>';
-      }
-      if (summaryOutput) summaryOutput.textContent = hotRadar.summaryText || hotRadar.promptText || unavailableReason || '选择一个热点后，可生成摘要、拍摄角度和AI8video 业务切入点。';
-      if (summaryButton) {
-        summaryButton.disabled = !selectedTopic || !!hotRadar.summarizing;
-        summaryButton.textContent = hotRadar.summarizing ? '摘要中...' : 'AI 摘要';
-      }
-      if (promptButton) {
-        promptButton.disabled = !selectedTopic || !!hotRadar.promptBuilding;
-        promptButton.textContent = hotRadar.promptBuilding ? '生成中...' : '转成拆解提示词';
-      }
-      if (fillPromptButton) fillPromptButton.disabled = !(hotRadar.promptText || hotRadar.summaryText);
+      renderHotRadarDetailPane(hotRadar);
     }
 
     async function refreshHotRadarTopics(options = {}) {
@@ -246,6 +329,7 @@
       hotRadar.unavailableReason = '';
       hotRadar.stale = false;
       hotRadar.realDataAvailable = false;
+      hotRadar.expandedTopicId = '';
       hotRadar.notice = '正在同步公开热点数据...';
       renderHotRadarWorkbench();
       const params = new URLSearchParams();
@@ -367,6 +451,7 @@
       const modal = document.getElementById('viralBreakdownModal');
       if (!modal) return;
       modal.classList.remove('hidden');
+      state.viralBreakdown.activeTab = 'grid';
       state.viralBreakdown.loading = true;
       state.viralBreakdown.error = '';
       state.viralBreakdown.notice = '正在读取爆款拆解归档...';

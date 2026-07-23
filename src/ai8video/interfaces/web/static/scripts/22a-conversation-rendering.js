@@ -119,22 +119,27 @@
       }
       if (payload.meta?.operation === 'pending' || hasAgentProgress) {
         const pending = normalizePendingStatusProgress(renderedPendingStatus || payload.pendingStatus || {});
-        const pendingProgress = buildPendingProgressFromRecentResults(pending);
-        const pendingOverview = buildProgressOverview({ videos: pendingProgress.videos });
-        const pendingActive = isPendingStatusActive(pending);
-        const planningProgress = pending.generationProgress && String(pending.generationProgress.status || '').trim() === 'planning';
-        const pendingTitle = pendingActive && !planningProgress ? '后台继续执行中' : getPendingStatusLabel(pending);
+        const historicalPending = Number(context.messageIndex) < Number(context.messageCount) - 1;
+        const displayedPending = historicalPending ? buildHistoricalPendingSnapshot(pending) : pending;
+        const pendingProgress = buildPendingProgressFromRecentResults(displayedPending);
+        const pendingOverview = buildProgressOverview({ videos: pendingProgress.videos, isActive: !historicalPending });
+        const pendingActive = !historicalPending && isPendingStatusActive(pending);
+        const pendingTitle = historicalPending
+          ? '历史任务进度快照'
+          : (pendingActive ? '后台继续执行中' : getPendingStatusLabel(pending));
         const elapsed = pending.elapsedSeconds > 0 ? `已等待 ${pending.elapsedSeconds} 秒` : '已进入后台继续执行';
-        const pendingLine = pendingActive
-          ? `${planningProgress && pending.generationProgress?.summary ? `${pending.generationProgress.summary}，` : ''}${elapsed}，结果会自动回填到当前对话。`
-          : buildTerminalPendingLine(pendingProgress, pending);
+        const pendingLine = historicalPending
+          ? '这是较早消息的进度记录，不再显示为执行中。'
+          : (pendingActive
+          ? `${elapsed}，结果会自动回填到当前对话。`
+          : buildTerminalPendingLine(pendingProgress, pending));
         const pendingCancel = pendingActive
           ? renderForceCancelButton(pending.sessionId || context.sessionId || state.activeId, {
               messageIndex: context.messageIndex,
             })
           : '';
         blocks.push(`
-          <div class="mini-card pending-card">
+          <div class="mini-card pending-card${historicalPending ? ' is-history' : ''}">
             <div class="pending-card-head">
               <div class="pending-card-title">
                 <strong>${escapeHtml(pendingTitle)}</strong>
@@ -143,7 +148,7 @@
               ${pendingCancel}
             </div>
             ${renderProgressOverview(pendingOverview)}
-            ${renderAgentStepChain(pending)}
+            ${renderAgentStepChain(displayedPending, { messageIndex: context.messageIndex })}
           </div>
         `);
       }
@@ -181,6 +186,20 @@
         blocks.push(renderAssistantResultCards(getActiveSession(), payload, resultGroups, summary));
       }
       return blocks.join('');
+    }
+
+    function buildHistoricalPendingSnapshot(pending = {}) {
+      const progress = pending.generationProgress || {};
+      const items = Array.isArray(progress.items) ? progress.items.map((item) => {
+        const status = String(item?.status || '').trim();
+        return isTerminalProgressStatus(status) ? item : {
+          ...item,
+          status: 'snapshot',
+          historicalSnapshot: true,
+          statusLabel: '历史进度快照',
+        };
+      }) : [];
+      return { ...pending, generationProgress: { ...progress, items } };
     }
 
     function buildTerminalAgentPendingStatus(payload, resultGroups, summary, sessionId) {
@@ -259,7 +278,7 @@
       ];
     }
 
-    function renderAgentStepChain(pending = {}) {
+    function renderAgentStepChain(pending = {}, options = {}) {
       const steps = buildAgentStepChainModel(pending);
       return `
         <div class="agent-step-chain-wrap">
@@ -273,38 +292,116 @@
             `).join('')}
           </div>
         </div>
-        ${renderAgentExecutionEvents(pending)}
+        ${renderAgentExecutionEvents(pending, options)}
       `;
     }
 
-    function renderAgentExecutionEvents(pending = {}) {
+    function buildAgentStepDetailsKey(sessionId, messageIndex) {
+      const sessionKey = String(sessionId || state.activeId || '').trim() || 'session';
+      const index = Number(messageIndex);
+      return `${sessionKey}#${Number.isFinite(index) ? index : 'live'}`;
+    }
+
+    function isAgentStepDetailsExpanded(detailsKey) {
+      const key = String(detailsKey || '').trim();
+      if (!key) return false;
+      return !!state.agentStepDetailsExpanded?.[key];
+    }
+
+    function toggleAgentStepDetailsExpanded(detailsKey) {
+      const key = String(detailsKey || '').trim();
+      if (!key) return false;
+      if (!state.agentStepDetailsExpanded || typeof state.agentStepDetailsExpanded !== 'object') {
+        state.agentStepDetailsExpanded = {};
+      }
+      state.agentStepDetailsExpanded[key] = !state.agentStepDetailsExpanded[key];
+      return !!state.agentStepDetailsExpanded[key];
+    }
+
+    function applyAgentStepDetailsExpanded(detailsKey, rootEl = null) {
+      const key = String(detailsKey || '').trim();
+      if (!key) return false;
+      const expanded = isAgentStepDetailsExpanded(key);
+      const root = rootEl || els.messages?.querySelector(`[data-agent-step-details="${CSS.escape(key)}"]`);
+      if (!root) return false;
+      root.classList.toggle('is-expanded', expanded);
+      const drawer = root.querySelector('.agent-step-details-drawer');
+      if (drawer) drawer.setAttribute('aria-hidden', expanded ? 'false' : 'true');
+      const toggle = root.querySelector('[data-agent-step-details-toggle]');
+      if (toggle) {
+        const count = Number(toggle.getAttribute('data-agent-step-details-count') || 0);
+        toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        toggle.textContent = expanded ? '收起' : `展开全部 · ${count}`;
+      }
+      if (expanded && toggle) {
+        window.requestAnimationFrame(() => {
+          toggle.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+        });
+      }
+      return expanded;
+    }
+
+    function buildAgentStepDetailMarkup(event, index, { activeFirst = true } = {}) {
+      const status = String(event?.status || '').trim();
+      const stateClass = status === 'failed'
+        ? 'error'
+        : (activeFirst && index === 0 && !['succeeded', 'completed'].includes(status) ? 'active' : 'done');
+      const segmentPrefix = String(event?.segmentLabel || '').trim();
+      const prefix = segmentPrefix
+        ? `${segmentPrefix} · `
+        : (event?.videoIndex ? `第 ${event.videoIndex} 条 · ` : '');
+      const progress = status === 'polling' && Number.isFinite(Number(event?.providerProgress))
+        ? ` · ${Number(event.providerProgress)}%`
+        : '';
+      const title = prefix + (event?.title || '后台任务');
+      const message = String(event?.message || '状态已更新') + progress;
+      return `<div class="agent-step-detail ${stateClass}"><span class="agent-step-detail-marker" aria-hidden="true"></span><div><strong>${escapeHtml(title)}</strong><span>${escapeHtml(message)}</span></div></div>`;
+    }
+
+    function renderAgentExecutionEvents(pending = {}, options = {}) {
       const events = collapseAgentPollingEvents(pending.generationProgress?.events);
+      const detailsKey = buildAgentStepDetailsKey(
+        pending.sessionId || state.activeId,
+        options.messageIndex
+      );
+      const expanded = isAgentStepDetailsExpanded(detailsKey);
       const readOnlyRecovery = pending.readOnlyRecovery || pending.generationProgress?.readOnlyRecovery;
+      const thumbnails = renderAgentVideoThumbnails(pending);
       if (readOnlyRecovery) {
-        return `<div class="agent-step-details"><div class="agent-step-detail done"><span class="agent-step-detail-marker" aria-hidden="true"></span><div><strong>历史任务已结束</strong><span>服务重启前的进度仅恢复为只读记录，不会继续生成。</span></div></div></div>${renderAgentVideoThumbnails(pending)}`;
+        return `<div class="agent-step-details is-single"><div class="agent-step-details-latest"><div class="agent-step-detail done"><span class="agent-step-detail-marker" aria-hidden="true"></span><div><strong>历史任务已结束</strong><span>服务重启前的进度仅恢复为只读记录，不会继续生成。</span></div></div></div></div>${thumbnails}`;
       }
       if (!events.length) {
-        const currentMessage = humanizePublicExecutionStatus(
-          pending.statusLabel || pending.generationProgress?.summary
-        );
-        return `<div class="agent-step-details"><div class="agent-step-detail active"><span class="agent-step-detail-marker" aria-hidden="true"></span><div><strong>后台当前阶段</strong><span>${escapeHtml(currentMessage)}</span></div></div></div>${renderAgentVideoThumbnails(pending)}`;
+        const steps = buildAgentStepChainModel(pending);
+        const activeStep = steps.find((step) => step.state === 'active') || steps[0];
+        const rawStatus = String(
+          pending.statusLabel || pending.generationProgress?.summary || ''
+        ).trim();
+        const isPlanning = String(pending.phase || '').trim() === 'planning'
+          || String(pending.generationProgress?.status || '').trim() === 'planning';
+        const currentMessage = rawStatus
+          ? (isPlanning ? friendlyPlanningSummary(rawStatus) : humanizePublicExecutionStatus(rawStatus))
+          : (activeStep?.label || '后台当前阶段');
+        const currentDetail = String(activeStep?.detail || '当前步骤进展会持续更新。').trim();
+        return `<div class="agent-step-details is-single"><div class="agent-step-details-latest"><div class="agent-step-detail active"><span class="agent-step-detail-marker" aria-hidden="true"></span><div><strong>${escapeHtml(currentMessage)}</strong><span>${escapeHtml(currentDetail)}</span></div></div></div></div>${thumbnails}`;
       }
+      const latestMarkup = buildAgentStepDetailMarkup(events[0], 0, { activeFirst: true });
+      const historyEvents = events.slice(1);
+      const historyMarkup = historyEvents
+        .map((event, index) => buildAgentStepDetailMarkup(event, index + 1, { activeFirst: false }))
+        .join('');
+      const toggle = historyEvents.length
+        ? `<button type="button" class="agent-step-details-toggle" data-agent-step-details-toggle="${escapeHtml(detailsKey)}" data-agent-step-details-count="${events.length}" aria-expanded="${expanded ? 'true' : 'false'}">${expanded ? '收起' : `展开全部 · ${events.length}`}</button>`
+        : '';
+      const drawer = historyEvents.length
+        ? `<div class="agent-step-details-drawer" aria-hidden="${expanded ? 'false' : 'true'}"><div class="agent-step-details-drawer-slot"><div class="agent-step-details-history">${historyMarkup}</div></div></div>`
+        : '';
       return `
-        <div class="agent-step-details" aria-label="后台真实执行事件">
-          ${events.map((event, index) => {
-            const status = String(event.status || '').trim();
-            const state = status === 'failed'
-              ? 'error'
-              : (index === 0 && !['succeeded', 'completed'].includes(status) ? 'active' : 'done');
-            const segmentPrefix = String(event.segmentLabel || '').trim();
-            const prefix = segmentPrefix ? `${segmentPrefix} · ` : (event.videoIndex ? `第 ${event.videoIndex} 条 · ` : '');
-            const progress = status === 'polling' && Number.isFinite(Number(event.providerProgress))
-              ? ` · ${Number(event.providerProgress)}%`
-              : '';
-            return `<div class="agent-step-detail ${state}"><span class="agent-step-detail-marker" aria-hidden="true"></span><div><strong>${escapeHtml(prefix + (event.title || '后台任务'))}</strong><span>${escapeHtml(String(event.message || '状态已更新') + progress)}</span></div></div>`;
-          }).join('')}
+        <div class="agent-step-details${expanded ? ' is-expanded' : ''}${events.length === 1 ? ' is-single' : ''}" data-agent-step-details="${escapeHtml(detailsKey)}" aria-label="后台真实执行事件">
+          <div class="agent-step-details-latest">${latestMarkup}</div>
+          ${drawer}
+          ${toggle}
         </div>
-        ${renderAgentVideoThumbnails(pending)}
+        ${thumbnails}
       `;
     }
 
@@ -332,18 +429,23 @@
       const progress = pending.generationProgress || {};
       const planning = String(pending.phase || '').trim() === 'planning'
         || String(progress.status || '').trim() === 'planning';
-      if (planning) return '';
+      const submitted = Number(progress.submittedCount || 0) || 0;
+      // 理解需求/规划阶段尚无可预览任务，不展示视频占位卡。
+      if (planning && !submitted) return '';
       const progressItems = Array.isArray(progress.items)
         ? progress.items
         : [];
       const items = progressItems
         .map((item, index) => {
+          if (item?.historicalSnapshot) return buildProgressStatusResultItem(item, index);
           const mirror = findUserGeneratedMirror(item);
           if (mirror?.userGeneratedKey) return mirror;
           return buildProgressStatusResultItem(item, index);
         })
         .filter(Boolean);
       if (!items.length) {
+        // 仅在已提交生成后才用数量占位；理解需求阶段即使已知目标条数也不展示小卡片。
+        if (!submitted) return '';
         const pendingCount = Math.max(
           0,
           Number(progress.totalRequested || pending.videoCount || 0) || 0
