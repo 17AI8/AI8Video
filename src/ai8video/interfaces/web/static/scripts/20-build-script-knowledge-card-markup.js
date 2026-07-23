@@ -200,7 +200,7 @@
       }
       const signature = JSON.stringify(items.map((item) => ({
         folder: item?.folder || '',
-        title: item?.episodeTitle || '',
+        title: item?.videoTitle || '',
         reason: item?.displayReason || item?.reason || '',
         createdAt: item?.createdAt || '',
         videos: (Array.isArray(item?.videos) ? item.videos : []).map((video) => ({
@@ -319,7 +319,7 @@
       const folder = String(item?.folder || '').trim();
       const selected = (state.recycleBinModal.selectedFolders || []).includes(folder);
       const restoring = state.recycleBinModal.restoringFolder === folder;
-      const title = item?.episodeTitle || `视频 ${item?.episodeIndex || ''}`.trim();
+      const title = item?.videoTitle || `视频 ${item?.videoIndex || ''}`.trim();
       const rawReason = String(item?.reason || '').trim();
       const reason = humanizeRecycleBinReason(item?.displayReason || rawReason || '任务失败');
       const meta = [
@@ -351,6 +351,12 @@
       const lowered = text.toLowerCase();
       const imageStage = lowered.includes('/v1/images/generations') || text.includes('首帧') || text.includes('图生图');
       if (!text) return '视频生成失败，请重新生成这一条。';
+      if (
+        text.includes('视频开头裁剪失败')
+        && (lowered.includes('libx264') || lowered.includes("unrecognized option 'preset'"))
+      ) {
+        return '本机视频后处理编码器不兼容，开头裁剪失败。已自动改用可用编码器，请重试这一条。';
+      }
       if (text.includes('未配置图片模型') || text.includes('请设置图片模型')) {
         return '请设置图片模型。';
       }
@@ -476,4 +482,3 @@
       if (reason.includes('后台中断了')) return '后台中断，未提交';
       return reason.length > 14 ? `${reason.slice(0, 14)}…` : reason;
     }
-

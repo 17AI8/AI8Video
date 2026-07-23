@@ -65,7 +65,7 @@
       const payload = session?.messages?.at?.(-1)?.payload || {};
       return [
         payload.awaiting || '',
-        payload.draft?.episodeCount || '',
+        payload.draft?.videoCount || '',
         payload.draft?.concurrentGeneration ?? '',
         payload.text || '',
       ].join('|');
@@ -385,7 +385,7 @@
 	            if (['succeeded', 'failed', 'skipped', 'deleted'].includes(status)) return { ...item };
             return {
               ...item,
-              episodeIndex: Number(item?.episodeIndex || 0) || index + 1,
+              videoIndex: Number(item?.videoIndex || 0) || index + 1,
               title: item?.title || `视频 ${index + 1}`,
               status: 'skipped',
               statusLabel: '已取消',
@@ -393,7 +393,7 @@
             };
           })
         : Array.from({ length: Math.max(1, total || 1) }, (_, index) => ({
-            episodeIndex: index + 1,
+            videoIndex: index + 1,
             title: `视频 ${index + 1}`,
             status: 'skipped',
             statusLabel: '已取消',
@@ -447,7 +447,7 @@
       if (!Array.isArray(items)) return [];
       return items
         .map((item, index) => ({
-          episodeIndex: Number(item?.episodeIndex || 0) || index + 1,
+          videoIndex: Number(item?.videoIndex || 0) || index + 1,
           jobId: String(item?.jobId || '').trim(),
         }))
         .filter((item) => item.jobId)

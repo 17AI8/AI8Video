@@ -13,23 +13,23 @@ from ai8video.generation.generation_batch_context import (
     set_current_generation_batch_id,
     set_current_generation_session_id,
 )
-from ai8video.core.models import EpisodePrompt, ParsedRequest, QuickVideoJob, GenerationOutcome
+from ai8video.core.models import VideoPrompt, ParsedRequest, QuickVideoJob, GenerationOutcome
 
 
 class AI8VideoAssetStoreTest(unittest.TestCase):
     def test_append_records_generation_outcome_without_scoring_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             store = JsonlAssetStore(f"{tempdir}/assets.jsonl")
-            request = ParsedRequest(raw_text="生成一条视频", mode="single_prompt")
-            episode = EpisodePrompt(index=1, title="单条视频", prompt="视频提示词")
+            request = ParsedRequest(raw_text="生成一条视频", mode="single_video")
+            video = VideoPrompt(index=1, title="单条视频", prompt="视频提示词")
             job = QuickVideoJob(
-                episode_index=1,
+                video_index=1,
                 job_id="job-1",
                 status="succeeded",
                 video_url="https://example.test/video.mp4",
             )
             outcome = GenerationOutcome(
-                episode_index=1,
+                video_index=1,
                 job_id="job-1",
                 status="succeeded",
                 decision="generated",
@@ -37,7 +37,7 @@ class AI8VideoAssetStoreTest(unittest.TestCase):
                 meta={"kind": "generation_outcome"},
             )
 
-            record = store.append(request, episode, job, outcome)
+            record = store.append(request, video, job, outcome)
 
             self.assertEqual(record["generationStatus"], "generated")
             self.assertEqual(record["generationReasons"], [])
@@ -46,11 +46,11 @@ class AI8VideoAssetStoreTest(unittest.TestCase):
     def test_append_records_generation_batch_and_session_context(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             store = JsonlAssetStore(f"{tempdir}/assets.jsonl")
-            request = ParsedRequest(raw_text="生成一条视频", mode="single_prompt")
-            episode = EpisodePrompt(index=1, title="单条视频", prompt="视频提示词")
-            job = QuickVideoJob(episode_index=1, job_id="job-context", status="succeeded")
+            request = ParsedRequest(raw_text="生成一条视频", mode="single_video")
+            video = VideoPrompt(index=1, title="单条视频", prompt="视频提示词")
+            job = QuickVideoJob(video_index=1, job_id="job-context", status="succeeded")
             outcome = GenerationOutcome(
-                episode_index=1,
+                video_index=1,
                 job_id="job-context",
                 status="succeeded",
                 decision="generated",
@@ -60,12 +60,12 @@ class AI8VideoAssetStoreTest(unittest.TestCase):
             batch_token = set_current_generation_batch_id("gb-context-001")
             session_token = set_current_generation_session_id("session-context-001")
             try:
-                record = store.append(request, episode, job, outcome)
+                record = store.append(request, video, job, outcome)
             finally:
                 reset_current_generation_session_id(session_token)
                 reset_current_generation_batch_id(batch_token)
 
-            record_without_context = store.append(request, episode, job, outcome)
+            record_without_context = store.append(request, video, job, outcome)
 
         self.assertEqual(record["generationBatchId"], "gb-context-001")
         self.assertEqual(record["sessionId"], "session-context-001")
@@ -111,11 +111,11 @@ class AI8VideoAssetStoreTest(unittest.TestCase):
                 except BaseException as error:
                     thread_errors.append(error)
 
-            request = ParsedRequest(raw_text="生成一条视频", mode="single_prompt")
-            episode = EpisodePrompt(index=2, title="并发视频", prompt="并发提示词")
-            job = QuickVideoJob(episode_index=2, job_id="concurrent-job", status="succeeded")
+            request = ParsedRequest(raw_text="生成一条视频", mode="single_video")
+            video = VideoPrompt(index=2, title="并发视频", prompt="并发提示词")
+            job = QuickVideoJob(video_index=2, job_id="concurrent-job", status="succeeded")
             outcome = GenerationOutcome(
-                episode_index=2,
+                video_index=2,
                 job_id="concurrent-job",
                 status="succeeded",
                 decision="generated",
@@ -125,7 +125,7 @@ class AI8VideoAssetStoreTest(unittest.TestCase):
 
             def run_append() -> None:
                 try:
-                    append_store.append(request, episode, job, outcome)
+                    append_store.append(request, video, job, outcome)
                 except BaseException as error:
                     thread_errors.append(error)
                 finally:

@@ -13,7 +13,8 @@ from ai8video.generation.generation_batch_context import (
     get_current_generation_batch_id,
     get_current_generation_session_id,
 )
-from ai8video.core.models import ArchivedAsset, EpisodePrompt, FirstFrameAsset, ParsedRequest, QuickVideoJob, GenerationOutcome
+from ai8video.core.legacy_payload import normalize_legacy_video_payload
+from ai8video.core.models import ArchivedAsset, VideoPrompt, FirstFrameAsset, ParsedRequest, QuickVideoJob, GenerationOutcome
 
 
 MutationResult = TypeVar("MutationResult")
@@ -36,7 +37,7 @@ class JsonlAssetStore:
     def append(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         job: QuickVideoJob,
         outcome: GenerationOutcome,
         first_frame: FirstFrameAsset | None = None,
@@ -46,8 +47,8 @@ class JsonlAssetStore:
             "createdAt": datetime.now(timezone.utc).isoformat(),
             "sessionId": get_current_generation_session_id(),
             "generationBatchId": get_current_generation_batch_id(),
-            "episodeIndex": episode.index,
-            "episodeTitle": sanitize_internal_fidelity_notes(episode.title),
+            "videoIndex": video.index,
+            "videoTitle": sanitize_internal_fidelity_notes(video.title),
             "jobId": job.job_id,
             "status": job.status,
             "generationStatus": "generated" if outcome.decision == "generated" else "failed",
@@ -73,10 +74,10 @@ class JsonlAssetStore:
             "archiveMeta": None if archive is None else archive.meta,
             "htmlMotionOverlay": None if archive is None else archive.meta.get("htmlMotionOverlay"),
             "usage": job.usage,
-            "prompt": sanitize_internal_fidelity_notes(episode.prompt),
+            "prompt": sanitize_internal_fidelity_notes(video.prompt),
             "request": {
                 "mode": request.mode,
-                "episodeCount": request.episode_count,
+                "videoCount": request.video_count,
                 "styleHint": request.style_hint,
                 "durationSeconds": request.duration_seconds,
                 "ratio": request.ratio,
@@ -147,8 +148,8 @@ class JsonlAssetStore:
 
 
 def _sanitize_asset_record(record: dict[str, Any]) -> dict[str, Any]:
-    cleaned = dict(record)
-    for key in ("episodeTitle", "prompt"):
+    cleaned = dict(normalize_legacy_video_payload(record))
+    for key in ("videoTitle", "prompt"):
         if cleaned.get(key) is not None:
             cleaned[key] = sanitize_internal_fidelity_notes(str(cleaned[key]))
     return cleaned

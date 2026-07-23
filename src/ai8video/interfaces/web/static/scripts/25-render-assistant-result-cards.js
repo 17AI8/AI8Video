@@ -1,12 +1,12 @@
     function renderAssistantResultCards(session, payload, resultGroups, summary) {
       const gallery = buildResultGalleryFromPayload(payload);
-      const expectedCount = gallery.expectedCount || summary.episodeCount || resultGroups.length || 0;
+      const expectedCount = gallery.expectedCount || summary.videoCount || resultGroups.length || 0;
       const returnedCount = getPlayableResultItems(gallery).length;
       const failedCount = getFailedResultItems(gallery).length;
       const hasTerminalResult = !!(payload?.result && payload.meta?.operation !== 'pending');
       const hasUnboundTerminalResult = hasTerminalResult && returnedCount === 0 && failedCount === 0;
-      const headline = payload.meta?.operation === 'rewrite' && payload.meta?.rewrittenEpisodeIndex
-        ? `第 ${payload.meta.rewrittenEpisodeIndex} 集已返回`
+      const headline = payload.meta?.operation === 'rewrite' && payload.meta?.rewrittenVideoIndex
+        ? `第 ${payload.meta.rewrittenVideoIndex} 条视频已返回`
         : hasUnboundTerminalResult
           ? '本轮结果已回填，未绑定预览'
         : failedCount && returnedCount === 0
@@ -34,18 +34,18 @@
     function renderResultReviewSuggestions(result) {
       const advisoryGroups = new Map();
       const suggestions = [];
-      (result?.episodes || []).forEach((episode) => {
-        const review = episode?.keyword_guidance?.post_review || {};
+      (result?.videos || []).forEach((video) => {
+        const review = video?.keyword_guidance?.post_review || {};
         const advisories = Array.isArray(review.userAdvisories) ? review.userAdvisories.filter(Boolean) : [];
         const violations = Array.isArray(review.violations) ? review.violations.filter(Boolean) : [];
         advisories.forEach((text) => {
           const indexes = advisoryGroups.get(text) || [];
-          indexes.push(episode.index || '-');
+          indexes.push(video.index || '-');
           advisoryGroups.set(text, indexes);
         });
-        violations.forEach((text) => suggestions.push(`第 ${episode.index || '-'} 条｜已修正：${text}`));
+        violations.forEach((text) => suggestions.push(`第 ${video.index || '-'} 条｜已修正：${text}`));
         if (review.passes === false && !advisories.length && !violations.length) {
-          suggestions.push(`第 ${episode.index || '-'} 条｜已修正：后审核已按系统提示词修正最终输出。`);
+          suggestions.push(`第 ${video.index || '-'} 条｜已修正：后审核已按系统提示词修正最终输出。`);
         }
       });
       advisoryGroups.forEach((indexes, text) => {
@@ -109,7 +109,7 @@
     function getFailedResultItems(gallery) {
       if (gallery?.source === 'folder') return [];
       const playableKeys = new Set(
-        getPlayableResultItems(gallery).map((item) => String(item.jobId || item.episodeIndex || '')).filter(Boolean)
+        getPlayableResultItems(gallery).map((item) => String(item.jobId || item.videoIndex || '')).filter(Boolean)
       );
       return (gallery.groups || [])
         .filter((item) => resolveBatchStageLabel(item) === '生成失败')
@@ -187,8 +187,8 @@
       const userGeneratedKey = item.userGeneratedKey || deriveUserGeneratedKeyFromMediaUrl(videoSrc);
       const userGeneratedPreviewKey = item.userGeneratedPreviewKey || deriveLocalPreviewKey(userGeneratedKey);
       const userGeneratedCoverKey = item.userGeneratedCoverKey || deriveLocalCoverKey(userGeneratedKey);
-      const badgeText = item.episodeIndex ? `第 ${item.episodeIndex} 条` : `视频 ${index + 1}`;
-      const title = cleanDisplayText(item.episodeTitle || item.title, badgeText);
+      const badgeText = item.videoIndex ? `第 ${item.videoIndex} 条` : `视频 ${index + 1}`;
+      const title = cleanDisplayText(item.videoTitle || item.title, badgeText);
       const ratioLabel = buildResultRatioLabel(item);
       const motionOverlay = htmlMotionOverlayDisplay(item);
       const subtitle = isFailedResult(item)
@@ -237,12 +237,12 @@
       const rawStatus = String(item?.status || '').trim();
       const postProcessing = isPostProcessingProgressItem(item);
       const status = postProcessing ? 'archiving' : rawStatus;
-      const episodeIndex = Number(item?.episodeIndex || 0) || index + 1;
-      const title = cleanDisplayText(item?.title, `视频 ${episodeIndex}`);
+      const videoIndex = Number(item?.videoIndex || 0) || index + 1;
+      const title = cleanDisplayText(item?.title, `视频 ${videoIndex}`);
       const stage = formatGenerationProgressStatus(item);
       return {
         __progressStatus: true,
-        episodeIndex,
+        videoIndex,
         title,
         ratio: buildResultRatioLabel(item),
         stage,
@@ -339,6 +339,7 @@
         const friendlyReason = rawReason ? humanizeGenerationFailureReason(rawReason) : '';
         const tooltipReason = friendlyReason || '生成失败';
         const badgeReason = summarizeGenerationFailureReason(tooltipReason);
+        const failureStageLabel = getGenerationFailureStageLabel(item);
         return `
           <div class="result-notify-card failed ${resultNotifyRatioClass(item)}">
             <div class="result-notify-preview" title="${escapeHtml(tooltipReason)}">
@@ -348,7 +349,7 @@
             </div>
             <div class="result-notify-meta">
               <div class="result-notify-title">${renderHoverScrollText(title)}</div>
-              <div class="result-notify-sub">生成失败</div>
+              <div class="result-notify-sub">${escapeHtml(failureStageLabel)}</div>
             </div>
           </div>
         `;
@@ -385,22 +386,22 @@
     }
 
     function renderGenerationRetryButton(item) {
-      const episodeIndex = Number(item?.episodeIndex || 0);
-      if (episodeIndex < 1) return '';
-      return `<button type="button" class="result-notify-retry-button" data-retry-generation-episode="${episodeIndex}" title="复用现有方案和首帧重试">重试</button>`;
+      const videoIndex = Number(item?.videoIndex || 0);
+      if (videoIndex < 1) return '';
+      return `<button type="button" class="result-notify-retry-button" data-retry-generation-video="${videoIndex}" title="复用现有方案和首帧重试">重试</button>`;
     }
 
-    async function retryFailedGenerationEpisode(button) {
-      const episodeIndex = Number(button?.getAttribute('data-retry-generation-episode') || 0);
+    async function retryFailedGenerationVideo(button) {
+      const videoIndex = Number(button?.getAttribute('data-retry-generation-video') || 0);
       const sessionId = String(state.activeId || '').trim();
-      if (!sessionId || episodeIndex < 1 || button.disabled) return;
+      if (!sessionId || videoIndex < 1 || button.disabled) return;
       button.disabled = true;
       button.textContent = '重试中';
       try {
         const res = await fetch('/api/generation/retry', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId, episodeIndex }),
+          body: JSON.stringify({ sessionId, videoIndex }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data?.ok === false) throw buildRequestError(data);
@@ -420,6 +421,7 @@
       const rawReason = getGenerationFailureRawReason(item);
       const reason = humanizeGenerationFailureReason(rawReason || '生成失败');
       const badgeReason = summarizeGenerationFailureReason(reason);
+      const failureStageLabel = getGenerationFailureStageLabel(item);
       const ratioLabel = buildResultRatioLabel(item);
       return `
         <div class="result-notify-card failed ${resultNotifyRatioClass(item)}">
@@ -429,7 +431,7 @@
           </div>
           <div class="result-notify-meta">
             <div class="result-notify-title">${title}</div>
-            <div class="result-notify-sub">${escapeHtml(reason ? `生成失败 · ${reason}` : '生成失败')}</div>
+            <div class="result-notify-sub">${escapeHtml(reason ? `${failureStageLabel} · ${reason}` : failureStageLabel)}</div>
           </div>
         </div>
       `;

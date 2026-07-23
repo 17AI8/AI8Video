@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ai8video.core.config import AI8VideoConfig
-from ai8video.integrations.llm_provider import build_openai_compat_splitter
+from ai8video.integrations.llm_provider import build_openai_compat_llm
 from ai8video.integrations.video_model_settings import load_video_model_settings
 
 PREFLIGHT_CHECK_CHOICES = ("llm", "video_model", "archive_config", "archive_probe")
@@ -67,7 +67,7 @@ def run_llm_check(config: AI8VideoConfig) -> dict:
             "status": "error",
             "error": "未配置 AI8VIDEO_LLM_*，AI8video 核心模型不可用。",
         }
-    llm = build_openai_compat_splitter(config)
+    llm = build_openai_compat_llm(config)
     if llm is None:
         return {
             "status": "error",

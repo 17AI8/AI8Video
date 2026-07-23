@@ -8,7 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from ai8video.generation.generation_batch_context import get_current_generation_batch_id
-from ai8video.core.models import EpisodePrompt, QuickVideoJob
+from ai8video.core.models import VideoPrompt, QuickVideoJob
 from ai8video.batch.task_ledger import TaskLedger
 
 
@@ -129,7 +129,7 @@ def get_generation_ledger_snapshot(
 
 def start_generation_progress(
     session_id: str | None,
-    episodes: list[EpisodePrompt],
+    videos: list[VideoPrompt],
     *,
     concurrent: bool = False,
     generation_batch_id: str | None = None,
@@ -166,38 +166,38 @@ def start_generation_progress(
             "startedAt": _isoformat(now),
             "updatedAt": _isoformat(now),
             "concurrent": bool(concurrent),
-            "totalRequested": len(episodes),
+            "totalRequested": len(videos),
             "items": [
                 {
-                    "episodeIndex": episode.index,
-                    "title": episode.title or f"视频 {episode.index}",
+                    "videoIndex": video.index,
+                    "title": video.title or f"视频 {video.index}",
                     "status": "pending_submission",
                     "statusLabel": "正在生成视频方案",
                     "jobId": None,
                     "updatedAt": _isoformat(now),
                 }
-                for episode in episodes
+                for video in videos
             ],
             "events": [{
                 "at": _isoformat(now),
                 "kind": "batch_started",
-                "message": f"已创建 {len(episodes)} 个视频任务，正在生成视频方案。",
+                "message": f"已创建 {len(videos)} 个视频任务，正在生成视频方案。",
             }],
         }
         snapshot = _copy_progress(_PROGRESS[normalized_session_id])
     _persist_progress_snapshot(snapshot)
 
 
-def mark_job_submitted(session_id: str | None, episode: EpisodePrompt, job: QuickVideoJob) -> None:
-    segment_values = _segment_values_from_episode(episode)
+def mark_job_submitted(session_id: str | None, video: VideoPrompt, job: QuickVideoJob) -> None:
+    segment_values = _segment_values_from_job(job) or _segment_values_from_video(video)
     if segment_values:
         job.segment_index = segment_values.get("segmentIndex")
         job.segment_label = segment_values.get("segmentLabel")
     _update_item(
         session_id,
-        episode.index,
+        video.index,
         {
-            "title": episode.title or f"视频 {episode.index}",
+            "title": video.title or f"视频 {video.index}",
             "status": "submitted",
             "statusLabel": _with_segment_label("已提交", segment_values.get("segmentLabel") if segment_values else ""),
             "jobId": job.job_id,
@@ -206,13 +206,13 @@ def mark_job_submitted(session_id: str | None, episode: EpisodePrompt, job: Quic
     )
 
 
-def mark_job_submitting(session_id: str | None, episode: EpisodePrompt) -> None:
-    segment_values = _segment_values_from_episode(episode)
+def mark_job_submitting(session_id: str | None, video: VideoPrompt) -> None:
+    segment_values = _segment_values_from_video(video)
     _update_item(
         session_id,
-        episode.index,
+        video.index,
         {
-            "title": episode.title or f"视频 {episode.index}",
+            "title": video.title or f"视频 {video.index}",
             "status": "submitting",
             "statusLabel": _with_segment_label("提交中", segment_values.get("segmentLabel") if segment_values else ""),
             **segment_values,
@@ -220,14 +220,14 @@ def mark_job_submitting(session_id: str | None, episode: EpisodePrompt) -> None:
     )
 
 
-def mark_job_preparing_first_frame(session_id: str | None, episode: EpisodePrompt) -> None:
+def mark_job_preparing_first_frame(session_id: str | None, video: VideoPrompt) -> None:
     now = time.time()
-    current_started_at = _current_item_field(session_id, episode.index, "firstFrameStartedAt")
+    current_started_at = _current_item_field(session_id, video.index, "firstFrameStartedAt")
     _update_item(
         session_id,
-        episode.index,
+        video.index,
         {
-            "title": episode.title or f"视频 {episode.index}",
+            "title": video.title or f"视频 {video.index}",
             "status": "preparing_first_frame",
             "statusLabel": "正在生成首帧图",
             "firstFrameStartedAt": current_started_at or _isoformat(now),
@@ -241,9 +241,14 @@ def mark_job_polling(session_id: str | None, job: QuickVideoJob) -> None:
     status_label = str(job.stage_label or "").strip()
     segment_values = _segment_values_from_job(job)
     status = "polling"
-    if job.status == "succeeded":
-        status = "archiving"
-        status_label = "后台处理中"
+    clear_provider_state = False
+    if str(job.status or "").strip().lower() in {"succeeded", "completed"}:
+        clear_provider_state = True
+        if segment_values:
+            status_label = "片段已生成，正在准备后续处理"
+        else:
+            status = "archiving"
+            status_label = "后台处理中"
     elif job.status == "failed":
         status = "failed"
         status_label = "生成失败"
@@ -251,8 +256,10 @@ def mark_job_polling(session_id: str | None, job: QuickVideoJob) -> None:
         status_label = f"真实生成进度 {provider_progress}%"
     elif provider_status:
         status_label = f"上游状态：{provider_status}"
-    else:
+    elif not status_label:
         status_label = "接口轮询中"
+    elif provider_progress is None:
+        clear_provider_state = True
     status_label = _with_segment_label(status_label, segment_values.get("segmentLabel") if segment_values else "")
     values: dict[str, Any] = {
         "status": status,
@@ -260,9 +267,13 @@ def mark_job_polling(session_id: str | None, job: QuickVideoJob) -> None:
         "jobId": job.job_id,
         **segment_values,
     }
+    if clear_provider_state or status in {"archiving", "failed"}:
+        values["_clearProviderState"] = True
+    if status == "polling" and status_label and not segment_values and provider_progress is None and not provider_status:
+        values["_clearSegmentContext"] = True
     if provider_status:
         values["providerStatus"] = provider_status
-    if provider_progress is not None:
+    if status == "polling" and not clear_provider_state and provider_progress is not None:
         values["providerProgress"] = provider_progress
     if job.video_url:
         values["videoUrl"] = job.video_url
@@ -270,7 +281,7 @@ def mark_job_polling(session_id: str | None, job: QuickVideoJob) -> None:
         values["error"] = job.error
     _update_item(
         session_id,
-        job.episode_index,
+        job.video_index,
         values,
     )
 
@@ -279,11 +290,13 @@ def mark_job_archiving(session_id: str | None, job: QuickVideoJob) -> None:
     segment_values = _segment_values_from_job(job)
     _update_item(
         session_id,
-        job.episode_index,
+        job.video_index,
         {
             "status": "archiving",
             "statusLabel": _with_segment_label("后台处理中", segment_values.get("segmentLabel") if segment_values else ""),
             "jobId": job.job_id,
+            "_clearProviderState": True,
+            "_clearSegmentContext": not bool(segment_values),
             **segment_values,
         },
     )
@@ -308,7 +321,7 @@ def mark_job_html_motion_overlay(
     }
     if result is not None:
         values["htmlMotionOverlay"] = result
-    _update_item(session_id, job.episode_index, values)
+    _update_item(session_id, job.video_index, values)
 
 
 def mark_job_succeeded(session_id: str | None, job: QuickVideoJob, asset_record: dict[str, Any] | None = None) -> None:
@@ -316,13 +329,15 @@ def mark_job_succeeded(session_id: str | None, job: QuickVideoJob, asset_record:
     status_label = _success_label_with_html_motion(asset_record)
     _update_item(
         session_id,
-        job.episode_index,
+        job.video_index,
         {
             "status": "succeeded",
             "statusLabel": _with_segment_label(status_label, segment_values.get("segmentLabel") if segment_values else ""),
             "jobId": job.job_id,
             "assetRecord": asset_record or {},
             "videoUrl": job.video_url or None,
+            "_clearProviderState": True,
+            "_clearSegmentContext": not bool(segment_values),
             **segment_values,
         },
     )
@@ -330,15 +345,15 @@ def mark_job_succeeded(session_id: str | None, job: QuickVideoJob, asset_record:
 
 def mark_job_failed(
     session_id: str | None,
-    episode_index: int,
+    video_index: int,
     error: Exception | str,
     *,
     job_id: str | None = None,
     asset_record: dict[str, Any] | None = None,
 ) -> None:
     raw_error = str(error)
-    previous_status = _current_item_status(session_id, episode_index)
-    previous_provider_status = _current_item_field(session_id, episode_index, "providerStatus")
+    previous_status = _current_item_status(session_id, video_index)
+    previous_provider_status = _current_item_field(session_id, video_index, "providerStatus")
     first_frame_lost = (
         (previous_status == "preparing_first_frame" and _is_lost_first_frame_response(raw_error))
         or previous_provider_status == "first_frame_response_lost"
@@ -355,7 +370,7 @@ def mark_job_failed(
     if video_create_lost:
         _update_item(
             session_id,
-            episode_index,
+            video_index,
             {
                 "status": "polling",
                 "statusLabel": "已提交上游，等待任务号回填",
@@ -366,10 +381,21 @@ def mark_job_failed(
             },
         )
         return
+    local_postprocess_failed = previous_status == "archiving" or _is_local_video_postprocess_failure(raw_error)
     values: dict[str, Any] = {
         "status": "failed",
-        "statusLabel": "首帧图未回填" if first_frame_lost else ("首帧图生成失败" if first_frame_failed else "生成失败"),
+        "statusLabel": (
+            "首帧图未回填"
+            if first_frame_lost
+            else "首帧图生成失败"
+            if first_frame_failed
+            else "本地后处理失败"
+            if local_postprocess_failed
+            else "生成失败"
+        ),
         "error": _humanize_failed_progress_error(raw_error, first_frame_lost=first_frame_lost),
+        "_clearProviderState": True,
+        "_clearSegmentContext": previous_status == "archiving",
     }
     if first_frame_lost:
         values["providerStatus"] = "first_frame_response_lost"
@@ -379,7 +405,7 @@ def mark_job_failed(
         values["providerStatus"] = "first_frame_failed"
         values["providerProgress"] = 100
         values["rawError"] = raw_error
-    existing_job_id = str(_current_item_field(session_id, episode_index, "jobId") or "").strip()
+    existing_job_id = str(_current_item_field(session_id, video_index, "jobId") or "").strip()
     final_job_id = str(job_id or "").strip()
     if final_job_id and _is_local_failure_job_id(final_job_id) and existing_job_id and not _is_local_failure_job_id(existing_job_id):
         final_job_id = existing_job_id
@@ -387,7 +413,7 @@ def mark_job_failed(
         values["jobId"] = final_job_id
     if asset_record:
         values["assetRecord"] = asset_record
-    _update_item(session_id, episode_index, values)
+    _update_item(session_id, video_index, values)
 
 
 def fail_generation_progress(
@@ -655,16 +681,16 @@ def _build_unsubmitted_failure_progress(
 
 def _build_unsubmitted_failure_item(
     source_item: Any,
-    fallback_episode_index: int,
+    fallback_video_index: int,
     reason: str,
     now: float,
 ) -> dict[str, Any]:
     item = dict(source_item) if isinstance(source_item, dict) else {}
-    episode_index = _coerce_positive_int(item.get("episodeIndex")) or fallback_episode_index
+    video_index = _coerce_positive_int(item.get("videoIndex")) or fallback_video_index
     return {
         **item,
-        "episodeIndex": episode_index,
-        "title": str(item.get("title") or f"视频 {episode_index}"),
+        "videoIndex": video_index,
+        "title": str(item.get("title") or f"视频 {video_index}"),
         "jobId": None,
         "status": "failed",
         "statusLabel": "生成失败",
@@ -788,26 +814,53 @@ def _record_item_execution_event(
 ) -> None:
     status = str(next_values.get("status") or current_item.get("status") or "").strip()
     label = str(next_values.get("statusLabel") or current_item.get("statusLabel") or "").strip()
-    provider_progress = next_values.get("providerProgress", current_item.get("providerProgress"))
+    video_index = _coerce_positive_int(current_item.get("videoIndex"))
+    segment_index = _coerce_positive_int(next_values.get("segmentIndex"))
+    segment_label = str(next_values.get("segmentLabel") or "").strip()
+    provider_progress = next_values.get("providerProgress") if status == "polling" else None
     previous = {
         "status": str(current_item.get("status") or "").strip(),
         "label": str(current_item.get("statusLabel") or "").strip(),
-        "providerProgress": current_item.get("providerProgress"),
+        "providerProgress": current_item.get("providerProgress") if status == "polling" else None,
+        "segmentIndex": _coerce_positive_int(current_item.get("segmentIndex")),
     }
-    if not label or previous == {"status": status, "label": label, "providerProgress": provider_progress}:
+    current = {
+        "status": status,
+        "label": label,
+        "providerProgress": provider_progress,
+        "segmentIndex": segment_index,
+    }
+    if not label or previous == current:
         return
     events = progress.get("events") if isinstance(progress.get("events"), list) else []
+    public_message = _public_execution_message(
+        status,
+        provider_progress,
+        _without_segment_label(label, segment_label),
+    )
+    event_kind = _execution_event_kind(status, provider_progress, public_message)
     event = {
         "at": _isoformat(now),
+        "kind": event_kind,
         "title": "后台任务",
         "status": status,
-        "message": _public_execution_message(status, provider_progress),
+        "message": public_message,
+        **({"videoIndex": video_index} if video_index else {}),
+        **({"segmentIndex": segment_index} if segment_index else {}),
+        **({"segmentLabel": segment_label} if segment_label else {}),
         **({"providerProgress": provider_progress} if provider_progress is not None else {}),
     }
     if status:
+        event_key = (video_index, segment_index, status, event_kind)
         for index in range(len(events) - 1, -1, -1):
             previous_event = events[index]
-            if previous_event.get("status") == status:
+            previous_key = (
+                _coerce_positive_int(previous_event.get("videoIndex")),
+                _coerce_positive_int(previous_event.get("segmentIndex")),
+                str(previous_event.get("status") or "").strip(),
+                str(previous_event.get("kind") or "").strip(),
+            )
+            if previous_key == event_key:
                 events[index] = event
                 progress["events"] = events[-_MAX_EXECUTION_EVENTS:]
                 return
@@ -815,8 +868,18 @@ def _record_item_execution_event(
     progress["events"] = events[-_MAX_EXECUTION_EVENTS:]
 
 
-def _public_execution_message(status: str, provider_progress: Any) -> str:
+def _execution_event_kind(status: str, provider_progress: Any, message: str) -> str:
     normalized_status = str(status or "").strip().lower()
+    if normalized_status == "polling" and provider_progress is not None:
+        return "provider_progress"
+    if normalized_status in {"polling", "archiving"}:
+        return f"{normalized_status}:{str(message or '').strip()}"
+    return normalized_status or "status_update"
+
+
+def _public_execution_message(status: str, provider_progress: Any, status_label: str = "") -> str:
+    normalized_status = str(status or "").strip().lower()
+    public_label = str(status_label or "").strip()
     if normalized_status == "preparing_first_frame":
         return "正在准备首帧图"
     if normalized_status == "submitting":
@@ -826,9 +889,11 @@ def _public_execution_message(status: str, provider_progress: Any) -> str:
     if normalized_status == "polling":
         if provider_progress is not None:
             return "视频生成中"
+        if public_label:
+            return public_label
         return "正在等待视频生成结果"
     if normalized_status == "archiving":
-        return "正在整理生成结果"
+        return public_label or "正在整理生成结果"
     if normalized_status == "succeeded":
         return "视频已生成"
     if normalized_status in {"failed", "skipped", "cancelled", "canceled"}:
@@ -930,7 +995,7 @@ def claim_active_generation_jobs(
     return claimed
 
 
-def _update_item(session_id: str | None, episode_index: int, values: dict[str, Any]) -> None:
+def _update_item(session_id: str | None, video_index: int, values: dict[str, Any]) -> None:
     normalized_session_id = _normalize_session_id(session_id)
     if not normalized_session_id:
         return
@@ -953,18 +1018,47 @@ def _update_item(session_id: str | None, episode_index: int, values: dict[str, A
         items = progress.get("items") or []
         target = None
         for item in items:
-            if int(item.get("episodeIndex") or 0) == int(episode_index):
+            if int(item.get("videoIndex") or 0) == int(video_index):
                 target = item
                 break
         if target is None:
             target = {
-                "episodeIndex": int(episode_index),
-                "title": f"视频 {episode_index}",
+                "videoIndex": int(video_index),
+                "title": f"视频 {video_index}",
             }
             items.append(target)
             progress["items"] = items
             progress["totalRequested"] = max(int(progress.get("totalRequested") or 0), len(items))
         next_values = dict(values)
+        clear_provider_state = bool(next_values.pop("_clearProviderState", False))
+        clear_segment_context = bool(next_values.pop("_clearSegmentContext", False))
+        next_segment_index = _coerce_positive_int(next_values.get("segmentIndex"))
+        current_segment_index = _coerce_positive_int(target.get("segmentIndex"))
+        segment_changed = bool(
+            next_segment_index
+            and current_segment_index
+            and next_segment_index != current_segment_index
+        )
+        next_status = str(next_values.get("status") or "").strip()
+        if next_status and next_status != "polling" and "providerProgress" not in next_values:
+            clear_provider_state = True
+        if segment_changed:
+            for field in (
+                "providerProgress",
+                "providerStatus",
+                "hasAcceptedProgressRollback",
+                "jobId",
+                "videoUrl",
+                "error",
+                "rawError",
+            ):
+                target.pop(field, None)
+        if clear_provider_state:
+            for field in ("providerProgress", "providerStatus", "hasAcceptedProgressRollback"):
+                target.pop(field, None)
+        if clear_segment_context:
+            target.pop("segmentIndex", None)
+            target.pop("segmentLabel", None)
         if "providerProgress" in next_values:
             resolved_progress, accepted_rollback = _resolve_provider_progress(
                 target.get("providerProgress"),
@@ -975,11 +1069,19 @@ def _update_item(session_id: str | None, episode_index: int, values: dict[str, A
                 next_values.pop("providerProgress", None)
             else:
                 next_values["providerProgress"] = resolved_progress
-                if str(next_values.get("statusLabel") or "").startswith("真实生成进度 "):
-                    next_values["statusLabel"] = f"真实生成进度 {resolved_progress}%"
+                if "真实生成进度 " in str(next_values.get("statusLabel") or ""):
+                    next_values["statusLabel"] = _with_segment_label(
+                        f"真实生成进度 {resolved_progress}%",
+                        next_values.get("segmentLabel"),
+                    )
             if accepted_rollback:
                 next_values["hasAcceptedProgressRollback"] = True
-        _update_segment_status(target, next_values, now)
+        _update_segment_status(
+            target,
+            next_values,
+            now,
+            clear_provider_state=clear_provider_state,
+        )
         _record_item_execution_event(progress, target, next_values, now)
         target.update(next_values)
         target["updatedAt"] = _isoformat(now)
@@ -988,24 +1090,24 @@ def _update_item(session_id: str | None, episode_index: int, values: dict[str, A
     _persist_progress_snapshot(snapshot)
 
 
-def _current_item_status(session_id: str | None, episode_index: int) -> str:
-    return str(_current_item_field(session_id, episode_index, "status") or "").strip()
+def _current_item_status(session_id: str | None, video_index: int) -> str:
+    return str(_current_item_field(session_id, video_index, "status") or "").strip()
 
 
-def _current_item_field(session_id: str | None, episode_index: int, field: str) -> Any:
+def _current_item_field(session_id: str | None, video_index: int, field: str) -> Any:
     normalized_session_id = _normalize_session_id(session_id)
     if not normalized_session_id:
         return None
     with _LOCK:
         progress = _PROGRESS.get(normalized_session_id) or {}
         for item in progress.get("items") or []:
-            if int(item.get("episodeIndex") or 0) == int(episode_index):
+            if int(item.get("videoIndex") or 0) == int(video_index):
                 return item.get(field)
     return None
 
 
-def _segment_values_from_episode(episode: EpisodePrompt) -> dict[str, Any]:
-    guidance = episode.keyword_guidance if isinstance(episode.keyword_guidance, dict) else {}
+def _segment_values_from_video(video: VideoPrompt) -> dict[str, Any]:
+    guidance = video.keyword_guidance if isinstance(video.keyword_guidance, dict) else {}
     segment_index = _coerce_positive_int(guidance.get("segmentIndex"))
     if not segment_index:
         return {}
@@ -1048,6 +1150,14 @@ def _with_segment_label(label: str, segment_label: str | None) -> str:
     return f"{clean_segment}：{clean_label}" if clean_label else clean_segment
 
 
+def _without_segment_label(label: str, segment_label: str | None) -> str:
+    clean_label = str(label or "").strip()
+    clean_segment = str(segment_label or "").strip()
+    if not clean_segment or not clean_label.startswith(clean_segment):
+        return clean_label
+    return clean_label[len(clean_segment):].lstrip("：: ")
+
+
 def _html_motion_overlay_label(stage: str, result: dict[str, Any] | None) -> str:
     if stage == "generating":
         return "正在生成 HTML 动效"
@@ -1074,7 +1184,13 @@ def _success_label_with_html_motion(asset_record: dict[str, Any] | None) -> str:
     return "已生成"
 
 
-def _update_segment_status(target: dict[str, Any], next_values: dict[str, Any], now: float) -> None:
+def _update_segment_status(
+    target: dict[str, Any],
+    next_values: dict[str, Any],
+    now: float,
+    *,
+    clear_provider_state: bool = False,
+) -> None:
     segment_index = _coerce_positive_int(next_values.get("segmentIndex"))
     if not segment_index:
         return
@@ -1094,18 +1210,23 @@ def _update_segment_status(target: dict[str, Any], next_values: dict[str, Any], 
         }
         segments.append(current)
         segments.sort(key=lambda item: _coerce_positive_int(item.get("segmentIndex")) or 0)
+    if clear_provider_state:
+        current.pop("providerProgress", None)
+        current.pop("providerStatus", None)
     current.update({
         "segmentIndex": segment_index,
         "segmentLabel": segment_label,
         "status": next_values.get("status") or current.get("status"),
         "statusLabel": next_values.get("statusLabel") or current.get("statusLabel"),
         "jobId": next_values.get("jobId") or current.get("jobId"),
-        "providerStatus": next_values.get("providerStatus") or current.get("providerStatus"),
-        "providerProgress": next_values.get("providerProgress", current.get("providerProgress")),
         "videoUrl": next_values.get("videoUrl") or current.get("videoUrl"),
         "error": next_values.get("error") or current.get("error"),
         "updatedAt": _isoformat(now),
     })
+    if next_values.get("providerStatus"):
+        current["providerStatus"] = next_values["providerStatus"]
+    if next_values.get("providerProgress") is not None:
+        current["providerProgress"] = next_values["providerProgress"]
     target["segmentStatus"] = segments
 
 
@@ -1150,6 +1271,27 @@ def _is_local_failure_job_id(job_id: str) -> bool:
         "first-frame-failed-",
         "interrupted-before-submit-",
         "merge2-failed-",
+    ))
+
+
+def _is_local_video_postprocess_failure(error: str) -> bool:
+    text = str(error or "").strip()
+    lowered = text.lower()
+    return any(marker in text for marker in (
+        "视频开头裁剪失败",
+        "归档或后处理失败",
+        "视频后处理失败",
+        "花字烧录失败",
+        "HTML 动效",
+        "提取尾帧失败",
+        "保存延长截帧失败",
+        "截取视频失败",
+        "合并视频失败",
+        "重新混入背景音乐失败",
+    )) or any(marker in lowered for marker in (
+        "ffmpeg",
+        "_mix_video",
+        "text overlay",
     ))
 
 
@@ -1238,8 +1380,6 @@ def _resolve_provider_progress(
     next_progress = _normalize_provider_progress(next_value)
     if next_progress is None:
         return previous_progress, has_accepted_rollback
-    if previous_progress is None and next_progress >= 66:
-        return None, False
     if previous_progress is not None and next_progress < previous_progress:
         is_significant_rollback = next_progress + 8 < previous_progress
         if not has_accepted_rollback and is_significant_rollback:

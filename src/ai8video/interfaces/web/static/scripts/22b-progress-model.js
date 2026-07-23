@@ -9,7 +9,7 @@
           isActive: false,
           summary: '等待输入提示词',
           metrics: [
-            { label: '集数', value: 0 },
+            { label: '视频数', value: 0 },
             { label: '已生成', value: 0 },
             { label: '归档', value: 0 },
           ],
@@ -107,7 +107,7 @@
         const currentResult = buildCurrentResultGalleryModel(session);
         const stageCards = buildBatchStageCards(
           currentResult.groups,
-          currentResult.expectedCount || currentResult.summary?.episodeCount || 0
+          currentResult.expectedCount || currentResult.summary?.videoCount || 0
         );
         if (stageCards.length) {
           const stageSummary = summarizeBatchStageCards(stageCards);
@@ -129,21 +129,21 @@
           };
         }
         const result = last.payload.result;
-        const groups = buildEpisodeGroups(result, last.payload.meta, state.assets);
+        const groups = buildVideoGroups(result, last.payload.meta, state.assets);
         const summary = summarizeResult(result, groups);
         return {
           title: '当前进度',
           isActive: false,
           summary: buildProgressSummary(summary, groups, last.payload.meta),
           metrics: [
-            { label: '集数', value: summary.episodeCount },
+            { label: '视频数', value: summary.videoCount },
             { label: '已生成', value: summary.successCount ?? summary.passCount },
             { label: '归档', value: groups.filter((item) => item.archiveStatus && item.archiveStatus !== 'disabled').length },
           ],
           details: groups.map((item) => ({
-            title: `第 ${item.index} 集 · ${item.title}${item.updated ? ' · 已重做' : ''}`,
+            title: `第 ${item.index} 条 · ${item.title}${item.updated ? ' · 已重做' : ''}`,
             body: [
-              item.updated ? '本次最新动作：已按修改意见重做这一集' : '',
+              item.updated ? '本次最新动作：已按修改意见重做这条视频' : '',
               `任务：${item.jobStatus || '待生成'}`,
               `归档：${item.archiveStatus || '未归档'}${item.archiveBackend ? ` · ${item.archiveBackend}` : ''}`,
               item.generationReasons ? `原因：${item.generationReasons}` : '',
@@ -161,7 +161,7 @@
           isActive: false,
           summary: failed ? '视频生成失败' : '任务已结束',
           metrics: [
-            { label: '集数', value: draft.episode_count || draft.episodeCount || 1 },
+            { label: '视频数', value: draft.video_count || draft.videoCount || 1 },
             { label: '状态', value: failed ? '失败' : '已结束' },
             { label: '归档', value: '-' },
           ],
@@ -179,15 +179,15 @@
           isActive: false,
           summary: awaiting,
           metrics: [
-            { label: '模式', value: draft.mode === 'multi_episode_script' ? '多集' : (draft.mode === 'single_prompt' ? '单条' : '待识别') },
-            { label: '集数', value: draft.episodeCount || 1 },
+            { label: '模式', value: draft.mode === 'batch_videos' ? '批量' : (draft.mode === 'single_video' ? '单条' : '待识别') },
+            { label: '视频数', value: draft.videoCount || 1 },
             { label: '参考图', value: draft.referenceImage ? '已给' : (draft.referenceImageEnabled === false ? '不用' : '待定') },
           ],
           details: [{
             title: '已识别信息',
             body: [
               `风格：${draft.styleHint || '未指定'}`,
-              `集数：${draft.episodeCount || '待确认'}`,
+              `视频数：${draft.videoCount || '待确认'}`,
               `参考图：${draft.referenceImage || (draft.referenceImageEnabled === false ? '不用参考图' : '待确认')}`,
               `状态：${awaiting}`,
             ].join('\n'),
@@ -200,7 +200,7 @@
           isActive: false,
           summary: '等待 AI8video 回复',
           metrics: [
-            { label: '集数', value: '-' },
+            { label: '视频数', value: '-' },
             { label: '通过', value: '-' },
             { label: '归档', value: '-' },
           ],
@@ -212,7 +212,7 @@
         isActive: false,
         summary: '继续补充需求',
         metrics: [
-          { label: '集数', value: '-' },
+          { label: '视频数', value: '-' },
           { label: '通过', value: '-' },
           { label: '归档', value: '-' },
         ],

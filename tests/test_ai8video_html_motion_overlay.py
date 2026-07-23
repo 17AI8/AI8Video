@@ -23,7 +23,7 @@ from ai8video.media.motion.html_motion_overlay import (
     update_html_motion_quality_retry_count,
 )
 from ai8video.media.motion.hyperframes_overlay_harness import HarnessResult
-from ai8video.core.models import EpisodePrompt, ParsedRequest, QuickVideoJob
+from ai8video.core.models import VideoPrompt, ParsedRequest, QuickVideoJob
 
 
 class AI8VideoHtmlMotionOverlayTest(unittest.TestCase):
@@ -44,15 +44,15 @@ class AI8VideoHtmlMotionOverlayTest(unittest.TestCase):
 
     @staticmethod
     def _request(enabled: bool) -> ParsedRequest:
-        return ParsedRequest(raw_text="生成视频", mode="single_prompt", html_motion_overlay_enabled=enabled)
+        return ParsedRequest(raw_text="生成视频", mode="single_video", html_motion_overlay_enabled=enabled)
 
     @staticmethod
-    def _episode() -> EpisodePrompt:
-        return EpisodePrompt(index=1, title="第一集", prompt="商务团队在办公室讨论客户承接")
+    def _video() -> VideoPrompt:
+        return VideoPrompt(index=1, title="第一条视频", prompt="商务团队在办公室讨论客户承接")
 
     @staticmethod
     def _job() -> QuickVideoJob:
-        return QuickVideoJob(episode_index=1, job_id="html-motion-job", status="succeeded")
+        return QuickVideoJob(video_index=1, job_id="html-motion-job", status="succeeded")
 
     def test_setting_is_persisted_and_exposed(self) -> None:
         with patch.object(html_motion_overlay, "ensure_user_file_root", return_value=self.root), patch.object(
@@ -120,7 +120,7 @@ class AI8VideoHtmlMotionOverlayTest(unittest.TestCase):
 
     def test_html_motion_llm_uses_single_streaming_request(self) -> None:
         config = AI8VideoConfig(llm_base_url="https://example.invalid", llm_api_key="key", llm_model="model")
-        with patch.object(html_motion_overlay, "build_openai_compat_splitter", return_value=lambda _: "{}") as builder:
+        with patch.object(html_motion_overlay, "build_openai_compat_llm", return_value=lambda _: "{}") as builder:
             html_motion_overlay.build_html_motion_llm(config)
 
         self.assertTrue(builder.call_args.kwargs["stream"])
@@ -143,7 +143,7 @@ class AI8VideoHtmlMotionOverlayTest(unittest.TestCase):
         result = apply_html_motion_overlay(
             source,
             self._request(False),
-            self._episode(),
+            self._video(),
             self._job(),
             llm=lambda _: self.fail("disabled request must not call model"),
             trigger="video_playback",
@@ -162,7 +162,7 @@ class AI8VideoHtmlMotionOverlayTest(unittest.TestCase):
             result = apply_html_motion_overlay(
                 source,
                 self._request(True),
-                self._episode(),
+                self._video(),
                 self._job(),
                 llm=lambda _: self.fail("missing runtime must not call model"),
                 trigger="video_playback",
@@ -213,7 +213,7 @@ class AI8VideoHtmlMotionOverlayTest(unittest.TestCase):
             result = apply_html_motion_overlay(
                 source,
                 self._request(True),
-                self._episode(),
+                self._video(),
                 self._job(),
                 llm=lambda _: "{}",
                 stage_callback=lambda stage, _result: events.append(stage),
@@ -242,7 +242,7 @@ class AI8VideoHtmlMotionOverlayTest(unittest.TestCase):
         result = apply_html_motion_overlay(
             source,
             self._request(True),
-            self._episode(),
+            self._video(),
             self._job(),
             llm=lambda _: self.fail("automatic trigger must not call model"),
         )

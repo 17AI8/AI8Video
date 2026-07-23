@@ -24,7 +24,7 @@ import urllib3
 from ai8video.core.config import AI8VideoConfig
 from ai8video.generation.business_prompt import finalize_video_prompt_with_ai
 from ai8video.assets.default_reference_image import reference_image_effect_definitions
-from ai8video.core.models import EpisodePrompt, FirstFrameAsset, ParsedRequest
+from ai8video.core.models import VideoPrompt, FirstFrameAsset, ParsedRequest
 from ai8video.generation.prompt_trace import append_prompt_trace
 from ai8video.assets.user_files import USER_FILE_ROOT, ensure_user_file_root
 
@@ -64,7 +64,7 @@ class ReferenceImagePreprocessor:
     def prepare_first_frame(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt | None = None,
+        video: VideoPrompt | None = None,
         trace_session_id: str | None = None,
     ) -> FirstFrameAsset | None:
         if not request.reference_image:
@@ -72,7 +72,7 @@ class ReferenceImagePreprocessor:
                 "first_frame_skipped",
                 session_id=trace_session_id,
                 payload={
-                    "episodeIndex": episode.index if episode else None,
+                    "videoIndex": video.index if video else None,
                     "reason": "no_reference_image",
                 },
             )
@@ -84,7 +84,7 @@ class ReferenceImagePreprocessor:
                 "first_frame_passthrough",
                 session_id=trace_session_id,
                 payload={
-                    "episodeIndex": episode.index if episode else None,
+                    "videoIndex": video.index if video else None,
                     "source": request.reference_image,
                     "transformOptions": options,
                     "customPrompt": custom_prompt,
@@ -96,7 +96,7 @@ class ReferenceImagePreprocessor:
                 "first_frame_dry_run",
                 session_id=trace_session_id,
                 payload={
-                    "episodeIndex": episode.index if episode else None,
+                    "videoIndex": video.index if video else None,
                     "source": request.reference_image,
                     "transformOptions": options,
                     "customPrompt": custom_prompt,
@@ -107,19 +107,19 @@ class ReferenceImagePreprocessor:
             raise ReferenceImagePreprocessError("请设置图片模型。请在设置的图片模型页补齐地址、API Key 和模型名。")
 
         prompt = build_reference_image_transform_prompt(
-            _build_context_text(request, episode),
+            _build_context_text(request, video),
             options,
             custom_prompt=custom_prompt,
             llm=self.llm,
             trace_session_id=trace_session_id,
-            episode_index=episode.index if episode else None,
+            video_index=video.index if video else None,
         )
         request_id = _image_generation_request_id()
         append_prompt_trace(
             "first_frame_image_prompt",
             session_id=trace_session_id,
             payload={
-                "episodeIndex": episode.index if episode else None,
+                "videoIndex": video.index if video else None,
                 "source": request.reference_image,
                 "transformOptions": options,
                 "customPrompt": custom_prompt,
@@ -133,14 +133,14 @@ class ReferenceImagePreprocessor:
                 prompt,
                 request_id=request_id,
                 trace_session_id=trace_session_id,
-                episode_index=episode.index if episode else None,
+                video_index=video.index if video else None,
             )
         except Exception as exc:
             append_prompt_trace(
                 "first_frame_image_error",
                 session_id=trace_session_id,
                 payload={
-                    "episodeIndex": episode.index if episode else None,
+                    "videoIndex": video.index if video else None,
                     "requestId": request_id,
                     "errorType": exc.__class__.__name__,
                     "error": str(exc),
@@ -152,7 +152,7 @@ class ReferenceImagePreprocessor:
             "first_frame_image_output",
             session_id=trace_session_id,
             payload={
-                "episodeIndex": episode.index if episode else None,
+                "videoIndex": video.index if video else None,
                 "outputSource": output_source,
                 "requestId": request_id,
                 **image_trace,
@@ -167,14 +167,14 @@ class ReferenceImagePreprocessor:
         *,
         request_id: str | None = None,
         trace_session_id: str | None = None,
-        episode_index: int | None = None,
+        video_index: int | None = None,
     ) -> tuple[str, dict[str, Any]]:
         return self._generate_images_to_image(
             [source],
             prompt,
             request_id=request_id,
             trace_session_id=trace_session_id,
-            episode_index=episode_index,
+            video_index=video_index,
         )
 
     def repair_frame_with_references(
@@ -226,7 +226,7 @@ class ReferenceImagePreprocessor:
         *,
         request_id: str | None = None,
         trace_session_id: str | None = None,
-        episode_index: int | None = None,
+        video_index: int | None = None,
         max_concurrency: int | None = None,
     ) -> tuple[str, dict[str, Any]]:
         image_inputs = [_reference_image_input_payload(source) for source in sources]
@@ -256,7 +256,7 @@ class ReferenceImagePreprocessor:
             "first_frame_image_waiting",
             session_id=trace_session_id,
             payload={
-                "episodeIndex": episode_index,
+                "videoIndex": video_index,
                 "requestId": request_id,
                 **request_meta,
             },
@@ -269,7 +269,7 @@ class ReferenceImagePreprocessor:
                 "first_frame_image_request",
                 session_id=trace_session_id,
                 payload={
-                    "episodeIndex": episode_index,
+                    "videoIndex": video_index,
                     "requestId": request_id,
                     **request_meta,
                 },
@@ -296,7 +296,7 @@ class ReferenceImagePreprocessor:
                         timeout=timeout_seconds,
                         request_meta=request_meta,
                         trace_session_id=trace_session_id,
-                        episode_index=episode_index,
+                        video_index=video_index,
                         request_id=request_id,
                     )
                 except requests.RequestException as exc:
@@ -346,7 +346,7 @@ def build_reference_image_transform_prompt(
     custom_prompt: str | None = None,
     llm: Callable[[str], str] | None = None,
     trace_session_id: str | None = None,
-    episode_index: int | None = None,
+    video_index: int | None = None,
 ) -> str:
     normalized = _normalize_options(options)
     effects = [effect["prompt"] for effect in reference_image_effect_definitions() if normalized.get(effect["key"])]
@@ -370,16 +370,16 @@ def build_reference_image_transform_prompt(
         prompt,
         llm=llm,
         trace_session_id=trace_session_id,
-        episode_index=episode_index,
+        video_index=video_index,
         prompt_kind="image",
     )
 
 
-def _build_context_text(request: ParsedRequest, episode: EpisodePrompt | None) -> str:
+def _build_context_text(request: ParsedRequest, video: VideoPrompt | None) -> str:
     parts: list[str] = []
-    if episode is not None:
-        title = str(episode.title or "").strip()
-        prompt = str(episode.prompt or "").strip()
+    if video is not None:
+        title = str(video.title or "").strip()
+        prompt = str(video.prompt or "").strip()
         if title:
             parts.append(f"当前视频标题：{title}")
         if prompt:
@@ -710,7 +710,7 @@ def _post_image_generation_with_lost_response_retry(
     timeout: int,
     request_meta: dict[str, Any],
     trace_session_id: str | None,
-    episode_index: int | None,
+    video_index: int | None,
     request_id: str | None,
 ) -> requests.Response:
     lost_response_retries = _image_lost_response_retries()
@@ -736,7 +736,7 @@ def _post_image_generation_with_lost_response_retry(
                     "first_frame_image_retry",
                     session_id=trace_session_id,
                     payload={
-                        "episodeIndex": episode_index,
+                        "videoIndex": video_index,
                         "requestId": request_id,
                         "attempt": attempt + 1,
                         "statusCode": status_code,
@@ -755,7 +755,7 @@ def _post_image_generation_with_lost_response_retry(
                 "first_frame_image_retry",
                 session_id=trace_session_id,
                 payload={
-                    "episodeIndex": episode_index,
+                    "videoIndex": video_index,
                     "requestId": request_id,
                     "attempt": attempt + 1,
                     "reason": str(exc),

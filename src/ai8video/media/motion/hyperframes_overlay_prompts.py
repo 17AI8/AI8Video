@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ai8video.core.models import EpisodePrompt
+from ai8video.core.models import VideoPrompt
 
 
 # Harness 引导：模型是操作员，通过工具与反馈环完成文案与配方选择。
@@ -61,7 +61,7 @@ HTML_MOTION_SYSTEM_PROMPT = """
 
 
 def build_generation_prompt(
-    episode: EpisodePrompt,
+    video: VideoPrompt,
     media: dict[str, Any],
     *,
     minimum_coverage_ratio: float,
@@ -80,7 +80,7 @@ def build_generation_prompt(
     required_beats = target_beat_count(duration, dialogue)
     return f"""开始设计 HTML 动效语义方案。可先 get_context，或直接 finalize。
 
-视频提示词：{episode.prompt}
+视频提示词：{video.prompt}
 当前最新台词：{dialogue}
 画布：{media['width']}x{media['height']}
 时长：{duration:.3f} 秒（必须恰好 {required_beats} 个 beats；每拍 question？+ result！）
@@ -96,13 +96,13 @@ HTML 动效安全区：{safe_zone_text}
 
 def build_critique_prompt(
     artifact: dict[str, Any],
-    episode: EpisodePrompt,
+    video: VideoPrompt,
     media: dict[str, Any],
     dialogue_text: str = "",
 ) -> str:
     payload = json.dumps(artifact, ensure_ascii=False, separators=(",", ":"))
     return f"""你是 HyperFrames 视觉总监。评审下面的透明视频叠加编排，只返回严格 JSON。
-视频提示词：{episode.prompt}
+视频提示词：{video.prompt}
 当前最新台词：{str(dialogue_text or '').strip() or '（无）'}
 画布：{media['width']}x{media['height']}，时长 {media['durationSeconds']} 秒。
 待评审产物：{payload}
@@ -114,7 +114,7 @@ def build_critique_prompt(
 
 def build_validation_repair_prompt(
     artifact: dict[str, Any],
-    episode: EpisodePrompt,
+    video: VideoPrompt,
     media: dict[str, Any],
     *,
     dialogue_text: str,
@@ -124,7 +124,7 @@ def build_validation_repair_prompt(
     return f"""你是AI8 HyperFrames 编排修复器。下面 artifact 已通过安全结构解析，但 HyperFrames 实测未通过。
 只返回完整修订后的 artifact JSON，不要解释、不要 Markdown、不要额外字段。
 
-视频提示词：{episode.prompt}
+视频提示词：{video.prompt}
 当前最新台词：{str(dialogue_text or '').strip() or '（无）'}
 画布：{media['width']}x{media['height']}，时长 {media['durationSeconds']} 秒。
 实测错误：{validation_error}

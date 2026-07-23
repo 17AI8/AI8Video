@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from ai8video.generation import business_prompt
 from ai8video.core.config import AI8VideoConfig
-from ai8video.core.models import EpisodePrompt, ParsedRequest, QuickVideoJob, ArchivedAsset
+from ai8video.core.models import VideoPrompt, ParsedRequest, QuickVideoJob, ArchivedAsset
 from ai8video.generation.pipeline import AI8VideoPipeline
 
 
@@ -18,15 +18,15 @@ class _FakeClient:
         self.created_text = ""
         self.created_texts = []
 
-    def create_job(self, *, text, episode_index, first_frame, duration_seconds, ratio, resolution, preset):
+    def create_job(self, *, text, video_index, first_frame, duration_seconds, ratio, resolution, preset):
         self.created_text = text
         self.created_texts.append(text)
         return QuickVideoJob(
-            episode_index=episode_index,
-            job_id=f"job-{episode_index}",
+            video_index=video_index,
+            job_id=f"job-{video_index}",
             status="succeeded",
             prompt=text,
-            video_url=f"https://example.test/video-{episode_index}.mp4",
+            video_url=f"https://example.test/video-{video_index}.mp4",
         )
 
     def poll_job(self, job: QuickVideoJob) -> QuickVideoJob:
@@ -34,9 +34,9 @@ class _FakeClient:
 
 
 class _FakeArchiver:
-    def archive(self, request, episode, job, outcome) -> ArchivedAsset:
+    def archive(self, request, video, job, outcome) -> ArchivedAsset:
         return ArchivedAsset(
-            episode_index=episode.index,
+            video_index=video.index,
             job_id=job.job_id,
             backend="local",
             status="archived",
@@ -48,10 +48,10 @@ class _FakeAssetStore:
     def __init__(self) -> None:
         self.records = []
 
-    def append(self, request, episode, job, outcome, first_frame, archive):
+    def append(self, request, video, job, outcome, first_frame, archive):
         record = {
-            "episodeIndex": episode.index,
-            "prompt": episode.prompt,
+            "videoIndex": video.index,
+            "prompt": video.prompt,
             "jobPrompt": job.prompt,
         }
         self.records.append(record)
@@ -65,7 +65,7 @@ class AI8VideoBusinessPromptTest(unittest.TestCase):
             with patch.object(business_prompt, "BUSINESS_PROMPT_PATH", prompt_path):
                 business_prompt.write_business_prompt("所有AI8VIDEO自动过滤，不允许出现任何logo。系统规则：需要模型理解语义约束。")
 
-                result = business_prompt.finalize_video_prompt(
+                result = business_prompt.finalize_prompt_text(
                     "候选提示词包含禁用内容甲，AI8videoAI8VIDEO，画面出现logo。\n"
                     "信息保真：这是内部补丁说明，不应进入最终提示词。"
                 )
@@ -205,14 +205,14 @@ class AI8VideoBusinessPromptTest(unittest.TestCase):
             ]
             """
 
-        episodes = [
-            EpisodePrompt(index=1, title="旧标题一", prompt="候选一"),
-            EpisodePrompt(index=2, title="旧标题二", prompt="候选二"),
+        videos = [
+            VideoPrompt(index=1, title="旧标题一", prompt="候选一"),
+            VideoPrompt(index=2, title="旧标题二", prompt="候选二"),
         ]
 
-        finalized = business_prompt.finalize_episode_prompts(episodes, llm=fake_llm)
+        finalized = business_prompt.finalize_video_prompts(videos, llm=fake_llm)
 
-        self.assertEqual([episode.title for episode in finalized], ["消息到来", "继续推进"])
+        self.assertEqual([video.title for video in finalized], ["消息到来", "继续推进"])
         self.assertEqual(finalized[0].prompt, "人物看向镜头，说：消息来了。")
         self.assertEqual(finalized[1].prompt, "人物转身走向发射场。")
 
@@ -281,12 +281,12 @@ class AI8VideoBusinessPromptTest(unittest.TestCase):
                 pipeline.archiver = _FakeArchiver()
                 pipeline.asset_store = _FakeAssetStore()
 
-                request = ParsedRequest(raw_text="测试", mode="single_prompt")
-                episodes = [EpisodePrompt(index=1, title="测试", prompt="候选提示词：第一条。")]
-                result = pipeline._run_episodes(request, episodes, progress_session_id=None)
+                request = ParsedRequest(raw_text="测试", mode="single_video")
+                videos = [VideoPrompt(index=1, title="测试", prompt="候选提示词：第一条。")]
+                result = pipeline._run_videos(request, videos, progress_session_id=None)
 
         self.assertEqual(pipeline.client.created_text, "模型最终提示词：第一条。")
-        self.assertEqual(result.episodes[0].prompt, pipeline.client.created_text)
+        self.assertEqual(result.videos[0].prompt, pipeline.client.created_text)
         self.assertEqual(pipeline.asset_store.records[0]["prompt"], pipeline.client.created_text)
         self.assertEqual(len(model_inputs), 3)
         self.assertIn("最终出站审校模型", model_inputs[1])
@@ -314,7 +314,7 @@ class AI8VideoBusinessPromptTest(unittest.TestCase):
 
                 request = ParsedRequest(
                     raw_text="测试",
-                    mode="single_prompt",
+                    mode="single_video",
                     reference_image="/tmp/reference.png",
                     reference_image_custom_prompt="必须泳装和沙滩",
                     reference_image_transform_options={
@@ -323,8 +323,8 @@ class AI8VideoBusinessPromptTest(unittest.TestCase):
                         "autoChangeClothes": False,
                     },
                 )
-                episodes = [EpisodePrompt(index=1, title="测试", prompt="候选提示词：第一条。")]
-                pipeline._run_episodes(request, episodes, progress_session_id=None)
+                videos = [VideoPrompt(index=1, title="测试", prompt="候选提示词：第一条。")]
+                pipeline._run_videos(request, videos, progress_session_id=None)
 
         self.assertEqual(len(model_inputs), 3)
         self.assertIn("当前任务补充约束", model_inputs[0])
@@ -376,16 +376,16 @@ class AI8VideoBusinessPromptTest(unittest.TestCase):
                 pipeline.archiver = _FakeArchiver()
                 pipeline.asset_store = _FakeAssetStore()
 
-                request = ParsedRequest(raw_text="测试", mode="multi_episode_script", concurrent_generation=True)
-                episodes = [
-                    EpisodePrompt(
+                request = ParsedRequest(raw_text="测试", mode="batch_videos", concurrent_generation=True)
+                videos = [
+                    VideoPrompt(
                         index=1,
                         title="第一条",
                         prompt="候选提示词：第一条。",
                         source_summary="来自脚本1",
                         keyword_guidance={"global_keywords": ["AI8video"], "preserved_keywords": ["AI8video"]},
                     ),
-                    EpisodePrompt(
+                    VideoPrompt(
                         index=2,
                         title="第二条",
                         prompt="候选提示词：第二条。",
@@ -393,18 +393,18 @@ class AI8VideoBusinessPromptTest(unittest.TestCase):
                         keyword_guidance={"global_keywords": ["AI8VIDEO"], "preserved_keywords": ["AI8VIDEO"]},
                     ),
                 ]
-                result = pipeline._run_episodes(request, episodes, progress_session_id=None)
+                result = pipeline._run_videos(request, videos, progress_session_id=None)
 
         self.assertEqual(len(model_inputs), 2)
         self.assertIn("整批最终提示词质检与改写模型", model_inputs[0])
         self.assertIn("最终输出后审核模型", model_inputs[1])
         self.assertEqual(pipeline.client.created_texts, ["模型最终提示词：第一条。", "模型最终提示词：第二条。"])
-        self.assertEqual([item.prompt for item in result.episodes], pipeline.client.created_texts)
-        self.assertEqual(result.episodes[0].keyword_guidance["final_rewrite_notes"], "已处理第一条")
+        self.assertEqual([item.prompt for item in result.videos], pipeline.client.created_texts)
+        self.assertEqual(result.videos[0].keyword_guidance["final_rewrite_notes"], "已处理第一条")
 
     def test_batch_rewrite_prompt_carries_ai_keyword_guidance(self) -> None:
-        episodes = [
-            EpisodePrompt(
+        videos = [
+            VideoPrompt(
                 index=1,
                 title="品牌发布",
                 prompt="候选提示词：老板口播品牌发布。",
@@ -420,7 +420,7 @@ class AI8VideoBusinessPromptTest(unittest.TestCase):
             )
         ]
 
-        prompt = business_prompt.build_business_prompt_batch_rewrite_prompt(episodes)
+        prompt = business_prompt.build_business_prompt_batch_rewrite_prompt(videos)
 
         self.assertIn("上游 AI 文本理解", prompt)
         self.assertIn("source_summary", prompt)
@@ -436,11 +436,11 @@ class AI8VideoBusinessPromptTest(unittest.TestCase):
             prompt_path = Path(tempdir) / "ai8video_business_model_prompt.txt"
             with patch.object(business_prompt, "BUSINESS_PROMPT_PATH", prompt_path):
                 business_prompt.write_business_prompt("所有AI8VIDEO自动过滤。系统规则：需要模型处理禁用内容。")
-                episodes = [
-                    EpisodePrompt(index=1, title="第一条", prompt="候选提示词包含禁用内容甲，AI8videoAI8VIDEO。"),
-                    EpisodePrompt(index=2, title="第二条", prompt="候选提示词包含禁用内容乙。"),
+                videos = [
+                    VideoPrompt(index=1, title="第一条", prompt="候选提示词包含禁用内容甲，AI8videoAI8VIDEO。"),
+                    VideoPrompt(index=2, title="第二条", prompt="候选提示词包含禁用内容乙。"),
                 ]
-                result = business_prompt.finalize_episode_prompts(episodes, llm=broken_llm)
+                result = business_prompt.finalize_video_prompts(videos, llm=broken_llm)
 
         self.assertIn("禁用内容甲", result[0].prompt)
         self.assertIn("禁用内容乙", result[1].prompt)

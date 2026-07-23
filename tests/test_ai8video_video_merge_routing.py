@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from ai8video.application.conversation_controller import AI8VideoConversationController
-from ai8video.core.models import EpisodePrompt, ParsedRequest, PipelineResult, QuickVideoJob
+from ai8video.core.models import VideoPrompt, ParsedRequest, PipelineResult, QuickVideoJob
 
 
 class _NormalPipeline:
@@ -15,9 +15,9 @@ class _NormalPipeline:
         self.called += 1
         return PipelineResult(
             request=request,
-            episodes=[EpisodePrompt(index=1, title="普通", prompt=request.raw_text)],
+            videos=[VideoPrompt(index=1, title="普通", prompt=request.raw_text)],
             first_frame=None,
-            jobs=[QuickVideoJob(episode_index=1, job_id="normal-1", status="succeeded", video_url="https://example.test/1.mp4")],
+            jobs=[QuickVideoJob(video_index=1, job_id="normal-1", status="succeeded", video_url="https://example.test/1.mp4")],
             dry_run=True,
         )
 
@@ -33,9 +33,9 @@ class _MergedPipeline:
         self.requests.append(request)
         return PipelineResult(
             request=request,
-            episodes=[EpisodePrompt(index=1, title="合并", prompt=request.raw_text)],
+            videos=[VideoPrompt(index=1, title="合并", prompt=request.raw_text)],
             first_frame=None,
-            jobs=[QuickVideoJob(episode_index=1, job_id="merge-1", status="succeeded", video_url="https://example.test/merge.mp4")],
+            jobs=[QuickVideoJob(video_index=1, job_id="merge-1", status="succeeded", video_url="https://example.test/merge.mp4")],
             dry_run=True,
         )
 
@@ -54,7 +54,7 @@ class AI8VideoVideoMergeRoutingTest(unittest.TestCase):
             merged_pipeline_factory=factory,
             merge_mode_loader=lambda: "none",
         )
-        request = ParsedRequest(raw_text="生成一条", mode="single_prompt")
+        request = ParsedRequest(raw_text="生成一条", mode="single_video")
 
         result = agent._run_generation_request(request, progress_session_id="route-none")
 
@@ -70,7 +70,7 @@ class AI8VideoVideoMergeRoutingTest(unittest.TestCase):
             merged_pipeline_factory=lambda: merged,
             merge_mode_loader=lambda: "merge2",
         )
-        request = ParsedRequest(raw_text="生成一条", mode="single_prompt")
+        request = ParsedRequest(raw_text="生成一条", mode="single_video")
 
         result = agent._run_generation_request(request, progress_session_id="route-merge2")
 
@@ -92,7 +92,7 @@ class AI8VideoVideoMergeRoutingTest(unittest.TestCase):
             merged_pipeline_factory=factory,
             merge_mode_loader=lambda: "merge4",
         )
-        request = ParsedRequest(raw_text="生成一条", mode="single_prompt")
+        request = ParsedRequest(raw_text="生成一条", mode="single_video")
 
         result = agent._run_generation_request(request, progress_session_id="route-merge4")
 
@@ -116,7 +116,7 @@ class AI8VideoVideoMergeRoutingTest(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(RuntimeError, "合并链路失败"):
-            agent._run_generation_request(ParsedRequest(raw_text="生成一条", mode="single_prompt"))
+            agent._run_generation_request(ParsedRequest(raw_text="生成一条", mode="single_video"))
 
         self.assertEqual(normal.called, 0)
 

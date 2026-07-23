@@ -15,6 +15,7 @@ from ai8video.assets.asset_store import JsonlAssetStore
 from ai8video.batch.batch_report_store import BatchReportStore
 from ai8video.application.conversation_controller import AI8VideoConversationController
 from ai8video.core.config import AI8VideoConfig
+from ai8video.core.legacy_payload import normalize_legacy_video_payload
 from ai8video.batch.daily_batch_runner import DailyBatchRunner
 from ai8video.generation.pipeline import AI8VideoPipeline
 from ai8video.application.summaries import build_batch_summary, build_pipeline_summary, build_summary
@@ -211,7 +212,7 @@ def _read_json_dict(path: Path) -> dict | None:
     try:
         if not path.exists() or not path.is_file():
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = normalize_legacy_video_payload(json.loads(path.read_text(encoding="utf-8")))
     except Exception:
         return None
     return data if isinstance(data, dict) else None

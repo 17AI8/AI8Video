@@ -207,32 +207,32 @@
       const progress = pendingStatus.generationProgress;
       if (!progress || typeof progress !== 'object') return pendingStatus;
       const originalItems = Array.isArray(progress.items) ? progress.items : [];
-      const maxEpisodeIndex = originalItems.reduce((max, item, index) => (
-        Math.max(max, Number(item?.episodeIndex || 0) || index + 1)
+      const maxVideoIndex = originalItems.reduce((max, item, index) => (
+        Math.max(max, Number(item?.videoIndex || 0) || index + 1)
       ), 0);
       const requested = Math.max(
         Number(pendingStatus.videoCount || 0) || 0,
         Number(progress.totalRequested || 0) || 0,
         originalItems.length,
-        maxEpisodeIndex
+        maxVideoIndex
       );
       if (requested <= 0) return pendingStatus;
       const terminalStateless = !!(pendingStatus.statelessProgress && !isBackendGenerationProgressActive(progress));
-      const byEpisode = new Map();
+      const byVideo = new Map();
       originalItems.forEach((item, index) => {
-        const episodeIndex = Number(item?.episodeIndex || 0) || index + 1;
-        if (!byEpisode.has(episodeIndex)) {
-          byEpisode.set(episodeIndex, item);
+        const videoIndex = Number(item?.videoIndex || 0) || index + 1;
+        if (!byVideo.has(videoIndex)) {
+          byVideo.set(videoIndex, item);
         }
       });
       const items = [];
       for (let index = 1; index <= requested; index += 1) {
-        const existing = byEpisode.get(index);
+        const existing = byVideo.get(index);
         if (existing) {
           items.push(existing);
         } else {
           items.push({
-            episodeIndex: index,
+            videoIndex: index,
             title: `视频 ${index}`,
             status: terminalStateless ? 'skipped' : 'pending_submission',
             statusLabel: terminalStateless ? '未提交' : '正在生成视频方案',

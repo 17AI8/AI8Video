@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from ai8video.generation.business_prompt import sanitize_internal_fidelity_notes
-from ai8video.core.models import EpisodePrompt, QuickVideoJob
+from ai8video.core.legacy_payload import normalize_legacy_video_payload
+from ai8video.core.models import VideoPrompt, QuickVideoJob
 from ai8video.assets.user_files import USER_RECYCLE_BIN_ROOT, ensure_user_file_root
 from ai8video.assets.user_generated_results import ensure_user_generated_result_dir
 from ai8video.assets.user_generated_previews import generate_preview_for_video, preview_key_for_video
@@ -27,7 +28,7 @@ def ensure_user_recycle_bin_dir() -> Path:
 
 def save_failed_video_task(
     *,
-    episode: EpisodePrompt,
+    video: VideoPrompt,
     job: QuickVideoJob | None = None,
     reason: str,
     videos: Iterable[Path | str],
@@ -39,11 +40,11 @@ def save_failed_video_task(
 
     root = ensure_user_recycle_bin_dir()
     created_at = datetime.now(timezone.utc)
-    job_id = str(getattr(job, "job_id", "") or f"episode-{episode.index}").strip()
-    title = sanitize_internal_fidelity_notes(episode.title or f"第 {episode.index} 条")
+    job_id = str(getattr(job, "job_id", "") or f"video-{video.index}").strip()
+    title = sanitize_internal_fidelity_notes(video.title or f"第 {video.index} 条")
     folder_name = _unique_folder_name(
         root,
-        f"{created_at.strftime('%Y%m%d-%H%M%S')}-{episode.index:02d}-{_slugify(title)}-{_slugify(job_id)}",
+        f"{created_at.strftime('%Y%m%d-%H%M%S')}-{video.index:02d}-{_slugify(title)}-{_slugify(job_id)}",
     )
     folder = root / folder_name
     video_dir = folder / "video"
@@ -69,8 +70,8 @@ def save_failed_video_task(
 
     manifest = {
         "createdAt": created_at.isoformat(),
-        "episodeIndex": episode.index,
-        "episodeTitle": title,
+        "videoIndex": video.index,
+        "videoTitle": title,
         "jobId": job_id,
         "reason": str(reason or "任务失败").strip()[:1000],
         "videos": copied,
@@ -93,7 +94,7 @@ def list_failed_video_tasks(limit: int = 50) -> dict[str, Any]:
         if not manifest_path.is_file():
             continue
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest = normalize_legacy_video_payload(json.loads(manifest_path.read_text(encoding="utf-8")))
         except Exception:
             manifest = {}
         if not isinstance(manifest, dict):
@@ -108,8 +109,8 @@ def list_failed_video_tasks(limit: int = 50) -> dict[str, Any]:
             "createdAt": created_at,
             "folder": folder.relative_to(root).as_posix(),
             "localPath": str(folder.resolve()),
-            "episodeIndex": manifest.get("episodeIndex"),
-            "episodeTitle": sanitize_internal_fidelity_notes(manifest.get("episodeTitle") or folder.name),
+            "videoIndex": manifest.get("videoIndex"),
+            "videoTitle": sanitize_internal_fidelity_notes(manifest.get("videoTitle") or folder.name),
             "jobId": manifest.get("jobId") or "",
             "reason": raw_reason,
             "displayReason": humanize_failed_video_reason(raw_reason),
@@ -220,7 +221,7 @@ def _task_video_files(task_folder: Path) -> list[Path]:
 def _load_task_manifest(task_folder: Path) -> dict[str, Any]:
     manifest_path = task_folder / RECYCLE_MANIFEST_NAME
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = normalize_legacy_video_payload(json.loads(manifest_path.read_text(encoding="utf-8")))
     except (OSError, json.JSONDecodeError):
         return {}
     return manifest if isinstance(manifest, dict) else {}
@@ -285,15 +286,15 @@ def _restored_result_metadata_payload(
     relative_key: str,
 ) -> dict[str, Any]:
     meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
-    title = sanitize_internal_fidelity_notes(manifest.get("episodeTitle") or source.stem)
+    title = sanitize_internal_fidelity_notes(manifest.get("videoTitle") or source.stem)
     prompt = _manifest_prompt(meta)
     return {
         "schema": "restored-result-v1",
         "restoredAt": datetime.now(timezone.utc).isoformat(),
         "sourceRecycleFolder": source_folder,
         "userGeneratedKey": relative_key,
-        "episodeIndex": manifest.get("episodeIndex"),
-        "episodeTitle": title,
+        "videoIndex": manifest.get("videoIndex"),
+        "videoTitle": title,
         "jobId": manifest.get("jobId") or "",
         "reason": manifest.get("reason") or "",
         "prompt": prompt,
@@ -331,7 +332,7 @@ def restored_result_metadata_path(result_root: Path, video_relative_key: str) ->
 def load_restored_result_metadata(result_root: Path, video_relative_key: str) -> dict[str, Any]:
     metadata_path = restored_result_metadata_path(result_root, video_relative_key)
     try:
-        payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+        payload = normalize_legacy_video_payload(json.loads(metadata_path.read_text(encoding="utf-8")))
     except (OSError, json.JSONDecodeError):
         return {}
     if not isinstance(payload, dict):

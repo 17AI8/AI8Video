@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 
 from ai8video.knowledge import default_script_reference
 from ai8video.application.conversation_controller import AI8VideoConversationController
-from ai8video.core.models import ConversationState, EpisodePrompt, ParsedRequest, PipelineResult, QuickVideoJob
+from ai8video.core.models import ConversationState, VideoPrompt, ParsedRequest, PipelineResult, QuickVideoJob
 from ai8video.knowledge.script_knowledge_context import retrieve_reference_context
 from ai8video.knowledge.script_knowledge_query import plan_retrieval_query
 from ai8video.knowledge.script_knowledge_rerank import rerank_candidates
@@ -138,14 +138,14 @@ class DefaultScriptReferenceTopKTest(unittest.TestCase):
         self.assertEqual(context["scripts"][0]["retrievalMode"], "topK")
         self.assertTrue(context["scripts"][0]["rerankApplied"])
 
-    def test_controller_keeps_full_mode_for_control_and_long_series(self) -> None:
+    def test_controller_keeps_full_mode_for_control_and_large_batch(self) -> None:
         controller = AI8VideoConversationController(Mock())
         state = ConversationState(session_id="top-k-gating")
 
         self.assertFalse(controller._prefer_full_script_reference(state, "使用当前剧本参考写私域老板"))
         self.assertFalse(controller._prefer_full_script_reference(state, "5 个"))
         self.assertTrue(controller._prefer_full_script_reference(state, "开始生成"))
-        self.assertTrue(controller._prefer_full_script_reference(state, "使用当前剧本参考生成10集"))
+        self.assertTrue(controller._prefer_full_script_reference(state, "使用当前剧本参考生成10条视频"))
         self.assertTrue(controller._prefer_full_script_reference(state, "使用当前剧本参考，按完整原文生成"))
 
     def test_controller_injects_top_k_sections_for_semantic_request(self) -> None:
@@ -158,9 +158,9 @@ class DefaultScriptReferenceTopKTest(unittest.TestCase):
                 captured["request"] = request
                 return PipelineResult(
                     request=request,
-                    episodes=[EpisodePrompt(index=1, title="第 1 条", prompt=request.raw_text)],
+                    videos=[VideoPrompt(index=1, title="第 1 条", prompt=request.raw_text)],
                     first_frame=None,
-                    jobs=[QuickVideoJob(episode_index=1, job_id="dry-1", status="succeeded")],
+                    jobs=[QuickVideoJob(video_index=1, job_id="dry-1", status="succeeded")],
                     dry_run=True,
                 )
 

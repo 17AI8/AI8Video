@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from ai8video.core.legacy_payload import normalize_legacy_video_payload
 from ai8video.core.paths import PROJECT_ROOT
 
 DEFAULT_TASK_LEDGER_PATH = (
@@ -255,7 +256,7 @@ def _row_to_generation_batch(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "sessionId": row["session_id"],
         "status": row["status"],
         "phase": row["phase"],
-        "progress": json.loads(row["progress_json"] or "{}"),
+        "progress": normalize_legacy_video_payload(json.loads(row["progress_json"] or "{}")),
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
         "completedAt": row["completed_at"],

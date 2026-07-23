@@ -10,7 +10,7 @@ from unittest.mock import patch
 from ai8video.knowledge import default_script_reference
 from ai8video.assets import user_materials
 from ai8video.application.conversation_controller import AI8VideoConversationController
-from ai8video.core.models import ConversationState, EpisodePrompt, ParsedRequest, PipelineResult, QuickVideoJob
+from ai8video.core.models import ConversationState, VideoPrompt, ParsedRequest, PipelineResult, QuickVideoJob
 
 
 class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
@@ -65,9 +65,9 @@ class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
                 captured["request"] = request
                 return PipelineResult(
                     request=request,
-                    episodes=[EpisodePrompt(index=1, title="第 1 条", prompt=request.raw_text)],
+                    videos=[VideoPrompt(index=1, title="第 1 条", prompt=request.raw_text)],
                     first_frame=None,
-                    jobs=[QuickVideoJob(episode_index=1, job_id="dry-1", status="succeeded")],
+                    jobs=[QuickVideoJob(video_index=1, job_id="dry-1", status="succeeded")],
                     dry_run=True,
                 )
 
@@ -144,14 +144,14 @@ class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
                 captured["request"] = request
                 return PipelineResult(
                     request=request,
-                    episodes=[
-                        EpisodePrompt(index=1, title="第一集", prompt="ep1"),
-                        EpisodePrompt(index=2, title="第二集", prompt="ep2"),
+                    videos=[
+                        VideoPrompt(index=1, title="第一条视频", prompt="video1"),
+                        VideoPrompt(index=2, title="第二条视频", prompt="video2"),
                     ],
                     first_frame=None,
                     jobs=[
-                        QuickVideoJob(episode_index=1, job_id="dry-1", status="succeeded"),
-                        QuickVideoJob(episode_index=2, job_id="dry-2", status="succeeded"),
+                        QuickVideoJob(video_index=1, job_id="dry-1", status="succeeded"),
+                        QuickVideoJob(video_index=2, job_id="dry-2", status="succeeded"),
                     ],
                     dry_run=True,
                 )
@@ -183,8 +183,8 @@ class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
             reply = agent.handle_message("script-ref-count", "2个")
 
         self.assertEqual(reply.stage, "completed")
-        self.assertEqual(captured["request"].episode_count, 2)
-        self.assertEqual(captured["request"].mode, "multi_episode_script")
+        self.assertEqual(captured["request"].video_count, 2)
+        self.assertEqual(captured["request"].mode, "batch_videos")
         read_full.assert_not_called()
         self.assertIn("剧本参考《2.docx》相关知识段（Top 1）", captured["request"].raw_text)
         self.assertEqual(captured["request"].reference_image, "/tmp/default.png")
@@ -200,7 +200,7 @@ class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
                 {
                   "intent": "batch_run",
                   "mode": null,
-                  "episode_count": 5,
+                  "video_count": 5,
                   "duration_seconds": null,
                   "concurrent_generation": null,
                   "reference_image_decision": null,
@@ -208,7 +208,7 @@ class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
                   "style_hint": null,
                   "batch_target_count": 5,
                   "batch_seed_messages": [],
-                  "rewrite_episode_index": null,
+                  "rewrite_video_index": null,
                   "rewrite_instruction": null,
                   "needs_content_completion": false,
                   "needs_core_keywords": false,
@@ -220,9 +220,9 @@ class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
                 captured["request"] = request
                 return PipelineResult(
                     request=request,
-                    episodes=[EpisodePrompt(index=i, title=f"第 {i} 集", prompt=f"ep{i}") for i in range(1, 6)],
+                    videos=[VideoPrompt(index=i, title=f"第 {i} 集", prompt=f"ep{i}") for i in range(1, 6)],
                     first_frame=None,
-                    jobs=[QuickVideoJob(episode_index=i, job_id=f"dry-{i}", status="succeeded") for i in range(1, 6)],
+                    jobs=[QuickVideoJob(video_index=i, job_id=f"dry-{i}", status="succeeded") for i in range(1, 6)],
                     dry_run=True,
                 )
 
@@ -254,8 +254,8 @@ class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
 
         self.assertEqual(reply.stage, "completed")
         self.assertNotEqual(reply.meta.get("operation"), "batch_run")
-        self.assertEqual(captured["request"].episode_count, 5)
-        self.assertEqual(captured["request"].mode, "multi_episode_script")
+        self.assertEqual(captured["request"].video_count, 5)
+        self.assertEqual(captured["request"].mode, "batch_videos")
         self.assertTrue(captured["request"].concurrent_generation)
         read_full.assert_not_called()
         self.assertIn("剧本参考《2.docx》相关知识段（Top 1）", captured["request"].raw_text)
@@ -269,9 +269,9 @@ class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
                 captured["request"] = request
                 return PipelineResult(
                     request=request,
-                    episodes=[EpisodePrompt(index=1, title="第一集", prompt="ep1")],
+                    videos=[VideoPrompt(index=1, title="第一条视频", prompt="video1")],
                     first_frame=None,
-                    jobs=[QuickVideoJob(episode_index=1, job_id="dry-1", status="succeeded")],
+                    jobs=[QuickVideoJob(video_index=1, job_id="dry-1", status="succeeded")],
                     dry_run=True,
                 )
 
@@ -285,8 +285,8 @@ class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
         session_id = "script-ref-form-state"
         agent = AI8VideoConversationController(FakePipeline(), merge_mode_loader=lambda: "none")  # type: ignore[arg-type]
         state = ConversationState(session_id=session_id)
-        state.draft.episode_count = 15
-        state.draft.mode = "multi_episode_script"
+        state.draft.video_count = 15
+        state.draft.mode = "batch_videos"
         state.draft.reference_image_enabled = False
         state.draft.concurrent_generation = True
         agent.sessions[session_id] = state
@@ -297,7 +297,7 @@ class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
 
         self.assertEqual(reply.stage, "completed")
         self.assertNotEqual(reply.awaiting, "raw_text")
-        self.assertEqual(captured["request"].episode_count, 15)
+        self.assertEqual(captured["request"].video_count, 15)
         self.assertTrue(captured["request"].concurrent_generation)
         self.assertIn("剧本参考《2.docx》内容", captured["request"].raw_text)
         self.assertIn("AI8video 全球发布倒计时", captured["request"].raw_text)
@@ -310,8 +310,8 @@ class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
                 return """
                 {
                   "intent": "generation",
-                  "mode": "multi_episode_script",
-                  "episode_count": 30,
+                  "mode": "batch_videos",
+                  "video_count": 30,
                   "duration_seconds": null,
                   "concurrent_generation": false,
                   "reference_image_decision": null,
@@ -319,7 +319,7 @@ class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
                   "style_hint": null,
                   "batch_target_count": null,
                   "batch_seed_messages": [],
-                  "rewrite_episode_index": null,
+                  "rewrite_video_index": null,
                   "rewrite_instruction": null,
                   "needs_content_completion": false,
                   "needs_core_keywords": true,
@@ -331,14 +331,14 @@ class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
                 captured["request"] = request
                 return PipelineResult(
                     request=request,
-                    episodes=[
-                        EpisodePrompt(index=1, title="第一集", prompt="ep1"),
-                        EpisodePrompt(index=2, title="第二集", prompt="ep2"),
+                    videos=[
+                        VideoPrompt(index=1, title="第一条视频", prompt="video1"),
+                        VideoPrompt(index=2, title="第二条视频", prompt="video2"),
                     ],
                     first_frame=None,
                     jobs=[
-                        QuickVideoJob(episode_index=1, job_id="dry-1", status="succeeded"),
-                        QuickVideoJob(episode_index=2, job_id="dry-2", status="succeeded"),
+                        QuickVideoJob(video_index=1, job_id="dry-1", status="succeeded"),
+                        QuickVideoJob(video_index=2, job_id="dry-2", status="succeeded"),
                     ],
                     dry_run=True,
                 )

@@ -15,7 +15,7 @@ from ai8video.application.conversation_controller import AI8VideoConversationCon
 from ai8video.core.config import AI8VideoConfig
 from ai8video.core.models import (
     ConversationState,
-    EpisodePrompt,
+    VideoPrompt,
     FirstFrameAsset,
     ParsedRequest,
     PipelineResult,
@@ -149,9 +149,9 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
                 captured["request"] = request
                 return PipelineResult(
                     request=request,
-                    episodes=[EpisodePrompt(index=1, title="第 1 条", prompt=request.raw_text)],
+                    videos=[VideoPrompt(index=1, title="第 1 条", prompt=request.raw_text)],
                     first_frame=FirstFrameAsset(source=request.reference_image),
-                    jobs=[QuickVideoJob(episode_index=1, job_id="dry-1", status="succeeded")],
+                    jobs=[QuickVideoJob(video_index=1, job_id="dry-1", status="succeeded")],
                     dry_run=True,
                 )
 
@@ -188,9 +188,9 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
                 captured["request"] = request
                 return PipelineResult(
                     request=request,
-                    episodes=[EpisodePrompt(index=1, title="第 1 条", prompt=request.raw_text)],
+                    videos=[VideoPrompt(index=1, title="第 1 条", prompt=request.raw_text)],
                     first_frame=FirstFrameAsset(source=request.reference_image),
-                    jobs=[QuickVideoJob(episode_index=1, job_id="dry-1", status="succeeded")],
+                    jobs=[QuickVideoJob(video_index=1, job_id="dry-1", status="succeeded")],
                     dry_run=True,
                 )
 
@@ -215,9 +215,9 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
                 captured["request"] = request
                 return PipelineResult(
                     request=request,
-                    episodes=[EpisodePrompt(index=1, title="第 1 条", prompt=request.raw_text)],
+                    videos=[VideoPrompt(index=1, title="第 1 条", prompt=request.raw_text)],
                     first_frame=FirstFrameAsset(source=request.reference_image),
-                    jobs=[QuickVideoJob(episode_index=1, job_id="dry-1", status="succeeded")],
+                    jobs=[QuickVideoJob(video_index=1, job_id="dry-1", status="succeeded")],
                     dry_run=True,
                 )
 
@@ -248,10 +248,10 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
         captured: dict[str, ParsedRequest] = {}
 
         class FakePipeline:
-            def rewrite_episode(
+            def rewrite_video(
                 self,
                 request: ParsedRequest,
-                episode: EpisodePrompt,
+                video: VideoPrompt,
                 rewrite_instruction: str,
                 *,
                 progress_session_id: str | None = None,
@@ -259,9 +259,9 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
                 captured["request"] = request
                 return PipelineResult(
                     request=request,
-                    episodes=[episode],
+                    videos=[video],
                     first_frame=FirstFrameAsset(source=request.reference_image),
-                    jobs=[QuickVideoJob(episode_index=1, job_id="dry-1", status="succeeded")],
+                    jobs=[QuickVideoJob(video_index=1, job_id="dry-1", status="succeeded")],
                     dry_run=True,
                 )
 
@@ -270,7 +270,7 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
         state = agent.sessions["s-rewrite"]
         state.completed_runs = 1
         state.last_result = {
-            "episodes": [{"index": 1, "title": "第 1 条", "prompt": "原始分集提示词"}],
+            "videos": [{"index": 1, "title": "第 1 条", "prompt": "原始视频提示词"}],
             "jobs": [],
             "outcomes": [],
             "archives": [],
@@ -305,9 +305,9 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
                 captured["request"] = request
                 return PipelineResult(
                     request=request,
-                    episodes=[EpisodePrompt(index=1, title="第 1 条", prompt=request.raw_text)],
+                    videos=[VideoPrompt(index=1, title="第 1 条", prompt=request.raw_text)],
                     first_frame=None,
-                    jobs=[QuickVideoJob(episode_index=1, job_id="dry-1", status="succeeded")],
+                    jobs=[QuickVideoJob(video_index=1, job_id="dry-1", status="succeeded")],
                     dry_run=True,
                 )
 
@@ -327,7 +327,7 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
         preprocessor = ReferenceImagePreprocessor(config)
         request = ParsedRequest(
             raw_text="生成一条视频",
-            mode="single_prompt",
+            mode="single_video",
             reference_image="/tmp/default.png",
             reference_image_transform_options=None,
         )
@@ -356,7 +356,7 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
             preprocessor = ReferenceImagePreprocessor(config)
             request = ParsedRequest(
                 raw_text="生成一条老板讲私域的视频",
-                mode="single_prompt",
+                mode="single_video",
                 reference_image=str(source),
                 reference_image_transform_options={
                     "autoChangeClothes": False,
@@ -418,7 +418,7 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
             preprocessor = ReferenceImagePreprocessor(config)
             request = ParsedRequest(
                 raw_text="生成一条老板讲私域的视频",
-                mode="single_prompt",
+                mode="single_video",
                 reference_image=str(source),
                 reference_image_custom_prompt="人物穿深色西装，棚拍灯光更高级。",
                 reference_image_transform_options=None,
@@ -458,7 +458,7 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
             preprocessor = ReferenceImagePreprocessor(config)
             request = ParsedRequest(
                 raw_text="生成一条老板讲私域的视频",
-                mode="single_prompt",
+                mode="single_video",
                 reference_image=str(source),
                 reference_image_transform_options={
                     "autoChangeClothes": True,
@@ -480,7 +480,7 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
             ), patch(
                 "ai8video.generation.reference_image_preprocessor.time.sleep",
             ), patch.dict(os.environ, {"AI8VIDEO_IMAGE_LOST_RESPONSE_RETRIES": "1"}):
-                first_frame = preprocessor.prepare_first_frame(request, episode=EpisodePrompt(index=1, title="第一条", prompt="测试"))
+                first_frame = preprocessor.prepare_first_frame(request, video=VideoPrompt(index=1, title="第一条", prompt="测试"))
 
             self.assertTrue(Path(first_frame.source).exists())
             self.assertEqual(len(session.post_calls), 2)
@@ -514,7 +514,7 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
             preprocessor = ReferenceImagePreprocessor(config)
             request = ParsedRequest(
                 raw_text="生成一条老板讲私域的视频",
-                mode="single_prompt",
+                mode="single_video",
                 reference_image=str(source),
                 reference_image_transform_options={
                     "autoChangeClothes": True,
@@ -533,7 +533,7 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
             ), patch(
                 "ai8video.generation.reference_image_preprocessor.time.sleep",
             ):
-                first_frame = preprocessor.prepare_first_frame(request, episode=EpisodePrompt(index=1, title="第一条", prompt="测试"))
+                first_frame = preprocessor.prepare_first_frame(request, video=VideoPrompt(index=1, title="第一条", prompt="测试"))
 
             self.assertTrue(Path(first_frame.source).exists())
             self.assertEqual(len(session.post_calls), 2)
@@ -567,7 +567,7 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
             preprocessor = ReferenceImagePreprocessor(config)
             request = ParsedRequest(
                 raw_text="生成一条老板讲私域的视频",
-                mode="single_prompt",
+                mode="single_video",
                 reference_image=str(source),
                 reference_image_transform_options={
                     "autoChangeClothes": True,
@@ -585,7 +585,7 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
             ), patch(
                 "ai8video.generation.reference_image_preprocessor.time.sleep",
             ) as sleep_mock:
-                first_frame = preprocessor.prepare_first_frame(request, episode=EpisodePrompt(index=1, title="第一条", prompt="测试"))
+                first_frame = preprocessor.prepare_first_frame(request, video=VideoPrompt(index=1, title="第一条", prompt="测试"))
 
             self.assertTrue(Path(first_frame.source).exists())
             self.assertEqual(len(session.post_calls), 2)
@@ -728,7 +728,7 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
         self.assertTrue(image_input.startswith("data:image/png;base64,"))
         self.assertTrue(base64.b64decode(image_input.split(",", 1)[1]).startswith(b"\x89PNG\r\n\x1a\n"))
 
-    def test_reference_preprocessor_uses_episode_context_for_i2i_prompt(self) -> None:
+    def test_reference_preprocessor_uses_video_context_for_i2i_prompt(self) -> None:
         class FakeResponse:
             def raise_for_status(self) -> None:
                 return None
@@ -748,11 +748,11 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
             preprocessor = ReferenceImagePreprocessor(config)
             request = ParsedRequest(
                 raw_text="生成三条视频",
-                mode="multi_episode_script",
+                mode="batch_videos",
                 reference_image=str(source),
                 reference_image_transform_options={"autoChangeBackground": True},
             )
-            episode = EpisodePrompt(index=2, title="第二条", prompt="老板在迪拜办公室讲全球客户跟进。")
+            video = VideoPrompt(index=2, title="第二条", prompt="老板在迪拜办公室讲全球客户跟进。")
             session = _FakeRequestsSession(post_response=FakeResponse())
             with patch(
                 "ai8video.generation.reference_image_preprocessor.requests.Session",
@@ -761,7 +761,7 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
                 "ai8video.generation.reference_image_preprocessor.TRANSFORMED_REFERENCE_DIR",
                 Path(tempdir) / "i2i",
             ):
-                first_frame = preprocessor.prepare_first_frame(request, episode=episode)
+                first_frame = preprocessor.prepare_first_frame(request, video=video)
 
             self.assertTrue(Path(first_frame.source).exists())
             prompt = session.post_calls[0][1]["json"]["prompt"]
@@ -781,8 +781,8 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
         self.assertIn("禁止分镜板、四宫格、多宫格、拼贴、分屏", prompt)
 
     def test_first_frame_context_only_uses_first_shot(self) -> None:
-        request = ParsedRequest(raw_text="生成一条视频", mode="single_prompt")
-        episode = EpisodePrompt(
+        request = ParsedRequest(raw_text="生成一条视频", mode="single_video")
+        video = VideoPrompt(
             index=1,
             title="测试视频",
             prompt=(
@@ -792,7 +792,7 @@ class AI8VideoDefaultReferenceImageTest(unittest.TestCase):
             ),
         )
 
-        context = _build_context_text(request, episode)
+        context = _build_context_text(request, video)
 
         self.assertIn("当前视频首镜头", context)
         self.assertIn("女性站在办公室入口", context)

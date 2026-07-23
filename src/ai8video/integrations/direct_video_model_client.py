@@ -48,7 +48,7 @@ class AI8VideoModelClient:
     def create_job(
         self,
         text: str,
-        episode_index: int = 1,
+        video_index: int = 1,
         first_frame: FirstFrameAsset | None = None,
         duration_seconds: int | None = 10,
         ratio: str = "9:16",
@@ -68,9 +68,9 @@ class AI8VideoModelClient:
         resolution = settings.resolution if resolution in ("", "480p", None) else resolution
 
         if self.config.dry_run:
-            job_id = f"dry-model-{episode_index}-{uuid.uuid4().hex[:8]}"
+            job_id = f"dry-model-{video_index}-{uuid.uuid4().hex[:8]}"
             return QuickVideoJob(
-                episode_index=episode_index,
+                video_index=video_index,
                 job_id=job_id,
                 status="succeeded",
                 prompt=text,
@@ -131,9 +131,9 @@ class AI8VideoModelClient:
             raise DirectVideoModelError(f"视频模型创建任务响应缺少任务 ID：{data}")
         job_id = task_id or f"direct-{uuid.uuid4().hex[:12]}"
         self._settings_by_job_id[job_id] = settings
-        self.guard.record_job(job_id=job_id, episode_index=episode_index, prompt=text)
+        self.guard.record_job(job_id=job_id, video_index=video_index, prompt=text)
         return QuickVideoJob(
-            episode_index=episode_index,
+            video_index=video_index,
             job_id=job_id,
             status="succeeded" if video_url else "pending",
             prompt=text,
@@ -147,11 +147,11 @@ class AI8VideoModelClient:
             },
         )
 
-    def get_job(self, job_id: str, episode_index: int = 1, prompt: str = "") -> QuickVideoJob:
+    def get_job(self, job_id: str, video_index: int = 1, prompt: str = "") -> QuickVideoJob:
         settings = self._settings_for_job(job_id)
         if self.config.dry_run:
             return QuickVideoJob(
-                episode_index=episode_index,
+                video_index=video_index,
                 job_id=job_id,
                 status="succeeded",
                 prompt=prompt,
@@ -185,7 +185,7 @@ class AI8VideoModelClient:
         else:
             status = "pending"
         return QuickVideoJob(
-            episode_index=episode_index,
+            video_index=video_index,
             job_id=job_id,
             status=status,
             prompt=prompt,
@@ -211,7 +211,7 @@ class AI8VideoModelClient:
         last_request_error: requests.RequestException | None = None
         for _ in range(self.config.max_poll_attempts):
             try:
-                latest = self.get_job(job.job_id, job.episode_index, job.prompt)
+                latest = self.get_job(job.job_id, job.video_index, job.prompt)
             except requests.RequestException as exc:
                 last_request_error = exc
                 time.sleep(self.config.poll_interval_seconds)

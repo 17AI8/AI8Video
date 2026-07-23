@@ -33,6 +33,7 @@ from ai8video.application.facade import (
     write_supervisor_admin_result_payload,
 )
 from ai8video.core.config import AI8VideoConfig, load_ai8video_core_model_settings
+from ai8video.core.legacy_payload import normalize_legacy_video_payload
 from ai8video.core.paths import PROJECT_ROOT
 from ai8video.interfaces.web.static_bundle import read_workbench_script
 from ai8video.interfaces.web.transport import (
@@ -73,7 +74,7 @@ from ai8video.knowledge.default_script_reference import (
     retrieve_script_reference_context,
     select_default_script_reference,
 )
-from ai8video.generation.ai_script_splitter import split_script_with_ai
+from ai8video.generation.video_prompt_planner import plan_video_prompts_with_ai
 from ai8video.knowledge.script_knowledge_query import build_script_query_llm
 from ai8video.knowledge.script_knowledge_rerank import build_script_rerank_llm
 from ai8video.generation.generation_mode import (
@@ -103,7 +104,7 @@ from ai8video.media.narration_review import (
     narration_review_status,
     update_narration_review_count,
 )
-from ai8video.core.models import EpisodePrompt, FirstFrameAsset, ParsedRequest, QuickVideoJob
+from ai8video.core.models import VideoPrompt, FirstFrameAsset, ParsedRequest, QuickVideoJob
 from ai8video.generation.pipeline import AI8VideoPipeline
 from ai8video.generation.reference_image_preprocessor import ReferenceImagePreprocessor
 from ai8video.generation.prompt_trace import append_prompt_trace
@@ -140,7 +141,7 @@ from ai8video.batch.batch_seed_file import resolve_batch_seed_file_path
 from ai8video.batch.live_preflight import SAFE_PREFLIGHT_CHECKS, run_preflight_checks
 from ai8video.assets.asset_maintenance import AssetMaintenanceService
 from ai8video.assets.asset_store import JsonlAssetStore
-from ai8video.integrations.llm_provider import build_openai_compat_splitter
+from ai8video.integrations.llm_provider import build_openai_compat_llm
 from ai8video.batch.supervisor_launchd import (
     build_launchd_plist,
     default_launchd_plist_path,
@@ -1237,7 +1238,7 @@ def _user_generated_result_items(limit: int = 50) -> list[dict]:
             "archiveManifestPath": record.get("archiveManifestPath"),
             "archiveMeta": record.get("archiveMeta"),
             "createdAt": record.get("createdAt") or datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
-            "episodeTitle": sanitize_internal_fidelity_notes(record.get("episodeTitle") or source.stem),
+            "videoTitle": sanitize_internal_fidelity_notes(record.get("videoTitle") or source.stem),
             "prompt": sanitize_internal_fidelity_notes(record.get("prompt") or ""),
             "userGeneratedKey": relative_key,
             "userGeneratedLocalPath": str(source.resolve()),
@@ -1358,7 +1359,7 @@ def _load_json_file(path: Path | str | None) -> dict:
     if not candidate.is_file():
         return {}
     try:
-        data = json.loads(candidate.read_text(encoding="utf-8"))
+        data = normalize_legacy_video_payload(json.loads(candidate.read_text(encoding="utf-8")))
     except Exception:
         return {}
     return data if isinstance(data, dict) else {}
@@ -1651,13 +1652,13 @@ def _polish_tts_narration_text(raw_text: object, duration_seconds: object = None
         raise LookupError("台词已删除")
     config = AI8VideoConfig.from_env()
     knowledge = _tts_script_knowledge(text, config)
-    llm = build_openai_compat_splitter(
+    llm = build_openai_compat_llm(
         config,
         timeout_seconds=45,
         system_prompt="你是短视频 TTS 口播台词润色助手，只输出润色后的中文台词。",
     )
     if llm is None:
-        raise RuntimeError("文本/拆集模型没有配置完整，不能 AI 润色")
+        raise RuntimeError("文本/视频规划模型没有配置完整，不能 AI 润色")
     duration = max(0.0, float(duration_seconds or 0))
     prompt = f"""请润色下面这段短视频 TTS 口播台词。
 
@@ -1698,13 +1699,13 @@ def _expand_tts_narration_text(raw_text: object, duration_seconds: object = None
         raise LookupError("台词已删除")
     config = AI8VideoConfig.from_env()
     knowledge = _tts_script_knowledge(text, config)
-    llm = build_openai_compat_splitter(
+    llm = build_openai_compat_llm(
         config,
         timeout_seconds=45,
         system_prompt="你是短视频 TTS 口播台词扩写助手，只输出扩写后的中文台词。",
     )
     if llm is None:
-        raise RuntimeError("文本/拆集模型没有配置完整，不能 AI 扩写")
+        raise RuntimeError("文本/视频规划模型没有配置完整，不能 AI 扩写")
     duration = max(0.0, float(duration_seconds or 0))
     prompt = f"""请扩写下面这段短视频 TTS 口播台词。
 
@@ -1783,12 +1784,12 @@ def _regenerate_user_generated_tts(raw_key: object) -> dict:
             "videoUrl": f"/user-generated-results/{relative_key}",
             "textChars": 0,
         }
-    episode_index = _coerce_positive_int(record.get("episodeIndex") if record else None)
+    video_index = _coerce_positive_int(record.get("videoIndex") if record else None)
     job_id = str((record or {}).get("jobId") or Path(relative_key).stem).strip()
     result = attach_local_tts_to_video(
         video_path,
         narration_text=narration_text,
-        episode_index=episode_index,
+        video_index=video_index,
         job_id=job_id,
         preserve_original_audio=False,
     )
@@ -1833,14 +1834,14 @@ def _regenerate_user_generated_html_motion(
         else ("retainedNarrationText" if dialogue_text else "none")
     )
     request_snapshot = _html_motion_request_snapshot(record, prompt)
-    episode = EpisodePrompt(
-        index=_coerce_positive_int(record.get("episodeIndex")) or 1,
-        title=str(record.get("episodeTitle") or Path(relative_key).stem).strip(),
+    video = VideoPrompt(
+        index=_coerce_positive_int(record.get("videoIndex")) or 1,
+        title=str(record.get("videoTitle") or Path(relative_key).stem).strip(),
         prompt=prompt,
         source_summary=dialogue_text,
     )
     job = QuickVideoJob(
-        episode_index=episode.index,
+        video_index=video.index,
         job_id=str(record.get("jobId") or Path(relative_key).stem).strip(),
         status="succeeded",
         prompt=prompt,
@@ -1866,7 +1867,7 @@ def _regenerate_user_generated_html_motion(
         lambda candidate: apply_html_motion_overlay(
             candidate,
             request_snapshot,
-            episode,
+            video,
             job,
             llm=llm,
             stage_callback=stage_callback,
@@ -1935,12 +1936,12 @@ def _video_prompt_for_user_generated_video(
     asset_record = _asset_record_for_user_generated_key(relative_key, video_path)
     record = _merge_user_generated_records(restored_record, asset_record)
     manifest = _load_json_file(record.get("archiveManifestPath") if record else None)
-    manifest_episode = manifest.get("episode") if isinstance(manifest.get("episode"), dict) else {}
+    manifest_video = manifest.get("video") if isinstance(manifest.get("video"), dict) else {}
     manifest_job = manifest.get("job") if isinstance(manifest.get("job"), dict) else {}
     manifest_generation = manifest.get("generation") if isinstance(manifest.get("generation"), dict) else {}
     candidates: list[tuple[str, str]] = []
     _add_video_prompt_candidate(candidates, "asset.prompt", record.get("prompt"))
-    _add_video_prompt_candidate(candidates, "manifest.episode.prompt", manifest_episode.get("prompt"))
+    _add_video_prompt_candidate(candidates, "manifest.video.prompt", manifest_video.get("prompt"))
     _add_video_prompt_candidate(candidates, "manifest.job.prompt", manifest_job.get("prompt"))
     _add_segment_prompt_candidates(candidates, "asset.generationMeta", record.get("generationMeta"))
     _add_segment_prompt_candidates(candidates, "asset.archiveMeta", record.get("archiveMeta"))
@@ -1998,7 +1999,7 @@ def _continue_extension_video_prompt(raw_key: object) -> dict:
     video_path, relative_key = _resolve_user_generated_video_key(raw_key)
     source_prompt, record, _source = _video_prompt_for_user_generated_video(relative_key, video_path)
     if not source_prompt:
-        raise LookupError("上集视频提示词已删除，无法续写")
+        raise LookupError("原视频提示词已删除，无法续写")
     source_dialogue, _ = _tts_narration_text_for_user_generated_video(relative_key, video_path)
     request_settings = record.get("request") if isinstance(record.get("request"), dict) else {}
     target_duration = max(1, int(request_settings.get("durationSeconds") or 10))
@@ -2006,20 +2007,20 @@ def _continue_extension_video_prompt(raw_key: object) -> dict:
     extension_frame = archive_meta.get("extensionFrame") if isinstance(archive_meta.get("extensionFrame"), dict) else {}
     frame_time = max(0.0, float(extension_frame.get("frameTime") or 0))
     config = AI8VideoConfig.from_env()
-    llm = build_openai_compat_splitter(
+    llm = build_openai_compat_llm(
         config,
         timeout_seconds=60,
-        system_prompt="你是 AI8video 的短视频剧本拆分与续写模型。",
+        system_prompt="你是 AI8video 的短视频提示词规划与续写模型。",
     )
     if llm is None:
-        raise RuntimeError("文本/拆集模型没有配置完整，不能续写上集")
+        raise RuntimeError("文本/视频规划模型没有配置完整，不能续写视频")
     continuation_source = f"""请续写下面这条视频，生成 1 条新的独立短视频方案。
 
-上集视频提示词：
+原视频提示词：
 {source_prompt}
 
-上集台词/口播：
-{source_dialogue or '（上集没有可用台词）'}
+原视频台词/口播：
+{source_dialogue or '（原视频没有可用台词）'}
 """
     continuation_source, material_context = apply_default_script_reference(
         continuation_source,
@@ -2029,20 +2030,20 @@ def _continue_extension_video_prompt(raw_key: object) -> dict:
         query_llm=build_script_query_llm(config),
     )
     task_constraints = (
-        f"续写必须从上集第 {frame_time:.2f} 秒的持久化截帧动作自然开始，保持人物、服饰、道具、"
-        "场景与空间关系连续，不得跳到上集之后尚未发生的场景。"
+        f"续写必须从原视频第 {frame_time:.2f} 秒的持久化截帧动作自然开始，保持人物、服饰、道具、"
+        "场景与空间关系连续，不得跳到原视频之后尚未发生的场景。"
         f"成片为独立 {target_duration} 秒视频，时间轴从【0秒】开始并在【{target_duration}秒】结束。"
         "必须同时生成画面提示词与可直接口播/对白的台词，并将台词写入 prompt 的“台词/口播”字段。"
-        "不要擅自新增地点、人物、品牌、台词或事实；不要提及上集、续写、截帧、知识库或内部处理。"
+        "不要擅自新增地点、人物、品牌、台词或事实；不要提及原视频、续写、截帧、知识库或内部处理。"
     )
-    episodes = split_script_with_ai(
+    videos = plan_video_prompts_with_ai(
         continuation_source,
         1,
         task_constraints=task_constraints,
         final_duration_seconds=target_duration,
         llm=llm,
     )
-    continued = episodes[0].prompt
+    continued = videos[0].prompt
     return {
         "ok": True,
         "text": continued,
@@ -2060,13 +2061,13 @@ def _transform_extension_video_prompt(raw_text: object, mode: str) -> dict:
     config = AI8VideoConfig.from_env()
     knowledge = _tts_script_knowledge(text, config)
     action = "润色" if mode == "polish" else "扩写"
-    llm = build_openai_compat_splitter(
+    llm = build_openai_compat_llm(
         config,
         timeout_seconds=60,
         system_prompt=f"你是短视频视频提示词{action}助手，只输出可直接交给视频模型的中文提示词。",
     )
     if llm is None:
-        raise RuntimeError(f"文本/拆集模型没有配置完整，不能{action}")
+        raise RuntimeError(f"文本/视频规划模型没有配置完整，不能{action}")
     mode_rule = (
         "优化镜头语言、画面可拍摄性、动作连贯性和表达精度，字数不要明显变长。"
         if mode == "polish"
@@ -2135,21 +2136,21 @@ def _generate_extension_video(
     settings = record.get("request") if isinstance(record.get("request"), dict) else {}
     request_snapshot = ParsedRequest(
         raw_text=prompt,
-        mode="single_prompt",
-        episode_count=1,
+        mode="single_video",
+        video_count=1,
         duration_seconds=int(settings.get("durationSeconds") or 10),
         ratio=str(settings.get("ratio") or "9:16"),
         resolution=str(settings.get("resolution") or "480p"),
         preset=str(settings.get("preset") or "custom"),
     )
-    episode = EpisodePrompt(
+    video = VideoPrompt(
         index=1,
-        title=f"{str(record.get('episodeTitle') or Path(relative_key).stem).strip()}-延长",
+        title=f"{str(record.get('videoTitle') or Path(relative_key).stem).strip()}-延长",
         prompt=prompt,
     )
-    result = AI8VideoPipeline(config=AI8VideoConfig.from_env()).retry_episode(
+    result = AI8VideoPipeline(config=AI8VideoConfig.from_env()).retry_video(
         request_snapshot,
-        episode,
+        video,
         FirstFrameAsset(source=str(frame_path)),
         progress_session_id=str(session_id or "").strip() or f"extension-{frame_name}",
     )
@@ -2373,8 +2374,8 @@ def _html_motion_request_snapshot(record: dict, prompt: str) -> ParsedRequest:
     request_data = record.get("request") if isinstance(record.get("request"), dict) else {}
     return ParsedRequest(
         raw_text=prompt,
-        mode=str(request_data.get("mode") or "single_prompt"),
-        episode_count=_coerce_positive_int(request_data.get("episodeCount")),
+        mode=str(request_data.get("mode") or "single_video"),
+        video_count=_coerce_positive_int(request_data.get("videoCount")),
         duration_seconds=_coerce_positive_int(request_data.get("durationSeconds")) or 10,
         ratio=str(request_data.get("ratio") or "9:16"),
         resolution=str(request_data.get("resolution") or "480p"),
@@ -2625,7 +2626,7 @@ def _manifest_video_path(manifest: dict) -> Path | None:
 
 def _manifest_is_orphan(path: Path) -> bool:
     try:
-        manifest = json.loads(path.read_text(encoding="utf-8"))
+        manifest = normalize_legacy_video_payload(json.loads(path.read_text(encoding="utf-8")))
     except Exception:
         return False
     if not isinstance(manifest, dict):
@@ -3109,16 +3110,16 @@ def api_auth_settings():
         _settings_field("接口地址", "mykey.py apibase", core_model.get("apibase"), core_source, sensitive=False, category="AI8video"),
         _settings_field("API Key", "mykey.py apikey", core_model.get("apikey"), core_source, category="AI8video"),
         _settings_field("模型名", "mykey.py model", core_model.get("model"), core_source, sensitive=False, category="AI8video"),
-        _settings_field("接口地址", "AI8VIDEO_LLM_BASE_URL", config.llm_base_url, config.llm_source, sensitive=False, category="文本/拆集模型"),
-        _settings_field("API Key", "AI8VIDEO_LLM_API_KEY", config.llm_api_key, config.llm_source, category="文本/拆集模型"),
-        _settings_field("模型名", "AI8VIDEO_LLM_MODEL", config.llm_model, config.llm_source, sensitive=False, category="文本/拆集模型"),
+        _settings_field("接口地址", "AI8VIDEO_LLM_BASE_URL", config.llm_base_url, config.llm_source, sensitive=False, category="文本/视频规划模型"),
+        _settings_field("API Key", "AI8VIDEO_LLM_API_KEY", config.llm_api_key, config.llm_source, category="文本/视频规划模型"),
+        _settings_field("模型名", "AI8VIDEO_LLM_MODEL", config.llm_model, config.llm_source, sensitive=False, category="文本/视频规划模型"),
         _settings_field(
             "台词审核次数",
             "NARRATION_REVIEW_COUNT",
             str(narration_review["reviewCount"]),
             "用户文件夹/台词审核/settings.json",
             sensitive=False,
-            category="文本/拆集模型",
+            category="文本/视频规划模型",
         ),
         _settings_field("接口地址", "AI8VIDEO_MULTIMODAL_BASE_URL", getattr(config, "multimodal_base_url", None), getattr(config, "multimodal_source", "missing"), sensitive=False, category="多模态模型"),
         _settings_field("API Key", "AI8VIDEO_MULTIMODAL_API_KEY", getattr(config, "multimodal_api_key", None), getattr(config, "multimodal_source", "missing"), category="多模态模型"),
@@ -3455,7 +3456,7 @@ def _auth_model_context(env_name: str) -> dict | None:
             "base_url": config.llm_base_url,
             "api_key": config.llm_api_key,
             "allowed_types": {"llm"},
-            "missing_error": "文本/拆集模型没有真实接口地址或 API Key，不能拉取模型。",
+            "missing_error": "文本/视频规划模型没有真实接口地址或 API Key，不能拉取模型。",
         }
     if env_name == "AI8VIDEO_MULTIMODAL_MODEL":
         return {
@@ -4814,17 +4815,17 @@ def api_retry_failed_generation():
         return HTTPResponse(status=204)
     payload = request.json or {}
     session_id = str(payload.get("sessionId") or "").strip()
-    episode_index = int(payload.get("episodeIndex") or 0)
-    if not session_id or episode_index < 1:
+    video_index = int(payload.get("videoIndex") or 0)
+    if not session_id or video_index < 1:
         response.status = 400
         return {"ok": False, "error": "缺少重试会话或视频序号"}
     try:
         config = AI8VideoConfig.from_env()
-        record = _find_retryable_asset_record(config, session_id, episode_index)
-        retry_request, episode, first_frame = _build_retry_inputs(record)
-        result = AI8VideoPipeline(config=config).retry_episode(
+        record = _find_retryable_asset_record(config, session_id, video_index)
+        retry_request, video, first_frame = _build_retry_inputs(record)
+        result = AI8VideoPipeline(config=config).retry_video(
             retry_request,
-            episode,
+            video,
             first_frame,
             progress_session_id=session_id,
         )
@@ -4834,12 +4835,12 @@ def api_retry_failed_generation():
         return {"ok": False, "error": str(exc)}
 
 
-def _find_retryable_asset_record(config: AI8VideoConfig, session_id: str, episode_index: int) -> dict[str, Any]:
+def _find_retryable_asset_record(config: AI8VideoConfig, session_id: str, video_index: int) -> dict[str, Any]:
     records = JsonlAssetStore(config.asset_store_path).read_all()
     matches = [
         item for item in records
         if str(item.get("sessionId") or "") == session_id
-        and int(item.get("episodeIndex") or 0) == episode_index
+        and int(item.get("videoIndex") or 0) == video_index
         and str(item.get("generationStatus") or "") == "failed"
     ]
     if not matches:
@@ -4847,7 +4848,7 @@ def _find_retryable_asset_record(config: AI8VideoConfig, session_id: str, episod
     return matches[-1]
 
 
-def _build_retry_inputs(record: dict[str, Any]) -> tuple[ParsedRequest, EpisodePrompt, FirstFrameAsset]:
+def _build_retry_inputs(record: dict[str, Any]) -> tuple[ParsedRequest, VideoPrompt, FirstFrameAsset]:
     prompt = str(record.get("prompt") or "").strip()
     first_frame_data = record.get("firstFrame") if isinstance(record.get("firstFrame"), dict) else {}
     first_frame = FirstFrameAsset(**{key: first_frame_data.get(key) for key in FirstFrameAsset.__dataclass_fields__})
@@ -4858,19 +4859,19 @@ def _build_retry_inputs(record: dict[str, Any]) -> tuple[ParsedRequest, EpisodeP
     if not prompt or not reusable:
         raise ValueError("重试所需的方案或首帧中间产物已丢失，无法原样重试")
     settings = record.get("request") if isinstance(record.get("request"), dict) else {}
-    episode_index = int(record.get("episodeIndex") or 0)
+    video_index = int(record.get("videoIndex") or 0)
     retry_request = ParsedRequest(
         raw_text=prompt,
-        mode=str(settings.get("mode") or "single_prompt"),
-        episode_count=1,
+        mode=str(settings.get("mode") or "single_video"),
+        video_count=1,
         duration_seconds=int(settings.get("durationSeconds") or 10),
         ratio=str(settings.get("ratio") or "9:16"),
         resolution=str(settings.get("resolution") or "480p"),
         preset=str(settings.get("preset") or "custom"),
         html_motion_overlay_enabled=bool(settings.get("htmlMotionOverlayEnabled")),
     )
-    episode = EpisodePrompt(episode_index, str(record.get("episodeTitle") or f"视频 {episode_index}"), prompt)
-    return retry_request, episode, first_frame
+    video = VideoPrompt(video_index, str(record.get("videoTitle") or f"视频 {video_index}"), prompt)
+    return retry_request, video, first_frame
 
 
 def _stale_status_for_pending_query(body: dict, *, pending_since: datetime | None) -> dict | None:
@@ -4980,7 +4981,7 @@ def _settle_stale_planning_progress(
             item = {}
         settled_items.append({
             **item,
-            "episodeIndex": _coerce_episode_index(item.get("episodeIndex")) or index,
+            "videoIndex": _coerce_video_index(item.get("videoIndex")) or index,
             "jobId": None,
             "status": "failed",
             "statusLabel": "生成失败",
@@ -5026,7 +5027,7 @@ def _planning_timeout_for_progress(progress: dict, *, base_timeout_seconds: int)
     total_requested = _coerce_positive_int(progress.get("totalRequested")) or item_count
     if total_requested <= 1:
         return base_timeout_seconds
-    # Long script references are finalized in model batches. A 5-episode request
+    # Long script references are finalized in model batches. A 5-video request
     # can legitimately take longer than 5 minutes before any video task exists.
     return max(base_timeout_seconds, 180 + int(total_requested) * 60)
 
@@ -5068,32 +5069,32 @@ def _query_local_terminal_generation_progress(
     local_items = _session_local_terminal_progress_items(session_id, pending_since=pending_since)
     if not local_items:
         return None
-    items_by_episode = {
-        int(item.get("episodeIndex") or index + 1): dict(item)
+    items_by_video = {
+        int(item.get("videoIndex") or index + 1): dict(item)
         for index, item in enumerate(local_items)
     }
-    inferred_total = _infer_requested_video_count_from_progress_items(items_by_episode.values())
+    inferred_total = _infer_requested_video_count_from_progress_items(items_by_video.values())
     if inferred_total > 0:
-        requested_total = max(inferred_total, max(items_by_episode))
+        requested_total = max(inferred_total, max(items_by_video))
     else:
-        requested_total = max(int(video_count or 0), max(items_by_episode))
-    trace_jobs_by_episode = _trace_video_jobs_by_episode(session_id, pending_since=pending_since)
-    client = AI8VideoModelClient() if trace_jobs_by_episode else None
-    for episode_index in range(1, requested_total + 1):
-        if episode_index in items_by_episode:
+        requested_total = max(int(video_count or 0), max(items_by_video))
+    trace_jobs_by_video = _trace_video_jobs_by_video(session_id, pending_since=pending_since)
+    client = AI8VideoModelClient() if trace_jobs_by_video else None
+    for video_index in range(1, requested_total + 1):
+        if video_index in items_by_video:
             continue
-        trace_job = trace_jobs_by_episode.get(episode_index)
+        trace_job = trace_jobs_by_video.get(video_index)
         if trace_job and client is not None:
             job_id = str(trace_job.get("jobId") or "").strip()
             base = {
-                "episodeIndex": episode_index,
-                "title": trace_job.get("title") or f"视频 {episode_index}",
+                "videoIndex": video_index,
+                "title": trace_job.get("title") or f"视频 {video_index}",
                 "jobId": job_id,
             }
             try:
-                latest = client.get_job(job_id, episode_index=episode_index)
+                latest = client.get_job(job_id, video_index=video_index)
             except Exception as exc:
-                items_by_episode[episode_index] = {
+                items_by_video[video_index] = {
                     **base,
                     "status": "polling",
                     "statusLabel": "等待生成结果",
@@ -5102,7 +5103,7 @@ def _query_local_terminal_generation_progress(
                 }
                 continue
             if latest.status == "failed":
-                items_by_episode[episode_index] = {
+                items_by_video[video_index] = {
                     **base,
                     "status": "failed",
                     "statusLabel": "生成失败",
@@ -5113,7 +5114,7 @@ def _query_local_terminal_generation_progress(
                 }
                 continue
             if latest.status == "succeeded":
-                items_by_episode[episode_index] = {
+                items_by_video[video_index] = {
                     **base,
                     "status": "archiving",
                     "statusLabel": "后台处理中",
@@ -5123,7 +5124,7 @@ def _query_local_terminal_generation_progress(
                     "updatedAt": datetime.now(timezone.utc).isoformat(),
                 }
                 continue
-            items_by_episode[episode_index] = {
+            items_by_video[video_index] = {
                 **base,
                 "status": "polling",
                 "statusLabel": "等待生成结果",
@@ -5132,15 +5133,15 @@ def _query_local_terminal_generation_progress(
                 "updatedAt": datetime.now(timezone.utc).isoformat(),
             }
             continue
-        items_by_episode[episode_index] = {
-            "episodeIndex": episode_index,
-            "title": f"视频 {episode_index}",
+        items_by_video[video_index] = {
+            "videoIndex": video_index,
+            "title": f"视频 {video_index}",
             "jobId": None,
             "status": "skipped",
             "statusLabel": "未提交",
             "error": "本地没有找到这一条的真实生成结果。",
         }
-    items = [items_by_episode[key] for key in sorted(items_by_episode)]
+    items = [items_by_video[key] for key in sorted(items_by_video)]
     latest_updated_at = max(
         [
             parsed
@@ -5235,13 +5236,13 @@ def _parse_chat_status_jobs() -> list[dict]:
         if not job_id:
             continue
         try:
-            episode_index = int(item.get("episodeIndex") or len(jobs) + 1)
+            video_index = int(item.get("videoIndex") or len(jobs) + 1)
         except (TypeError, ValueError):
-            episode_index = len(jobs) + 1
+            video_index = len(jobs) + 1
         jobs.append({
             "jobId": job_id,
-            "episodeIndex": episode_index,
-            "title": f"视频 {episode_index}",
+            "videoIndex": video_index,
+            "title": f"视频 {video_index}",
         })
     return jobs
 
@@ -5402,13 +5403,13 @@ def _session_local_terminal_progress_items(
         if isinstance(item, dict) and _record_mentions_progress_session(item, normalized_session_id)
     ]
     reference_time = _latest_local_terminal_time(asset_records, recycle_items)
-    items_by_episode: dict[int, dict] = {}
+    items_by_video: dict[int, dict] = {}
     for record in asset_records:
         created_at = _parse_iso_datetime(record.get("createdAt") or record.get("updatedAt") or "")
         if not _local_terminal_time_in_scope(created_at, pending_since, reference_time):
             continue
-        episode_index = _coerce_episode_index(record.get("episodeIndex"))
-        if episode_index <= 0:
+        video_index = _coerce_video_index(record.get("videoIndex"))
+        if video_index <= 0:
             continue
         local_exists = _asset_record_local_video_exists(record)
         archive_status = str(record.get("archiveStatus") or "").strip().lower()
@@ -5425,8 +5426,8 @@ def _session_local_terminal_progress_items(
         else:
             continue
         item = {
-            "episodeIndex": episode_index,
-            "title": record.get("episodeTitle") or f"视频 {episode_index}",
+            "videoIndex": video_index,
+            "title": record.get("videoTitle") or f"视频 {video_index}",
             "jobId": str(record.get("jobId") or "").strip(),
             "status": status,
             "statusLabel": status_label,
@@ -5442,21 +5443,21 @@ def _session_local_terminal_progress_items(
         segment_status = _asset_record_segment_statuses(record)
         if segment_status:
             item["segmentStatus"] = segment_status
-        _put_latest_episode_item(items_by_episode, episode_index, item)
+        _put_latest_video_item(items_by_video, video_index, item)
     for failed in recycle_items:
         created_at = _parse_iso_datetime(failed.get("createdAt") or "")
         if not _local_terminal_time_in_scope(created_at, pending_since, reference_time):
             continue
-        episode_index = _coerce_episode_index(failed.get("episodeIndex"))
-        if episode_index <= 0:
+        video_index = _coerce_video_index(failed.get("videoIndex"))
+        if video_index <= 0:
             continue
         reason = str(failed.get("displayReason") or "").strip()
         if not reason:
             reason = humanize_failed_video_reason(str(failed.get("reason") or "生成失败"))
         item = {
-            "episodeIndex": episode_index,
-            "title": failed.get("episodeTitle") or f"视频 {episode_index}",
-            "jobId": str(failed.get("jobId") or f"merge2-failed-{episode_index}").strip(),
+            "videoIndex": video_index,
+            "title": failed.get("videoTitle") or f"视频 {video_index}",
+            "jobId": str(failed.get("jobId") or f"merge2-failed-{video_index}").strip(),
             "status": "failed",
             "statusLabel": "生成失败",
             "providerStatus": "local_failed",
@@ -5466,10 +5467,10 @@ def _session_local_terminal_progress_items(
             "updatedAt": created_at.isoformat() if created_at else "",
             "_localTerminalAt": created_at,
         }
-        _put_latest_episode_item(items_by_episode, episode_index, item)
+        _put_latest_video_item(items_by_video, video_index, item)
     return [
         _strip_private_progress_fields(item)
-        for _, item in sorted(items_by_episode.items(), key=lambda pair: pair[0])
+        for _, item in sorted(items_by_video.items(), key=lambda pair: pair[0])
     ]
 
 
@@ -5507,9 +5508,9 @@ def _apply_deleted_asset_progress_state(body: dict) -> None:
             record_job_id = str(record.get("jobId") or "").strip()
             if record_job_id:
                 item["jobId"] = record_job_id
-            episode_title = str(record.get("episodeTitle") or "").strip()
-            if episode_title:
-                item["title"] = episode_title
+            video_title = str(record.get("videoTitle") or "").strip()
+            if video_title:
+                item["title"] = video_title
             if not item.get("segmentStatus"):
                 segment_status = _asset_record_segment_statuses(record)
                 if segment_status:
@@ -5635,28 +5636,28 @@ def _query_video_jobs_progress(
     client = AI8VideoModelClient()
     records_by_job_id = _asset_records_by_job_id()
     local_items = _session_local_terminal_progress_items(session_id, pending_since=pending_since)
-    items_by_episode = {
-        int(item.get("episodeIndex") or index + 1): dict(item)
+    items_by_video = {
+        int(item.get("videoIndex") or index + 1): dict(item)
         for index, item in enumerate(local_items)
     }
-    jobs_by_episode: dict[int, list[dict]] = {}
-    latest_jobs_by_episode: dict[int, dict] = {}
+    jobs_by_video: dict[int, list[dict]] = {}
+    latest_jobs_by_video: dict[int, dict] = {}
     for job in jobs:
-        episode_index = int(job["episodeIndex"])
-        jobs_by_episode.setdefault(episode_index, []).append(job)
-        latest_jobs_by_episode[episode_index] = job
-    for job in latest_jobs_by_episode.values():
+        video_index = int(job["videoIndex"])
+        jobs_by_video.setdefault(video_index, []).append(job)
+        latest_jobs_by_video[video_index] = job
+    for job in latest_jobs_by_video.values():
         job_id = job["jobId"]
-        episode_index = int(job["episodeIndex"])
+        video_index = int(job["videoIndex"])
         if _is_local_failed_video_job_id(job_id) and local_items:
             continue
-        existing_item = items_by_episode.get(episode_index)
+        existing_item = items_by_video.get(video_index)
         existing_job_id = str((existing_item or {}).get("jobId") or "").strip()
         existing_is_local_failed = _is_local_failed_video_job_id(existing_job_id)
         if existing_item is not None and not (existing_is_local_failed and not _is_local_failed_video_job_id(job_id)):
             segment_status = _query_video_segment_statuses(
                 client,
-                jobs_by_episode.get(episode_index) or [job],
+                jobs_by_video.get(video_index) or [job],
                 records_by_job_id,
             )
             if not segment_status:
@@ -5667,13 +5668,13 @@ def _query_video_jobs_progress(
                 existing_item["segmentStatus"] = segment_status
             continue
         base = {
-            "episodeIndex": episode_index,
-            "title": job.get("title") or f"视频 {episode_index}",
+            "videoIndex": video_index,
+            "title": job.get("title") or f"视频 {video_index}",
             "jobId": job_id,
         }
         segment_status = _query_video_segment_statuses(
             client,
-            jobs_by_episode.get(episode_index) or [job],
+            jobs_by_video.get(video_index) or [job],
             records_by_job_id,
         )
         if segment_status:
@@ -5693,7 +5694,7 @@ def _query_video_jobs_progress(
         local_exists = _asset_record_local_video_exists(record) if record else None
         if record and (record_status == "failed" or record_archive_status == "failed"):
             reason = humanize_failed_video_reason(record_error or "生成失败")
-            items_by_episode[episode_index] = {
+            items_by_video[video_index] = {
                 **base,
                 "status": "failed",
                 "statusLabel": "生成失败",
@@ -5704,9 +5705,9 @@ def _query_video_jobs_progress(
             }
             continue
         if record and record_archive_status == "archived" and local_exists is True:
-            items_by_episode[episode_index] = {
+            items_by_video[video_index] = {
                 **base,
-                "title": record.get("episodeTitle") or base.get("title") or f"视频 {episode_index}",
+                "title": record.get("videoTitle") or base.get("title") or f"视频 {video_index}",
                 "status": "succeeded",
                 "statusLabel": "已生成",
                 "providerStatus": "completed",
@@ -5718,7 +5719,7 @@ def _query_video_jobs_progress(
             }
             continue
         if record and record_archive_status == "archived" and local_exists is False:
-            items_by_episode[episode_index] = {
+            items_by_video[video_index] = {
                 **base,
                 "status": "deleted",
                 "statusLabel": "已生成，文件已删除",
@@ -5730,7 +5731,7 @@ def _query_video_jobs_progress(
             }
             continue
         if _is_local_failed_video_job_id(job_id):
-            items_by_episode[episode_index] = {
+            items_by_video[video_index] = {
                 **base,
                 "status": "failed",
                 "statusLabel": "生成失败",
@@ -5741,9 +5742,9 @@ def _query_video_jobs_progress(
             }
             continue
         try:
-            latest = client.get_job(job_id, episode_index=episode_index)
+            latest = client.get_job(job_id, video_index=video_index)
         except Exception as exc:
-            items_by_episode[episode_index] = {
+            items_by_video[video_index] = {
                 **base,
                 "status": "polling",
                 "statusLabel": "等待生成结果",
@@ -5787,34 +5788,34 @@ def _query_video_jobs_progress(
                 "providerStatus": latest.provider_status or "pending",
                 "providerProgress": provider_progress,
             }
-        items_by_episode[episode_index] = item
+        items_by_video[video_index] = item
     requested_total = max(
         int(video_count or 0),
-        _infer_requested_video_count_from_progress_items(items_by_episode.values()),
+        _infer_requested_video_count_from_progress_items(items_by_video.values()),
     )
     if requested_total > 0:
         has_running = any(
             str(item.get("status") or "").strip() in {"submitting", "preparing_first_frame", "submitted", "polling", "archiving"}
-            for item in items_by_episode.values()
+            for item in items_by_video.values()
         )
         has_terminal = any(
             str(item.get("status") or "").strip() in {"succeeded", "failed", "deleted"}
-            for item in items_by_episode.values()
+            for item in items_by_video.values()
         )
         terminal_failure_error = next(
             (
                 str(item.get("error") or "").strip()
-                for _, item in sorted(items_by_episode.items())
+                for _, item in sorted(items_by_video.items())
                 if str(item.get("status") or "").strip() == "failed" and str(item.get("error") or "").strip()
             ),
             "",
         )
-        for episode_index in range(1, requested_total + 1):
-            if episode_index in items_by_episode:
+        for video_index in range(1, requested_total + 1):
+            if video_index in items_by_video:
                 continue
-            items_by_episode[episode_index] = {
-                "episodeIndex": episode_index,
-                "title": f"视频 {episode_index}",
+            items_by_video[video_index] = {
+                "videoIndex": video_index,
+                "title": f"视频 {video_index}",
                 "jobId": None,
                 "status": "pending_submission" if has_running and not has_terminal else "skipped",
                 "statusLabel": "待生成" if has_running and not has_terminal else "未继续生成",
@@ -5823,8 +5824,8 @@ def _query_video_jobs_progress(
                 ),
             }
     items = [
-        items_by_episode[key]
-        for key in sorted(items_by_episode)
+        items_by_video[key]
+        for key in sorted(items_by_video)
     ]
     if not items:
         return None
@@ -5877,7 +5878,7 @@ def _query_video_jobs_progress(
     }
 
 
-def _trace_video_jobs_by_episode(
+def _trace_video_jobs_by_video(
     session_id: str,
     *,
     pending_since: datetime | None = None,
@@ -5891,13 +5892,13 @@ def _trace_video_jobs_by_episode(
         payload = record.get("payload")
         if not isinstance(payload, dict):
             continue
-        episode_index = _coerce_episode_index(payload.get("episodeIndex"))
+        video_index = _coerce_video_index(payload.get("videoIndex"))
         job_id = str(payload.get("jobId") or "").strip()
-        if episode_index <= 0 or not job_id:
+        if video_index <= 0 or not job_id:
             continue
-        jobs[episode_index] = {
-            "episodeIndex": episode_index,
-            "title": payload.get("title") or payload.get("episodeTitle") or f"视频 {episode_index}",
+        jobs[video_index] = {
+            "videoIndex": video_index,
+            "title": payload.get("title") or payload.get("videoTitle") or f"视频 {video_index}",
             "jobId": job_id,
         }
     return jobs
@@ -5923,7 +5924,7 @@ def _query_video_segment_statuses(
         job_id = str(job.get("jobId") or "").strip()
         if not job_id:
             continue
-        episode_index = int(job.get("episodeIndex") or 1)
+        video_index = int(job.get("videoIndex") or 1)
         segment_index = _coerce_segment_index(job.get("segmentIndex") or job.get("segmentLabel")) or order
         segment_label = str(job.get("segmentLabel") or f"片段 {segment_index}").strip()
         base = {
@@ -5956,7 +5957,7 @@ def _query_video_segment_statuses(
             })
             continue
         try:
-            latest = client.get_job(job_id, episode_index=episode_index)
+            latest = client.get_job(job_id, video_index=video_index)
         except Exception as exc:
             statuses.append({
                 **base,
@@ -5997,26 +5998,26 @@ def _query_video_segment_statuses(
     return statuses
 
 
-def _merge_trace_items_into_job_progress(job_progress: dict, trace_items_by_episode: dict[int, dict]) -> None:
+def _merge_trace_items_into_job_progress(job_progress: dict, trace_items_by_video: dict[int, dict]) -> None:
     progress = job_progress.get("generationProgress")
     if not isinstance(progress, dict):
         return
     items = progress.get("items")
     if not isinstance(items, list):
         return
-    by_episode = {
-        int(item.get("episodeIndex") or index + 1): item
+    by_video = {
+        int(item.get("videoIndex") or index + 1): item
         for index, item in enumerate(items)
         if isinstance(item, dict)
     }
     changed = False
-    for episode_index, trace_item in trace_items_by_episode.items():
+    for video_index, trace_item in trace_items_by_video.items():
         if not isinstance(trace_item, dict):
             continue
         trace_status = str(trace_item.get("status") or "").strip()
         if trace_status not in {"failed", "skipped"}:
             continue
-        existing = by_episode.get(int(episode_index))
+        existing = by_video.get(int(video_index))
         existing_status = str((existing or {}).get("status") or "").strip()
         if existing is None:
             items.append(_strip_private_progress_fields(dict(trace_item)))
@@ -6029,7 +6030,7 @@ def _merge_trace_items_into_job_progress(job_progress: dict, trace_items_by_epis
             changed = True
     if not changed:
         return
-    items.sort(key=lambda item: int(item.get("episodeIndex") or 0))
+    items.sort(key=lambda item: int(item.get("videoIndex") or 0))
     progress["items"] = items
     progress["totalRequested"] = len(items)
     progress["submittedCount"] = sum(1 for item in items if _has_video_submission(item))
@@ -6082,8 +6083,8 @@ def _query_prompt_trace_planning_progress(
     planning_events = {
         "keyword_model_input",
         "keyword_model_output",
-        "split_model_input",
-        "split_model_output",
+        "video_planning_model_input",
+        "video_planning_model_output",
         "business_prompt_batch_model_input",
         "business_prompt_batch_model_output",
         "business_prompt_batch_model_error",
@@ -6096,11 +6097,11 @@ def _query_prompt_trace_planning_progress(
         return None
 
     latest_at: datetime | None = None
-    episode_total = int(video_count or 0)
-    titles_by_episode: dict[int, str] = {}
-    validation_state_by_episode: dict[int, str] = {}
+    video_total = int(video_count or 0)
+    titles_by_video: dict[int, str] = {}
+    validation_state_by_video: dict[int, str] = {}
     event_names: set[str] = set()
-    active_validation_episode = 0
+    active_validation_video = 0
     for record in records:
         event = str(record.get("event") or "").strip()
         if event:
@@ -6112,45 +6113,45 @@ def _query_prompt_trace_planning_progress(
         if not isinstance(payload, dict):
             payload = {}
         try:
-            episode_total = max(episode_total, int(payload.get("episodeCount") or 0))
+            video_total = max(video_total, int(payload.get("videoCount") or 0))
         except (TypeError, ValueError):
             pass
-        episode_index = _coerce_episode_index(payload.get("episodeIndex"))
-        if episode_index > 0:
-            episode_total = max(episode_total, episode_index)
-            title = str(payload.get("title") or payload.get("episodeTitle") or "").strip()
+        video_index = _coerce_video_index(payload.get("videoIndex"))
+        if video_index > 0:
+            video_total = max(video_total, video_index)
+            title = str(payload.get("title") or payload.get("videoTitle") or "").strip()
             if title:
-                titles_by_episode[episode_index] = title
+                titles_by_video[video_index] = title
             if event == "business_prompt_validation_model_input":
-                validation_state_by_episode[episode_index] = "input"
-                active_validation_episode = episode_index
+                validation_state_by_video[video_index] = "input"
+                active_validation_video = video_index
             elif event == "business_prompt_validation_model_output":
-                validation_state_by_episode[episode_index] = "output"
+                validation_state_by_video[video_index] = "output"
             elif event == "business_prompt_validation_model_error":
-                validation_state_by_episode[episode_index] = "error"
-    if episode_total <= 0:
-        episode_total = 1
+                validation_state_by_video[video_index] = "error"
+    if video_total <= 0:
+        video_total = 1
 
     if "merged_final_video_prompt" in event_names:
         global_label = "视频方案已完成，正在进入生成"
-    elif active_validation_episode:
-        global_label = f"正在检查第 {active_validation_episode}/{episode_total} 条视频脚本"
+    elif active_validation_video:
+        global_label = f"正在检查第 {active_validation_video}/{video_total} 条视频脚本"
     elif "business_prompt_batch_model_output" in event_names:
         global_label = "正在完善每条视频脚本"
     elif "business_prompt_batch_model_input" in event_names:
         global_label = "正在生成每条视频方案"
-    elif "split_model_output" in event_names:
-        global_label = "已拆成多条视频，正在写每条方案"
-    elif "split_model_input" in event_names:
-        global_label = "正在智能拆分剧本"
+    elif "video_planning_model_output" in event_names:
+        global_label = "批量视频规划完成，正在写每条方案"
+    elif "video_planning_model_input" in event_names:
+        global_label = "正在智能规划批量视频"
     elif "keyword_model_output" in event_names:
-        global_label = "已读懂重点，正在拆成短视频"
+        global_label = "已读懂重点，正在规划独立视频"
     else:
         global_label = "正在理解全文关键词"
 
     items = []
-    for episode_index in range(1, episode_total + 1):
-        state = validation_state_by_episode.get(episode_index)
+    for video_index in range(1, video_total + 1):
+        state = validation_state_by_video.get(video_index)
         if state == "output":
             item_label = "视频脚本检查完成"
             provider_progress = 72
@@ -6166,11 +6167,11 @@ def _query_prompt_trace_planning_progress(
         elif "business_prompt_batch_model_input" in event_names:
             item_label = "正在生成视频方案"
             provider_progress = 38
-        elif "split_model_output" in event_names:
-            item_label = "已拆分，正在写方案"
+        elif "video_planning_model_output" in event_names:
+            item_label = "规划完成，正在写方案"
             provider_progress = 32
-        elif "split_model_input" in event_names:
-            item_label = "智能拆分剧本"
+        elif "video_planning_model_input" in event_names:
+            item_label = "智能规划视频"
             provider_progress = 22
         elif "keyword_model_output" in event_names:
             item_label = "关键词理解完成"
@@ -6179,8 +6180,8 @@ def _query_prompt_trace_planning_progress(
             item_label = "理解全文关键词"
             provider_progress = 8
         items.append({
-            "episodeIndex": episode_index,
-            "title": titles_by_episode.get(episode_index) or f"视频 {episode_index}",
+            "videoIndex": video_index,
+            "title": titles_by_video.get(video_index) or f"视频 {video_index}",
             "jobId": None,
             "status": "planning",
             "statusLabel": item_label,
@@ -6192,7 +6193,7 @@ def _query_prompt_trace_planning_progress(
         "sessionId": normalized_session_id,
         "status": "planning",
         "summary": global_label,
-        "totalRequested": episode_total,
+        "totalRequested": video_total,
         "items": items,
         "submittedCount": 0,
         "runningCount": len(items),
@@ -6226,8 +6227,8 @@ def _query_prompt_trace_generation_progress(
     records = _prompt_trace_attempt_records_for_pending(records, pending_since=pending_since)
     if not records:
         return None
-    titles_by_episode: dict[int, str] = {}
-    items_by_episode: dict[int, dict] = {}
+    titles_by_video: dict[int, str] = {}
+    items_by_video: dict[int, dict] = {}
     trace_jobs: list[dict] = []
     latest_at: datetime | None = None
     saw_generation_trace = False
@@ -6239,12 +6240,12 @@ def _query_prompt_trace_generation_progress(
         created_at = _parse_iso_datetime(record.get("createdAt") or "")
         if created_at and (latest_at is None or created_at > latest_at):
             latest_at = created_at
-        episode_index = _coerce_episode_index(payload.get("episodeIndex"))
-        if episode_index <= 0:
+        video_index = _coerce_video_index(payload.get("videoIndex"))
+        if video_index <= 0:
             continue
-        title = str(payload.get("title") or payload.get("episodeTitle") or "").strip()
+        title = str(payload.get("title") or payload.get("videoTitle") or "").strip()
         if event == "merged_final_video_prompt" and title:
-            titles_by_episode[episode_index] = title
+            titles_by_video[video_index] = title
             continue
         if event not in {
             "first_frame_image_prompt",
@@ -6256,9 +6257,9 @@ def _query_prompt_trace_generation_progress(
         }:
             continue
         saw_generation_trace = True
-        title = titles_by_episode.get(episode_index) or title or f"视频 {episode_index}"
+        title = titles_by_video.get(video_index) or title or f"视频 {video_index}"
         base = {
-            "episodeIndex": episode_index,
+            "videoIndex": video_index,
             "title": title,
             "jobId": None,
             "_localTerminalAt": created_at,
@@ -6301,7 +6302,7 @@ def _query_prompt_trace_generation_progress(
             if job_id:
                 segment_index = _coerce_segment_index(segment_label)
                 trace_jobs.append({
-                    "episodeIndex": episode_index,
+                    "videoIndex": video_index,
                     "title": title,
                     "jobId": job_id,
                     "segmentIndex": segment_index,
@@ -6320,7 +6321,7 @@ def _query_prompt_trace_generation_progress(
             raw_error = str(payload.get("error") or "首帧图结果未回填").strip()
             item = {
                 **base,
-                "jobId": f"first-frame-failed-{episode_index}",
+                "jobId": f"first-frame-failed-{video_index}",
                 "status": "failed",
                 "statusLabel": "首帧图未回填" if _is_lost_first_frame_response(raw_error) else "首帧图生成失败",
                 "providerStatus": "first_frame_response_lost" if _is_lost_first_frame_response(raw_error) else "first_frame_failed",
@@ -6328,8 +6329,8 @@ def _query_prompt_trace_generation_progress(
                 "error": _humanize_first_frame_trace_error(raw_error),
                 "rawError": raw_error,
             }
-        _put_latest_episode_item(items_by_episode, episode_index, item)
-    if not saw_generation_trace or not items_by_episode:
+        _put_latest_video_item(items_by_video, video_index, item)
+    if not saw_generation_trace or not items_by_video:
         return None
     if trace_jobs:
         job_progress = _query_video_jobs_progress(
@@ -6339,13 +6340,13 @@ def _query_prompt_trace_generation_progress(
             pending_since=pending_since,
         )
         if job_progress:
-            _merge_trace_items_into_job_progress(job_progress, items_by_episode)
+            _merge_trace_items_into_job_progress(job_progress, items_by_video)
             job_progress["traceRecovered"] = True
             job_progress["statelessProgress"] = True
             return job_progress
 
     now = datetime.now(timezone.utc)
-    for item in items_by_episode.values():
+    for item in items_by_video.values():
         if _first_frame_lost_still_recovering(item, now):
             item["status"] = "polling"
             item["statusLabel"] = "等待生成结果回填"
@@ -6353,14 +6354,14 @@ def _query_prompt_trace_generation_progress(
             item["providerProgress"] = 90
             item["error"] = _first_frame_response_lost_recovering_message()
 
-    requested_total = max(int(video_count or 0), max(items_by_episode))
-    for episode_index in range(1, requested_total + 1):
-        item = items_by_episode.get(episode_index)
+    requested_total = max(int(video_count or 0), max(items_by_video))
+    for video_index in range(1, requested_total + 1):
+        item = items_by_video.get(video_index)
         if item is None:
-            items_by_episode[episode_index] = {
-                "episodeIndex": episode_index,
-                "title": titles_by_episode.get(episode_index) or f"视频 {episode_index}",
-                "jobId": f"interrupted-before-submit-{episode_index}",
+            items_by_video[video_index] = {
+                "videoIndex": video_index,
+                "title": titles_by_video.get(video_index) or f"视频 {video_index}",
+                "jobId": f"interrupted-before-submit-{video_index}",
                 "status": "skipped",
                 "statusLabel": "未继续生成",
                 "providerStatus": "local_interrupted",
@@ -6384,11 +6385,11 @@ def _query_prompt_trace_generation_progress(
             )
             item["error"] = _video_create_response_lost_message()
             continue
-        item["jobId"] = item.get("jobId") or f"interrupted-before-submit-{episode_index}"
+        item["jobId"] = item.get("jobId") or f"interrupted-before-submit-{video_index}"
         item["status"] = "failed"
         item["providerProgress"] = 100
         if status == "preparing_first_frame" and item.get("_firstFrameRequestStarted"):
-            item["jobId"] = f"first-frame-failed-{episode_index}"
+            item["jobId"] = f"first-frame-failed-{video_index}"
             item["statusLabel"] = "首帧图未回填"
             item["providerStatus"] = "first_frame_response_lost"
             item["error"] = _first_frame_response_lost_message()
@@ -6406,8 +6407,8 @@ def _query_prompt_trace_generation_progress(
             item["error"] = "后台中断了，这条视频未提交给生成服务。请重新生成。"
 
     items = [
-        _strip_private_progress_fields(items_by_episode[key])
-        for key in sorted(items_by_episode)
+        _strip_private_progress_fields(items_by_video[key])
+        for key in sorted(items_by_video)
     ]
     failed_count = sum(1 for item in items if item.get("status") == "failed")
     skipped_count = sum(1 for item in items if item.get("status") == "skipped")
@@ -6478,7 +6479,7 @@ def _iter_prompt_trace_records(session_id: str, *, pending_since: datetime | Non
             for raw_line in handle:
                 line = raw_line.decode("utf-8", errors="ignore")
                 try:
-                    record = json.loads(line)
+                    record = normalize_legacy_video_payload(json.loads(line))
                 except ValueError:
                     continue
                 if not isinstance(record, dict):
@@ -6504,7 +6505,7 @@ def _prompt_trace_attempt_records_for_pending(
     }
     attempt_start_events = {
         "keyword_model_input",
-        "split_model_input",
+        "video_planning_model_input",
         "business_prompt_batch_model_input",
     }
     if pending_since is not None:
@@ -6662,7 +6663,7 @@ def _infer_requested_video_count_from_progress_items(items) -> int:
         request_info = record.get("request")
         if not isinstance(request_info, dict):
             continue
-        for key in ("episodeCount", "videoCount", "count"):
+        for key in ("videoCount", "videoCount", "count"):
             try:
                 requested_total = max(requested_total, int(request_info.get(key) or 0))
             except (TypeError, ValueError):
@@ -6712,7 +6713,7 @@ def _parse_iso_datetime(value) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def _coerce_episode_index(value) -> int:
+def _coerce_video_index(value) -> int:
     try:
         return int(value or 0)
     except (TypeError, ValueError):
@@ -6735,17 +6736,17 @@ def _coerce_segment_index(value) -> int | None:
     return parsed if parsed > 0 else None
 
 
-def _put_latest_episode_item(items_by_episode: dict[int, dict], episode_index: int, item: dict) -> None:
-    previous = items_by_episode.get(episode_index)
+def _put_latest_video_item(items_by_video: dict[int, dict], video_index: int, item: dict) -> None:
+    previous = items_by_video.get(video_index)
     if previous is None:
-        items_by_episode[episode_index] = item
+        items_by_video[video_index] = item
         return
     previous_time = previous.get("_localTerminalAt")
     next_time = item.get("_localTerminalAt")
     if not isinstance(previous_time, datetime) or (
         isinstance(next_time, datetime) and next_time >= previous_time
     ):
-        items_by_episode[episode_index] = item
+        items_by_video[video_index] = item
 
 
 def _strip_private_progress_fields(item: dict) -> dict:

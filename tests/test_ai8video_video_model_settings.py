@@ -23,7 +23,7 @@ from ai8video.integrations.direct_video_model_client import (
     _format_create_timeout_error,
     _raise_for_response,
 )
-from ai8video.integrations.llm_provider import build_openai_compat_splitter
+from ai8video.integrations.llm_provider import build_openai_compat_llm
 from ai8video.core.models import FirstFrameAsset, QuickVideoJob
 from ai8video.generation.pipeline import _current_video_settings_trace, _is_generated_job
 from ai8video.integrations.video_model_settings import (
@@ -90,7 +90,7 @@ class AI8VideoVideoModelSettingsTest(unittest.TestCase):
             llm_api_key="sk-test",
             llm_model="deepseek-test",
         )
-        llm = build_openai_compat_splitter(config)
+        llm = build_openai_compat_llm(config)
 
         with patch("ai8video.integrations.llm_provider.api_request", side_effect=fake_request):
             result = llm("只输出空数组")
@@ -107,7 +107,7 @@ class AI8VideoVideoModelSettingsTest(unittest.TestCase):
         response.status_code = 200
         response._content = b'{"choices":[{"message":{"content":"{}"}}]}'
         config = AI8VideoConfig(llm_base_url="https://api.example.com", llm_api_key="sk-test", llm_model="deepseek-test")
-        llm = build_openai_compat_splitter(config, stream=False, transport_retry_count=1)
+        llm = build_openai_compat_llm(config, stream=False, transport_retry_count=1)
 
         with patch("ai8video.integrations.llm_provider.api_request", return_value=response) as request:
             self.assertEqual(llm("只输出对象"), "{}")
@@ -120,7 +120,7 @@ class AI8VideoVideoModelSettingsTest(unittest.TestCase):
         response.status_code = 200
         response._content = b'{"choices":[{"message":{"content":"{}"}}]}'
         config = AI8VideoConfig(llm_base_url="https://api.example.com", llm_api_key="sk-test", llm_model="deepseek-test")
-        llm = build_openai_compat_splitter(config, stream=False, transport_retry_count=1)
+        llm = build_openai_compat_llm(config, stream=False, transport_retry_count=1)
 
         with patch(
             "ai8video.integrations.llm_provider.api_request",
@@ -132,7 +132,7 @@ class AI8VideoVideoModelSettingsTest(unittest.TestCase):
 
     def test_llm_provider_does_not_retry_read_timeout(self) -> None:
         config = AI8VideoConfig(llm_base_url="https://api.example.com", llm_api_key="sk-test", llm_model="deepseek-test")
-        llm = build_openai_compat_splitter(config, stream=False, transport_retry_count=1)
+        llm = build_openai_compat_llm(config, stream=False, transport_retry_count=1)
 
         with patch(
             "ai8video.integrations.llm_provider.api_request",
@@ -377,7 +377,7 @@ class AI8VideoVideoModelSettingsTest(unittest.TestCase):
             ), patch("ai8video.integrations.direct_video_model_client.api_request", side_effect=fake_request):
                 job = client.create_job(
                     text="测试视频",
-                    episode_index=1,
+                    video_index=1,
                     first_frame=FirstFrameAsset(source=str(image_path)),
                     duration_seconds=10,
                 )
@@ -421,7 +421,7 @@ class AI8VideoVideoModelSettingsTest(unittest.TestCase):
             "ai8video.integrations.direct_video_model_client.load_video_model_settings",
             return_value=latest_settings,
         ):
-            job = client.create_job(text="测试视频", episode_index=1)
+            job = client.create_job(text="测试视频", video_index=1)
 
         self.assertEqual(job.usage["settings"]["model"], "Grok-Video-GN")
         self.assertEqual(job.usage["settings"]["template"], "openai-compatible")
@@ -462,7 +462,7 @@ class AI8VideoVideoModelSettingsTest(unittest.TestCase):
             return_value=settings,
         ), patch("ai8video.integrations.direct_video_model_client.api_request", side_effect=fake_request):
             with ThreadPoolExecutor(max_workers=3) as executor:
-                list(executor.map(lambda index: client.create_job(text=f"测试 {index}", episode_index=index), range(1, 4)))
+                list(executor.map(lambda index: client.create_job(text=f"测试 {index}", video_index=index), range(1, 4)))
 
         self.assertEqual(max_active, 1)
 
@@ -492,7 +492,7 @@ class AI8VideoVideoModelSettingsTest(unittest.TestCase):
             side_effect=requests.ReadTimeout("read timeout=420"),
         ):
             with self.assertRaisesRegex(DirectVideoModelError, "后台生成"):
-                client.create_job(text="测试视频", episode_index=1)
+                client.create_job(text="测试视频", video_index=1)
 
     def test_openai_compatible_create_timeout_warns_about_possible_orphan_upstream_job(self) -> None:
         message = _format_create_timeout_error(
@@ -551,7 +551,7 @@ class AI8VideoVideoModelSettingsTest(unittest.TestCase):
             return response
 
         with patch("ai8video.integrations.direct_video_model_client.api_request", side_effect=fake_request):
-            job = client.get_job("task-1", episode_index=1, prompt="测试视频")
+            job = client.get_job("task-1", video_index=1, prompt="测试视频")
 
         self.assertEqual(job.status, "failed")
         self.assertIsNone(job.video_url)
@@ -562,13 +562,13 @@ class AI8VideoVideoModelSettingsTest(unittest.TestCase):
             config=AI8VideoConfig(dry_run=False, poll_interval_seconds=0, max_poll_attempts=3),
         )
         submitted = QuickVideoJob(
-            episode_index=1,
+            video_index=1,
             job_id="task-1",
             status="pending",
             prompt="测试视频",
         )
         completed = QuickVideoJob(
-            episode_index=1,
+            video_index=1,
             job_id="task-1",
             status="succeeded",
             prompt="测试视频",
@@ -591,7 +591,7 @@ class AI8VideoVideoModelSettingsTest(unittest.TestCase):
             config=AI8VideoConfig(dry_run=False, poll_interval_seconds=0, max_poll_attempts=1),
         )
         submitted = QuickVideoJob(
-            episode_index=1,
+            video_index=1,
             job_id="task-segment-2",
             status="pending",
             prompt="测试视频",
@@ -599,7 +599,7 @@ class AI8VideoVideoModelSettingsTest(unittest.TestCase):
             segment_label="片段 2",
         )
         latest = QuickVideoJob(
-            episode_index=1,
+            video_index=1,
             job_id="task-segment-2",
             status="succeeded",
             prompt="测试视频",
@@ -614,7 +614,7 @@ class AI8VideoVideoModelSettingsTest(unittest.TestCase):
 
     def test_synthetic_storage_key_alone_is_not_generated_success(self) -> None:
         job = QuickVideoJob(
-            episode_index=1,
+            video_index=1,
             job_id="task-1",
             status="succeeded",
             storage_key="direct-video-model/task-1.mp4",

@@ -17,13 +17,13 @@
     });
 
     document.getElementById('progressModalBody')?.addEventListener('click', (event) => {
-      const button = event.target?.closest?.('[data-retry-generation-episode]');
-      if (button) retryFailedGenerationEpisode(button);
+      const button = event.target?.closest?.('[data-retry-generation-video]');
+      if (button) retryFailedGenerationVideo(button);
     });
 
     els.messages?.addEventListener('click', (event) => {
-      const button = event.target?.closest?.('[data-retry-generation-episode]');
-      if (button) retryFailedGenerationEpisode(button);
+      const button = event.target?.closest?.('[data-retry-generation-video]');
+      if (button) retryFailedGenerationVideo(button);
     });
 
     document.getElementById('hotRadarSummaryButton')?.addEventListener('click', async () => {

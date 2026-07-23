@@ -262,7 +262,7 @@ def attach_local_tts_to_video(
     video_path: Path | str,
     *,
     narration_text: str | None,
-    episode_index: int | None = None,
+    video_index: int | None = None,
     job_id: str | None = None,
     ffmpeg_bin: str | None = None,
     preserve_original_audio: bool = True,
@@ -290,9 +290,9 @@ def attach_local_tts_to_video(
     output_dir = local_tts_output_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    episode_part = f"e{episode_index:02d}" if episode_index is not None else "episode"
+    video_part = f"e{video_index:02d}" if video_index is not None else "video"
     job_part = _safe_file_part(job_id or "local")
-    audio_path = output_dir / f"{stamp}-{episode_part}-{job_part}.m4a"
+    audio_path = output_dir / f"{stamp}-{video_part}-{job_part}.m4a"
     synth = synthesize_local_tts(text, audio_path, settings=synth_settings, ffmpeg_bin=ffmpeg_bin)
     if synth.get("status") != "generated":
         return {"enabled": True, "status": "failed", "reason": synth.get("reason") or "tts failed"}

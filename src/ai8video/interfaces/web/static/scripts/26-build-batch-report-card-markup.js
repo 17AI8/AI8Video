@@ -443,10 +443,12 @@
       const succeeded = Number(progress.succeededCount || 0) || 0;
       const failed = Number(progress.failedCount || 0) || 0;
       const deleted = Number(progress.deletedCount || 0) || 0;
+      const hasLocalPostprocessFailure = failed > 0 && Array.isArray(progress.items)
+        && progress.items.some((item) => item?.status === 'failed' && getGenerationFailureStageLabel(item) === '本地后处理失败');
       if (failed > 0 && succeeded > 0) return '部分视频已生成';
       if (deleted > 0 && !succeeded && !failed) return '文件已删除';
       if (deleted > 0 && (succeeded > 0 || failed > 0)) return '部分视频已生成';
-      if (failed > 0) return '视频生成失败';
+      if (failed > 0) return hasLocalPostprocessFailure ? '本地后处理失败' : '视频生成失败';
       if (total > 0 && succeeded >= total) return '视频已生成';
       if (succeeded > 0) return '视频已生成';
       return '生成已结束';
@@ -482,11 +484,10 @@
         return `已生成 ${done}/${total}，可在“查看结果”里查看。`;
       }
       if (total > 0 && failed > 0) {
-        return `已完成 ${done}/${total}，失败 ${failed} 条，正在整理结果。`;
+        return `本轮已结束：已生成 ${done}/${total}，失败 ${failed} 条。`;
       }
       if (total > 0) {
-        return `已生成 ${done}/${total}，正在整理结果。`;
+        return `本轮已结束：已生成 ${done}/${total}。`;
       }
-      return '生成已结束，正在整理结果。';
+      return '本轮任务已结束。';
     }
-

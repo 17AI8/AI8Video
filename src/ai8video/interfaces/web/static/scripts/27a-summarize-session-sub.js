@@ -13,9 +13,9 @@
           ? `批量 ${done}/${target} · 补量 ${topUpRounds} 轮`
           : `批量 ${done}/${target}`;
       }
-      if (last.payload?.summary) return `已生成 ${last.payload.summary.episodeCount} 条结果`;
+      if (last.payload?.summary) return `已生成 ${last.payload.summary.videoCount} 条结果`;
       if (last.payload?.awaiting === 'batch_seed_messages') return '等待补充批量候选';
-      if (last.payload?.awaiting === 'episode_count') return '等待补充集数';
+      if (last.payload?.awaiting === 'video_count') return '等待补充视频数量';
       if (last.payload?.awaiting === 'reference_image') return '等待补充参考图';
       if (last.payload?.awaiting === 'content_completion') return '等待补充台词';
       if (last.payload?.awaiting === 'core_keywords') return '等待确认核心主题';

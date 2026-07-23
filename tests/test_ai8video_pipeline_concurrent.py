@@ -10,7 +10,7 @@ from unittest.mock import patch
 from ai8video.core.config import AI8VideoConfig
 from ai8video.generation.generation_progress import clear_generation_progress, get_generation_progress
 from ai8video.integrations.direct_video_model_client import DirectVideoModelError
-from ai8video.core.models import ArchivedAsset, EpisodePrompt, FirstFrameAsset, ParsedRequest, QuickVideoJob
+from ai8video.core.models import ArchivedAsset, VideoPrompt, FirstFrameAsset, ParsedRequest, QuickVideoJob
 from ai8video.generation.pipeline import AI8VideoPipeline
 
 
@@ -21,21 +21,21 @@ class _FakeClient:
         self.first_frame_sources: list[str] = []
         self.poll_started_after_create_counts: list[int] = []
 
-    def create_job(self, *, text, episode_index, first_frame, duration_seconds, ratio, resolution, preset):
-        self.created.append(episode_index)
+    def create_job(self, *, text, video_index, first_frame, duration_seconds, ratio, resolution, preset):
+        self.created.append(video_index)
         self.first_frame_sources.append("" if first_frame is None else str(first_frame.source))
         return QuickVideoJob(
-            episode_index=episode_index,
-            job_id=f"job-{episode_index}",
+            video_index=video_index,
+            job_id=f"job-{video_index}",
             status="pending",
             prompt=text,
         )
 
     def poll_job(self, job: QuickVideoJob) -> QuickVideoJob:
         self.poll_started_after_create_counts.append(len(self.created))
-        time.sleep(0.01 * (4 - job.episode_index))
+        time.sleep(0.01 * (4 - job.video_index))
         job.status = "succeeded"
-        job.video_url = f"https://example.test/{job.episode_index}.mp4"
+        job.video_url = f"https://example.test/{job.video_index}.mp4"
         return job
 
 
@@ -43,7 +43,7 @@ class _ProgressFakeClient(_FakeClient):
     def poll_job(self, job: QuickVideoJob, progress_callback=None) -> QuickVideoJob:
         for value in (12, 37, 83):
             latest = QuickVideoJob(
-                episode_index=job.episode_index,
+                video_index=job.video_index,
                 job_id=job.job_id,
                 status="pending",
                 prompt=job.prompt,
@@ -53,7 +53,7 @@ class _ProgressFakeClient(_FakeClient):
             if progress_callback:
                 progress_callback(latest)
         job.status = "succeeded"
-        job.video_url = f"https://example.test/{job.episode_index}.mp4"
+        job.video_url = f"https://example.test/{job.video_index}.mp4"
         job.provider_status = "completed"
         job.provider_progress = 100
         return job
@@ -63,7 +63,7 @@ class _NoDelayFakeClient(_FakeClient):
     def poll_job(self, job: QuickVideoJob) -> QuickVideoJob:
         self.poll_started_after_create_counts.append(len(self.created))
         job.status = "succeeded"
-        job.video_url = f"https://example.test/{job.episode_index}.mp4"
+        job.video_url = f"https://example.test/{job.video_index}.mp4"
         return job
 
 
@@ -78,15 +78,15 @@ class _FailedFakeClient(_FakeClient):
 
 class _ConcurrentPartialTimeoutFakeClient(_FakeClient):
     def poll_job(self, job: QuickVideoJob) -> QuickVideoJob:
-        if job.episode_index == 1:
+        if job.video_index == 1:
             job.status = "succeeded"
             job.video_url = "https://example.test/1.mp4"
             return job
         raise TimeoutError("Polling timed out for direct video model job job-2")
 
-    def get_job(self, job_id: str, episode_index: int = 1, prompt: str = "") -> QuickVideoJob:
+    def get_job(self, job_id: str, video_index: int = 1, prompt: str = "") -> QuickVideoJob:
         return QuickVideoJob(
-            episode_index=episode_index,
+            video_index=video_index,
             job_id=job_id,
             status="failed",
             prompt=prompt,
@@ -98,15 +98,15 @@ class _ConcurrentPartialTimeoutFakeClient(_FakeClient):
 
 class _ConcurrentThreeItemPartialTimeoutFakeClient(_FakeClient):
     def poll_job(self, job: QuickVideoJob) -> QuickVideoJob:
-        if job.episode_index == 2:
+        if job.video_index == 2:
             raise TimeoutError("Polling timed out for direct video model job job-2")
         job.status = "succeeded"
-        job.video_url = f"https://example.test/{job.episode_index}.mp4"
+        job.video_url = f"https://example.test/{job.video_index}.mp4"
         return job
 
-    def get_job(self, job_id: str, episode_index: int = 1, prompt: str = "") -> QuickVideoJob:
+    def get_job(self, job_id: str, video_index: int = 1, prompt: str = "") -> QuickVideoJob:
         return QuickVideoJob(
-            episode_index=episode_index,
+            video_index=video_index,
             job_id=job_id,
             status="failed",
             prompt=prompt,
@@ -129,23 +129,23 @@ class _LimitedFakeClient(_FakeClient):
 
 
 class _RejectedOnCreateFakeClient(_FakeClient):
-    def create_job(self, *, text, episode_index, first_frame, duration_seconds, ratio, resolution, preset):
+    def create_job(self, *, text, video_index, first_frame, duration_seconds, ratio, resolution, preset):
         raise DirectVideoModelError("视频 1 未提交到真实生成后端：AI短视频额度不足")
 
 
 class _FakeArchiver:
-    def archive(self, request, episode, job, outcome) -> ArchivedAsset:
+    def archive(self, request, video, job, outcome) -> ArchivedAsset:
         return ArchivedAsset(
-            episode_index=episode.index,
+            video_index=video.index,
             job_id=job.job_id,
             backend="test",
             status="stored",
-            archive_key=f"video/{episode.index}.mp4",
+            archive_key=f"video/{video.index}.mp4",
         )
 
 
 class _FailingArchiver:
-    def archive(self, request, episode, job, outcome) -> ArchivedAsset:
+    def archive(self, request, video, job, outcome) -> ArchivedAsset:
         raise RuntimeError("花字烧录失败：No module named 'PIL'")
 
 
@@ -153,20 +153,20 @@ class _FakeAssetStore:
     def __init__(self) -> None:
         self.appended: list[int] = []
 
-    def append(self, request, episode, job, outcome, first_frame, archive):
-        self.appended.append(episode.index)
-        return {"episodeIndex": episode.index, "jobId": job.job_id}
+    def append(self, request, video, job, outcome, first_frame, archive):
+        self.appended.append(video.index)
+        return {"videoIndex": video.index, "jobId": job.job_id}
 
 
-class _PerEpisodeReferencePreprocessor:
+class _PerVideoReferencePreprocessor:
     def __init__(self) -> None:
         self.calls: list[tuple[int, str]] = []
 
-    def prepare_first_frame(self, request: ParsedRequest, episode: EpisodePrompt | None = None):
-        if episode is None:
+    def prepare_first_frame(self, request: ParsedRequest, video: VideoPrompt | None = None):
+        if video is None:
             return None
-        self.calls.append((episode.index, episode.prompt))
-        return FirstFrameAsset(source=f"/tmp/reference-{episode.index}.png")
+        self.calls.append((video.index, video.prompt))
+        return FirstFrameAsset(source=f"/tmp/reference-{video.index}.png")
 
 
 class _TempTransformedReferencePreprocessor:
@@ -174,10 +174,10 @@ class _TempTransformedReferencePreprocessor:
         self.output_dir = output_dir
         self.paths: list[Path] = []
 
-    def prepare_first_frame(self, request: ParsedRequest, episode: EpisodePrompt | None = None):
-        if episode is None:
+    def prepare_first_frame(self, request: ParsedRequest, video: VideoPrompt | None = None):
+        if video is None:
             return None
-        path = self.output_dir / f"reference-i2i-test-{episode.index}.png"
+        path = self.output_dir / f"reference-i2i-test-{video.index}.png"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"png")
         self.paths.append(path)
@@ -188,9 +188,9 @@ class _DisconnectingReferencePreprocessor:
     def __init__(self) -> None:
         self.calls: list[int] = []
 
-    def prepare_first_frame(self, request: ParsedRequest, episode: EpisodePrompt | None = None):
-        if episode is not None:
-            self.calls.append(episode.index)
+    def prepare_first_frame(self, request: ParsedRequest, video: VideoPrompt | None = None):
+        if video is not None:
+            self.calls.append(video.index)
         raise ConnectionError("('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))")
 
 
@@ -204,22 +204,22 @@ class AI8VideoPipelineConcurrentTest(unittest.TestCase):
         pipeline.asset_store = _FakeAssetStore()
 
         request = ParsedRequest(
-            raw_text="三集剧本",
-            mode="multi_episode_script",
-            episode_count=3,
+            raw_text="三条视频素材",
+            mode="batch_videos",
+            video_count=3,
             concurrent_generation=True,
         )
-        episodes = [
-            EpisodePrompt(index=1, title="第一集", prompt="ep1"),
-            EpisodePrompt(index=2, title="第二集", prompt="ep2"),
-            EpisodePrompt(index=3, title="第三集", prompt="ep3"),
+        videos = [
+            VideoPrompt(index=1, title="第一条视频", prompt="video1"),
+            VideoPrompt(index=2, title="第二条视频", prompt="video2"),
+            VideoPrompt(index=3, title="第三条视频", prompt="video3"),
         ]
 
-        result = pipeline._run_episodes(request, episodes, progress_session_id="progress-test")
+        result = pipeline._run_videos(request, videos, progress_session_id="progress-test")
 
         self.assertEqual(pipeline.client.created, [1, 2, 3])
         self.assertTrue(all(count == 3 for count in pipeline.client.poll_started_after_create_counts))
-        self.assertEqual([job.episode_index for job in result.jobs], [1, 2, 3])
+        self.assertEqual([job.video_index for job in result.jobs], [1, 2, 3])
         self.assertEqual(sorted(pipeline.asset_store.appended), [1, 2, 3])
         progress = get_generation_progress("progress-test")
         self.assertIsNotNone(progress)
@@ -239,23 +239,23 @@ class AI8VideoPipelineConcurrentTest(unittest.TestCase):
         pipeline.asset_store = _FakeAssetStore()
 
         request = ParsedRequest(
-            raw_text="五集剧本",
-            mode="multi_episode_script",
-            episode_count=5,
+            raw_text="五条视频素材",
+            mode="batch_videos",
+            video_count=5,
             concurrent_generation=True,
         )
-        episodes = [
-            EpisodePrompt(index=index, title=f"第{index}集", prompt=f"ep{index}")
+        videos = [
+            VideoPrompt(index=index, title=f"第{index}集", prompt=f"ep{index}")
             for index in range(1, 6)
         ]
 
         with patch("ai8video.generation.pipeline.time.sleep") as submit_sleep:
-            result = pipeline._run_episodes(request, episodes, progress_session_id="five-submit-progress-test")
+            result = pipeline._run_videos(request, videos, progress_session_id="five-submit-progress-test")
 
         self.assertEqual(sorted(pipeline.client.created), [1, 2, 3, 4, 5])
         self.assertEqual(sorted(call.args[0] for call in submit_sleep.call_args_list), [1.0, 2.0, 3.0, 4.0])
         self.assertTrue(all(count == 5 for count in pipeline.client.poll_started_after_create_counts))
-        self.assertEqual([job.episode_index for job in result.jobs], [1, 2, 3, 4, 5])
+        self.assertEqual([job.video_index for job in result.jobs], [1, 2, 3, 4, 5])
         progress = get_generation_progress("five-submit-progress-test")
         self.assertIsNotNone(progress)
         self.assertEqual(progress["totalRequested"], 5)
@@ -264,42 +264,42 @@ class AI8VideoPipelineConcurrentTest(unittest.TestCase):
         self.assertEqual(progress["succeededCount"], 5)
         clear_generation_progress("five-submit-progress-test")
 
-    def test_concurrent_mode_prepares_reference_image_per_episode(self) -> None:
+    def test_concurrent_mode_prepares_reference_image_per_video(self) -> None:
         pipeline = AI8VideoPipeline.__new__(AI8VideoPipeline)
         pipeline.config = AI8VideoConfig(dry_run=True)
         pipeline.client = _FakeClient()
-        preprocessor = _PerEpisodeReferencePreprocessor()
+        preprocessor = _PerVideoReferencePreprocessor()
         pipeline.reference_image_preprocessor = preprocessor
         pipeline.archiver = _FakeArchiver()
         pipeline.asset_store = _FakeAssetStore()
 
         request = ParsedRequest(
-            raw_text="三集剧本",
-            mode="multi_episode_script",
-            episode_count=3,
+            raw_text="三条视频素材",
+            mode="batch_videos",
+            video_count=3,
             concurrent_generation=True,
             reference_image="/tmp/default.png",
             reference_image_transform_options={"autoChangeBackground": True},
         )
-        episodes = [
-            EpisodePrompt(index=1, title="第一集", prompt="ep1"),
-            EpisodePrompt(index=2, title="第二集", prompt="ep2"),
-            EpisodePrompt(index=3, title="第三集", prompt="ep3"),
+        videos = [
+            VideoPrompt(index=1, title="第一条视频", prompt="video1"),
+            VideoPrompt(index=2, title="第二条视频", prompt="video2"),
+            VideoPrompt(index=3, title="第三条视频", prompt="video3"),
         ]
 
-        result = pipeline._run_episodes(request, episodes, progress_session_id="per-episode-ref-test")
+        result = pipeline._run_videos(request, videos, progress_session_id="per-video-ref-test")
 
         self.assertEqual([item[0] for item in preprocessor.calls], [1, 2, 3])
-        self.assertTrue(preprocessor.calls[0][1].startswith("ep1"))
-        self.assertTrue(preprocessor.calls[1][1].startswith("ep2"))
-        self.assertTrue(preprocessor.calls[2][1].startswith("ep3"))
+        self.assertTrue(preprocessor.calls[0][1].startswith("video1"))
+        self.assertTrue(preprocessor.calls[1][1].startswith("video2"))
+        self.assertTrue(preprocessor.calls[2][1].startswith("video3"))
         self.assertEqual(pipeline.client.first_frame_sources, [
             "/tmp/reference-1.png",
             "/tmp/reference-2.png",
             "/tmp/reference-3.png",
         ])
         self.assertEqual(result.first_frame.source, "/tmp/reference-1.png")
-        clear_generation_progress("per-episode-ref-test")
+        clear_generation_progress("per-video-ref-test")
 
     def test_concurrent_mode_does_not_submit_video_when_i2i_fails(self) -> None:
         pipeline = AI8VideoPipeline.__new__(AI8VideoPipeline)
@@ -311,20 +311,20 @@ class AI8VideoPipelineConcurrentTest(unittest.TestCase):
         pipeline.asset_store = _FakeAssetStore()
 
         request = ParsedRequest(
-            raw_text="三集剧本",
-            mode="multi_episode_script",
-            episode_count=3,
+            raw_text="三条视频素材",
+            mode="batch_videos",
+            video_count=3,
             concurrent_generation=True,
             reference_image="/tmp/default.png",
             reference_image_transform_options={"autoChangeBackground": True},
         )
-        episodes = [
-            EpisodePrompt(index=1, title="第一集", prompt="ep1"),
-            EpisodePrompt(index=2, title="第二集", prompt="ep2"),
-            EpisodePrompt(index=3, title="第三集", prompt="ep3"),
+        videos = [
+            VideoPrompt(index=1, title="第一条视频", prompt="video1"),
+            VideoPrompt(index=2, title="第二条视频", prompt="video2"),
+            VideoPrompt(index=3, title="第三条视频", prompt="video3"),
         ]
 
-        result = pipeline._run_episodes(request, episodes, progress_session_id="i2i-fallback-progress-test")
+        result = pipeline._run_videos(request, videos, progress_session_id="i2i-fallback-progress-test")
 
         self.assertEqual(sorted(preprocessor.calls), [1, 2, 3])
         self.assertEqual(pipeline.client.created, [])
@@ -357,24 +357,24 @@ class AI8VideoPipelineConcurrentTest(unittest.TestCase):
             pipeline.asset_store = _FakeAssetStore()
 
             request = ParsedRequest(
-                raw_text="两集剧本",
-                mode="multi_episode_script",
-                episode_count=2,
+                raw_text="两条视频素材",
+                mode="batch_videos",
+                video_count=2,
                 concurrent_generation=True,
                 reference_image="/tmp/default.png",
                 reference_image_transform_options={"autoChangeBackground": True},
             )
-            episodes = [
-                EpisodePrompt(index=1, title="第一集", prompt="ep1"),
-                EpisodePrompt(index=2, title="第二集", prompt="ep2"),
+            videos = [
+                VideoPrompt(index=1, title="第一条视频", prompt="video1"),
+                VideoPrompt(index=2, title="第二条视频", prompt="video2"),
             ]
 
             with patch("ai8video.generation.pipeline.TRANSFORMED_REFERENCE_DIR", output_dir), patch(
                 "ai8video.generation.reference_image_preprocessor.TRANSFORMED_REFERENCE_DIR", output_dir
             ):
-                result = pipeline._run_episodes(request, episodes, progress_session_id="cleanup-progress-test")
+                result = pipeline._run_videos(request, videos, progress_session_id="cleanup-progress-test")
 
-            self.assertEqual([job.episode_index for job in result.jobs], [1, 2])
+            self.assertEqual([job.video_index for job in result.jobs], [1, 2])
             self.assertEqual(len(preprocessor.paths), 2)
             self.assertTrue(all(not path.exists() for path in preprocessor.paths))
             self.assertEqual(len(list((archive_dir / "first-frames").rglob("*.png"))), 2)
@@ -390,10 +390,10 @@ class AI8VideoPipelineConcurrentTest(unittest.TestCase):
             pipeline = AI8VideoPipeline.__new__(AI8VideoPipeline)
             pipeline.config = AI8VideoConfig(dry_run=True, archive_local_dir=str(archive_dir))
             first_frame = FirstFrameAsset(source=str(first_frame_path))
-            episode = EpisodePrompt(index=1, title="第一集", prompt="ep1")
+            video = VideoPrompt(index=1, title="第一条视频", prompt="video1")
 
             with patch("ai8video.generation.pipeline.TRANSFORMED_REFERENCE_DIR", output_dir):
-                pipeline._archive_transformed_first_frame(first_frame, episode, "retry-preserve-test")
+                pipeline._archive_transformed_first_frame(first_frame, video, "retry-preserve-test")
 
             self.assertFalse(first_frame_path.exists())
             self.assertTrue(Path(str(first_frame.source)).is_file())
@@ -410,23 +410,23 @@ class AI8VideoPipelineConcurrentTest(unittest.TestCase):
             pipeline.asset_store = _FakeAssetStore()
 
             request = ParsedRequest(
-                raw_text="一集剧本",
-                mode="single_prompt",
-                episode_count=1,
+                raw_text="一条视频素材",
+                mode="single_video",
+                video_count=1,
                 reference_image="/tmp/default.png",
                 reference_image_transform_options={"autoChangeBackground": True},
             )
-            episodes = [EpisodePrompt(index=1, title="第一集", prompt="ep1")]
+            videos = [VideoPrompt(index=1, title="第一条视频", prompt="video1")]
 
             with patch("ai8video.generation.reference_image_preprocessor.TRANSFORMED_REFERENCE_DIR", output_dir):
                 with self.assertRaises(DirectVideoModelError):
-                    pipeline._run_episodes(request, episodes, progress_session_id="cleanup-create-failed-test")
+                    pipeline._run_videos(request, videos, progress_session_id="cleanup-create-failed-test")
 
             self.assertEqual(len(preprocessor.paths), 1)
             self.assertTrue(preprocessor.paths[0].exists())
             clear_generation_progress("cleanup-create-failed-test")
 
-    def test_pipeline_records_provider_progress_during_polling(self) -> None:
+    def test_pipeline_records_provider_progress_during_polling_and_clears_terminal_item(self) -> None:
         pipeline = AI8VideoPipeline.__new__(AI8VideoPipeline)
         pipeline.config = AI8VideoConfig(dry_run=True)
         pipeline.client = _ProgressFakeClient()
@@ -436,19 +436,22 @@ class AI8VideoPipelineConcurrentTest(unittest.TestCase):
 
         request = ParsedRequest(
             raw_text="单条视频",
-            mode="single_prompt",
-            episode_count=1,
+            mode="single_video",
+            video_count=1,
         )
-        episodes = [EpisodePrompt(index=1, title="第一集", prompt="ep1")]
+        videos = [VideoPrompt(index=1, title="第一条视频", prompt="video1")]
 
-        pipeline._run_episodes(request, episodes, progress_session_id="provider-progress-test")
+        pipeline._run_videos(request, videos, progress_session_id="provider-progress-test")
 
         progress = get_generation_progress("provider-progress-test")
         self.assertIsNotNone(progress)
         item = progress["items"][0]
         self.assertEqual(item["jobId"], "job-1")
-        self.assertEqual(item["providerProgress"], 83)
-        self.assertEqual(item["providerStatus"], "processing")
+        self.assertEqual(item["status"], "succeeded")
+        self.assertNotIn("providerProgress", item)
+        self.assertNotIn("providerStatus", item)
+        provider_events = [event for event in progress["events"] if event.get("kind") == "provider_progress"]
+        self.assertEqual([83], [event.get("providerProgress") for event in provider_events])
         clear_generation_progress("provider-progress-test")
 
     def test_failed_polled_job_stays_failed_and_does_not_get_fake_archive(self) -> None:
@@ -461,12 +464,12 @@ class AI8VideoPipelineConcurrentTest(unittest.TestCase):
 
         request = ParsedRequest(
             raw_text="单条视频",
-            mode="single_prompt",
-            episode_count=1,
+            mode="single_video",
+            video_count=1,
         )
-        episodes = [EpisodePrompt(index=1, title="失败视频", prompt="ep1")]
+        videos = [VideoPrompt(index=1, title="失败视频", prompt="video1")]
 
-        result = pipeline._run_episodes(request, episodes, progress_session_id="failed-progress-test")
+        result = pipeline._run_videos(request, videos, progress_session_id="failed-progress-test")
 
         self.assertEqual(result.jobs[0].status, "failed")
         self.assertEqual(result.archives[0].status, "failed")
@@ -488,17 +491,17 @@ class AI8VideoPipelineConcurrentTest(unittest.TestCase):
         pipeline.asset_store = _FakeAssetStore()
 
         request = ParsedRequest(
-            raw_text="两集剧本",
-            mode="multi_episode_script",
-            episode_count=2,
+            raw_text="两条视频素材",
+            mode="batch_videos",
+            video_count=2,
             concurrent_generation=True,
         )
-        episodes = [
-            EpisodePrompt(index=1, title="第一集", prompt="ep1"),
-            EpisodePrompt(index=2, title="第二集", prompt="ep2"),
+        videos = [
+            VideoPrompt(index=1, title="第一条视频", prompt="video1"),
+            VideoPrompt(index=2, title="第二条视频", prompt="video2"),
         ]
 
-        result = pipeline._run_episodes(request, episodes, progress_session_id="partial-timeout-progress-test")
+        result = pipeline._run_videos(request, videos, progress_session_id="partial-timeout-progress-test")
 
         self.assertEqual([job.status for job in result.jobs], ["succeeded", "failed"])
         self.assertEqual([archive.status for archive in result.archives], ["stored", "failed"])
@@ -520,10 +523,10 @@ class AI8VideoPipelineConcurrentTest(unittest.TestCase):
         pipeline.archiver = _FailingArchiver()
         pipeline.asset_store = _FakeAssetStore()
 
-        request = ParsedRequest(raw_text="单条视频", mode="single_prompt")
-        episodes = [EpisodePrompt(index=1, title="第一集", prompt="ep1")]
+        request = ParsedRequest(raw_text="单条视频", mode="single_video")
+        videos = [VideoPrompt(index=1, title="第一条视频", prompt="video1")]
 
-        result = pipeline._run_episodes(request, episodes, progress_session_id="archive-failed-progress-test")
+        result = pipeline._run_videos(request, videos, progress_session_id="archive-failed-progress-test")
 
         self.assertEqual(result.jobs[0].status, "succeeded")
         self.assertEqual(result.archives[0].status, "error")
@@ -545,20 +548,20 @@ class AI8VideoPipelineConcurrentTest(unittest.TestCase):
         pipeline.asset_store = _FakeAssetStore()
 
         request = ParsedRequest(
-            raw_text="三集剧本",
-            mode="multi_episode_script",
-            episode_count=3,
+            raw_text="三条视频素材",
+            mode="batch_videos",
+            video_count=3,
             concurrent_generation=True,
         )
-        episodes = [
-            EpisodePrompt(index=1, title="第一集", prompt="ep1"),
-            EpisodePrompt(index=2, title="第二集", prompt="ep2"),
-            EpisodePrompt(index=3, title="第三集", prompt="ep3"),
+        videos = [
+            VideoPrompt(index=1, title="第一条视频", prompt="video1"),
+            VideoPrompt(index=2, title="第二条视频", prompt="video2"),
+            VideoPrompt(index=3, title="第三条视频", prompt="video3"),
         ]
 
-        result = pipeline._run_episodes(request, episodes, progress_session_id="partial-timeout-three-progress-test")
+        result = pipeline._run_videos(request, videos, progress_session_id="partial-timeout-three-progress-test")
 
-        self.assertEqual([job.episode_index for job in result.jobs], [1, 2, 3])
+        self.assertEqual([job.video_index for job in result.jobs], [1, 2, 3])
         self.assertEqual([job.status for job in result.jobs], ["succeeded", "failed", "succeeded"])
         self.assertEqual([archive.status for archive in result.archives], ["stored", "failed", "stored"])
         self.assertEqual(sorted(pipeline.asset_store.appended), [1, 2, 3])
@@ -580,19 +583,19 @@ class AI8VideoPipelineConcurrentTest(unittest.TestCase):
         pipeline.asset_store = _FakeAssetStore()
 
         request = ParsedRequest(
-            raw_text="三集剧本",
-            mode="multi_episode_script",
-            episode_count=3,
+            raw_text="三条视频素材",
+            mode="batch_videos",
+            video_count=3,
             concurrent_generation=True,
         )
-        episodes = [
-            EpisodePrompt(index=1, title="第一集", prompt="ep1"),
-            EpisodePrompt(index=2, title="第二集", prompt="ep2"),
-            EpisodePrompt(index=3, title="第三集", prompt="ep3"),
+        videos = [
+            VideoPrompt(index=1, title="第一条视频", prompt="video1"),
+            VideoPrompt(index=2, title="第二条视频", prompt="video2"),
+            VideoPrompt(index=3, title="第三条视频", prompt="video3"),
         ]
 
         with self.assertRaisesRegex(RuntimeError, "本轮需要提交 3 条"):
-            pipeline._run_episodes(request, episodes, progress_session_id="limited-progress-test")
+            pipeline._run_videos(request, videos, progress_session_id="limited-progress-test")
 
         self.assertEqual(pipeline.client.created, [])
         self.assertIsNone(get_generation_progress("limited-progress-test"))
@@ -606,18 +609,18 @@ class AI8VideoPipelineConcurrentTest(unittest.TestCase):
         pipeline.asset_store = _FakeAssetStore()
 
         request = ParsedRequest(
-            raw_text="两集剧本",
-            mode="multi_episode_script",
-            episode_count=2,
+            raw_text="两条视频素材",
+            mode="batch_videos",
+            video_count=2,
             concurrent_generation=True,
         )
-        episodes = [
-            EpisodePrompt(index=1, title="第一集", prompt="ep1"),
-            EpisodePrompt(index=2, title="第二集", prompt="ep2"),
+        videos = [
+            VideoPrompt(index=1, title="第一条视频", prompt="video1"),
+            VideoPrompt(index=2, title="第二条视频", prompt="video2"),
         ]
 
         with patch("ai8video.generation.pipeline.time.sleep"):
-            result = pipeline._run_episodes(request, episodes, progress_session_id="create-rejected-progress-test")
+            result = pipeline._run_videos(request, videos, progress_session_id="create-rejected-progress-test")
 
         self.assertEqual([job.status for job in result.jobs], ["failed", "failed"])
         self.assertEqual(sorted(pipeline.asset_store.appended), [1, 2])

@@ -16,7 +16,7 @@ import requests
 
 from ai8video.core.config import AI8VideoConfig
 from ai8video.media.ffmpeg_utils import resolve_ffmpeg_bin
-from ai8video.core.models import ArchivedAsset, EpisodePrompt, ParsedRequest, QuickVideoJob, GenerationOutcome
+from ai8video.core.models import ArchivedAsset, VideoPrompt, ParsedRequest, QuickVideoJob, GenerationOutcome
 from ai8video.assets.user_generated_results import ensure_user_generated_result_dir
 from ai8video.assets.user_generated_previews import generate_preview_for_video
 from ai8video.assets.user_recycle_bin import save_failed_video_task
@@ -28,7 +28,7 @@ from ai8video.media.background_music import (
 )
 from ai8video.generation.business_prompt import sanitize_internal_fidelity_notes
 from ai8video.media.local_tts import attach_local_tts_to_video, extract_dialogue_text, prepare_narration_text
-from ai8video.media.video_encoding import append_video_postprocess_encoding_args, video_postprocess_encoding_meta
+from ai8video.media.video_encoding import append_video_postprocess_encoding_args
 from ai8video.media.motion.html_motion_overlay import manual_only_html_motion_result
 from ai8video.media.video_text_overlay import apply_video_text_overlay
 
@@ -97,7 +97,7 @@ def trim_video_start(
         "-map",
         "0:a?",
     ]
-    append_video_postprocess_encoding_args(cmd)
+    video_encoding = append_video_postprocess_encoding_args(cmd)
     cmd.extend([
         "-c:a",
         "aac",
@@ -116,7 +116,7 @@ def trim_video_start(
                 temp_target.unlink()
             except OSError:
                 pass
-        detail = str(exc).strip() or exc.__class__.__name__
+        detail = _video_postprocess_error_detail(exc)
         raise RuntimeError(f"视频开头裁剪失败：{detail}") from exc
 
     return {
@@ -124,8 +124,22 @@ def trim_video_start(
         "status": "trimmed",
         "trimStartSeconds": seconds,
         "ffmpeg": ffmpeg,
-        "videoEncoding": video_postprocess_encoding_meta(),
+        "videoEncoding": video_encoding,
     }
+
+
+def _video_postprocess_error_detail(exc: Exception) -> str:
+    if isinstance(exc, subprocess.TimeoutExpired):
+        return "FFmpeg 处理超时"
+    if isinstance(exc, FileNotFoundError):
+        return "未找到 FFmpeg 可执行文件"
+    if isinstance(exc, subprocess.CalledProcessError):
+        output = str(exc.stderr or exc.stdout or "").strip()
+        if output:
+            lines = [line.strip() for line in output.splitlines() if line.strip()]
+            if lines:
+                return " ".join(lines[-3:])[:500]
+    return (str(exc).strip() or exc.__class__.__name__)[:500]
 
 
 class VideoAssetArchiver:
@@ -136,7 +150,7 @@ class VideoAssetArchiver:
     def archive(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         job: QuickVideoJob,
         outcome: GenerationOutcome,
         *,
@@ -145,24 +159,24 @@ class VideoAssetArchiver:
         backend = self._resolve_backend()
         if backend == "none":
             return ArchivedAsset(
-                episode_index=episode.index,
+                video_index=video.index,
                 job_id=job.job_id,
                 backend="none",
                 status="disabled",
             )
         if not job.video_url or "example.invalid" in job.video_url:
-            return self._simulate_archive(request, episode, job, outcome, backend)
+            return self._simulate_archive(request, video, job, outcome, backend)
         if backend == "local":
-            return self._archive_local(request, episode, job, outcome, progress_session_id=progress_session_id)
+            return self._archive_local(request, video, job, outcome, progress_session_id=progress_session_id)
         if backend == "s3":
-            return self._archive_s3(request, episode, job, outcome, progress_session_id=progress_session_id)
+            return self._archive_s3(request, video, job, outcome, progress_session_id=progress_session_id)
         raise RuntimeError(f"Unsupported archive backend: {backend}")
 
     def archive_local_file(
         self,
         source_video: Path | str,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         job: QuickVideoJob,
         outcome: GenerationOutcome,
         *,
@@ -175,7 +189,7 @@ class VideoAssetArchiver:
         backend = self._resolve_backend()
         if backend == "none":
             return ArchivedAsset(
-                episode_index=episode.index,
+                video_index=video.index,
                 job_id=job.job_id,
                 backend="none",
                 status="disabled",
@@ -185,7 +199,7 @@ class VideoAssetArchiver:
             return self._archive_local_file_to_s3(
                 source,
                 request,
-                episode,
+                video,
                 job,
                 outcome,
                 extra_meta=extra_meta,
@@ -196,7 +210,7 @@ class VideoAssetArchiver:
 
         self.local_root.mkdir(parents=True, exist_ok=True)
         result_root = ensure_user_generated_result_dir()
-        video_name = Path(self._build_video_key(job, episode)).name
+        video_name = Path(self._build_video_key(job, video)).name
         result_video_key = f"video/{video_name}"
         result_video = result_root / result_video_key
         result_video.parent.mkdir(parents=True, exist_ok=True)
@@ -205,13 +219,13 @@ class VideoAssetArchiver:
                 video_meta, postprocess = self._apply_video_postprocess(
                     source,
                     request=request,
-                    episode=episode,
+                    video=video,
                     job=job,
                     progress_session_id=progress_session_id,
                 )
             except Exception as exc:
                 save_failed_video_task(
-                    episode=episode,
+                    video=video,
                     job=job,
                     reason=str(exc),
                     videos=[source],
@@ -223,12 +237,12 @@ class VideoAssetArchiver:
             video_meta, postprocess = self._apply_video_postprocess(
                 result_video,
                 request=request,
-                episode=episode,
+                video=video,
                 job=job,
                 progress_session_id=progress_session_id,
             )
 
-        cover_name = Path(self._build_cover_key(job, episode)).name
+        cover_name = Path(self._build_cover_key(job, video)).name
         cover_key = f"cover/{cover_name}"
         result_cover = result_root / cover_key
         result_cover.parent.mkdir(parents=True, exist_ok=True)
@@ -241,7 +255,7 @@ class VideoAssetArchiver:
 
         manifest_path = self._write_manifest(
             request,
-            episode,
+            video,
             job,
             outcome,
             "local",
@@ -255,7 +269,7 @@ class VideoAssetArchiver:
             postprocess_meta=extra_meta,
         )
         return ArchivedAsset(
-            episode_index=episode.index,
+            video_index=video.index,
             job_id=job.job_id,
             backend="local",
             status="archived",
@@ -283,18 +297,18 @@ class VideoAssetArchiver:
     def _simulate_archive(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         job: QuickVideoJob,
         outcome: GenerationOutcome,
         backend: str,
     ) -> ArchivedAsset:
-        archive_key = self._build_video_key(job, episode)
+        archive_key = self._build_video_key(job, video)
         manifest_path = self.local_root / f"{job.job_id}-manifest.json"
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest = {
             "mode": "simulated",
             "request": request.__dict__,
-            "episode": episode.__dict__,
+            "video": video.__dict__,
             "job": job.__dict__,
             "generation": outcome.__dict__,
             "archiveKey": archive_key,
@@ -303,7 +317,7 @@ class VideoAssetArchiver:
         with manifest_path.open("w", encoding="utf-8") as fh:
             json.dump(manifest, fh, ensure_ascii=False, indent=2)
         return ArchivedAsset(
-            episode_index=episode.index,
+            video_index=video.index,
             job_id=job.job_id,
             backend=backend,
             status="simulated",
@@ -318,7 +332,7 @@ class VideoAssetArchiver:
     def _archive_local(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         job: QuickVideoJob,
         outcome: GenerationOutcome,
         *,
@@ -331,13 +345,13 @@ class VideoAssetArchiver:
             video_meta, postprocess = self._apply_video_postprocess(
                 video_temp_path,
                 request=request,
-                episode=episode,
+                video=video,
                 job=job,
                 progress_session_id=progress_session_id,
             )
         except Exception as exc:
             save_failed_video_task(
-                episode=episode,
+                video=video,
                 job=job,
                 reason=str(exc),
                 videos=[video_temp_path],
@@ -345,7 +359,7 @@ class VideoAssetArchiver:
             )
             raise
         result_root = ensure_user_generated_result_dir()
-        video_name = Path(self._build_video_key(job, episode)).name
+        video_name = Path(self._build_video_key(job, video)).name
         result_video_key = f"video/{video_name}"
         result_video = result_root / result_video_key
         result_video.parent.mkdir(parents=True, exist_ok=True)
@@ -357,14 +371,14 @@ class VideoAssetArchiver:
         cover_generation_meta: dict[str, Any] | None = None
         if job.cover_image_url:
             cover_temp, _cover_meta = self._download_to_tempfile(job.cover_image_url, suffix=".jpg")
-            cover_name = Path(self._build_cover_key(job, episode)).name
+            cover_name = Path(self._build_cover_key(job, video)).name
             cover_key = f"cover/{cover_name}"
             result_cover = result_root / cover_key
             result_cover.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(cover_temp, result_cover)
             cover_url = self._display_url("local", cover_key)
         else:
-            cover_name = Path(self._build_cover_key(job, episode)).name
+            cover_name = Path(self._build_cover_key(job, video)).name
             cover_key = f"cover/{cover_name}"
             result_cover = result_root / cover_key
             result_cover.parent.mkdir(parents=True, exist_ok=True)
@@ -378,7 +392,7 @@ class VideoAssetArchiver:
 
         manifest_path = self._write_manifest(
             request,
-            episode,
+            video,
             job,
             outcome,
             "local",
@@ -391,7 +405,7 @@ class VideoAssetArchiver:
             local_tts_result=postprocess["localTts"],
         )
         return ArchivedAsset(
-            episode_index=episode.index,
+            video_index=video.index,
             job_id=job.job_id,
             backend="local",
             status="archived",
@@ -415,7 +429,7 @@ class VideoAssetArchiver:
     def _archive_s3(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         job: QuickVideoJob,
         outcome: GenerationOutcome,
         *,
@@ -435,18 +449,18 @@ class VideoAssetArchiver:
             aws_secret_access_key=self.config.archive_s3_secret_key,
         )
         video_temp, video_meta = self._download_to_tempfile(job.video_url, suffix=".mp4")
-        archive_key = self._build_video_key(job, episode)
+        archive_key = self._build_video_key(job, video)
         try:
             video_meta, postprocess = self._apply_video_postprocess(
                 video_temp,
                 request=request,
-                episode=episode,
+                video=video,
                 job=job,
                 progress_session_id=progress_session_id,
             )
         except Exception as exc:
             save_failed_video_task(
-                episode=episode,
+                video=video,
                 job=job,
                 reason=str(exc),
                 videos=[Path(video_temp)],
@@ -465,7 +479,7 @@ class VideoAssetArchiver:
         if job.cover_image_url:
             suffix = Path(job.cover_image_url).suffix or ".jpg"
             cover_temp, _cover_meta = self._download_to_tempfile(job.cover_image_url, suffix=suffix)
-            cover_key = self._build_cover_key(job, episode, suffix=suffix)
+            cover_key = self._build_cover_key(job, video, suffix=suffix)
             try:
                 self._upload_file_to_s3(client, cover_temp, cover_key, content_type=_guess_content_type(cover_key))
             finally:
@@ -478,7 +492,7 @@ class VideoAssetArchiver:
             cover_path = Path(cover_temp)
             cover_generation_meta = self._extract_cover_frame(Path(video_temp), cover_path)
             if cover_generation_meta.get("status") == "generated":
-                cover_key = self._build_cover_key(job, episode, suffix=".jpg")
+                cover_key = self._build_cover_key(job, video, suffix=".jpg")
                 try:
                     self._upload_file_to_s3(client, str(cover_path), cover_key, content_type="image/jpeg")
                 finally:
@@ -490,7 +504,7 @@ class VideoAssetArchiver:
 
         manifest_path = self._write_manifest(
             request,
-            episode,
+            video,
             job,
             outcome,
             "s3",
@@ -500,10 +514,10 @@ class VideoAssetArchiver:
             html_motion_result=postprocess["htmlMotionOverlay"],
             local_tts_result=postprocess["localTts"],
         )
-        manifest_key = self._build_manifest_key(job, episode)
+        manifest_key = self._build_manifest_key(job, video)
         self._upload_file_to_s3(client, str(manifest_path), manifest_key, content_type="application/json")
         return ArchivedAsset(
-            episode_index=episode.index,
+            video_index=video.index,
             job_id=job.job_id,
             backend="s3",
             status="archived",
@@ -528,7 +542,7 @@ class VideoAssetArchiver:
         self,
         source: Path,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         job: QuickVideoJob,
         outcome: GenerationOutcome,
         *,
@@ -548,7 +562,7 @@ class VideoAssetArchiver:
             aws_access_key_id=self.config.archive_s3_access_key,
             aws_secret_access_key=self.config.archive_s3_secret_key,
         )
-        archive_key = self._build_video_key(job, episode)
+        archive_key = self._build_video_key(job, video)
         video_fd, video_temp = tempfile.mkstemp(prefix="ai8video-merged-archive-", suffix=".mp4")
         os.close(video_fd)
         video_path = Path(video_temp)
@@ -558,13 +572,13 @@ class VideoAssetArchiver:
                 video_meta, postprocess = self._apply_video_postprocess(
                     video_path,
                     request=request,
-                    episode=episode,
+                    video=video,
                     job=job,
                     progress_session_id=progress_session_id,
                 )
             except Exception as exc:
                 save_failed_video_task(
-                    episode=episode,
+                    video=video,
                     job=job,
                     reason=str(exc),
                     videos=[video_path],
@@ -582,7 +596,7 @@ class VideoAssetArchiver:
             try:
                 cover_generation_meta = self._extract_cover_frame(video_path, cover_path)
                 if cover_generation_meta.get("status") == "generated":
-                    cover_key = self._build_cover_key(job, episode, suffix=".jpg")
+                    cover_key = self._build_cover_key(job, video, suffix=".jpg")
                     self._upload_file_to_s3(client, str(cover_path), cover_key, content_type="image/jpeg")
                     cover_url = self._display_url("s3", cover_key)
             finally:
@@ -591,7 +605,7 @@ class VideoAssetArchiver:
 
             manifest_path = self._write_manifest(
                 request,
-                episode,
+                video,
                 job,
                 outcome,
                 "s3",
@@ -602,10 +616,10 @@ class VideoAssetArchiver:
                 local_tts_result=postprocess["localTts"],
                 postprocess_meta=extra_meta,
             )
-            manifest_key = self._build_manifest_key(job, episode)
+            manifest_key = self._build_manifest_key(job, video)
             self._upload_file_to_s3(client, str(manifest_path), manifest_key, content_type="application/json")
             return ArchivedAsset(
-                episode_index=episode.index,
+                video_index=video.index,
                 job_id=job.job_id,
                 backend="s3",
                 status="archived",
@@ -635,7 +649,7 @@ class VideoAssetArchiver:
         video_path: Path | str,
         *,
         request: ParsedRequest,
-        episode: EpisodePrompt | None = None,
+        video: VideoPrompt | None = None,
         job: QuickVideoJob | None = None,
         progress_session_id: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
@@ -645,13 +659,13 @@ class VideoAssetArchiver:
         text_overlay_result = apply_video_text_overlay(target)
         _raise_if_required_text_overlay_failed(text_overlay_result)
         narration_text = None
-        if episode is not None:
-            narration_text = _local_tts_narration_text(job, episode)
+        if video is not None:
+            narration_text = _local_tts_narration_text(job, video)
         preserve_original_audio = preserve_original_audio_enabled()
         local_tts_result = attach_local_tts_to_video(
             target,
             narration_text=narration_text,
-            episode_index=None if episode is None else episode.index,
+            video_index=None if video is None else video.index,
             job_id=None if job is None else job.job_id,
             preserve_original_audio=preserve_original_audio,
         )
@@ -711,7 +725,7 @@ class VideoAssetArchiver:
     def _write_manifest(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         job: QuickVideoJob,
         outcome: GenerationOutcome,
         backend: str,
@@ -730,7 +744,7 @@ class VideoAssetArchiver:
             "createdAt": datetime.now(timezone.utc).isoformat(),
             "backend": backend,
             "request": request.__dict__,
-            "episode": episode.__dict__,
+            "video": video.__dict__,
             "job": job.__dict__,
             "generation": outcome.__dict__,
             "localVideo": None if local_video is None else str(local_video),
@@ -746,25 +760,25 @@ class VideoAssetArchiver:
             json.dump(payload, fh, ensure_ascii=False, indent=2)
         return manifest_path
 
-    def _build_video_key(self, job: QuickVideoJob, episode: EpisodePrompt, suffix: str = ".mp4") -> str:
+    def _build_video_key(self, job: QuickVideoJob, video: VideoPrompt, suffix: str = ".mp4") -> str:
         day = datetime.now(timezone.utc).strftime("%Y/%m/%d")
         prefix = self.config.archive_s3_prefix.strip("/")
-        title = _slugify(sanitize_internal_fidelity_notes(episode.title)) or f"episode-{episode.index:02d}"
-        parts = [part for part in [prefix, day, "video", f"{job.episode_index:02d}-{title}-{job.job_id}{suffix}"] if part]
+        title = _slugify(sanitize_internal_fidelity_notes(video.title)) or f"video-{video.index:02d}"
+        parts = [part for part in [prefix, day, "video", f"{job.video_index:02d}-{title}-{job.job_id}{suffix}"] if part]
         return "/".join(parts)
 
-    def _build_cover_key(self, job: QuickVideoJob, episode: EpisodePrompt, suffix: str = ".jpg") -> str:
+    def _build_cover_key(self, job: QuickVideoJob, video: VideoPrompt, suffix: str = ".jpg") -> str:
         day = datetime.now(timezone.utc).strftime("%Y/%m/%d")
         prefix = self.config.archive_s3_prefix.strip("/")
-        title = _slugify(sanitize_internal_fidelity_notes(episode.title)) or f"episode-{episode.index:02d}"
-        parts = [part for part in [prefix, day, "cover", f"{job.episode_index:02d}-{title}-{job.job_id}{suffix}"] if part]
+        title = _slugify(sanitize_internal_fidelity_notes(video.title)) or f"video-{video.index:02d}"
+        parts = [part for part in [prefix, day, "cover", f"{job.video_index:02d}-{title}-{job.job_id}{suffix}"] if part]
         return "/".join(parts)
 
-    def _build_manifest_key(self, job: QuickVideoJob, episode: EpisodePrompt) -> str:
+    def _build_manifest_key(self, job: QuickVideoJob, video: VideoPrompt) -> str:
         day = datetime.now(timezone.utc).strftime("%Y/%m/%d")
         prefix = self.config.archive_s3_prefix.strip("/")
-        title = _slugify(sanitize_internal_fidelity_notes(episode.title)) or f"episode-{episode.index:02d}"
-        parts = [part for part in [prefix, day, "manifest", f"{job.episode_index:02d}-{title}-{job.job_id}.json"] if part]
+        title = _slugify(sanitize_internal_fidelity_notes(video.title)) or f"video-{video.index:02d}"
+        parts = [part for part in [prefix, day, "manifest", f"{job.video_index:02d}-{title}-{job.job_id}.json"] if part]
         return "/".join(parts)
 
     def _display_url(self, backend: str, key: str | None) -> str | None:
@@ -836,14 +850,14 @@ def _guess_content_type(path: str) -> str:
     return mimetypes.guess_type(path)[0] or "application/octet-stream"
 
 
-def _local_tts_narration_text(job: QuickVideoJob | None, episode: EpisodePrompt) -> str:
+def _local_tts_narration_text(job: QuickVideoJob | None, video: VideoPrompt) -> str:
     if job is not None and isinstance(job.usage, dict):
         if "localTtsNarrationText" in job.usage:
             return str(job.usage.get("localTtsNarrationText") or "").strip()
-    post_review = (episode.keyword_guidance or {}).get("post_review")
+    post_review = (video.keyword_guidance or {}).get("post_review")
     if isinstance(post_review, dict) and "narrationText" in post_review:
         return str(post_review.get("narrationText") or "").strip()
-    dialogue = extract_dialogue_text(episode.prompt)
+    dialogue = extract_dialogue_text(video.prompt)
     if dialogue:
         return prepare_narration_text(dialogue)
     return ""

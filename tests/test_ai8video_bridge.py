@@ -52,16 +52,17 @@ class AI8VideoAI8VideoBridgeTest(unittest.TestCase):
             "AI8VIDEO_ARCHIVE_LOCAL_DIR",
         ]
 
-    def test_runtime_chat_returns_structured_collecting_reply(self) -> None:
+    def test_runtime_chat_defaults_to_no_reference_when_tab_has_no_selection(self) -> None:
         payload = handle_chat_message(
             session_id="employee-a",
             message="给我一条老板在会议室开会风格的短视频提示词，10秒。",
             refresh=True,
         )
 
-        self.assertEqual(payload["reply"]["stage"], "collecting")
-        self.assertEqual(payload["reply"]["awaiting"], "reference_image")
-        self.assertNotIn("result", payload)
+        self.assertEqual(payload["reply"]["stage"], "completed")
+        self.assertIsNone(payload["reply"]["awaiting"])
+        self.assertFalse(payload["reply"]["draft"]["referenceImageEnabled"])
+        self.assertIn("result", payload)
 
     @patch("ai8video.application.ai8video_chat_service.handle_chat_message")
     def test_chat_service_dispatches_directly_to_runtime(self, runtime_chat) -> None:

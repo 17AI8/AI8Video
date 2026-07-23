@@ -13,22 +13,22 @@ _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 def parse_employee_message(message: str) -> ParsedRequest:
     """Extract only routing fields from a natural-language request.
 
-    This parser decides what the employee is asking for. It does not split
-    scripts into episodes; that belongs to ai_script_splitter.
+    This parser decides what the employee is asking for. It does not plan
+    video prompts; that belongs to video_prompt_planner.
     """
     text = message.strip()
-    episode_count = _extract_episode_count(text)
+    video_count = _extract_video_count(text)
     reference_image = _extract_reference_image(text)
     style_hint = _extract_style_hint(text)
     core_keywords = extract_core_keywords(text)
     duration_seconds = _extract_duration_seconds(text)
     concurrent_generation = detect_concurrent_generation_decision(text) is True
     html_motion_overlay = detect_html_motion_overlay_decision(text)
-    mode = "multi_episode_script" if episode_count and episode_count > 1 else "single_prompt"
+    mode = "batch_videos" if video_count and video_count > 1 else "single_video"
     return ParsedRequest(
         raw_text=text,
         mode=mode,
-        episode_count=episode_count,
+        video_count=video_count,
         reference_image=reference_image,
         style_hint=style_hint,
         core_keywords=core_keywords,
@@ -42,8 +42,8 @@ def parse_employee_message(message: str) -> ParsedRequest:
     )
 
 
-def extract_episode_count(text: str) -> int | None:
-    return _extract_episode_count(text)
+def extract_video_count(text: str) -> int | None:
+    return _extract_video_count(text)
 
 
 def extract_duration_seconds(text: str) -> int | None:
@@ -131,10 +131,10 @@ def extract_batch_seed_messages(text: str) -> list[str]:
 
 
 def detect_mode_hint(text: str) -> str | None:
-    if re.search(r"(剧本|拆成|分成|第\s*[一二三四五六七八九十\d]+\s*集)", text):
-        return "multi_episode_script"
+    if re.search(r"(批量|多条|多个|生成\s*[一二三四五六七八九十两零百\d]+\s*(?:条|个)(?:短视频|视频)?)", text):
+        return "batch_videos"
     if re.search(r"(提示词|一条视频|单条视频|直接生成|生成一条)", text):
-        return "single_prompt"
+        return "single_video"
     return None
 
 
@@ -164,11 +164,11 @@ def detect_html_motion_overlay_decision(text: str) -> bool | None:
     return None
 
 
-def extract_episode_index(text: str) -> int | None:
+def extract_video_index(text: str) -> int | None:
     patterns = [
-        r"第\s*([一二三四五六七八九十两零\d]+)\s*[集条]",
-        r"重做\s*第\s*([一二三四五六七八九十两零\d]+)\s*[集条]",
-        r"第\s*([一二三四五六七八九十两零\d]+)\s*[集条]\s*重做",
+        r"第\s*([一二三四五六七八九十两零\d]+)\s*条(?:视频)?",
+        r"重做\s*第\s*([一二三四五六七八九十两零\d]+)\s*条(?:视频)?",
+        r"第\s*([一二三四五六七八九十两零\d]+)\s*条(?:视频)?\s*重做",
     ]
     for pattern in patterns:
         match = re.search(pattern, text)
@@ -181,31 +181,30 @@ def extract_episode_index(text: str) -> int | None:
 
 
 def detect_rewrite_instruction(text: str) -> str | None:
-    if extract_episode_index(text) is None:
+    if extract_video_index(text) is None:
         return None
     if not re.search(r"(重做|改|调整|优化|不要|改成|更像|重来|重新生成)", text):
         return None
-    instruction = re.sub(r"第\s*[一二三四五六七八九十两零\d]+\s*[集条]", "", text)
+    instruction = re.sub(r"第\s*[一二三四五六七八九十两零\d]+\s*条(?:视频)?", "", text)
     instruction = re.sub(r"^(帮我|麻烦|请|把|将)\s*", "", instruction)
     instruction = re.sub(r"(重做这一条|重做这条|重做|重新生成这一条|重新生成这条|重新生成)\s*$", "", instruction)
     instruction = instruction.strip(" ，,。")
-    return instruction or "沿用原目标重做这一集，但按本轮要求调整画面与语气。"
+    return instruction or "沿用原目标重做这条视频，但按本轮要求调整画面与语气。"
 
 
-def _extract_episode_count(text: str) -> int | None:
+def _extract_video_count(text: str) -> int | None:
     patterns = [
-        r"^\s*([一二三四五六七八九十两零百\d]+)\s*[集条个]\s*$",
-        r"^\s*([一二三四五六七八九十两零百\d]+)\s*[集条个]\s*[，,、\s]+",
-        r"拆成\s*([一二三四五六七八九十两零百\d]+)\s*[集条个]",
-        r"按\s*([一二三四五六七八九十两零百\d]+)\s*[集条个]",
-        r"([一二三四五六七八九十两零百\d]+)\s*集剧本",
+        r"^\s*([一二三四五六七八九十两零百\d]+)\s*[条个]\s*$",
+        r"^\s*([一二三四五六七八九十两零百\d]+)\s*[条个]\s*[，,、\s]+",
+        r"(?:生成|制作|做|来|需要)\s*([一二三四五六七八九十两零百\d]+)\s*[条个]",
+        r"按\s*([一二三四五六七八九十两零百\d]+)\s*[条个]",
         r"([一二三四五六七八九十两零百\d]+)\s*条短视频",
         r"生成\s*([一二三四五六七八九十两零百\d]+)\s*条",
         r"生成\s*([一二三四五六七八九十两零百\d]+)\s*个\s*\d+\s*[sS秒]\s*$",
         r"生成\s*([一二三四五六七八九十两零百\d]+)\s*个\s*\d+\s*[sS秒]\s*(?:短视频|视频)",
         r"([一二三四五六七八九十两零百\d]+)\s*个\s*\d+\s*[sS秒]\s*(?:短视频|视频)",
-        r"生成\s*([一二三四五六七八九十两零百\d]+)\s*(?:个|条|集)\s*(?:短视频|视频)",
-        r"([一二三四五六七八九十两零百\d]+)\s*(?:个|条|集)\s*(?:短视频|视频)",
+        r"生成\s*([一二三四五六七八九十两零百\d]+)\s*(?:个|条)\s*(?:短视频|视频)",
+        r"([一二三四五六七八九十两零百\d]+)\s*(?:个|条)\s*(?:短视频|视频)",
     ]
     for pattern in patterns:
         match = re.search(pattern, text)

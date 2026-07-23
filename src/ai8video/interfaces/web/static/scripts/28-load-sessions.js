@@ -3,11 +3,12 @@
         const primary = localStorage.getItem(SESSION_STORAGE_KEY);
         if (!primary) return [];
         const parsed = JSON.parse(primary || '[]');
-        const migrated = migrateStoredSessionBranding(parsed);
-        if (migrated.changed) {
-          localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(migrated.sessions));
+        const schemaMigration = migrateLegacyVideoSchema(parsed);
+        const brandingMigration = migrateStoredSessionBranding(schemaMigration.value);
+        if (schemaMigration.changed || brandingMigration.changed) {
+          localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(brandingMigration.sessions));
         }
-        return migrated.sessions;
+        return brandingMigration.sessions;
       } catch {
         return [];
       }
@@ -40,7 +41,7 @@
 
     function migrateAssistantMessageBranding(message) {
       if (!message || typeof message !== 'object' || message.role === 'user') return message;
-      const text = replaceLegacyBrandText(message.text);
+      const text = replaceLegacyBrandText(replaceLegacyAssistantSemantics(message.text));
       const payload = migrateAssistantPayloadBranding(message.payload);
       if (text === message.text && payload === message.payload) return message;
       return { ...message, text, payload };
@@ -48,9 +49,9 @@
 
     function migrateAssistantPayloadBranding(payload) {
       if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return payload;
-      const text = replaceLegacyBrandText(payload.text);
+      const text = replaceLegacyBrandText(replaceLegacyAssistantSemantics(payload.text));
       const reply = payload.reply && typeof payload.reply === 'object'
-        ? { ...payload.reply, text: replaceLegacyBrandText(payload.reply.text) }
+        ? { ...payload.reply, text: replaceLegacyBrandText(replaceLegacyAssistantSemantics(payload.reply.text)) }
         : payload.reply;
       if (text === payload.text && reply?.text === payload.reply?.text) return payload;
       return { ...payload, text, reply };
@@ -225,9 +226,6 @@
       }
       return false;
     }
-
-
-
 
 
 

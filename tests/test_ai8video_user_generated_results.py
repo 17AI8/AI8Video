@@ -63,7 +63,7 @@ class AI8VideoUserGeneratedResultsTest(unittest.TestCase):
         legacy_video.parent.mkdir(parents=True)
         legacy_meta.parent.mkdir(parents=True)
         legacy_video.write_bytes(b"video")
-        legacy_meta.write_text('{"episodeTitle":"恢复","userGeneratedKey":"video/restored/legacy.mp4"}', encoding="utf-8")
+        legacy_meta.write_text('{"videoTitle":"恢复","userGeneratedKey":"video/restored/legacy.mp4"}', encoding="utf-8")
 
         result = user_generated_results.migrate_legacy_result_layout(generated_root)
 
@@ -118,7 +118,7 @@ class AI8VideoUserGeneratedResultsTest(unittest.TestCase):
         result_file.write_bytes(b"video")
         progress = {
             "generationBatchId": "gb-reconcile-success",
-            "items": [{"episodeIndex": 1, "jobId": "job-1", "status": "succeeded"}],
+            "items": [{"videoIndex": 1, "jobId": "job-1", "status": "succeeded"}],
         }
         assets = [{"jobId": "job-1", "archiveKey": "video/done.mp4"}]
 
@@ -140,7 +140,7 @@ class AI8VideoUserGeneratedResultsTest(unittest.TestCase):
         result_file.write_bytes(b"video")
         progress = {
             "generationBatchId": "gb-html-degraded",
-            "items": [{"episodeIndex": 1, "jobId": "job-1", "status": "succeeded"}],
+            "items": [{"videoIndex": 1, "jobId": "job-1", "status": "succeeded"}],
         }
         assets = [{
             "jobId": "job-1",
@@ -165,7 +165,7 @@ class AI8VideoUserGeneratedResultsTest(unittest.TestCase):
         generated_root = self.root / "用户生成结果"
         progress = {
             "generationBatchId": "gb-reconcile-deleted",
-            "items": [{"episodeIndex": 1, "jobId": "job-1", "status": "succeeded"}],
+            "items": [{"videoIndex": 1, "jobId": "job-1", "status": "succeeded"}],
         }
         assets = [{"jobId": "job-1", "archiveKey": "video/deleted.mp4"}]
 
@@ -186,7 +186,7 @@ class AI8VideoUserGeneratedResultsTest(unittest.TestCase):
         generated_root = self.root / "用户生成结果"
         progress = {
             "generationBatchId": "gb-reconcile-failed",
-            "items": [{"episodeIndex": 1, "jobId": None, "status": "failed"}],
+            "items": [{"videoIndex": 1, "jobId": None, "status": "failed"}],
         }
 
         result = user_generated_results.build_generation_result_reconciliation(
@@ -247,7 +247,7 @@ class AI8VideoUserGeneratedResultsTest(unittest.TestCase):
         progress = {
             "sessionId": "session-current",
             "generationBatchId": "gb-current",
-            "items": [{"episodeIndex": 1, "jobId": "shared-job", "status": "succeeded"}],
+            "items": [{"videoIndex": 1, "jobId": "shared-job", "status": "succeeded"}],
         }
         assets = [
             {
@@ -283,7 +283,7 @@ class AI8VideoUserGeneratedResultsTest(unittest.TestCase):
         progress = {
             "sessionId": "session-current",
             "generationBatchId": "gb-current",
-            "items": [{"episodeIndex": 1, "jobId": "shared-job", "status": "succeeded"}],
+            "items": [{"videoIndex": 1, "jobId": "shared-job", "status": "succeeded"}],
         }
         assets = [
             {
@@ -313,7 +313,7 @@ class AI8VideoUserGeneratedResultsTest(unittest.TestCase):
         outside_file.write_bytes(b"outside")
         progress = {
             "generationBatchId": "gb-reconcile-path",
-            "items": [{"episodeIndex": 1, "jobId": "job-1", "status": "succeeded"}],
+            "items": [{"videoIndex": 1, "jobId": "job-1", "status": "succeeded"}],
         }
         assets = [{"jobId": "job-1", "archiveLocalPath": str(outside_file)}]
 

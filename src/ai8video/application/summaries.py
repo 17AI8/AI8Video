@@ -19,12 +19,12 @@ def build_pipeline_summary(data: dict) -> dict:
         if str(item.get("status") or "").strip().lower() in {"succeeded", "completed"}
         and (item.get("video_url") or item.get("local_video_path"))
     )
-    failed = max(0, len(data.get("episodes") or []) - generated)
+    failed = max(0, len(data.get("videos") or []) - generated)
     archived = sum(1 for item in archives if item.get("status") == "archived")
     simulated = sum(1 for item in archives if item.get("status") == "simulated")
     return {
         "mode": data["request"]["mode"],
-        "episodeCount": len(data.get("episodes") or []),
+        "videoCount": len(data.get("videos") or []),
         "successCount": generated,
         "failedCount": failed,
         "passCount": generated,

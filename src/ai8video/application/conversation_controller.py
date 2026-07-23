@@ -14,8 +14,8 @@ from ai8video.application.message_parser import (
     extract_batch_seed_messages,
     extract_batch_target_count,
     extract_duration_seconds,
-    extract_episode_count,
-    extract_episode_index,
+    extract_video_count,
+    extract_video_index,
     extract_core_keywords,
     extract_reference_image,
     extract_style_hint,
@@ -30,7 +30,7 @@ from ai8video.knowledge.default_script_reference import apply_default_script_ref
 from ai8video.generation.generation_mode import default_concurrent_generation_enabled
 from ai8video.media.motion.html_motion_overlay import default_html_motion_overlay_enabled
 from ai8video.batch.daily_batch_runner import DailyBatchRunner
-from ai8video.core.models import ChatReply, ConversationState, EpisodePrompt, ParsedRequest
+from ai8video.core.models import ChatReply, ConversationState, VideoPrompt, ParsedRequest
 from ai8video.generation.pipeline import AI8VideoPipeline
 from ai8video.application.request_interpreter import interpret_generation_request_with_ai
 from ai8video.media.video_merge_mode import load_video_merge_mode, normalize_video_merge_mode
@@ -58,7 +58,7 @@ class AI8VideoConversationController:
     def get_welcome_reply(self) -> ChatReply:
         return ChatReply(
             text=(
-                "把提示词或多集剧本直接发我。多集剧本记得写目标集数；"
+                "把提示词、脚本素材或批量视频需求直接发我；批量生成请写清目标视频数量。"
                 "参考图可以下一句再给。如果暂时不用参考图，直接回复“不用参考图”。\n"
                 "如果要批量跑量，也可以直接说“今天先跑两条商务风”，"
                 "再把候选内容逐行发我，或者一次性发“候选：A；B；C”。"
@@ -71,7 +71,7 @@ class AI8VideoConversationController:
         text = message.strip()
         if not text:
             return ChatReply(
-                text="我还没收到内容。直接把提示词、多集剧本，或者参考图路径发我就行。",
+                text="我还没收到内容。直接把提示词、脚本素材、批量视频需求或参考图路径发我就行。",
                 stage="collecting",
                 meta={"operation": "collect"},
             )
@@ -129,7 +129,7 @@ class AI8VideoConversationController:
             state.awaiting = "raw_text"
             return ChatReply(
                 text=self._prepend_material_receipt(
-                    "先把提示词或多集剧本发我。多集剧本最好顺手写清楚要拆成几集。",
+                    "先把提示词或脚本素材发我；如果要批量生成，请顺手写清楚要做几条独立视频。",
                     material_context,
                 ),
                 stage="collecting",
@@ -138,11 +138,11 @@ class AI8VideoConversationController:
                 meta={"operation": "collect"},
             )
 
-        if state.draft.mode == "multi_episode_script" and not state.draft.episode_count:
-            state.awaiting = "episode_count"
+        if state.draft.mode == "batch_videos" and not state.draft.video_count:
+            state.awaiting = "video_count"
             return ChatReply(
                 text=self._prepend_material_receipt(
-                    "收到剧本了。你希望我拆成几集？直接回复“6 集”或只回数字都可以。",
+                    "收到素材了。你希望生成几条独立视频？直接回复“6 条”或只回数字都可以。",
                     material_context,
                 ),
                 stage="collecting",
@@ -164,26 +164,15 @@ class AI8VideoConversationController:
         self._apply_default_reference_image(state)
 
         if state.draft.reference_image_enabled is None:
-            state.awaiting = "reference_image"
-            return ChatReply(
-                text=self._prepend_material_receipt(
-                    (
-                        f"{self._build_scope_summary(state)}。需要参考图吗？"
-                        "如果需要，把桌面文件名、本地路径或图片地址发我；"
-                        "如果不用，直接回复“不用参考图”。"
-                    ),
-                    material_context,
-                ),
-                stage="collecting",
-                awaiting=state.awaiting,
-                draft=state.draft,
-                meta={"operation": "collect"},
-            )
+            state.draft.reference_image_enabled = False
 
         if state.draft.reference_image_enabled and not state.draft.reference_image:
             state.awaiting = "reference_image"
             return ChatReply(
-                text="我已经记下你要用参考图了。现在把桌面文件名、本地路径或图片地址发我。",
+                text=(
+                    "你明确要求使用参考图，但参考图标签页当前没有选中图片。"
+                    "请先在标签页选择，或把桌面文件名、本地路径或图片地址发我。"
+                ),
                 stage="collecting",
                 awaiting=state.awaiting,
                 draft=state.draft,
@@ -220,14 +209,14 @@ class AI8VideoConversationController:
             if str(job.status or "").strip().lower() in {"succeeded", "completed"}
             and (job.video_url or job.local_video_path or job.storage_key)
         )
-        total = len(result.episodes or [])
+        total = len(result.videos or [])
         failed = max(0, total - succeeded)
         prefix = f"{self._build_scope_summary(state)}，{self._build_reference_summary(state)}。"
         if failed and succeeded:
             return f"{prefix}本轮 {succeeded} 条已生成，{failed} 条生成失败，下面是结果。"
         if failed:
             return f"{prefix}本轮 {failed} 条生成失败，下面是结果。"
-        return f"{prefix}本轮已经完成拆集、传图、创建任务和归档，下面是结果。"
+        return f"{prefix}本轮已经完成视频方案规划、传图、创建任务和归档，下面是结果。"
 
     def _handle_content_completion_followup(
         self,
@@ -266,7 +255,7 @@ class AI8VideoConversationController:
             state.draft.core_keywords = str((ai_interpretation or {}).get("core_keywords") or "").strip()
         elif re.search(r"^(不用|不需要|没有|跳过|无)\s*(关键词|核心主题|主题)?$", text.strip()):
             state.draft.core_keywords = "按用户提供的原文自行提炼核心主题，但不得偏离用户原始要求"
-        elif re.fullmatch(r"\d+\s*(?:个|条|集|支|段|部|[sS秒分钟]*)?", text.strip()):
+        elif re.fullmatch(r"\d+\s*(?:个|条|支|段|部|[sS秒分钟]*)?", text.strip()):
             state.draft.core_keywords = "按用户提供的原文自行提炼核心主题，但不得偏离用户原始要求"
         else:
             state.draft.core_keywords = extract_core_keywords(text) or text.strip()
@@ -275,33 +264,33 @@ class AI8VideoConversationController:
     def _handle_rewrite(self, state: ConversationState, text: str) -> ChatReply:
         if not state.last_result:
             return ChatReply(
-                text="我这里还没有上一轮结果，先生成一轮，再告诉我要重做第几集。",
+                text="我这里还没有上一轮结果，先生成一轮，再告诉我要重做第几条视频。",
                 stage="collecting",
                 meta={"operation": "collect"},
             )
         ai_interpretation = self._interpret_request_with_ai(text)
-        episode_index = (ai_interpretation or {}).get("rewrite_episode_index") or extract_episode_index(text)
+        video_index = (ai_interpretation or {}).get("rewrite_video_index") or extract_video_index(text)
         rewrite_instruction = (ai_interpretation or {}).get("rewrite_instruction") or detect_rewrite_instruction(text) or text
-        if not episode_index:
+        if not video_index:
             return ChatReply(
-                text="你直接说“第 3 集重做，改得更像老板真实开会”这种格式就行。",
+                text="你直接说“第 3 条视频重做，改得更像老板真实开会”这种格式就行。",
                 stage="collecting",
                 meta={"operation": "collect"},
             )
 
-        episode = self._find_episode(state.last_result, episode_index)
-        if episode is None:
-            total = len(state.last_result.get("episodes") or [])
+        video = self._find_video(state.last_result, video_index)
+        if video is None:
+            total = len(state.last_result.get("videos") or [])
             return ChatReply(
-                text=f"当前这一轮只有 {total} 集，我没找到你说的第 {episode_index} 集。你可以换成现有集数继续改。",
+                text=f"当前这一轮只有 {total} 条视频，我没找到你说的第 {video_index} 条。你可以换成现有序号继续改。",
                 stage="collecting",
                 meta={"operation": "collect"},
             )
 
         request = self._build_rewrite_request(state, text)
-        result = self.pipeline.rewrite_episode(
+        result = self.pipeline.rewrite_video(
             request,
-            episode,
+            video,
             rewrite_instruction,
             progress_session_id=state.session_id,
         )
@@ -313,7 +302,7 @@ class AI8VideoConversationController:
             state.draft.style_hint = self._merge_style_hints(state.draft.style_hint, style_hint)
         return ChatReply(
             text=(
-                f"收到。我只重做第 {episode_index} 集，其他集数保持不动。"
+                f"收到。我只重做第 {video_index} 条视频，其他视频保持不动。"
                 "这次已经按你的修改要求重新生成并回写到当前结果里。"
             ),
             stage="completed",
@@ -321,7 +310,7 @@ class AI8VideoConversationController:
             result_payload=merged,
             meta={
                 "operation": "rewrite",
-                "rewrittenEpisodeIndex": episode_index,
+                "rewrittenVideoIndex": video_index,
                 "rewriteInstruction": rewrite_instruction,
             },
         )
@@ -437,7 +426,7 @@ class AI8VideoConversationController:
         return missing
 
     def _build_missing_info_reply(self, state: ConversationState, missing_requirements: list[dict[str, str]]) -> ChatReply:
-        episode_count = state.draft.episode_count or 1
+        video_count = state.draft.video_count or 1
         duration = state.draft.duration_seconds or 10
         reference_ready = bool(state.draft.reference_image)
         return ChatReply(
@@ -455,7 +444,7 @@ class AI8VideoConversationController:
                 "guide": {
                     "kind": "missing_info",
                     "title": "生成前先补齐关键信息",
-                    "summary": f"已识别 {episode_count} 条、{duration} 秒的生成目标，请先补齐台词/口播文案。",
+                    "summary": f"已识别 {video_count} 条、{duration} 秒的生成目标，请先补齐台词/口播文案。",
                     "missingFields": missing_requirements,
                     "actions": [
                         {
@@ -488,17 +477,17 @@ class AI8VideoConversationController:
         if (ai_interpretation or {}).get("needs_core_keywords") is False and AI8VideoConversationController._ai_intent(ai_interpretation) == "generation":
             return False
         return (
-            state.draft.mode == "multi_episode_script"
-            and (state.draft.episode_count or 0) > 1
+            state.draft.mode == "batch_videos"
+            and (state.draft.video_count or 0) > 1
             and not str(state.draft.core_keywords or "").strip()
         )
 
     def _build_core_keywords_reply(self, state: ConversationState, material_context: dict | None = None) -> ChatReply:
-        episode_count = state.draft.episode_count or 2
+        video_count = state.draft.video_count or 2
         return ChatReply(
             text=self._prepend_material_receipt(
                 (
-                    f"已识别要生成 {episode_count} 条视频。为避免核心主题被长文档冲淡，"
+                    f"已识别要生成 {video_count} 条视频。为避免核心主题被长文档冲淡，"
                     "请先确认这一轮必须围绕的关键词 / 核心主题。"
                     "例如：“核心主题：新品卖点、目标受众、实际使用场景”。"
                     "如果没有指定，回复“跳过关键词”。"
@@ -531,11 +520,11 @@ class AI8VideoConversationController:
         )
 
     def _build_concurrent_generation_reply(self, state: ConversationState, material_context: dict | None = None) -> ChatReply:
-        episode_count = state.draft.episode_count or 2
+        video_count = state.draft.video_count or 2
         return ChatReply(
             text=self._prepend_material_receipt(
                 (
-                    f"已识别要生成 {episode_count} 条视频。要不要开启并发模式？"
+                    f"已识别要生成 {video_count} 条视频。要不要开启并发模式？"
                     "并发模式会一次性提交多条生成请求，整体更快；"
                     "普通模式会一条生成完再生成下一条，更稳但更慢。"
                     "直接回复“并发模式”或“普通模式”。"
@@ -550,7 +539,7 @@ class AI8VideoConversationController:
                 "guide": {
                     "kind": "concurrent_generation",
                     "title": "选择生成提交方式",
-                    "summary": f"本轮共 {episode_count} 条视频。并发更快，普通模式更稳。",
+                    "summary": f"本轮共 {video_count} 条视频。并发更快，普通模式更稳。",
                     "actions": [
                         {
                             "kind": "send",
@@ -634,12 +623,12 @@ class AI8VideoConversationController:
             return int(count_match.group(1)) > 5
         if re.search(r"(全文|完整原文|完整剧本|逐字|按原顺序|全篇|全部内容|完整覆盖)", value):
             return True
-        episode_count = extract_episode_count(value) or self._extract_plain_number(value)
-        if not episode_count:
-            match = re.search(r"(\d{1,3})\s*(?:个|条|集|支|段)", value)
-            episode_count = int(match.group(1)) if match else None
-        episode_count = episode_count or state.draft.episode_count
-        return bool(episode_count and episode_count > 5)
+        video_count = extract_video_count(value) or self._extract_plain_number(value)
+        if not video_count:
+            match = re.search(r"(\d{1,3})\s*(?:个|条|支|段)", value)
+            video_count = int(match.group(1)) if match else None
+        video_count = video_count or state.draft.video_count
+        return bool(video_count and video_count > 5)
 
     def _merge_message(
         self,
@@ -656,22 +645,22 @@ class AI8VideoConversationController:
             state.draft.raw_text = text
 
         count = (
-            (ai_interpretation or {}).get("episode_count")
-            or extract_episode_count(controls)
+            (ai_interpretation or {}).get("video_count")
+            or extract_video_count(controls)
             or self._extract_plain_number(controls)
-            or extract_episode_count(text)
+            or extract_video_count(text)
             or self._extract_plain_number(text)
         )
         if count:
-            state.draft.episode_count = count
+            state.draft.video_count = count
 
         mode_hint = (ai_interpretation or {}).get("mode") or detect_mode_hint(controls)
         if mode_hint:
             state.draft.mode = mode_hint
-        elif not state.draft.mode and state.draft.episode_count and state.draft.episode_count > 1:
-            state.draft.mode = "multi_episode_script"
+        elif not state.draft.mode and state.draft.video_count and state.draft.video_count > 1:
+            state.draft.mode = "batch_videos"
         elif not state.draft.mode and state.draft.raw_text:
-            state.draft.mode = "single_prompt"
+            state.draft.mode = "single_video"
 
         reference_image = extract_reference_image(controls) or extract_reference_image(text)
         if reference_image:
@@ -691,6 +680,8 @@ class AI8VideoConversationController:
         elif reference_decision is True and state.draft.reference_image_enabled is None:
             if self._uses_saved_reference_image(controls):
                 self._apply_default_reference_image(state)
+                if not state.draft.reference_image:
+                    state.draft.reference_image_enabled = True
             else:
                 state.draft.reference_image_enabled = True
 
@@ -728,9 +719,9 @@ class AI8VideoConversationController:
             logger.info("ai8video request interpretation start")
             interpretation = interpret_generation_request_with_ai(text, llm=llm)
             logger.info(
-                "ai8video request interpretation done intent=%s episode_count=%s confidence=%s",
+                "ai8video request interpretation done intent=%s video_count=%s confidence=%s",
                 (interpretation or {}).get("intent"),
-                (interpretation or {}).get("episode_count"),
+                (interpretation or {}).get("video_count"),
                 (interpretation or {}).get("confidence"),
             )
         except Exception as exc:
@@ -772,7 +763,7 @@ class AI8VideoConversationController:
             return False
         has_generation_frame = bool(
             state.draft.reference_image
-            or (state.draft.episode_count and state.draft.episode_count > 1)
+            or (state.draft.video_count and state.draft.video_count > 1)
             or re.search(r"\d+\s*(?:秒|[sS])", text)
             or any(token in text for token in ("素材", "参考图", "图片", "@"))
         )
@@ -854,12 +845,12 @@ class AI8VideoConversationController:
         return detect_batch_mode(text)
 
     @staticmethod
-    def _find_episode(result_payload: dict, episode_index: int) -> EpisodePrompt | None:
-        for item in result_payload.get("episodes") or []:
-            if int(item.get("index") or 0) == episode_index:
-                return EpisodePrompt(
-                    index=episode_index,
-                    title=str(item.get("title") or f"第 {episode_index} 集"),
+    def _find_video(result_payload: dict, video_index: int) -> VideoPrompt | None:
+        for item in result_payload.get("videos") or []:
+            if int(item.get("index") or 0) == video_index:
+                return VideoPrompt(
+                    index=video_index,
+                    title=str(item.get("title") or f"视频 {video_index}"),
                     prompt=str(item.get("prompt") or "").strip(),
                     source_summary=str(item.get("source_summary") or "").strip(),
                 )
@@ -872,8 +863,8 @@ class AI8VideoConversationController:
         draft_request = state.draft.to_request()
         return ParsedRequest(
             raw_text=text,
-            mode="single_prompt",
-            episode_count=1,
+            mode="single_video",
+            video_count=1,
             reference_image=draft_request.reference_image,
             reference_image_custom_prompt=draft_request.reference_image_custom_prompt,
             reference_image_transform_options=draft_request.reference_image_transform_options,
@@ -894,10 +885,10 @@ class AI8VideoConversationController:
         merged["firstFrame"] = latest.get("firstFrame") or previous.get("firstFrame")
         merged["dryRun"] = latest.get("dryRun", previous.get("dryRun", True))
         for key, index_key in (
-            ("episodes", "index"),
-            ("jobs", "episode_index"),
-            ("outcomes", "episode_index"),
-            ("archives", "episode_index"),
+            ("videos", "index"),
+            ("jobs", "video_index"),
+            ("outcomes", "video_index"),
+            ("archives", "video_index"),
         ):
             merged[key] = AI8VideoConversationController._merge_items(previous.get(key) or [], latest.get(key) or [], index_key)
         merged["assetRecords"] = (previous.get("assetRecords") or []) + (latest.get("assetRecords") or [])
@@ -920,10 +911,10 @@ class AI8VideoConversationController:
         return [bucket[idx] for idx in sorted(order)]
 
     def _build_scope_summary(self, state: ConversationState) -> str:
-        if state.draft.mode == "multi_episode_script":
-            count = state.draft.episode_count or 1
+        if state.draft.mode == "batch_videos":
+            count = state.draft.video_count or 1
             style = f"，风格偏 {state.draft.style_hint}" if state.draft.style_hint else ""
-            return f"好，我会按 {count} 集来处理这段剧本{style}"
+            return f"好，我会基于这份素材规划 {count} 条独立视频{style}"
         style = f"，风格偏 {state.draft.style_hint}" if state.draft.style_hint else ""
         return f"好，我会先按单条视频来处理{style}"
 
@@ -1006,7 +997,7 @@ class AI8VideoConversationController:
     def _is_rewrite_request(text: str, ai_interpretation: dict | None = None) -> bool:
         if AI8VideoConversationController._ai_intent(ai_interpretation) == "rewrite":
             return True
-        return extract_episode_index(text) is not None and detect_rewrite_instruction(text) is not None
+        return extract_video_index(text) is not None and detect_rewrite_instruction(text) is not None
 
     @staticmethod
     def _ai_intent(ai_interpretation: dict | None) -> str | None:

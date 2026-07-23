@@ -19,7 +19,7 @@ from ai8video.radar import hot_topic_feeds
 from ai8video.application import runtime as ai8video_runtime
 from ai8video.assets import user_materials as ai8video_user_materials
 from ai8video.assets.asset_store import JsonlAssetStore
-from ai8video.core.models import EpisodePrompt
+from ai8video.core.models import VideoPrompt
 from ai8video.interfaces.web.static_bundle import read_workbench_script, workbench_script_paths
 
 
@@ -149,7 +149,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("const generationBatchId = extractGenerationBatchId(pendingPayload);", source)
         self.assertIn("params.set('generationBatchId', generationBatchId);", source)
         self.assertIn(
-            "payload.meta?.operation === 'pending' || (payload.pendingStatus?.generationProgress && !isGeneratedResult)",
+            "payload.meta?.operation === 'pending' || hasAgentProgress",
             source,
         )
         self.assertIn(
@@ -258,8 +258,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("function resultNotifyRatioClass(item = {})", source)
         self.assertIn(".result-notify-card.ratio-portrait .result-notify-preview", source)
         self.assertIn(".result-notify-card.ratio-landscape .result-notify-preview", source)
-        self.assertIn("data-retry-generation-episode", source)
-        self.assertIn("async function retryFailedGenerationEpisode(button)", source)
+        self.assertIn("data-retry-generation-video", source)
+        self.assertIn("async function retryFailedGenerationVideo(button)", source)
         self.assertIn('data-video-preview-action="extend-video"', source)
         self.assertIn(".video-preview-extend-actions", source)
         self.assertIn('data-video-preview-action="delete-extension"', source)
@@ -435,8 +435,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
     def test_retry_inputs_require_persisted_first_frame(self) -> None:
         record = {
-            "episodeIndex": 3,
-            "episodeTitle": "布局窗口期",
+            "videoIndex": 3,
+            "videoTitle": "布局窗口期",
             "prompt": "复用现有最终方案",
             "request": {"durationSeconds": 10, "ratio": "9:16", "resolution": "480p", "preset": "custom"},
             "firstFrame": None,
@@ -447,9 +447,9 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         first_frame_path = self.root / "first-frame.png"
         first_frame_path.write_bytes(b"image")
         record["firstFrame"] = {"source": str(first_frame_path)}
-        retry_request, episode, first_frame = ai8video_web._build_retry_inputs(record)
+        retry_request, video, first_frame = ai8video_web._build_retry_inputs(record)
         self.assertEqual(retry_request.ratio, "9:16")
-        self.assertEqual(episode.index, 3)
+        self.assertEqual(video.index, 3)
         self.assertEqual(first_frame.source, str(first_frame_path))
 
     def test_hot_topic_parser_supports_rss_and_atom(self) -> None:
@@ -1575,7 +1575,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 "archiveCoverKey": cover_rel.as_posix(),
                 "archiveBackend": "local",
                 "archiveStatus": "archived",
-                "episodeTitle": "演示视频",
+                "videoTitle": "演示视频",
                 "createdAt": "2026-06-13T10:00:00+08:00",
             }, ensure_ascii=False) + "\n",
             encoding="utf-8",
@@ -1613,8 +1613,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             json.dumps(
                 {
                     "createdAt": "2026-06-18T03:22:33+00:00",
-                    "episodeIndex": 1,
-                    "episodeTitle": "花字失败样片",
+                    "videoIndex": 1,
+                    "videoTitle": "花字失败样片",
                     "jobId": "job-a",
                     "reason": "_mix_video() got an unexpected keyword argument 'preserve_original_audio_override'",
                     "videos": [
@@ -1634,7 +1634,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             json.dumps(
                 {
                     "createdAt": "2026-06-18T03:24:44+00:00",
-                    "episodeTitle": "无视频失败",
+                    "videoTitle": "无视频失败",
                     "reason": "上游失败",
                     "videos": [{"relativePath": "missing.mp4"}],
                 },
@@ -1659,7 +1659,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertEqual(body["count"], 1)
         self.assertEqual(len(body["items"]), 1)
         item = body["items"][0]
-        self.assertEqual(item["episodeTitle"], "花字失败样片")
+        self.assertEqual(item["videoTitle"], "花字失败样片")
         self.assertIn("_mix_video()", item["reason"])
         self.assertEqual(
             item["displayReason"],
@@ -1781,8 +1781,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         (self.root / "assets.jsonl").write_text(
             json.dumps(
                 {
-                    "episodeIndex": 1,
-                    "episodeTitle": "已删除视频",
+                    "videoIndex": 1,
+                    "videoTitle": "已删除视频",
                     "jobId": "task_deleted",
                     "status": "succeeded",
                     "generationStatus": "generated",
@@ -1801,7 +1801,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
         body = ai8video_web._query_video_jobs_progress(
             "s-test",
-            [{"episodeIndex": 1, "jobId": "task_deleted"}],
+            [{"videoIndex": 1, "jobId": "task_deleted"}],
         )
 
         progress = body["generationProgress"]
@@ -1815,8 +1815,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         (self.root / "assets.jsonl").write_text(
             json.dumps(
                 {
-                    "episodeIndex": 6,
-                    "episodeTitle": "发布进入倒计时的冲刺感",
+                    "videoIndex": 6,
+                    "videoTitle": "发布进入倒计时的冲刺感",
                     "jobId": "merge2-task_segment_1-task_segment_2",
                     "status": "succeeded",
                     "generationStatus": "generated",
@@ -1841,7 +1841,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
         body = ai8video_web._query_video_jobs_progress(
             "s-test",
-            [{"episodeIndex": 6, "jobId": "task_segment_2"}],
+            [{"videoIndex": 6, "jobId": "task_segment_2"}],
         )
 
         progress = body["generationProgress"]
@@ -1857,8 +1857,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         (self.root / "assets.jsonl").write_text(
             json.dumps(
                 {
-                    "episodeIndex": 3,
-                    "episodeTitle": "全球连接的时代已经到来",
+                    "videoIndex": 3,
+                    "videoTitle": "全球连接的时代已经到来",
                     "jobId": "merge2-task_segment_1-task_segment_2",
                     "status": "succeeded",
                     "generationStatus": "generated",
@@ -1885,7 +1885,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                             },
                         ],
                     },
-                    "request": {"episodeCount": 3},
+                    "request": {"videoCount": 3},
                 },
                 ensure_ascii=False,
             )
@@ -1900,7 +1900,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         ):
             body = ai8video_web._query_video_jobs_progress(
                 "s-test",
-                [{"episodeIndex": 3, "jobId": "merge2-task_segment_1-task_segment_2"}],
+                [{"videoIndex": 3, "jobId": "merge2-task_segment_1-task_segment_2"}],
                 video_count=3,
             )
 
@@ -1919,7 +1919,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             "generationProgress": {
                 "items": [
                     {
-                        "episodeIndex": 6,
+                        "videoIndex": 6,
                         "title": "发布进入倒计时的冲刺感 · 片段 2",
                         "status": "succeeded",
                         "statusLabel": "已生成",
@@ -1957,13 +1957,13 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 "status": "active",
                 "items": [
                     {
-                        "episodeIndex": 1,
+                        "videoIndex": 1,
                         "title": "沟通的鸿沟 · 片段 2",
                         "status": "archiving",
                         "statusLabel": "后台处理中",
                         "jobId": "task-segment-2",
                         "assetRecord": {
-                            "episodeTitle": "沟通的鸿沟",
+                            "videoTitle": "沟通的鸿沟",
                             "jobId": "merge2-task-segment-1-task-segment-2",
                             "archiveStatus": "archived",
                             "archiveUrl": "video/memory-done.mp4",
@@ -2905,7 +2905,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                         "succeededCount": 0,
                         "failedCount": 0,
                         "items": [
-                            {"episodeIndex": 1, "title": "视频 1", "status": "planning", "jobId": None},
+                            {"videoIndex": 1, "title": "视频 1", "status": "planning", "jobId": None},
                         ],
                     },
                 },
@@ -2922,7 +2922,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
     def test_api_chat_status_can_refresh_stateless_video_jobs(self) -> None:
         class FakeVideoClient:
-            def get_job(self, job_id, episode_index=1):
+            def get_job(self, job_id, video_index=1):
                 if job_id == "job-done":
                     return SimpleNamespace(
                         status="succeeded",
@@ -2940,8 +2940,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 )
 
         jobs = json.dumps([
-            {"episodeIndex": 1, "title": "视频 1", "jobId": "job-done"},
-            {"episodeIndex": 2, "title": "视频 2", "jobId": "job-failed"},
+            {"videoIndex": 1, "title": "视频 1", "jobId": "job-done"},
+            {"videoIndex": 2, "title": "视频 2", "jobId": "job-failed"},
         ])
         request_backup = ai8video_web.request
         ai8video_web.request = SimpleNamespace(
@@ -2981,7 +2981,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
     def test_api_chat_status_uses_trace_video_job_created_over_first_frame_error(self) -> None:
         class FakeVideoClient:
-            def get_job(self, job_id, episode_index=1):
+            def get_job(self, job_id, video_index=1):
                 self.last_job_id = job_id
                 return SimpleNamespace(
                     status="succeeded",
@@ -2999,14 +2999,14 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                     "createdAt": now.isoformat(),
                     "event": "merged_final_video_prompt",
                     "sessionId": "session-video-created",
-                    "payload": {"episodeIndex": 1, "title": "第一条"},
+                    "payload": {"videoIndex": 1, "title": "第一条"},
                 }, ensure_ascii=False),
                 json.dumps({
                     "createdAt": now.isoformat(),
                     "event": "first_frame_image_error",
                     "sessionId": "session-video-created",
                     "payload": {
-                        "episodeIndex": 1,
+                        "videoIndex": 1,
                         "error": "status_code=400, invalid image base64 data",
                     },
                 }, ensure_ascii=False),
@@ -3015,7 +3015,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                     "event": "video_job_created",
                     "sessionId": "session-video-created",
                     "payload": {
-                        "episodeIndex": 1,
+                        "videoIndex": 1,
                         "title": "第一条",
                         "jobId": "task-real-video",
                         "status": "pending",
@@ -3066,11 +3066,11 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
     def test_api_chat_status_treats_merge_failed_placeholder_as_local_failure(self) -> None:
         class FakeVideoClient:
-            def get_job(self, job_id, episode_index=1):
+            def get_job(self, job_id, video_index=1):
                 raise RuntimeError("task_not_exist")
 
         jobs = json.dumps([
-            {"episodeIndex": 1, "title": "视频 1", "jobId": "merge2-failed-1"},
+            {"videoIndex": 1, "title": "视频 1", "jobId": "merge2-failed-1"},
         ])
         request_backup = ai8video_web.request
         ai8video_web.request = SimpleNamespace(
@@ -3111,8 +3111,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             json.dumps(
                 {
                     "createdAt": "2026-06-20T02:05:47+00:00",
-                    "episodeIndex": 1,
-                    "episodeTitle": "连接世界的新时代",
+                    "videoIndex": 1,
+                    "videoTitle": "连接世界的新时代",
                     "jobId": "merge2-task_done_1-task_done_2",
                     "status": "succeeded",
                     "videoUrl": None,
@@ -3131,7 +3131,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                             }
                         ],
                     },
-                    "request": {"episodeCount": 3},
+                    "request": {"videoCount": 3},
                 },
                 ensure_ascii=False,
             )
@@ -3146,8 +3146,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 "items": [
                     {
                         "createdAt": "2026-06-20T02:06:22+00:00",
-                        "episodeIndex": 2,
-                        "episodeTitle": "一个APP解决五大痛点",
+                        "videoIndex": 2,
+                        "videoTitle": "一个APP解决五大痛点",
                         "jobId": "merge2-failed-2",
                         "reason": "raw upstream reason",
                         "displayReason": "内容审核未通过，请换成非真人或非写实主体后重试。",
@@ -3162,7 +3162,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         ):
             body = ai8video_web._query_video_jobs_progress(
                 "s-local-terminal",
-                [{"episodeIndex": 1, "jobId": "merge2-failed-1"}],
+                [{"videoIndex": 1, "jobId": "merge2-failed-1"}],
                 pending_since=datetime(2026, 6, 20, 2, 0, tzinfo=timezone.utc),
             )
 
@@ -3184,7 +3184,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
     def test_api_chat_status_humanizes_model_duration_limit(self) -> None:
         class FakeVideoClient:
-            def get_job(self, job_id, episode_index=1):
+            def get_job(self, job_id, video_index=1):
                 return SimpleNamespace(
                     status="failed",
                     provider_status="failed",
@@ -3203,7 +3203,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         ):
             body = ai8video_web._query_video_jobs_progress(
                 "session-duration-limit",
-                [{"episodeIndex": 1, "jobId": "task-duration-limit"}],
+                [{"videoIndex": 1, "jobId": "task-duration-limit"}],
                 video_count=1,
             )
 
@@ -3220,8 +3220,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             json.dumps(
                 {
                     "createdAt": "2026-06-20T02:05:47+00:00",
-                    "episodeIndex": 1,
-                    "episodeTitle": "审核失败视频",
+                    "videoIndex": 1,
+                    "videoTitle": "审核失败视频",
                     "jobId": "merge2-task-ok-task-review-failed",
                     "status": "failed",
                     "archiveStatus": "failed",
@@ -3248,7 +3248,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         ):
             body = ai8video_web._query_video_jobs_progress(
                 "session-review-failed",
-                [{"episodeIndex": 1, "jobId": "task-review-failed"}],
+                [{"videoIndex": 1, "jobId": "task-review-failed"}],
                 video_count=1,
             )
 
@@ -3261,7 +3261,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
     def test_api_chat_status_stateless_terminal_counts_do_not_depend_on_two_items(self) -> None:
         class FakeVideoClient:
-            def get_job(self, job_id, episode_index=1):
+            def get_job(self, job_id, video_index=1):
                 if job_id == "job-failed":
                     return SimpleNamespace(
                         status="failed",
@@ -3279,10 +3279,10 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 )
 
         jobs = json.dumps([
-            {"episodeIndex": 1, "title": "视频 1", "jobId": "job-done-1"},
-            {"episodeIndex": 2, "title": "视频 2", "jobId": "job-failed"},
-            {"episodeIndex": 3, "title": "视频 3", "jobId": "job-done-3"},
-            {"episodeIndex": 4, "title": "视频 4", "jobId": "job-done-4"},
+            {"videoIndex": 1, "title": "视频 1", "jobId": "job-done-1"},
+            {"videoIndex": 2, "title": "视频 2", "jobId": "job-failed"},
+            {"videoIndex": 3, "title": "视频 3", "jobId": "job-done-3"},
+            {"videoIndex": 4, "title": "视频 4", "jobId": "job-done-4"},
         ])
         request_backup = ai8video_web.request
         ai8video_web.request = SimpleNamespace(
@@ -3322,7 +3322,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
     def test_api_chat_status_stateless_counts_archived_local_asset_as_generated(self) -> None:
         class FakeVideoClient:
-            def get_job(self, job_id, episode_index=1):
+            def get_job(self, job_id, video_index=1):
                 return SimpleNamespace(
                     status="succeeded",
                     provider_status="completed",
@@ -3337,8 +3337,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         (self.root / "assets.jsonl").write_text(
             json.dumps(
                 {
-                    "episodeIndex": 1,
-                    "episodeTitle": "已归档视频",
+                    "videoIndex": 1,
+                    "videoTitle": "已归档视频",
                     "jobId": "job-done",
                     "status": "succeeded",
                     "videoUrl": "https://example.com/done.mp4",
@@ -3353,7 +3353,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             encoding="utf-8",
         )
         jobs = json.dumps([
-            {"episodeIndex": 1, "title": "视频 1", "jobId": "job-done"},
+            {"videoIndex": 1, "title": "视频 1", "jobId": "job-done"},
         ])
         request_backup = ai8video_web.request
         ai8video_web.request = SimpleNamespace(
@@ -3389,7 +3389,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
     def test_api_chat_status_stateless_keeps_pending_when_any_job_is_running(self) -> None:
         class FakeVideoClient:
-            def get_job(self, job_id, episode_index=1):
+            def get_job(self, job_id, video_index=1):
                 if job_id == "job-running":
                     return SimpleNamespace(
                         status="pending",
@@ -3407,9 +3407,9 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 )
 
         jobs = json.dumps([
-            {"episodeIndex": 1, "title": "视频 1", "jobId": "job-done-1"},
-            {"episodeIndex": 2, "title": "视频 2", "jobId": "job-running"},
-            {"episodeIndex": 3, "title": "视频 3", "jobId": "job-done-3"},
+            {"videoIndex": 1, "title": "视频 1", "jobId": "job-done-1"},
+            {"videoIndex": 2, "title": "视频 2", "jobId": "job-running"},
+            {"videoIndex": 3, "title": "视频 3", "jobId": "job-done-3"},
         ])
         request_backup = ai8video_web.request
         ai8video_web.request = SimpleNamespace(
@@ -3446,7 +3446,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
     def test_api_chat_status_stateless_ignores_query_title_to_avoid_mojibake(self) -> None:
         class FakeVideoClient:
-            def get_job(self, job_id, episode_index=1):
+            def get_job(self, job_id, video_index=1):
                 return SimpleNamespace(
                     status="pending",
                     provider_status="processing",
@@ -3457,7 +3457,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
         jobs = json.dumps([
             {
-                "episodeIndex": 1,
+                "videoIndex": 1,
                 "title": "Ã¨Â®Â©Ã§Â¿Â»Ã¨Â¯ÂÃ¯Â¼ÂÃ¦ÂÂÃ¤Â¸ÂºÃ¥ÂÂÃ¥ÂÂ²",
                 "jobId": "job-running",
             },
@@ -3493,12 +3493,12 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
     def test_api_chat_status_recovers_first_frame_disconnect_from_trace(self) -> None:
         trace_path = self.root / "prompt_traces.jsonl"
 
-        def line(created_at: str, event: str, episode_index: int, payload: dict | None = None) -> str:
+        def line(created_at: str, event: str, video_index: int, payload: dict | None = None) -> str:
             data = {
                 "createdAt": created_at,
                 "event": event,
                 "sessionId": "session-trace",
-                "payload": {"episodeIndex": episode_index, **(payload or {})},
+                "payload": {"videoIndex": video_index, **(payload or {})},
             }
             return json.dumps(data, ensure_ascii=False)
 
@@ -3587,12 +3587,12 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
     def test_api_chat_status_keeps_video_submit_without_job_id_pending(self) -> None:
         trace_path = self.root / "prompt_traces.jsonl"
 
-        def line(created_at: str, event: str, episode_index: int, payload: dict | None = None) -> str:
+        def line(created_at: str, event: str, video_index: int, payload: dict | None = None) -> str:
             data = {
                 "createdAt": created_at,
                 "event": event,
                 "sessionId": "session-create-response-lost",
-                "payload": {"episodeIndex": episode_index, **(payload or {})},
+                "payload": {"videoIndex": video_index, **(payload or {})},
             }
             return json.dumps(data, ensure_ascii=False)
 
@@ -3660,10 +3660,10 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
     def test_generation_progress_keeps_lost_create_response_polling(self) -> None:
         session_id = "session-progress-create-lost"
-        episode = EpisodePrompt(index=1, title="片段一", prompt="测试")
-        generation_progress.start_generation_progress(session_id, [episode])
+        video = VideoPrompt(index=1, title="片段一", prompt="测试")
+        generation_progress.start_generation_progress(session_id, [video])
         try:
-            generation_progress.mark_job_submitting(session_id, episode)
+            generation_progress.mark_job_submitting(session_id, video)
             generation_progress.mark_job_failed(
                 session_id,
                 1,
@@ -3686,7 +3686,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
     def test_api_chat_status_recovers_merge_segments_from_trace(self) -> None:
         class FakeVideoClient:
-            def get_job(self, job_id, episode_index=1):
+            def get_job(self, job_id, video_index=1):
                 if job_id == "task-segment-1":
                     return SimpleNamespace(
                         status="succeeded",
@@ -3711,14 +3711,14 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                     "createdAt": now.isoformat(),
                     "event": "merged_final_video_prompt",
                     "sessionId": "session-merge-segments",
-                    "payload": {"episodeIndex": 1, "title": "第一条"},
+                    "payload": {"videoIndex": 1, "title": "第一条"},
                 }, ensure_ascii=False),
                 json.dumps({
                     "createdAt": now.isoformat(),
                     "event": "video_job_created",
                     "sessionId": "session-merge-segments",
                     "payload": {
-                        "episodeIndex": 1,
+                        "videoIndex": 1,
                         "title": "第一条 · 片段 1",
                         "jobId": "task-segment-1",
                         "status": "pending",
@@ -3730,7 +3730,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                     "event": "video_job_created",
                     "sessionId": "session-merge-segments",
                     "payload": {
-                        "episodeIndex": 1,
+                        "videoIndex": 1,
                         "title": "第一条 · 片段 2",
                         "jobId": "task-segment-2",
                         "status": "pending",
@@ -3787,14 +3787,14 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                     "createdAt": now.isoformat(),
                     "event": "merged_final_video_prompt",
                     "sessionId": "session-recovering",
-                    "payload": {"episodeIndex": 1, "title": "第一条"},
+                    "payload": {"videoIndex": 1, "title": "第一条"},
                 }, ensure_ascii=False),
                 json.dumps({
                     "createdAt": now.isoformat(),
                     "event": "first_frame_image_error",
                     "sessionId": "session-recovering",
                     "payload": {
-                        "episodeIndex": 1,
+                        "videoIndex": 1,
                         "error": "('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))",
                     },
                 }, ensure_ascii=False),
@@ -3846,14 +3846,14 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         (self.root / "assets.jsonl").write_text(
             json.dumps({
                 "createdAt": now.isoformat(),
-                "episodeIndex": 1,
-                "episodeTitle": "后台已生成",
+                "videoIndex": 1,
+                "videoTitle": "后台已生成",
                 "jobId": "task-real-video",
                 "status": "succeeded",
                 "archiveStatus": "archived",
                 "archiveLocalPath": str(video_path),
                 "progressSessionId": "session-local-wins",
-                "request": {"episodeCount": 1},
+                "request": {"videoCount": 1},
             }, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
@@ -3863,14 +3863,14 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                     "createdAt": now.isoformat(),
                     "event": "merged_final_video_prompt",
                     "sessionId": "session-local-wins",
-                    "payload": {"episodeIndex": 1, "title": "第一条"},
+                    "payload": {"videoIndex": 1, "title": "第一条"},
                 }, ensure_ascii=False),
                 json.dumps({
                     "createdAt": now.isoformat(),
                     "event": "first_frame_image_error",
                     "sessionId": "session-local-wins",
                     "payload": {
-                        "episodeIndex": 1,
+                        "videoIndex": 1,
                         "error": "('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))",
                     },
                 }, ensure_ascii=False),
@@ -3917,19 +3917,19 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         video_dir = self.root / "用户生成结果" / "video"
         video_dir.mkdir(parents=True, exist_ok=True)
         records = []
-        for episode_index in range(1, 4):
-            video_path = video_dir / f"done-{episode_index}.mp4"
+        for video_index in range(1, 4):
+            video_path = video_dir / f"done-{video_index}.mp4"
             video_path.write_bytes(b"video")
             records.append(json.dumps({
                 "createdAt": now.isoformat(),
-                "episodeIndex": episode_index,
-                "episodeTitle": f"成片 {episode_index}",
-                "jobId": f"merge2-task-seg-a-{episode_index}-task-seg-b-{episode_index}",
+                "videoIndex": video_index,
+                "videoTitle": f"成片 {video_index}",
+                "jobId": f"merge2-task-seg-a-{video_index}-task-seg-b-{video_index}",
                 "status": "succeeded",
                 "archiveStatus": "archived",
                 "archiveLocalPath": str(video_path),
                 "progressSessionId": "session-postprocessing-done",
-                "request": {"episodeCount": 3},
+                "request": {"videoCount": 3},
             }, ensure_ascii=False))
         (self.root / "assets.jsonl").write_text("\n".join(records) + "\n", encoding="utf-8")
         request_backup = ai8video_web.request
@@ -3957,9 +3957,9 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                         "status": "active",
                         "totalRequested": 3,
                         "items": [
-                            {"episodeIndex": 1, "status": "archiving", "statusLabel": "后台处理中"},
-                            {"episodeIndex": 2, "status": "succeeded", "statusLabel": "已生成"},
-                            {"episodeIndex": 3, "status": "archiving", "statusLabel": "后台处理中"},
+                            {"videoIndex": 1, "status": "archiving", "statusLabel": "后台处理中"},
+                            {"videoIndex": 2, "status": "succeeded", "statusLabel": "已生成"},
+                            {"videoIndex": 3, "status": "archiving", "statusLabel": "后台处理中"},
                         ],
                         "runningCount": 2,
                         "postProcessingCount": 2,
@@ -3991,19 +3991,19 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         video_dir = self.root / "用户生成结果" / "video"
         video_dir.mkdir(parents=True, exist_ok=True)
         records = []
-        for episode_index in range(1, 3):
-            video_path = video_dir / f"done-planning-{episode_index}.mp4"
+        for video_index in range(1, 3):
+            video_path = video_dir / f"done-planning-{video_index}.mp4"
             video_path.write_bytes(b"video")
             records.append(json.dumps({
                 "createdAt": now.isoformat(),
-                "episodeIndex": episode_index,
-                "episodeTitle": f"规划后成片 {episode_index}",
-                "jobId": f"merge2-task-plan-a-{episode_index}-task-plan-b-{episode_index}",
+                "videoIndex": video_index,
+                "videoTitle": f"规划后成片 {video_index}",
+                "jobId": f"merge2-task-plan-a-{video_index}-task-plan-b-{video_index}",
                 "status": "succeeded",
                 "archiveStatus": "archived",
                 "archiveLocalPath": str(video_path),
                 "progressSessionId": "session-planning-done",
-                "request": {"episodeCount": 2},
+                "request": {"videoCount": 2},
             }, ensure_ascii=False))
         (self.root / "assets.jsonl").write_text("\n".join(records) + "\n", encoding="utf-8")
         request_backup = ai8video_web.request
@@ -4033,8 +4033,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                         "updatedAt": old,
                         "totalRequested": 2,
                         "items": [
-                            {"episodeIndex": 1, "status": "planning", "statusLabel": "正在整理视频提示词"},
-                            {"episodeIndex": 2, "status": "planning", "statusLabel": "正在整理视频提示词"},
+                            {"videoIndex": 1, "status": "planning", "statusLabel": "正在整理视频提示词"},
+                            {"videoIndex": 2, "status": "planning", "statusLabel": "正在整理视频提示词"},
                         ],
                         "runningCount": 2,
                         "waitingCount": 2,
@@ -4074,15 +4074,15 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
         trace_path.write_text(
             "\n".join([
-                line("2026-06-20T09:25:53+00:00", "keyword_model_input", {"episodeCount": 3}),
-                line("2026-06-20T09:26:18+00:00", "keyword_model_output", {"episodeCount": 3}),
-                line("2026-06-20T09:26:18+00:00", "split_model_input", {"episodeCount": 3}),
-                line("2026-06-20T09:26:49+00:00", "split_model_output", {"episodeCount": 3}),
-                line("2026-06-20T09:26:49+00:00", "business_prompt_batch_model_input", {"episodeCount": 3}),
-                line("2026-06-20T09:27:23+00:00", "business_prompt_batch_model_output", {"episodeCount": 3}),
-                line("2026-06-20T09:27:23+00:00", "business_prompt_validation_model_input", {"episodeIndex": 1}),
-                line("2026-06-20T09:27:38+00:00", "business_prompt_validation_model_output", {"episodeIndex": 1}),
-                line("2026-06-20T09:27:38+00:00", "business_prompt_validation_model_input", {"episodeIndex": 2}),
+                line("2026-06-20T09:25:53+00:00", "keyword_model_input", {"videoCount": 3}),
+                line("2026-06-20T09:26:18+00:00", "keyword_model_output", {"videoCount": 3}),
+                line("2026-06-20T09:26:18+00:00", "split_model_input", {"videoCount": 3}),
+                line("2026-06-20T09:26:49+00:00", "split_model_output", {"videoCount": 3}),
+                line("2026-06-20T09:26:49+00:00", "business_prompt_batch_model_input", {"videoCount": 3}),
+                line("2026-06-20T09:27:23+00:00", "business_prompt_batch_model_output", {"videoCount": 3}),
+                line("2026-06-20T09:27:23+00:00", "business_prompt_validation_model_input", {"videoIndex": 1}),
+                line("2026-06-20T09:27:38+00:00", "business_prompt_validation_model_output", {"videoIndex": 1}),
+                line("2026-06-20T09:27:38+00:00", "business_prompt_validation_model_input", {"videoIndex": 2}),
             ]) + "\n",
             encoding="utf-8",
         )
@@ -4145,30 +4145,30 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         trace_path.write_text(
             "\n".join([
                 line("2026-06-20T13:16:10+00:00", "merged_final_video_prompt", {
-                    "episodeIndex": 1,
+                    "videoIndex": 1,
                     "title": "旧轮视频",
                 }),
                 line("2026-06-20T13:16:13+00:00", "video_job_created", {
-                    "episodeIndex": 1,
+                    "videoIndex": 1,
                     "title": "旧轮视频",
                     "jobId": "task-old-failed",
                     "status": "pending",
                 }),
-                line("2026-06-20T14:12:06+00:00", "keyword_model_input", {"episodeCount": 4}),
-                line("2026-06-20T14:12:36+00:00", "keyword_model_output", {"episodeCount": 4}),
-                line("2026-06-20T14:12:36+00:00", "split_model_input", {"episodeCount": 4}),
-                line("2026-06-20T14:13:08+00:00", "split_model_output", {"episodeCount": 4}),
-                line("2026-06-20T14:13:08+00:00", "business_prompt_batch_model_input", {"episodeCount": 4}),
-                line("2026-06-20T14:13:47+00:00", "business_prompt_batch_model_output", {"episodeCount": 4}),
-                line("2026-06-20T14:13:47+00:00", "business_prompt_validation_model_input", {"episodeIndex": 1}),
-                line("2026-06-20T14:13:58+00:00", "business_prompt_validation_model_output", {"episodeIndex": 1}),
-                line("2026-06-20T14:13:58+00:00", "business_prompt_validation_model_input", {"episodeIndex": 2}),
+                line("2026-06-20T14:12:06+00:00", "keyword_model_input", {"videoCount": 4}),
+                line("2026-06-20T14:12:36+00:00", "keyword_model_output", {"videoCount": 4}),
+                line("2026-06-20T14:12:36+00:00", "split_model_input", {"videoCount": 4}),
+                line("2026-06-20T14:13:08+00:00", "split_model_output", {"videoCount": 4}),
+                line("2026-06-20T14:13:08+00:00", "business_prompt_batch_model_input", {"videoCount": 4}),
+                line("2026-06-20T14:13:47+00:00", "business_prompt_batch_model_output", {"videoCount": 4}),
+                line("2026-06-20T14:13:47+00:00", "business_prompt_validation_model_input", {"videoIndex": 1}),
+                line("2026-06-20T14:13:58+00:00", "business_prompt_validation_model_output", {"videoIndex": 1}),
+                line("2026-06-20T14:13:58+00:00", "business_prompt_validation_model_input", {"videoIndex": 2}),
             ]) + "\n",
             encoding="utf-8",
         )
 
         class FakeVideoClient:
-            def get_job(self, job_id, episode_index=1):
+            def get_job(self, job_id, video_index=1):
                 raise AssertionError(f"old job should not be polled: {job_id}")
 
         request_backup = ai8video_web.request
@@ -4307,8 +4307,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                         "succeededCount": 0,
                         "failedCount": 0,
                         "items": [
-                            {"episodeIndex": 1, "title": "视频 1", "status": "planning", "jobId": None},
-                            {"episodeIndex": 2, "title": "视频 2", "status": "planning", "jobId": None},
+                            {"videoIndex": 1, "title": "视频 1", "status": "planning", "jobId": None},
+                            {"videoIndex": 2, "title": "视频 2", "status": "planning", "jobId": None},
                         ],
                     },
                 },
@@ -4440,8 +4440,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
     def test_api_chat_clears_terminal_progress_before_new_message(self) -> None:
         request_backup = ai8video_web.request
         session_id = "session-reused-after-terminal"
-        episodes = [EpisodePrompt(index=1, title="旧视频", prompt="old")]
-        generation_progress.start_generation_progress(session_id, episodes)
+        videos = [VideoPrompt(index=1, title="旧视频", prompt="old")]
+        generation_progress.start_generation_progress(session_id, videos)
         generation_progress.mark_job_failed(session_id, 1, "旧任务失败")
         generation_progress.fail_generation_progress(session_id, "旧任务失败", skip_pending=False)
         self.assertEqual(generation_progress.get_generation_progress(session_id)["status"], "failed")
@@ -4511,9 +4511,24 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("function renderAgentExecutionEvents(pending = {})", html)
         self.assertIn("function collapseAgentPollingEvents(rawEvents)", html)
         self.assertIn("const latestStatusIndex = new Map();", html)
+        self.assertIn("const eventKey = status ? `${videoIndex}:${segmentIndex}:${status}:${eventKind}` : '';", html)
+        self.assertIn("function buildTerminalAgentPendingStatus(payload, resultGroups, summary, sessionId)", html)
+        self.assertIn("function isLocalVideoPostprocessFailure(value)", html)
+        self.assertIn("function getGenerationFailureStageLabel(itemOrReason = {})", html)
+        self.assertIn("const hasAgentProgress = !!renderedPendingStatus?.generationProgress;", html)
+        self.assertIn("if (payload.meta?.operation === 'pending' || hasAgentProgress)", html)
+        self.assertIn("if (isGeneratedResult && summary && !hasAgentProgress)", html)
+        self.assertIn("const generatingStatuses = new Set(['submitting', 'preparing_first_frame', 'submitted', 'polling']);", html)
+        self.assertIn("status === 'polling' && Number.isFinite(Number(event.providerProgress))", html)
+        self.assertIn("index === 0 && !['succeeded', 'completed'].includes(status)", html)
+        self.assertIn("本轮已结束：已生成 ${done}/${total}，失败 ${failed} 条。", html)
+        self.assertIn("本机视频后处理编码器不兼容，开头裁剪失败", html)
+        self.assertIn("hasLocalPostprocessFailure ? '本地后处理失败' : '视频生成失败'", html)
         self.assertIn("last.payload.pendingStatus = normalizePendingStatusProgress({", html)
         self.assertIn('class="pending-card-status"', html)
         self.assertIn("function renderAgentVideoThumbnails(pending = {})", html)
+        self.assertIn("String(progress.status || '').trim() === 'planning'", html)
+        self.assertIn("if (planning) return '';", html)
         self.assertIn("${renderProgressResultStrip([], pendingCount)}", html)
         self.assertIn("return buildProgressStatusResultItem(item, index);", html)
         self.assertIn("function humanizePublicExecutionStatus(value)", html)
@@ -4609,7 +4624,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
     def test_polish_tts_narration_uses_text_model(self) -> None:
         prompts: list[str] = []
-        with patch.object(ai8video_web, "build_openai_compat_splitter", return_value=lambda prompt: prompts.append(prompt) or "更顺口的新台词。") as build_llm:
+        with patch.object(ai8video_web, "build_openai_compat_llm", return_value=lambda prompt: prompts.append(prompt) or "更顺口的新台词。") as build_llm:
             body = ai8video_web._polish_tts_narration_text("旧台词。", 14)
 
         self.assertTrue(body["ok"])
@@ -4620,7 +4635,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
     def test_polish_tts_narration_accepts_json_model_output(self) -> None:
         with patch.object(
             ai8video_web,
-            "build_openai_compat_splitter",
+            "build_openai_compat_llm",
             return_value=lambda prompt: '{"text":"JSON 润色台词。"}',
         ):
             body = ai8video_web._polish_tts_narration_text("旧台词。")
@@ -4640,7 +4655,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         }
         with patch.object(ai8video_web, "_tts_script_knowledge", return_value=knowledge), patch.object(
             ai8video_web,
-            "build_openai_compat_splitter",
+            "build_openai_compat_llm",
             return_value=fake_llm,
         ):
             body = ai8video_web._polish_tts_narration_text("客户不能流失。")
@@ -4650,12 +4665,12 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertEqual(body["knowledge"]["topK"], 5)
 
     def test_polish_tts_narration_requires_text_model(self) -> None:
-        with patch.object(ai8video_web, "build_openai_compat_splitter", return_value=None):
-            with self.assertRaisesRegex(RuntimeError, "文本/拆集模型"):
+        with patch.object(ai8video_web, "build_openai_compat_llm", return_value=None):
+            with self.assertRaisesRegex(RuntimeError, "文本/视频规划模型"):
                 ai8video_web._polish_tts_narration_text("旧台词。")
 
     def test_expand_tts_narration_uses_text_model(self) -> None:
-        with patch.object(ai8video_web, "build_openai_compat_splitter", return_value=lambda prompt: "扩写后的新台词，节奏更完整。") as build_llm:
+        with patch.object(ai8video_web, "build_openai_compat_llm", return_value=lambda prompt: "扩写后的新台词，节奏更完整。") as build_llm:
             body = ai8video_web._expand_tts_narration_text("旧台词。")
 
         self.assertTrue(body["ok"])
@@ -4665,7 +4680,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
     def test_expand_tts_narration_accepts_json_model_output(self) -> None:
         with patch.object(
             ai8video_web,
-            "build_openai_compat_splitter",
+            "build_openai_compat_llm",
             return_value=lambda prompt: '{"text":"JSON 扩写台词。"}',
         ):
             body = ai8video_web._expand_tts_narration_text("旧台词。")
@@ -4703,7 +4718,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             [{
                 "archiveKey": "video/demo.mp4",
                 "archiveLocalPath": str(video_path),
-                "episodeIndex": 2,
+                "videoIndex": 2,
                 "jobId": "job-demo",
                 "generationMeta": {"localTtsNarrationText": "旧台词。"},
             }]
@@ -4762,7 +4777,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         video_path.write_bytes(b"video")
         metadata_path.write_text(
             json.dumps({
-                "episodeTitle": "恢复视频",
+                "videoTitle": "恢复视频",
                 "generationMeta": {
                     "segmentRecords": [{
                         "narrationText": "归档台词。",
@@ -4790,7 +4805,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 video_path,
             )
 
-        self.assertEqual(items[0]["episodeTitle"], "恢复视频")
+        self.assertEqual(items[0]["videoTitle"], "恢复视频")
         self.assertEqual(body["text"], "归档台词")
         self.assertTrue(saved["ok"])
         self.assertEqual(updated["text"], "用户修改后的台词")
@@ -4831,7 +4846,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             [{
                 "archiveKey": "video/demo.mp4",
                 "archiveLocalPath": str(video_path),
-                "episodeIndex": 2,
+                "videoIndex": 2,
                 "jobId": "job-demo",
                 "generationMeta": {
                     "localTtsNarrationText": "第一句台词。第二句台词。",
@@ -4917,8 +4932,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             [{
                 "archiveKey": "video/demo.mp4",
                 "archiveLocalPath": str(video_path),
-                "episodeIndex": 2,
-                "episodeTitle": "演示视频",
+                "videoIndex": 2,
+                "videoTitle": "演示视频",
                 "jobId": "job-demo",
                 "prompt": "留存的最终视频提示词",
                 "generationMeta": {"userTtsNarrationText": "用户修改后的最新台词。"},
@@ -4943,11 +4958,11 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
         self.assertTrue(body["ok"])
         request_snapshot = apply_overlay.call_args.args[1]
-        episode = apply_overlay.call_args.args[2]
+        video = apply_overlay.call_args.args[2]
         self.assertTrue(request_snapshot.html_motion_overlay_enabled)
         self.assertEqual(apply_overlay.call_args.kwargs["trigger"], "video_playback")
-        self.assertEqual(episode.prompt, "留存的最终视频提示词")
-        self.assertEqual(episode.source_summary, "用户修改后的最新台词")
+        self.assertEqual(video.prompt, "留存的最终视频提示词")
+        self.assertEqual(video.source_summary, "用户修改后的最新台词")
         self.assertEqual(body["htmlMotionOverlay"]["dialogueChars"], 10)
         stored = JsonlAssetStore(self.root / "assets.jsonl").read_all()[0]
         self.assertEqual(body["htmlMotionOverlay"]["status"], "preview_ready")
@@ -5001,7 +5016,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         video_path.write_bytes(b"video")
         manifest_path = self.root / "job-manifest.json"
         manifest_path.write_text(
-            json.dumps({"episode": {"prompt": "manifest 留存的视频提示词"}}, ensure_ascii=False),
+            json.dumps({"video": {"prompt": "manifest 留存的视频提示词"}}, ensure_ascii=False),
             encoding="utf-8",
         )
         JsonlAssetStore(self.root / "assets.jsonl").rewrite_all(
@@ -5260,14 +5275,22 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertNotIn("deleted-placeholder", html)
 
     def test_static_brand_uses_round_webp_avatar(self) -> None:
-        from PIL import Image
+        from PIL import Image, features
 
         html = read_static_source()
         avatar_path = STATIC_ROOT / "images" / "ai8video-avatar.webp"
 
-        self.assertIn("/static/images/ai8video-avatar.webp?v=20260720-2205", html)
+        self.assertIn("/static/images/ai8video-avatar.webp?v=20260723-0739", html)
         self.assertIn("alt=\"AI8video 头像\"", html)
         self.assertTrue(avatar_path.is_file())
+        avatar_bytes = avatar_path.read_bytes()
+        self.assertEqual(avatar_bytes[:4], b"RIFF")
+        self.assertEqual(avatar_bytes[8:16], b"WEBPVP8L")
+        vp8l_bits = int.from_bytes(avatar_bytes[21:25], "little")
+        self.assertEqual(((vp8l_bits & 0x3FFF) + 1, ((vp8l_bits >> 14) & 0x3FFF) + 1), (512, 512))
+        self.assertEqual((vp8l_bits >> 28) & 1, 1)
+        if not features.check("webp"):
+            return
         with Image.open(avatar_path) as avatar:
             self.assertEqual(avatar.format, "WEBP")
             self.assertEqual(avatar.size, (512, 512))
@@ -5291,7 +5314,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("title=\"${escapeHtml(reason)}\"", html)
         self.assertIn("title=\"${escapeHtml(tooltipReason)}\"", html)
         self.assertIn("const isSkipped = status === 'skipped';", html)
-        self.assertIn("episodeIndex,", html)
+        self.assertIn("videoIndex,", html)
         self.assertIn("error: item?.error || '',", html)
         self.assertIn("generationReasons: item?.generationReasons || '',", html)
         self.assertIn("statusLabel: item?.statusLabel || '',", html)
@@ -5306,7 +5329,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("const badgeReason = summarizeGenerationFailureReason(tooltipReason);", html)
         self.assertNotIn("前面失败，没生成", html)
         self.assertNotIn("片段${number}${statusText}", html)
-        self.assertIn("<div class=\"result-notify-sub\">生成失败</div>", html)
+        self.assertIn("<div class=\"result-notify-sub\">${escapeHtml(failureStageLabel)}</div>", html)
         self.assertIn("当前模型只支持 4、6 或 8 秒", html)
 
     def test_static_progress_modal_does_not_truncate_backend_items(self) -> None:

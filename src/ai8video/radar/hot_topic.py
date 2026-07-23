@@ -19,7 +19,7 @@ from ai8video.radar.hot_topic_feeds import (
     registry_signature,
     save_custom_sources,
 )
-from ai8video.integrations.llm_provider import build_openai_compat_splitter
+from ai8video.integrations.llm_provider import build_openai_compat_llm
 from ai8video.assets.user_files import USER_FILE_ROOT
 
 
@@ -88,7 +88,7 @@ def summarize_hot_topic(
     if not title:
         raise ValueError("热点标题不能为空")
     llm_config = config or AI8VideoConfig.from_env()
-    llm = build_openai_compat_splitter(
+    llm = build_openai_compat_llm(
         llm_config,
         timeout_seconds=45,
         system_prompt="你是短视频热点选题分析助手，只输出清晰、可核验的中文分析。",

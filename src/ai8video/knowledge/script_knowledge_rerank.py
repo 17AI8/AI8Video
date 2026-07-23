@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ai8video.core.config import AI8VideoConfig
-from ai8video.integrations.llm_provider import build_openai_compat_splitter
+from ai8video.integrations.llm_provider import build_openai_compat_llm
 
 
 RerankLLM = Callable[[str], str]
@@ -23,7 +23,7 @@ def build_script_rerank_llm(config: AI8VideoConfig) -> RerankLLM | None:
     if not _rerank_enabled():
         return None
     timeout_seconds = _bounded_env_int("AI8VIDEO_RERANK_TIMEOUT_SECONDS", 8, 3, 20)
-    return build_openai_compat_splitter(
+    return build_openai_compat_llm(
         config,
         timeout_seconds=timeout_seconds,
         system_prompt=RERANK_SYSTEM_PROMPT,

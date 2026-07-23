@@ -406,7 +406,7 @@
           .map((item) => String(item || '').trim())
           .filter(Boolean)
       );
-      const episodes = new Set();
+      const videos = new Set();
       const addItem = (item) => {
         if (!item || typeof item !== 'object') return;
         const keys = [
@@ -422,8 +422,8 @@
         const matched = keys.some((key) => deletedKeys.has(key) || deletedBasenames.has(mediaKeyBasename(key)));
         if (!matched) return;
         collectProgressItemJobIds(item).forEach((jobId) => jobIds.add(jobId));
-        const episode = Number(item.episodeIndex || item.index || 0);
-        if (episode > 0) episodes.add(episode);
+        const video = Number(item.videoIndex || item.index || 0);
+        if (video > 0) videos.add(video);
       };
       (state.userGeneratedResults || []).forEach(addItem);
       (state.videoPreviewModal?.playlist || []).forEach(addItem);
@@ -431,7 +431,7 @@
         keys: deletedKeys,
         basenames: deletedBasenames,
         jobIds,
-        episodes,
+        videos,
       };
     }
 
@@ -474,8 +474,8 @@
         [...(identity.keys || [])].some((key) => String(key || '').includes(jobId))
         || [...(identity.basenames || [])].some((key) => String(key || '').includes(jobId))
       ))) return true;
-      const episode = Number(item.episodeIndex || item.index || 0);
-      if (episode > 0 && identity.episodes?.has(episode) && identity.jobIds?.size) return true;
+      const video = Number(item.videoIndex || item.index || 0);
+      if (video > 0 && identity.videos?.has(video) && identity.jobIds?.size) return true;
       const keys = [
         item.userGeneratedKey,
         item.userGeneratedCoverKey,

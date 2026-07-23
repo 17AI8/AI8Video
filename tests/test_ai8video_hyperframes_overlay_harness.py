@@ -14,7 +14,7 @@ from ai8video.media.motion.hyperframes_overlay_harness import (
 )
 from ai8video.media.motion.hyperframes_overlay_prompts import HTML_MOTION_SYSTEM_PROMPT
 from ai8video.media.motion.hyperframes_overlay_semantic import dialogue_text_blocks
-from ai8video.core.models import EpisodePrompt
+from ai8video.core.models import VideoPrompt
 
 
 def _scene(index: int, start: float, end: float, zone: str, ease_a: str, ease_b: str) -> dict:
@@ -90,7 +90,7 @@ def _artifact() -> dict:
 class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
     def setUp(self) -> None:
         self.media = {"width": 720, "height": 1280, "durationSeconds": 4.0}
-        self.episode = EpisodePrompt(index=1, title="第一集", prompt="办公室中围绕沟通困境展开讨论")
+        self.video = VideoPrompt(index=1, title="第一条视频", prompt="办公室中围绕沟通困境展开讨论")
 
     def test_harness_builds_inline_html_css_and_seekable_waapi_plan(self) -> None:
         responses = iter([
@@ -103,7 +103,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
         ])
         result = build_hyperframes_overlay(
             lambda _prompt: next(responses),
-            self.episode,
+            self.video,
             self.media,
             dialogue_text="关键沟通需要保留完整上下文",
         )
@@ -142,7 +142,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
 
         result = build_hyperframes_overlay(
             lambda _prompt: next(responses),
-            self.episode,
+            self.video,
             self.media,
             dialogue_text="关键沟通需要保留完整上下文",
         )
@@ -166,7 +166,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
         ])
 
         result = build_hyperframes_overlay(
-            lambda _prompt: next(responses), self.episode, self.media, dialogue_text="关键沟通需要保留完整上下文"
+            lambda _prompt: next(responses), self.video, self.media, dialogue_text="关键沟通需要保留完整上下文"
         )
 
         self.assertEqual(result.artifact["design"]["chosen"], "编辑线框")
@@ -181,7 +181,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
 
         result = build_hyperframes_overlay(
             llm,
-            self.episode,
+            self.video,
             self.media,
             dialogue_text="关键沟通需要保留完整上下文",
             critique_enabled=False,
@@ -206,7 +206,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
         }
         result = build_hyperframes_overlay(
             lambda _prompt: json.dumps(semantic, ensure_ascii=False),
-            self.episode,
+            self.video,
             {**self.media, "durationSeconds": 10.0},
             dialogue_text="沟通总等待。对话总停顿。自然衔接。信息开始顺畅。后续内容不显示。",
             critique_enabled=False,
@@ -252,7 +252,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
                 "theme": "signal",
                 "beats": [{"question": "表达总卡顿？", "result": "清晰抵达！"}],
             }, ensure_ascii=False),
-            self.episode,
+            self.video,
             {**self.media, "textStyle": {"textColor": "#FFEE43", "strokeColor": "#121826", "strokeWidth": 6}},
             dialogue_text="信息表达总卡顿。当前信息清晰抵达。",
             critique_enabled=False,
@@ -273,7 +273,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
                 "density": "balanced",
                 "beats": [{"question": "表达总卡顿？", "result": "表达更清晰！"}],
             }, ensure_ascii=False),
-            self.episode,
+            self.video,
             self.media,
             dialogue_text="信息表达总卡顿。信息表达更清晰。",
             critique_enabled=False,
@@ -309,7 +309,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
         result = revise_hyperframes_overlay(
             lambda _prompt: json.dumps(revision, ensure_ascii=False),
             _normalize_artifact(_artifact(), self.media),
-            self.episode,
+            self.video,
             self.media,
             dialogue_text="关键沟通需要保留完整上下文",
             validation_error="Text content is clipped",
@@ -515,7 +515,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
             _normalize_artifact(artifact, self.media)
 
     def test_generation_prompt_contains_opendesign_quality_contract(self) -> None:
-        prompt = _build_generation_prompt(self.episode, self.media, "用户修改后的最新台词")
+        prompt = _build_generation_prompt(self.video, self.media, "用户修改后的最新台词")
         self.assertIn("当前最新台词：用户修改后的最新台词", prompt)
         self.assertIn("get_context", prompt)
         self.assertIn("finalize", HTML_MOTION_SYSTEM_PROMPT)
@@ -541,7 +541,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
                     "result": "打通所有工作！",
                 }],
             }, ensure_ascii=False),
-            self.episode,
+            self.video,
             self.media,
             dialogue_text="应用跳转很烦。打通所有工作。",
             critique_enabled=False,
@@ -568,7 +568,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
                     "density": "rich",
                     "beats": [{"question": "信息总卡顿？", "result": "清晰出现！"}],
                 }, ensure_ascii=False),
-                self.episode,
+                self.video,
                 self.media,
                 dialogue_text="关键信息总卡顿。关键信息清晰出现。",
                 critique_enabled=False,
@@ -609,7 +609,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
         }
         result = build_hyperframes_overlay(
             lambda _prompt: json.dumps(semantic, ensure_ascii=False),
-            self.episode,
+            self.video,
             {**self.media, "durationSeconds": 12.0},
             dialogue_text="关键处总停顿。跨区总卡顿。信息开始自然流动。第三段给出结论。",
             critique_enabled=False,
@@ -650,7 +650,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
                     {"question": "反馈总卡壳？", "result": "反馈接住！"},
                 ],
             }, ensure_ascii=False),
-            self.episode,
+            self.video,
             {**self.media, "durationSeconds": 12.0, "beatIntervalSeconds": 4},
             dialogue_text="客户沟通总是卡壳。需求总卡壳。反馈总卡壳。反馈和需求都能及时接住。需求接住。反馈接住。",
             critique_enabled=False,
@@ -691,7 +691,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
                     "density": "balanced",
                     "beats": [{"question": "在关键处停顿？", "result": "开始自然流动！"}],
                 }, ensure_ascii=False),
-                self.episode,
+                self.video,
                 {**self.media, "durationSeconds": 12.0},
                 dialogue_text="沟通关键处停顿。跨区总卡顿。信息开始自然流动。第三段给出结论。",
                 critique_enabled=False,
@@ -710,7 +710,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
                         "question": "沟通总是卡壳？",
                     }],
                 }, ensure_ascii=False),
-                self.episode,
+                self.video,
                 self.media,
                 dialogue_text="客户沟通总是卡壳。AI同声传译，全球聊天支付办公全整合。反馈和需求都能及时接住。",
                 critique_enabled=False,
@@ -770,7 +770,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
         ])
         result = build_hyperframes_overlay(
             lambda _prompt: next(responses),
-            self.episode,
+            self.video,
             {**self.media, "durationSeconds": 5.0},
             dialogue_text="沟通总卡顿。信息自然流动。",
             critique_enabled=False,
@@ -803,7 +803,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
 
         result = build_hyperframes_overlay(
             llm,
-            self.episode,
+            self.video,
             {**self.media, "durationSeconds": 19.9, "beatIntervalSeconds": 3},
             dialogue_text=dialogue,
             critique_enabled=False,
@@ -848,7 +848,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
 
         build_hyperframes_overlay(
             llm,
-            self.episode,
+            self.video,
             {**self.media, "durationSeconds": 4.0},
             dialogue_text="独立跨境快一年半，客户沟通总是卡壳。",
             critique_enabled=False,
@@ -896,7 +896,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
 
         result = build_hyperframes_overlay(
             llm,
-            self.episode,
+            self.video,
             {
                 **self.media,
                 "durationSeconds": 19.9,
@@ -922,7 +922,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
                         {"question": "通总是卡壳？", "result": "支付！"},
                     ],
                 }, ensure_ascii=False),
-                self.episode,
+                self.video,
                 self.media,
                 dialogue_text=(
                     "做独立跨境快一年半，客户沟通总是卡壳。"
@@ -945,7 +945,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
                         "result": "立享返佣！",
                     }],
                 }, ensure_ascii=False),
-                self.episode,
+                self.video,
                 self.media,
                 dialogue_text=(
                     "做独立跨境快一年半，客户沟通总是卡壳。"
@@ -970,7 +970,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
                         "result": "零障碍收益！",
                     }],
                 }, ensure_ascii=False),
-                self.episode,
+                self.video,
                 {
                     **self.media,
                     "safeZone": {"x": 8.87, "y": 3.72, "width": 84.13, "height": 43.42},
@@ -1001,7 +1001,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
 
         result = build_hyperframes_overlay(
             llm,
-            self.episode,
+            self.video,
             self.media,
             dialogue_text="客户沟通总是卡壳。反馈和需求都能及时接住。",
             critique_enabled=False,
@@ -1030,7 +1030,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
 
         result = build_hyperframes_overlay(
             llm,
-            self.episode,
+            self.video,
             self.media,
             dialogue_text="客户沟通总是卡壳。反馈和需求都能及时接住。",
             critique_enabled=False,
@@ -1053,7 +1053,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
                     "result": "及时接住！",
                 }],
             }, ensure_ascii=False),
-            self.episode,
+            self.video,
             {
                 **self.media,
                 "safeZone": {"x": 8.87, "y": 3.72, "width": 84.13, "height": 43.42},
@@ -1085,7 +1085,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
         }
         result = build_hyperframes_overlay(
             lambda _prompt: json.dumps(semantic, ensure_ascii=False),
-            self.episode,
+            self.video,
             media,
             dialogue_text="关键信息总卡顿。关键信息清晰出现。",
             critique_enabled=False,
@@ -1104,7 +1104,7 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "缺少经过提炼的文案节拍"):
             build_hyperframes_overlay(
                 lambda _prompt: json.dumps({"theme": "signal"}, ensure_ascii=False),
-                self.episode,
+                self.video,
                 self.media,
                 dialogue_text="这是一整段没有经过规划的原始台词。",
                 critique_enabled=False,

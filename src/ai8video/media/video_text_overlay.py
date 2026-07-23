@@ -17,7 +17,7 @@ from ai8video.media.ffmpeg_utils import resolve_ffmpeg_bin, resolve_ffprobe_bin
 from ai8video.assets.user_materials import IMAGE_MATERIAL_EXTENSIONS, USER_FLOWER_WATERMARK_DIR
 from ai8video.assets.user_files import USER_FILE_ROOT, ensure_user_file_root
 from ai8video.core.paths import PROJECT_ROOT
-from ai8video.media.video_encoding import append_video_postprocess_encoding_args, video_postprocess_encoding_meta
+from ai8video.media.video_encoding import append_video_postprocess_encoding_args
 
 
 VIDEO_TEXT_OVERLAY_DIR = (USER_FILE_ROOT / "花字").resolve()
@@ -435,7 +435,7 @@ def apply_video_text_overlay(
         "-map",
         "0:a?",
     ])
-    append_video_postprocess_encoding_args(cmd)
+    video_encoding = append_video_postprocess_encoding_args(cmd)
     cmd.extend([
         "-c:a",
         "copy",
@@ -500,7 +500,7 @@ def apply_video_text_overlay(
         "watermark2Present": watermark2_present,
         "targetVideoSize": None if target_size is None else {"width": target_size[0], "height": target_size[1]},
         "textLength": len(text),
-        "videoEncoding": video_postprocess_encoding_meta(),
+        "videoEncoding": video_encoding,
     }
 
 

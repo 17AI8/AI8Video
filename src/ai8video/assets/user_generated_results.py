@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ai8video.assets.user_files import USER_GENERATED_RESULT_ROOT, ensure_user_file_root
+from ai8video.core.legacy_payload import normalize_legacy_video_payload
 
 RESULT_VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v"}
 RESULT_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -98,7 +99,7 @@ def _migrate_result_metadata(root: Path, moved_keys: dict[str, str]) -> list[str
 
 def _read_json_object(path: Path) -> dict[str, Any]:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = normalize_legacy_video_payload(json.loads(path.read_text(encoding="utf-8")))
     except (OSError, json.JSONDecodeError):
         return {}
     return payload if isinstance(payload, dict) else {}
@@ -302,7 +303,7 @@ def _reconcile_progress_item(
     if task_status != "succeeded" and result_path is not None:
         conflicts.append("result_for_non_succeeded_task")
     return {
-        "episodeIndex": progress_item.get("episodeIndex"),
+        "videoIndex": progress_item.get("videoIndex"),
         "jobId": _normalized_text(progress_item.get("jobId")) or None,
         "taskStatus": task_status,
         "assetState": asset_state,

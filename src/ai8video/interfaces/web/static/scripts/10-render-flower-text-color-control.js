@@ -108,7 +108,7 @@
             <input type="checkbox" data-html-motion-overlay-toggle ${overlay.enabled ? 'checked' : ''} ${overlay.saving ? 'disabled' : ''}>
           </label>
           <div class="generation-mode-note">
-            开启后会按每集最终提示词生成透明动态图形，再叠加到基础视频。渲染或叠加失败时会保留基础视频，并在结果里标记原因。
+            开启后会按每条视频的最终提示词生成透明动态图形，再叠加到基础视频。渲染或叠加失败时会保留基础视频，并在结果里标记原因。
             ${note ? `<br>${escapeHtml(note)}` : ''}${runtimeNote}
           </div>
         </div>
@@ -200,7 +200,7 @@
         String(item?.label || '').trim(),
         item?.value,
       ]));
-      const total = parseProgressNumber(metricMap.get('集数') ?? metricMap.get('目标'));
+      const total = parseProgressNumber(metricMap.get('视频数') ?? metricMap.get('目标'));
       const done = parseProgressNumber(
         metricMap.get('已生成') ?? metricMap.get('通过') ?? metricMap.get('归档')
       );

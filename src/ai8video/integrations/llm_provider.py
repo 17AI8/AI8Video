@@ -9,11 +9,11 @@ from ai8video.core.config import AI8VideoConfig
 from ai8video.integrations.http_client import api_request
 
 
-def build_openai_compat_splitter(
+def build_openai_compat_llm(
     config: AI8VideoConfig,
     *,
     timeout_seconds: int | None = None,
-    system_prompt: str = "你是严格遵守 JSON 输出要求的剧本拆分器。",
+    system_prompt: str = "你是严格遵守 JSON 输出要求的短视频规划模型。",
     stream: bool = True,
     transport_retry_count: int = 0,
 ):

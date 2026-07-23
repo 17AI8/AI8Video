@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from ai8video.generation import generation_mode
 from ai8video.application.conversation_controller import AI8VideoConversationController
-from ai8video.core.models import EpisodePrompt, ParsedRequest, PipelineResult, QuickVideoJob
+from ai8video.core.models import VideoPrompt, ParsedRequest, PipelineResult, QuickVideoJob
 
 
 class AI8VideoGenerationModeTest(unittest.TestCase):
@@ -32,9 +32,9 @@ class AI8VideoGenerationModeTest(unittest.TestCase):
                 captured["request"] = request
                 return PipelineResult(
                     request=request,
-                    episodes=[EpisodePrompt(index=1, title="第 1 条", prompt=request.raw_text)],
+                    videos=[VideoPrompt(index=1, title="第 1 条", prompt=request.raw_text)],
                     first_frame=None,
-                    jobs=[QuickVideoJob(episode_index=1, job_id="dry-1", status="succeeded")],
+                    jobs=[QuickVideoJob(video_index=1, job_id="dry-1", status="succeeded")],
                     dry_run=True,
                 )
 
@@ -57,9 +57,9 @@ class AI8VideoGenerationModeTest(unittest.TestCase):
                 captured["request"] = request
                 return PipelineResult(
                     request=request,
-                    episodes=[EpisodePrompt(index=1, title="第 1 条", prompt=request.raw_text)],
+                    videos=[VideoPrompt(index=1, title="第 1 条", prompt=request.raw_text)],
                     first_frame=None,
-                    jobs=[QuickVideoJob(episode_index=1, job_id="dry-1", status="succeeded")],
+                    jobs=[QuickVideoJob(video_index=1, job_id="dry-1", status="succeeded")],
                     dry_run=True,
                 )
 

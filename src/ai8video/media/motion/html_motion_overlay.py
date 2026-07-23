@@ -19,8 +19,8 @@ from ai8video.media.motion.hyperframes_overlay_prompts import HTML_MOTION_SYSTEM
 from ai8video.media.motion.hyperframes_runtime import WAAPI_RUNTIME_SOURCE, render_prepared_hyperframes, write_hyperframes_files
 from ai8video.media.motion.hyperframes_worker import HyperFramesWorkerCancelled, HyperFramesWorkerError
 from ai8video.media.overlay_video_io import assert_transparent_layer, composite_transparent_layer, validate_composited_video
-from ai8video.integrations.llm_provider import build_openai_compat_splitter
-from ai8video.core.models import EpisodePrompt, ParsedRequest, QuickVideoJob
+from ai8video.integrations.llm_provider import build_openai_compat_llm
+from ai8video.core.models import VideoPrompt, ParsedRequest, QuickVideoJob
 from ai8video.assets.user_files import USER_FILE_ROOT, ensure_user_file_root
 from ai8video.media.video_encoding import video_postprocess_encoding_meta
 from ai8video.media.video_text_overlay import selected_video_text_overlay_font_path
@@ -128,7 +128,7 @@ def html_motion_runtime_status() -> dict[str, Any]:
 
 
 def build_html_motion_llm(config: AI8VideoConfig):
-    llm = build_openai_compat_splitter(
+    llm = build_openai_compat_llm(
         config,
         timeout_seconds=HTML_MOTION_LLM_TIMEOUT_SECONDS,
         stream=True,
@@ -165,7 +165,7 @@ def _run_llm_race(llm: Callable[[str], str], prompt: str) -> str:
 def apply_html_motion_overlay(
     video_path: Path | str,
     request: ParsedRequest,
-    episode: EpisodePrompt,
+    video: VideoPrompt,
     job: QuickVideoJob,
     *,
     llm: Callable[[str], str] | None,
@@ -189,7 +189,7 @@ def apply_html_motion_overlay(
     if llm is None:
         return _result("degraded", "未配置可用文本模型，HTML 动效未叠加", runtime=runtime)
     return _render_and_composite(
-        source, episode, llm, ffmpeg_bin, stage_callback, runtime, cancel_event, text_style,
+        source, video, llm, ffmpeg_bin, stage_callback, runtime, cancel_event, text_style,
     )
 
 
@@ -201,7 +201,7 @@ def manual_only_html_motion_result() -> dict[str, Any]:
 
 def _render_and_composite(
     source: Path,
-    episode: EpisodePrompt,
+    video: VideoPrompt,
     llm: Callable[[str], str],
     ffmpeg_bin: str | None,
     stage_callback: Callable[[str, dict[str, Any] | None], None] | None,
@@ -224,10 +224,10 @@ def _render_and_composite(
         _notify_stage(stage_callback, "preparing")
         font_family = _resolve_motion_font_family()
         _notify_stage(stage_callback, "generating")
-        dialogue_text = _resolve_html_motion_dialogue(episode)
+        dialogue_text = _resolve_html_motion_dialogue(video)
         harness = build_hyperframes_overlay(
             llm,
-            episode,
+            video,
             media,
             dialogue_text=dialogue_text,
             font_family=font_family,
@@ -246,7 +246,7 @@ def _render_and_composite(
             work_dir,
             harness,
             llm,
-            episode,
+            video,
             media,
             font_family,
             cancel_event=cancel_event,
@@ -325,7 +325,7 @@ def _render_with_validation_repair(
     work_dir: Path,
     harness: HarnessResult,
     llm: Callable[[str], str],
-    episode: EpisodePrompt,
+    video: VideoPrompt,
     media: dict[str, Any],
     font_family: str,
     *,
@@ -347,9 +347,9 @@ def _render_with_validation_repair(
         revised = revise_hyperframes_overlay(
             llm,
             harness.artifact,
-            episode,
+            video,
             media,
-            dialogue_text=_resolve_html_motion_dialogue(episode),
+            dialogue_text=_resolve_html_motion_dialogue(video),
             validation_error=str(exc)[:1_200],
             font_family=font_family,
             semantic_spec=harness.semantic_spec,
@@ -543,11 +543,11 @@ def _normalize_text_style(value: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
-def _resolve_html_motion_dialogue(episode: EpisodePrompt) -> str:
-    summary = str(getattr(episode, "source_summary", "") or "").strip()
+def _resolve_html_motion_dialogue(video: VideoPrompt) -> str:
+    summary = str(getattr(video, "source_summary", "") or "").strip()
     if summary:
         return summary
-    prompt = str(getattr(episode, "prompt", "") or "").strip()
+    prompt = str(getattr(video, "prompt", "") or "").strip()
     return prompt
 
 

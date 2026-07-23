@@ -394,7 +394,7 @@
       } else if (ref.error) {
         button.title = `参考图设置失败：${ref.error}`;
       } else {
-        button.title = '从图片素材库选择默认首帧图 / 参考图。';
+        button.title = '当前未选择，生成时默认不用参考图。点击可从图片素材库选择。';
       }
     }
 
@@ -413,7 +413,7 @@
       const loading = !!state.defaultReferenceDrawer.loading;
       const selecting = !!ref.selecting;
       const error = String(ref.error || '').trim();
-      const statusText = selecting ? '正在切换参考图...' : error ? `提示：${error}` : '从图片素材库选择默认首帧图 / 参考图';
+      const statusText = selecting ? '正在切换参考图...' : error ? `提示：${error}` : '未选择时默认不用参考图；选择后自动用于生成';
       const effectDefinitions = normalizeDefaultReferenceEffects(ref.effectDefinitions);
       const options = normalizeDefaultReferenceOptions(ref.options, effectDefinitions);
       let listMarkup = '';
@@ -497,4 +497,3 @@
       };
       return customPrompt;
     }
-

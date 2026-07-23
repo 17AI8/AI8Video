@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from ai8video.core.models import EpisodePrompt
+from ai8video.core.models import VideoPrompt
 from ai8video.media.motion.hyperframes_overlay_agent import run_semantic_agent
 from ai8video.media.motion.hyperframes_overlay_renderer import build_composition_html, build_motion_manifest
 from ai8video.media.motion.hyperframes_overlay_prompts import (
@@ -38,7 +38,7 @@ class HarnessResult:
 
 def build_hyperframes_overlay(
     llm: Callable[[str], str],
-    episode: EpisodePrompt,
+    video: VideoPrompt,
     media: dict[str, Any],
     dialogue_text: str = "",
     font_family: str = "",
@@ -61,7 +61,7 @@ def build_hyperframes_overlay(
     try:
         agent = run_semantic_agent(
             gated_llm,
-            episode,
+            video,
             media,
             dialogue_text,
             max_turns=max(1, int(quality_retry_count) + 1),
@@ -69,7 +69,7 @@ def build_hyperframes_overlay(
         )
     except _LegacyArtifactPath as legacy:
         return _finish_legacy_artifact(
-            legacy.value, llm, episode, media, dialogue_text,
+            legacy.value, llm, video, media, dialogue_text,
             font_family=font_family, critique_enabled=critique_enabled,
         )
 
@@ -103,7 +103,7 @@ def build_hyperframes_overlay(
 def revise_hyperframes_overlay(
     llm: Callable[[str], str],
     artifact: dict[str, Any],
-    episode: EpisodePrompt,
+    video: VideoPrompt,
     media: dict[str, Any],
     *,
     dialogue_text: str,
@@ -137,7 +137,7 @@ def revise_hyperframes_overlay(
         _parse_json_object(
             llm(build_validation_repair_prompt(
                 artifact,
-                episode,
+                video,
                 media,
                 dialogue_text=dialogue_text,
                 validation_error=validation_error,
@@ -159,7 +159,7 @@ def revise_hyperframes_overlay(
 def _finish_legacy_artifact(
     model_value: dict[str, Any],
     llm: Callable[[str], str],
-    episode: EpisodePrompt,
+    video: VideoPrompt,
     media: dict[str, Any],
     dialogue_text: str,
     *,
@@ -167,7 +167,7 @@ def _finish_legacy_artifact(
     critique_enabled: bool,
 ) -> HarnessResult:
     artifact = _normalize_artifact(model_value, media, dialogue_text)
-    critique = _converge_critique(llm, artifact, episode, media, dialogue_text) if critique_enabled else {
+    critique = _converge_critique(llm, artifact, video, media, dialogue_text) if critique_enabled else {
         "artifact": artifact,
         "scores": {},
         "notes": [],
@@ -186,12 +186,12 @@ def _finish_legacy_artifact(
 def _converge_critique(
     llm: Callable[[str], str],
     artifact: dict[str, Any],
-    episode: EpisodePrompt,
+    video: VideoPrompt,
     media: dict[str, Any],
     dialogue_text: str,
 ) -> dict[str, Any]:
     for _ in range(3):
-        critique = _parse_critique(llm(_build_critique_prompt(artifact, episode, media, dialogue_text)))
+        critique = _parse_critique(llm(_build_critique_prompt(artifact, video, media, dialogue_text)))
         if min(critique["scores"].values()) >= 4:
             return {**critique, "artifact": artifact, "converged": True}
         revised = critique.get("revisedArtifact")
@@ -211,12 +211,12 @@ def _looks_semantic(value: dict[str, Any]) -> bool:
 
 
 def _build_generation_prompt(
-    episode: EpisodePrompt,
+    video: VideoPrompt,
     media: dict[str, Any],
     dialogue_text: str = "",
 ) -> str:
     return build_generation_prompt(
-        episode,
+        video,
         media,
         minimum_coverage_ratio=MIN_COVERAGE_RATIO,
         dialogue_text=dialogue_text,
@@ -225,8 +225,8 @@ def _build_generation_prompt(
 
 def _build_critique_prompt(
     artifact: dict[str, Any],
-    episode: EpisodePrompt,
+    video: VideoPrompt,
     media: dict[str, Any],
     dialogue_text: str = "",
 ) -> str:
-    return build_critique_prompt(artifact, episode, media, dialogue_text)
+    return build_critique_prompt(artifact, video, media, dialogue_text)

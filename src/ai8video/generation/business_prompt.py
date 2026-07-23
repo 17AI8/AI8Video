@@ -8,7 +8,7 @@ import re
 import tempfile
 from typing import Callable, Any
 
-from ai8video.core.models import EpisodePrompt
+from ai8video.core.models import VideoPrompt
 from ai8video.generation.prompt_trace import append_prompt_trace
 from ai8video.assets.user_files import USER_FILE_ROOT, ensure_user_file_root
 
@@ -98,7 +98,7 @@ def append_business_prompt(text: str) -> str:
     return f"{base}\n\n{block}"
 
 
-def finalize_video_prompt(text: str) -> str:
+def finalize_prompt_text(text: str) -> str:
     """Legacy fallback when the core text model is unavailable.
 
     Natural-language constraints must be handled by the core text model. This
@@ -155,7 +155,7 @@ AI8video 固定质量要求：
 
 
 def build_business_prompt_batch_rewrite_prompt(
-    episodes: list[EpisodePrompt],
+    videos: list[VideoPrompt],
     *,
     prompt_kind: str = "video",
     task_constraints: str | None = None,
@@ -163,15 +163,15 @@ def build_business_prompt_batch_rewrite_prompt(
     business_prompt = read_business_prompt()
     kind_label = "视频模型提示词" if prompt_kind == "video" else "图片图生图提示词"
     task_constraint_block = _task_constraint_block(task_constraints)
-    episode_items = [
+    video_items = [
         {
-            "index": episode.index,
-            "title": str(episode.title or "").strip(),
-            "prompt": str(episode.prompt or "").strip(),
-            "source_summary": str(episode.source_summary or "").strip(),
-            "keyword_guidance": episode.keyword_guidance or {},
+            "index": video.index,
+            "title": str(video.title or "").strip(),
+            "prompt": str(video.prompt or "").strip(),
+            "source_summary": str(video.source_summary or "").strip(),
+            "keyword_guidance": video.keyword_guidance or {},
         }
-        for episode in episodes
+        for video in videos
     ]
     return f"""你是AI8video 的整批最终提示词质检与改写模型。
 
@@ -201,7 +201,7 @@ def build_business_prompt_batch_rewrite_prompt(
 ]
 
 候选提示词数组：
-{json.dumps(episode_items, ensure_ascii=False)}
+{json.dumps(video_items, ensure_ascii=False)}
 """
 
 
@@ -245,7 +245,7 @@ def finalize_video_prompt_with_ai(
     *,
     llm: LLMCallable | None = None,
     trace_session_id: str | None = None,
-    episode_index: int | None = None,
+    video_index: int | None = None,
     prompt_kind: str = "video",
     source_summary: str | None = None,
     keyword_guidance: dict | None = None,
@@ -261,7 +261,7 @@ def finalize_video_prompt_with_ai(
     if not base:
         return ""
     if llm is None:
-        return finalize_video_prompt(base)
+        return finalize_prompt_text(base)
 
     model_prompt = build_business_prompt_rewrite_prompt(
         base,
@@ -274,7 +274,7 @@ def finalize_video_prompt_with_ai(
         "business_prompt_model_input",
         session_id=trace_session_id,
         payload={
-            "episodeIndex": episode_index,
+            "videoIndex": video_index,
             "promptKind": prompt_kind,
             "sourceSummary": source_summary,
             "keywordGuidance": keyword_guidance,
@@ -288,7 +288,7 @@ def finalize_video_prompt_with_ai(
             "business_prompt_model_output",
             session_id=trace_session_id,
             payload={
-                "episodeIndex": episode_index,
+                "videoIndex": video_index,
                 "promptKind": prompt_kind,
                 "raw": raw,
             },
@@ -302,7 +302,7 @@ def finalize_video_prompt_with_ai(
             cleaned_prompt,
             llm=llm,
             trace_session_id=trace_session_id,
-            episode_index=episode_index,
+            video_index=video_index,
             prompt_kind=prompt_kind,
             task_constraints=task_constraints,
         )
@@ -312,7 +312,7 @@ def finalize_video_prompt_with_ai(
             "business_prompt_model_error",
             session_id=trace_session_id,
             payload={
-                "episodeIndex": episode_index,
+                "videoIndex": video_index,
                 "promptKind": prompt_kind,
                 "errorType": exc.__class__.__name__,
                 "error": str(exc),
@@ -321,30 +321,30 @@ def finalize_video_prompt_with_ai(
         return _apply_custom_safety_guard(_minimal_internal_prompt_guard(base), task_constraints)
 
 
-def finalize_episode_prompts(
-    episodes: list[EpisodePrompt],
+def finalize_video_prompts(
+    videos: list[VideoPrompt],
     *,
     llm: LLMCallable | None = None,
     trace_session_id: str | None = None,
     prompt_kind: str = "video",
     task_constraints: str | None = None,
-) -> list[EpisodePrompt]:
-    if not episodes:
+) -> list[VideoPrompt]:
+    if not videos:
         return []
-    if llm is None or len(episodes) == 1:
+    if llm is None or len(videos) == 1:
         return [
-            finalize_episode_prompt(
-                episode,
+            finalize_video_prompt(
+                video,
                 llm=llm,
                 trace_session_id=trace_session_id,
                 task_constraints=task_constraints,
             )
-            for episode in episodes
+            for video in videos
         ]
 
-    finalized: list[EpisodePrompt] = []
-    for batch_index, batch in enumerate(_chunk_episodes(episodes, FINALIZE_EPISODE_BATCH_SIZE), 1):
-        finalized.extend(_finalize_episode_prompt_batch(
+    finalized: list[VideoPrompt] = []
+    for batch_index, batch in enumerate(_chunk_videos(videos, FINALIZE_EPISODE_BATCH_SIZE), 1):
+        finalized.extend(_finalize_video_prompt_batch(
             batch,
             llm=llm,
             trace_session_id=trace_session_id,
@@ -355,17 +355,17 @@ def finalize_episode_prompts(
     return finalized
 
 
-def _finalize_episode_prompt_batch(
-    episodes: list[EpisodePrompt],
+def _finalize_video_prompt_batch(
+    videos: list[VideoPrompt],
     *,
     llm: LLMCallable,
     trace_session_id: str | None,
     prompt_kind: str,
     task_constraints: str | None,
     batch_index: int,
-) -> list[EpisodePrompt]:
+) -> list[VideoPrompt]:
     model_prompt = build_business_prompt_batch_rewrite_prompt(
-        episodes,
+        videos,
         prompt_kind=prompt_kind,
         task_constraints=task_constraints,
     )
@@ -374,8 +374,8 @@ def _finalize_episode_prompt_batch(
         session_id=trace_session_id,
         payload={
             "batchIndex": batch_index,
-            "episodeCount": len(episodes),
-            "episodeIndexes": [episode.index for episode in episodes],
+            "videoCount": len(videos),
+            "videoIndexes": [video.index for video in videos],
             "promptKind": prompt_kind,
             "taskConstraints": task_constraints,
             "prompt": model_prompt,
@@ -388,8 +388,8 @@ def _finalize_episode_prompt_batch(
             session_id=trace_session_id,
             payload={
                 "batchIndex": batch_index,
-                "episodeCount": len(episodes),
-                "episodeIndexes": [episode.index for episode in episodes],
+                "videoCount": len(videos),
+                "videoIndexes": [video.index for video in videos],
                 "promptKind": prompt_kind,
                 "raw": raw,
             },
@@ -404,25 +404,25 @@ def _finalize_episode_prompt_batch(
             except (TypeError, ValueError):
                 continue
             by_index[index] = item
-        if len(by_index) != len(episodes):
-            raise ValueError(f"business prompt model returned {len(by_index)} items, expected {len(episodes)}")
-        finalized: list[EpisodePrompt] = []
-        for episode in episodes:
-            item = by_index.get(episode.index) or {}
+        if len(by_index) != len(videos):
+            raise ValueError(f"business prompt model returned {len(by_index)} items, expected {len(videos)}")
+        finalized: list[VideoPrompt] = []
+        for video in videos:
+            item = by_index.get(video.index) or {}
             prompt = str(item.get("final_prompt") or "").strip()
             if not prompt:
-                raise ValueError(f"business prompt model returned empty final_prompt for episode {episode.index}")
+                raise ValueError(f"business prompt model returned empty final_prompt for video {video.index}")
             cleaned_prompt = _minimal_internal_prompt_guard(prompt)
-            finalized.append(EpisodePrompt(
-                index=episode.index,
+            finalized.append(VideoPrompt(
+                index=video.index,
                 title=finalize_title(
-                    str(item.get("title") or episode.title),
+                    str(item.get("title") or video.title),
                     task_constraints=task_constraints,
                 ),
                 prompt=cleaned_prompt,
-                source_summary=episode.source_summary,
+                source_summary=video.source_summary,
                 keyword_guidance={
-                    **(episode.keyword_guidance or {}),
+                    **(video.keyword_guidance or {}),
                     "final_rewrite_notes": str(item.get("notes") or "").strip(),
                 },
             ))
@@ -433,51 +433,51 @@ def _finalize_episode_prompt_batch(
             session_id=trace_session_id,
             payload={
                 "batchIndex": batch_index,
-                "episodeCount": len(episodes),
-                "episodeIndexes": [episode.index for episode in episodes],
+                "videoCount": len(videos),
+                "videoIndexes": [video.index for video in videos],
                 "promptKind": prompt_kind,
                 "errorType": exc.__class__.__name__,
                 "error": str(exc),
             },
         )
         return [
-            finalize_episode_prompt(
-                episode,
+            finalize_video_prompt(
+                video,
                 llm=None,
                 trace_session_id=trace_session_id,
                 task_constraints=task_constraints,
             )
-            for episode in episodes
+            for video in videos
         ]
 
 
-def _chunk_episodes(episodes: list[EpisodePrompt], batch_size: int) -> list[list[EpisodePrompt]]:
+def _chunk_videos(videos: list[VideoPrompt], batch_size: int) -> list[list[VideoPrompt]]:
     size = max(1, int(batch_size or 1))
-    return [episodes[index:index + size] for index in range(0, len(episodes), size)]
+    return [videos[index:index + size] for index in range(0, len(videos), size)]
 
 
-def finalize_episode_prompt(
-    episode: EpisodePrompt,
+def finalize_video_prompt(
+    video: VideoPrompt,
     *,
     llm: LLMCallable | None = None,
     trace_session_id: str | None = None,
     task_constraints: str | None = None,
-) -> EpisodePrompt:
-    return EpisodePrompt(
-        index=episode.index,
-        title=finalize_title(episode.title, task_constraints=task_constraints),
+) -> VideoPrompt:
+    return VideoPrompt(
+        index=video.index,
+        title=finalize_title(video.title, task_constraints=task_constraints),
         prompt=finalize_video_prompt_with_ai(
-            episode.prompt,
+            video.prompt,
             llm=llm,
             trace_session_id=trace_session_id,
-            episode_index=episode.index,
+            video_index=video.index,
             prompt_kind="video",
-            source_summary=episode.source_summary,
-            keyword_guidance=episode.keyword_guidance,
+            source_summary=video.source_summary,
+            keyword_guidance=video.keyword_guidance,
             task_constraints=task_constraints,
         ),
-        source_summary=episode.source_summary,
-        keyword_guidance=episode.keyword_guidance,
+        source_summary=video.source_summary,
+        keyword_guidance=video.keyword_guidance,
     )
 
 
@@ -486,7 +486,7 @@ def _validate_business_prompt_with_ai(
     *,
     llm: LLMCallable,
     trace_session_id: str | None = None,
-    episode_index: int | None = None,
+    video_index: int | None = None,
     prompt_kind: str = "video",
     task_constraints: str | None = None,
 ) -> str:
@@ -502,7 +502,7 @@ def _validate_business_prompt_with_ai(
         "business_prompt_validation_model_input",
         session_id=trace_session_id,
         payload={
-            "episodeIndex": episode_index,
+            "videoIndex": video_index,
             "promptKind": prompt_kind,
             "taskConstraints": task_constraints,
             "prompt": validation_prompt,
@@ -514,7 +514,7 @@ def _validate_business_prompt_with_ai(
             "business_prompt_validation_model_output",
             session_id=trace_session_id,
             payload={
-                "episodeIndex": episode_index,
+                "videoIndex": video_index,
                 "promptKind": prompt_kind,
                 "raw": raw,
             },
@@ -529,7 +529,7 @@ def _validate_business_prompt_with_ai(
             "business_prompt_validation_model_error",
             session_id=trace_session_id,
             payload={
-                "episodeIndex": episode_index,
+                "videoIndex": video_index,
                 "promptKind": prompt_kind,
                 "errorType": exc.__class__.__name__,
                 "error": str(exc),

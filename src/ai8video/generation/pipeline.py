@@ -7,15 +7,15 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from ai8video.generation.ai_script_splitter import (
+from ai8video.generation.video_prompt_planner import (
     LLMCallable,
     expand_batch_seed_messages_with_ai,
-    rewrite_episode_with_ai,
-    single_prompt_to_episode,
-    split_script_with_ai,
+    rewrite_video_with_ai,
+    single_prompt_to_video,
+    plan_video_prompts_with_ai,
 )
 from ai8video.assets.asset_store import JsonlAssetStore
-from ai8video.generation.business_prompt import finalize_episode_prompts
+from ai8video.generation.business_prompt import finalize_video_prompts
 from ai8video.core.config import AI8VideoConfig
 from ai8video.assets.default_reference_image import build_reference_image_instruction
 from ai8video.generation.generation_progress import (
@@ -33,12 +33,12 @@ from ai8video.generation.generation_progress import (
     mark_job_succeeded,
     start_generation_progress,
 )
-from ai8video.integrations.llm_provider import build_openai_compat_splitter
+from ai8video.integrations.llm_provider import build_openai_compat_llm
 from ai8video.knowledge.script_knowledge_rerank import build_script_rerank_llm
 from ai8video.knowledge.script_knowledge_query import build_script_query_llm
 from ai8video.application.message_parser import parse_employee_message
 from ai8video.integrations.direct_video_model_client import AI8VideoModelClient
-from ai8video.core.models import ArchivedAsset, EpisodePrompt, FirstFrameAsset, ParsedRequest, PipelineResult, QuickVideoJob, GenerationOutcome
+from ai8video.core.models import ArchivedAsset, VideoPrompt, FirstFrameAsset, ParsedRequest, PipelineResult, QuickVideoJob, GenerationOutcome
 from ai8video.generation.prompt_trace import append_prompt_trace
 from ai8video.generation.output_review import review_final_outputs
 from ai8video.generation.reference_image_preprocessor import (
@@ -60,9 +60,9 @@ class AI8VideoPipeline:
         llm: LLMCallable | None = None,
     ):
         self.config = config or AI8VideoConfig.from_env()
-        self.llm = llm or build_openai_compat_splitter(self.config)
+        self.llm = llm or build_openai_compat_llm(self.config)
         interpreter_timeout = max(5, min(30, int(os.getenv("AI8VIDEO_REQUEST_INTERPRETER_TIMEOUT_SECONDS", "20"))))
-        self.request_interpreter_llm = llm or build_openai_compat_splitter(
+        self.request_interpreter_llm = llm or build_openai_compat_llm(
             self.config,
             timeout_seconds=interpreter_timeout,
             system_prompt="你是AI8video 的员工自然语言请求理解器，只返回严格 JSON。",
@@ -79,35 +79,35 @@ class AI8VideoPipeline:
         return self.run_request(request, progress_session_id=progress_session_id)
 
     def run_request(self, request: ParsedRequest, *, progress_session_id: str | None = None) -> PipelineResult:
-        allow_mock_split = self.config.dry_run
+        allow_mock_planning = self.config.dry_run
         task_constraints = self._reference_task_constraints(request)
-        if request.mode == "multi_episode_script":
-            if not request.episode_count:
-                raise ValueError("episode_count is required for multi_episode_script mode")
-            episodes = split_script_with_ai(
+        if request.mode == "batch_videos":
+            if not request.video_count:
+                raise ValueError("video_count is required for batch_videos mode")
+            videos = plan_video_prompts_with_ai(
                 request.raw_text,
-                request.episode_count,
+                request.video_count,
                 request.style_hint,
                 request.core_keywords,
                 task_constraints=task_constraints,
                 llm=self.llm,
-                allow_mock=allow_mock_split,
+                allow_mock=allow_mock_planning,
                 trace_session_id=progress_session_id,
             )
         else:
-            episodes = single_prompt_to_episode(request.raw_text, request.style_hint, request.core_keywords)
-        return self._run_episodes(request, episodes, progress_session_id=progress_session_id)
+            videos = single_prompt_to_video(request.raw_text, request.style_hint, request.core_keywords)
+        return self._run_videos(request, videos, progress_session_id=progress_session_id)
 
-    def rewrite_episode(
+    def rewrite_video(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         rewrite_instruction: str,
         *,
         progress_session_id: str | None = None,
     ) -> PipelineResult:
-        revised_episode = rewrite_episode_with_ai(
-            episode,
+        revised_video = rewrite_video_with_ai(
+            video,
             rewrite_instruction,
             style_hint=request.style_hint,
             core_keywords=request.core_keywords,
@@ -116,37 +116,37 @@ class AI8VideoPipeline:
             allow_mock=self.config.dry_run,
             trace_session_id=progress_session_id,
         )
-        return self._run_episodes(request, [revised_episode], progress_session_id=progress_session_id)
+        return self._run_videos(request, [revised_video], progress_session_id=progress_session_id)
 
-    def retry_episode(
+    def retry_video(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         first_frame: FirstFrameAsset,
         *,
         progress_session_id: str | None = None,
     ) -> PipelineResult:
-        start_generation_progress(progress_session_id, [episode], concurrent=False)
+        start_generation_progress(progress_session_id, [video], concurrent=False)
         try:
-            mark_job_submitting(progress_session_id, episode)
+            mark_job_submitting(progress_session_id, video)
             job = self.client.create_job(
-                text=episode.prompt,
-                episode_index=episode.index,
+                text=video.prompt,
+                video_index=video.index,
                 first_frame=first_frame,
                 duration_seconds=request.duration_seconds,
                 ratio=request.ratio,
                 resolution=request.resolution,
                 preset=request.preset,
             )
-            mark_job_submitted(progress_session_id, episode, job)
+            mark_job_submitted(progress_session_id, video, job)
             mark_job_polling(progress_session_id, job)
             completed_job = self._poll_job(job, progress_session_id)
             outcome, archive, asset_record = self._record_completed_job(
-                request, episode, completed_job, first_frame, progress_session_id,
+                request, video, completed_job, first_frame, progress_session_id,
             )
             return PipelineResult(
                 request=request,
-                episodes=[episode],
+                videos=[video],
                 first_frame=first_frame,
                 jobs=[completed_job],
                 outcomes=[outcome],
@@ -155,7 +155,7 @@ class AI8VideoPipeline:
                 dry_run=self.config.dry_run,
             )
         except Exception as exc:
-            mark_job_failed(progress_session_id, episode.index, exc)
+            mark_job_failed(progress_session_id, video.index, exc)
             raise
         finally:
             finish_generation_progress(progress_session_id)
@@ -177,78 +177,78 @@ class AI8VideoPipeline:
             allow_mock=self.config.dry_run,
         )
 
-    def _run_episodes(
+    def _run_videos(
         self,
         request: ParsedRequest,
-        episodes: list[EpisodePrompt],
+        videos: list[VideoPrompt],
         *,
         progress_session_id: str | None = None,
     ) -> PipelineResult:
         if not self.config.dry_run and self.client.guard.forced_duration_seconds > 0:
             request.duration_seconds = self.client.guard.forced_duration_seconds
         if not self.config.dry_run:
-            self.client.guard.assert_can_create_count(len(episodes))
+            self.client.guard.assert_can_create_count(len(videos))
         result_first_frame = None
 
         start_generation_progress(
             progress_session_id,
-            episodes,
-            concurrent=bool(request.concurrent_generation and len(episodes) > 1),
+            videos,
+            concurrent=bool(request.concurrent_generation and len(videos) > 1),
         )
         logger.info(
-            "ai8video generation start session=%s episodes=%s concurrent=%s reference=%s transform=%s custom_prompt=%s",
+            "ai8video generation start session=%s videos=%s concurrent=%s reference=%s transform=%s custom_prompt=%s",
             progress_session_id,
-            len(episodes),
-            bool(request.concurrent_generation and len(episodes) > 1),
+            len(videos),
+            bool(request.concurrent_generation and len(videos) > 1),
             bool(request.reference_image),
             bool(request.reference_image_transform_options and any(request.reference_image_transform_options.values())),
             bool(str(request.reference_image_custom_prompt or "").strip()),
         )
-        if request.concurrent_generation and len(episodes) > 1:
-            return self._run_episodes_concurrently(request, episodes, progress_session_id=progress_session_id)
+        if request.concurrent_generation and len(videos) > 1:
+            return self._run_videos_concurrently(request, videos, progress_session_id=progress_session_id)
 
         jobs = []
         outcomes = []
         archives = []
         asset_records = []
-        final_episodes = []
+        final_videos = []
         first_frames = []
         task_constraints = self._reference_task_constraints(request)
         try:
-            finalized_episode_queue = finalize_episode_prompts(
-                episodes,
+            finalized_video_queue = finalize_video_prompts(
+                videos,
                 llm=getattr(self, "llm", None),
                 trace_session_id=progress_session_id,
                 task_constraints=task_constraints,
             )
-            finalized_episode_queue = review_final_outputs(
-                finalized_episode_queue,
+            finalized_video_queue = review_final_outputs(
+                finalized_video_queue,
                 llm=getattr(self, "llm", None),
                 trace_session_id=progress_session_id,
             )
-            for final_episode in finalized_episode_queue:
-                final_episodes.append(final_episode)
-                self._trace_final_episode_prompt(request, final_episode, progress_session_id)
+            for final_video in finalized_video_queue:
+                final_videos.append(final_video)
+                self._trace_final_video_prompt(request, final_video, progress_session_id)
                 try:
-                    mark_job_preparing_first_frame(progress_session_id, final_episode)
-                    first_frame = self._prepare_episode_first_frame(
+                    mark_job_preparing_first_frame(progress_session_id, final_video)
+                    first_frame = self._prepare_video_first_frame(
                         request,
-                        final_episode,
+                        final_video,
                         progress_session_id=progress_session_id,
                     )
                     first_frames.append(first_frame)
                     if result_first_frame is None:
                         result_first_frame = first_frame
-                    mark_job_submitting(progress_session_id, final_episode)
+                    mark_job_submitting(progress_session_id, final_video)
                     self._trace_video_submit(
                         request,
-                        final_episode,
+                        final_video,
                         first_frame,
                         progress_session_id,
                     )
                     job = self.client.create_job(
-                        text=final_episode.prompt,
-                        episode_index=final_episode.index,
+                        text=final_video.prompt,
+                        video_index=final_video.index,
                         first_frame=first_frame,
                         duration_seconds=request.duration_seconds,
                         ratio=request.ratio,
@@ -257,23 +257,23 @@ class AI8VideoPipeline:
                     )
                     self._trace_video_job_created(
                         request,
-                        final_episode,
+                        final_video,
                         job,
                         progress_session_id,
                         duration_seconds=request.duration_seconds,
                     )
-                    mark_job_submitted(progress_session_id, final_episode, job)
+                    mark_job_submitted(progress_session_id, final_video, job)
                     mark_job_polling(progress_session_id, job)
                     completed_job = self._poll_job(job, progress_session_id)
                     outcome, archive, asset_record = self._record_completed_job(
                         request,
-                        final_episode,
+                        final_video,
                         completed_job,
                         first_frame,
                         progress_session_id,
                     )
                 except Exception as exc:
-                    mark_job_failed(progress_session_id, final_episode.index, exc)
+                    mark_job_failed(progress_session_id, final_video.index, exc)
                     fail_generation_progress(progress_session_id, exc)
                     raise
                 jobs.append(completed_job)
@@ -281,12 +281,12 @@ class AI8VideoPipeline:
                 archives.append(archive)
                 asset_records.append(asset_record)
         finally:
-            if len(jobs) + sum(1 for item in asset_records if item) >= len(episodes):
+            if len(jobs) + sum(1 for item in asset_records if item) >= len(videos):
                 finish_generation_progress(progress_session_id)
 
         return PipelineResult(
             request=request,
-            episodes=final_episodes,
+            videos=final_videos,
             first_frame=result_first_frame,
             jobs=jobs,
             outcomes=outcomes,
@@ -295,87 +295,87 @@ class AI8VideoPipeline:
             dry_run=self.config.dry_run,
         )
 
-    def _run_episodes_concurrently(
+    def _run_videos_concurrently(
         self,
         request: ParsedRequest,
-        episodes: list[EpisodePrompt],
+        videos: list[VideoPrompt],
         *,
         progress_session_id: str | None = None,
     ) -> PipelineResult:
         first_frame_by_index = {}
         task_constraints = self._reference_task_constraints(request)
         try:
-            final_episodes = finalize_episode_prompts(
-                episodes,
+            final_videos = finalize_video_prompts(
+                videos,
                 llm=getattr(self, "llm", None),
                 trace_session_id=progress_session_id,
                 task_constraints=task_constraints,
             )
-            final_episodes = review_final_outputs(
-                final_episodes,
+            final_videos = review_final_outputs(
+                final_videos,
                 llm=getattr(self, "llm", None),
                 trace_session_id=progress_session_id,
             )
-            for episode in final_episodes:
-                self._trace_final_episode_prompt(request, episode, progress_session_id)
-            ordered_final_episodes = sorted(final_episodes, key=lambda item: item.index)
+            for video in final_videos:
+                self._trace_final_video_prompt(request, video, progress_session_id)
+            ordered_final_videos = sorted(final_videos, key=lambda item: item.index)
             logger.info(
-                "ai8video concurrent submit start session=%s episodes=%s",
+                "ai8video concurrent submit start session=%s videos=%s",
                 progress_session_id,
-                len(ordered_final_episodes),
+                len(ordered_final_videos),
             )
-            episode_by_index = {episode.index: episode for episode in final_episodes}
+            video_by_index = {video.index: video for video in final_videos}
             created_jobs = []
             submit_failed_jobs = []
-            submit_worker_count = len(ordered_final_episodes)
+            submit_worker_count = len(ordered_final_videos)
             with ThreadPoolExecutor(max_workers=submit_worker_count) as executor:
                 future_map = {
                     executor.submit(
-                        self._submit_episode_job,
+                        self._submit_video_job,
                         request,
-                        episode,
+                        video,
                         progress_session_id,
                         submit_offset=offset,
-                    ): episode
-                    for offset, episode in enumerate(ordered_final_episodes)
+                    ): video
+                    for offset, video in enumerate(ordered_final_videos)
                 }
                 for future in as_completed(future_map):
-                    episode = future_map[future]
+                    video = future_map[future]
                     try:
                         first_frame, job = future.result()
-                        first_frame_by_index[episode.index] = first_frame
+                        first_frame_by_index[video.index] = first_frame
                         created_jobs.append(job)
                     except Exception as exc:
-                        mark_job_failed(progress_session_id, episode.index, exc)
+                        mark_job_failed(progress_session_id, video.index, exc)
                         submit_failed_jobs.append(
                             QuickVideoJob(
-                                episode_index=episode.index,
-                                job_id=f"create-failed-{episode.index}",
+                                video_index=video.index,
+                                job_id=f"create-failed-{video.index}",
                                 status="failed",
-                                prompt=episode.prompt,
+                                prompt=video.prompt,
                                 error=str(exc),
                             )
                         )
 
-            result_first_frame = first_frame_by_index.get(ordered_final_episodes[0].index)
+            result_first_frame = first_frame_by_index.get(ordered_final_videos[0].index)
 
             jobs_by_index = {}
             outcomes_by_index = {}
             archives_by_index = {}
             asset_records_by_index = {}
             for failed_job in submit_failed_jobs:
-                episode = episode_by_index[failed_job.episode_index]
+                video = video_by_index[failed_job.video_index]
                 outcome, archive, asset_record = self._record_completed_job(
                     request,
-                    episode,
+                    video,
                     failed_job,
-                    first_frame_by_index.get(episode.index),
+                    first_frame_by_index.get(video.index),
                     progress_session_id,
                 )
-                jobs_by_index[episode.index] = failed_job
-                outcomes_by_index[episode.index] = outcome
-                archives_by_index[episode.index] = archive
-                asset_records_by_index[episode.index] = asset_record
+                jobs_by_index[video.index] = failed_job
+                outcomes_by_index[video.index] = outcome
+                archives_by_index[video.index] = archive
+                asset_records_by_index[video.index] = asset_record
 
             worker_count = min(len(created_jobs), 3)
             if worker_count > 0:
@@ -389,30 +389,30 @@ class AI8VideoPipeline:
                             completed_job = future.result()
                         except Exception as exc:
                             completed_job = self._job_from_poll_exception(job, exc)
-                        episode = episode_by_index[completed_job.episode_index]
+                        video = video_by_index[completed_job.video_index]
                         outcome, archive, asset_record = self._record_completed_job(
                             request,
-                            episode,
+                            video,
                             completed_job,
-                            first_frame_by_index.get(episode.index),
+                            first_frame_by_index.get(video.index),
                             progress_session_id,
                         )
-                        jobs_by_index[episode.index] = completed_job
-                        outcomes_by_index[episode.index] = outcome
-                        archives_by_index[episode.index] = archive
-                        asset_records_by_index[episode.index] = asset_record
+                        jobs_by_index[video.index] = completed_job
+                        outcomes_by_index[video.index] = outcome
+                        archives_by_index[video.index] = archive
+                        asset_records_by_index[video.index] = asset_record
 
-            ordered_indexes = [episode.index for episode in ordered_final_episodes]
+            ordered_indexes = [video.index for video in ordered_final_videos]
             jobs = [jobs_by_index[index] for index in ordered_indexes if index in jobs_by_index]
             outcomes = [outcomes_by_index[index] for index in ordered_indexes if index in outcomes_by_index]
             archives = [archives_by_index[index] for index in ordered_indexes if index in archives_by_index]
             asset_records = [asset_records_by_index[index] for index in ordered_indexes if index in asset_records_by_index]
-            if len(asset_records) >= len(episodes):
+            if len(asset_records) >= len(videos):
                 finish_generation_progress(progress_session_id)
 
             return PipelineResult(
                 request=request,
-                episodes=ordered_final_episodes,
+                videos=ordered_final_videos,
                 first_frame=result_first_frame,
                 jobs=jobs,
                 outcomes=outcomes,
@@ -475,10 +475,10 @@ class AI8VideoPipeline:
             constraints.append("本次如果要求无人物、无人脸或无身体部位，最终提示词必须使用物件、空间、背影以外的安全场景承载。")
         return "\n".join(constraints)
 
-    def _submit_episode_job(
+    def _submit_video_job(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         progress_session_id: str | None,
         *,
         submit_offset: int,
@@ -486,33 +486,33 @@ class AI8VideoPipeline:
         delay = max(0.0, float(CONCURRENT_SUBMIT_STAGGER_SECONDS))
         if submit_offset > 0 and delay > 0:
             time.sleep(delay * submit_offset)
-        mark_job_preparing_first_frame(progress_session_id, episode)
+        mark_job_preparing_first_frame(progress_session_id, video)
         logger.info(
-            "ai8video episode first-frame start session=%s episode=%s",
+            "ai8video video first-frame start session=%s video=%s",
             progress_session_id,
-            episode.index,
+            video.index,
         )
-        first_frame = self._prepare_episode_first_frame(
+        first_frame = self._prepare_video_first_frame(
             request,
-            episode,
+            video,
             progress_session_id=progress_session_id,
         )
-        mark_job_submitting(progress_session_id, episode)
+        mark_job_submitting(progress_session_id, video)
         logger.info(
-            "ai8video episode video-submit start session=%s episode=%s first_frame=%s",
+            "ai8video video video-submit start session=%s video=%s first_frame=%s",
             progress_session_id,
-            episode.index,
+            video.index,
             bool(first_frame),
         )
         self._trace_video_submit(
             request,
-            episode,
+            video,
             first_frame,
             progress_session_id,
         )
         job = self.client.create_job(
-            text=episode.prompt,
-            episode_index=episode.index,
+            text=video.prompt,
+            video_index=video.index,
             first_frame=first_frame,
             duration_seconds=request.duration_seconds,
             ratio=request.ratio,
@@ -521,18 +521,18 @@ class AI8VideoPipeline:
         )
         self._trace_video_job_created(
             request,
-            episode,
+            video,
             job,
             progress_session_id,
             duration_seconds=request.duration_seconds,
         )
-        mark_job_submitted(progress_session_id, episode, job)
+        mark_job_submitted(progress_session_id, video, job)
         return first_frame, job
 
     def _archive_transformed_first_frame(
         self,
         first_frame: FirstFrameAsset | None,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         progress_session_id: str | None,
     ) -> FirstFrameAsset | None:
         source = str(getattr(first_frame, "source", "") or "").strip()
@@ -577,7 +577,7 @@ class AI8VideoPipeline:
 
     def _job_from_poll_exception(self, job: QuickVideoJob, exc: Exception) -> QuickVideoJob:
         try:
-            latest = self.client.get_job(job.job_id, job.episode_index, job.prompt)
+            latest = self.client.get_job(job.job_id, job.video_index, job.prompt)
         except Exception:
             latest = None
         if isinstance(latest, QuickVideoJob) and latest.status in {"succeeded", "failed"}:
@@ -585,7 +585,7 @@ class AI8VideoPipeline:
                 latest.error = str(exc)
             return latest
         return QuickVideoJob(
-            episode_index=job.episode_index,
+            video_index=job.video_index,
             job_id=job.job_id,
             status="failed",
             prompt=job.prompt,
@@ -597,31 +597,31 @@ class AI8VideoPipeline:
     def _record_completed_job(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         completed_job: QuickVideoJob,
         first_frame,
         progress_session_id: str | None,
     ) -> tuple[GenerationOutcome, ArchivedAsset, dict]:
         first_frame = self._archive_transformed_first_frame(
             first_frame,
-            episode,
+            video,
             progress_session_id,
         )
-        outcome = _build_generation_outcome(completed_job, episode)
+        outcome = _build_generation_outcome(completed_job, video)
         if not _is_generated_job(completed_job):
             error = "；".join(outcome.reasons) or completed_job.error or "生成失败"
             archive = ArchivedAsset(
-                episode_index=episode.index,
+                video_index=video.index,
                 job_id=completed_job.job_id,
                 backend=self.config.archive_backend,
                 status="failed",
                 error=error,
                 meta={"reason": "生成未成功，不创建视频归档"},
             )
-            asset_record = self.asset_store.append(request, episode, completed_job, outcome, first_frame, archive)
+            asset_record = self.asset_store.append(request, video, completed_job, outcome, first_frame, archive)
             mark_job_failed(
                 progress_session_id,
-                episode.index,
+                video.index,
                 error,
                 job_id=completed_job.job_id,
                 asset_record=asset_record,
@@ -633,37 +633,37 @@ class AI8VideoPipeline:
             archive = archive_with_progress(
                 self.archiver.archive,
                 request,
-                episode,
+                video,
                 completed_job,
                 outcome,
                 progress_session_id=progress_session_id,
             )
         except Exception as exc:
             archive = ArchivedAsset(
-                episode_index=episode.index,
+                video_index=video.index,
                 job_id=completed_job.job_id,
                 backend=self.config.archive_backend,
                 status="error",
                 error=str(exc),
                 meta={"reason": "归档或后处理失败，不创建成功结果"},
             )
-        asset_record = self.asset_store.append(request, episode, completed_job, outcome, first_frame, archive)
+        asset_record = self.asset_store.append(request, video, completed_job, outcome, first_frame, archive)
         if archive.status in {"archived", "stored", "simulated", "disabled"}:
             mark_job_succeeded(progress_session_id, completed_job, asset_record)
         else:
             mark_job_failed(
                 progress_session_id,
-                episode.index,
+                video.index,
                 archive.error or "归档或后处理失败",
                 job_id=completed_job.job_id,
                 asset_record=asset_record,
             )
         return outcome, archive, asset_record
 
-    def _prepare_episode_first_frame(
+    def _prepare_video_first_frame(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         *,
         progress_session_id: str | None = None,
     ):
@@ -671,17 +671,17 @@ class AI8VideoPipeline:
         if "trace_session_id" in parameters:
             return self.reference_image_preprocessor.prepare_first_frame(
                 request,
-                episode=episode,
+                video=video,
                 trace_session_id=progress_session_id,
             )
-        if "episode" in parameters:
-            return self.reference_image_preprocessor.prepare_first_frame(request, episode=episode)
+        if "video" in parameters:
+            return self.reference_image_preprocessor.prepare_first_frame(request, video=video)
         return self.reference_image_preprocessor.prepare_first_frame(request)
 
     def _trace_video_submit(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         first_frame: FirstFrameAsset | None,
         progress_session_id: str | None,
         *,
@@ -692,8 +692,8 @@ class AI8VideoPipeline:
             "video_submit",
             session_id=progress_session_id,
             payload={
-                "episodeIndex": episode.index,
-                "title": episode.title,
+                "videoIndex": video.index,
+                "title": video.title,
                 "durationSeconds": duration_seconds if duration_seconds is not None else request.duration_seconds,
                 "ratio": request.ratio,
                 "resolution": request.resolution,
@@ -708,7 +708,7 @@ class AI8VideoPipeline:
     def _trace_video_job_created(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         job: QuickVideoJob,
         progress_session_id: str | None,
         *,
@@ -719,8 +719,8 @@ class AI8VideoPipeline:
             "video_job_created",
             session_id=progress_session_id,
             payload={
-                "episodeIndex": episode.index,
-                "title": episode.title,
+                "videoIndex": video.index,
+                "title": video.title,
                 "durationSeconds": duration_seconds if duration_seconds is not None else request.duration_seconds,
                 "ratio": request.ratio,
                 "resolution": request.resolution,
@@ -738,24 +738,24 @@ class AI8VideoPipeline:
             },
         )
 
-    def _trace_final_episode_prompt(
+    def _trace_final_video_prompt(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         progress_session_id: str | None,
     ) -> None:
         append_prompt_trace(
             "final_video_prompt",
             session_id=progress_session_id,
             payload={
-                "episodeIndex": episode.index,
-                "title": episode.title,
-                "prompt": episode.prompt,
-                "sourceSummary": episode.source_summary,
-                "keywordGuidance": episode.keyword_guidance,
+                "videoIndex": video.index,
+                "title": video.title,
+                "prompt": video.prompt,
+                "sourceSummary": video.source_summary,
+                "keywordGuidance": video.keyword_guidance,
                 "request": {
                     "mode": request.mode,
-                    "episodeCount": request.episode_count,
+                    "videoCount": request.video_count,
                     "styleHint": request.style_hint,
                     "coreKeywords": request.core_keywords,
                     "durationSeconds": request.duration_seconds,
@@ -851,7 +851,7 @@ def _is_generated_job(job: QuickVideoJob) -> bool:
     return bool(job.video_url or job.local_video_path)
 
 
-def _build_generation_outcome(job: QuickVideoJob, episode: EpisodePrompt) -> GenerationOutcome:
+def _build_generation_outcome(job: QuickVideoJob, video: VideoPrompt) -> GenerationOutcome:
     generated = _is_generated_job(job)
     reasons: list[str] = []
     if not generated:
@@ -863,7 +863,7 @@ def _build_generation_outcome(job: QuickVideoJob, episode: EpisodePrompt) -> Gen
         if not (job.video_url or job.local_video_path):
             reasons.append("没有返回可归档视频")
     return GenerationOutcome(
-        episode_index=episode.index,
+        video_index=video.index,
         job_id=job.job_id,
         status=job.status,
         decision="generated" if generated else "failed",

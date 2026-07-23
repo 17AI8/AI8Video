@@ -10,7 +10,7 @@ from ai8video.application.message_parser import (
     extract_batch_seed_messages,
     extract_batch_target_count,
     extract_duration_seconds,
-    extract_episode_count,
+    extract_video_count,
 )
 
 
@@ -37,25 +37,25 @@ class AI8VideoMessageParserTest(unittest.TestCase):
 
         self.assertEqual(items, ["老板在会议室讲封号风险。"])
 
-    def test_extract_episode_count_supports_real_generation_wording(self) -> None:
+    def test_extract_video_count_supports_real_generation_wording(self) -> None:
         text = "根据这个剧本生成 2 个 10s 短视频，老板商务风。"
 
-        self.assertEqual(extract_episode_count(text), 2)
+        self.assertEqual(extract_video_count(text), 2)
 
-    def test_extract_episode_count_supports_leading_count_with_topic(self) -> None:
+    def test_extract_video_count_supports_leading_count_with_topic(self) -> None:
         text = "10 个，重大消息"
 
-        self.assertEqual(extract_episode_count(text), 10)
+        self.assertEqual(extract_video_count(text), 10)
 
-    def test_extract_episode_count_supports_real_generation_without_video_suffix(self) -> None:
+    def test_extract_video_count_supports_real_generation_without_video_suffix(self) -> None:
         text = "@2.docx @612.png 生成 2 个 10s"
 
-        self.assertEqual(extract_episode_count(text), 2)
+        self.assertEqual(extract_video_count(text), 2)
 
-    def test_extract_episode_count_supports_chinese_numerals_for_video_count(self) -> None:
+    def test_extract_video_count_supports_chinese_numerals_for_video_count(self) -> None:
         text = "请把这段内容拆成两条短视频，风格更真实。"
 
-        self.assertEqual(extract_episode_count(text), 2)
+        self.assertEqual(extract_video_count(text), 2)
 
     def test_extract_duration_seconds_supports_s_suffix(self) -> None:
         text = "根据这个剧本生成 2 个 15s 短视频。"

@@ -13,7 +13,7 @@ import requests
 
 from ai8video.media.ffmpeg_utils import resolve_ffmpeg_bin
 from ai8video.core.models import QuickVideoJob
-from ai8video.media.video_encoding import append_video_postprocess_encoding_args, video_postprocess_encoding_meta
+from ai8video.media.video_encoding import append_video_postprocess_encoding_args
 
 
 def materialize_segment_video(
@@ -39,7 +39,7 @@ def materialize_segment_video(
     if dry_run:
         return create_placeholder_video(target, duration_seconds=max(1, min(int(duration_seconds or 1), 2)))
 
-    raise RuntimeError(f"片段 {job.episode_index} 没有可下载的视频结果")
+    raise RuntimeError(f"片段 {job.video_index} 没有可下载的视频结果")
 
 
 def download_video_to_path(url: str, target: Path, *, timeout_seconds: int = 180) -> Path:
@@ -136,7 +136,7 @@ def trim_video_end(
         resolve_ffmpeg_bin(ffmpeg_bin), "-y", "-hide_banner", "-loglevel", "error",
         "-i", str(source), "-t", f"{duration:.3f}",
     ]
-    append_video_postprocess_encoding_args(cmd)
+    video_encoding = append_video_postprocess_encoding_args(cmd)
     cmd.extend(["-c:a", "aac", "-movflags", "+faststart", str(target)])
     _run_ffmpeg(cmd, "按截图位置截取视频失败")
     if not target.is_file() or target.stat().st_size <= 0:
@@ -145,7 +145,7 @@ def trim_video_end(
         "status": "trimmed",
         "outputPath": str(target),
         "endSeconds": round(duration, 3),
-        "videoEncoding": video_postprocess_encoding_meta(),
+        "videoEncoding": video_encoding,
     }
 
 
@@ -157,6 +157,7 @@ def concat_videos(video_paths: list[Path], output_path: Path, *, ffmpeg_bin: str
             raise RuntimeError(f"合并视频失败：片段不存在 {item}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     ffmpeg = resolve_ffmpeg_bin(ffmpeg_bin)
+    video_encoding: dict[str, str] | None = None
     list_path = output_path.with_suffix(".concat.txt")
     list_path.write_text(
         "".join(f"file '{_escape_concat_path(Path(item))}'\n" for item in video_paths),
@@ -199,7 +200,7 @@ def concat_videos(video_paths: list[Path], output_path: Path, *, ffmpeg_bin: str
             "-i",
             str(list_path),
         ]
-        append_video_postprocess_encoding_args(reencode_cmd)
+        video_encoding = append_video_postprocess_encoding_args(reencode_cmd)
         reencode_cmd.extend([
             "-c:a",
             "aac",
@@ -216,7 +217,7 @@ def concat_videos(video_paths: list[Path], output_path: Path, *, ffmpeg_bin: str
         "method": method,
         "outputPath": str(output_path),
         "segments": [str(item) for item in video_paths],
-        "videoEncoding": None if method == "concat-copy" else video_postprocess_encoding_meta(),
+        "videoEncoding": video_encoding,
     }
 
 

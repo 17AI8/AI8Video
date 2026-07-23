@@ -52,8 +52,8 @@ class AI8VideoUserRecycleBinTest(unittest.TestCase):
             source_preview.write_bytes(b"preview")
             (task_folder / user_recycle_bin.RECYCLE_MANIFEST_NAME).write_text(
                 json.dumps({
-                    "episodeIndex": 1,
-                    "episodeTitle": "恢复测试",
+                    "videoIndex": 1,
+                    "videoTitle": "恢复测试",
                     "jobId": "job-demo",
                     "videos": [{"relativePath": "task-one/video/01-demo.mp4"}],
                     "meta": {
@@ -80,7 +80,7 @@ class AI8VideoUserRecycleBinTest(unittest.TestCase):
             preview_key = user_recycle_bin.preview_key_for_video(restored_key)
             self.assertTrue((result_root / preview_key).is_file())
             metadata = user_recycle_bin.load_restored_result_metadata(result_root, restored_key)
-            self.assertEqual(metadata["episodeTitle"], "恢复测试")
+            self.assertEqual(metadata["videoTitle"], "恢复测试")
             self.assertEqual(
                 metadata["generationMeta"]["segmentRecords"][0]["narrationText"],
                 "第一句台词。第二句台词。",

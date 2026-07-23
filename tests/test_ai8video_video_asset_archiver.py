@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import subprocess
 import tempfile
 import types
 import unittest
@@ -9,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ai8video.core.config import AI8VideoConfig
-from ai8video.core.models import EpisodePrompt, ParsedRequest, QuickVideoJob, GenerationOutcome
+from ai8video.core.models import VideoPrompt, ParsedRequest, QuickVideoJob, GenerationOutcome
 from ai8video.assets import user_generated_results as generated_results
 from ai8video.assets import user_recycle_bin
 from ai8video.assets.video_asset_archiver import (
@@ -21,36 +22,36 @@ from ai8video.assets.video_asset_archiver import (
 
 class AI8VideoVideoAssetArchiverTest(unittest.TestCase):
     def test_local_tts_uses_dialogue_instead_of_internal_source_summary(self) -> None:
-        episode = EpisodePrompt(
+        video = VideoPrompt(
             index=1,
             title="稀缺机会",
             prompt='画外音（坚定）：“一个城市只开放一个名额。”\n镜头：人物转身。',
             source_summary="基于脚本71与脚本75集中营造紧迫感。",
         )
 
-        text = _local_tts_narration_text(None, episode)
+        text = _local_tts_narration_text(None, video)
 
         self.assertEqual(text, "一个城市只开放一个名额")
         self.assertNotIn("基于脚本", text)
 
     def test_local_tts_does_not_fall_back_to_source_summary_without_dialogue(self) -> None:
-        episode = EpisodePrompt(
+        video = VideoPrompt(
             index=1,
             title="纯画面",
             prompt="镜头：人物从远处走近。",
             source_summary="内部选材说明，不应成为配音。",
         )
 
-        self.assertEqual(_local_tts_narration_text(None, episode), "")
+        self.assertEqual(_local_tts_narration_text(None, video), "")
 
     def test_local_tts_does_not_read_visual_prompt_when_source_summary_is_empty(self) -> None:
-        episode = EpisodePrompt(
+        video = VideoPrompt(
             index=1,
             title="纯画面延长",
             prompt="【0-10秒，中景】人物抬手触碰光点。情绪：坚定。音效：电子律动。",
         )
 
-        self.assertEqual(_local_tts_narration_text(None, episode), "")
+        self.assertEqual(_local_tts_narration_text(None, video), "")
 
     def setUp(self) -> None:
         self.tempdir = tempfile.TemporaryDirectory()
@@ -76,14 +77,14 @@ class AI8VideoVideoAssetArchiverTest(unittest.TestCase):
         return AI8VideoConfig(**base)
 
     def _sample_request(self) -> ParsedRequest:
-        return ParsedRequest(raw_text="老板在会议室讲封号风险", mode="single_prompt")
+        return ParsedRequest(raw_text="老板在会议室讲封号风险", mode="single_video")
 
-    def _sample_episode(self) -> EpisodePrompt:
-        return EpisodePrompt(index=1, title="单条视频", prompt="老板在会议室讲封号风险")
+    def _sample_video(self) -> VideoPrompt:
+        return VideoPrompt(index=1, title="单条视频", prompt="老板在会议室讲封号风险")
 
     def _sample_job(self) -> QuickVideoJob:
         return QuickVideoJob(
-            episode_index=1,
+            video_index=1,
             job_id="job-001",
             status="succeeded",
             prompt="老板在会议室讲封号风险",
@@ -94,7 +95,7 @@ class AI8VideoVideoAssetArchiverTest(unittest.TestCase):
 
     def _sample_generation_outcome(self) -> GenerationOutcome:
         return GenerationOutcome(
-            episode_index=1,
+            video_index=1,
             job_id="job-001",
             status="completed",
             decision="generated",
@@ -169,7 +170,7 @@ class AI8VideoVideoAssetArchiverTest(unittest.TestCase):
             ):
                 archived = archiver.archive(
                     self._sample_request(),
-                    self._sample_episode(),
+                    self._sample_video(),
                     self._sample_job(),
                     self._sample_generation_outcome(),
                 )
@@ -219,7 +220,7 @@ class AI8VideoVideoAssetArchiverTest(unittest.TestCase):
         ):
             archived = archiver.archive(
                 self._sample_request(),
-                self._sample_episode(),
+                self._sample_video(),
                 self._sample_job(),
                 self._sample_generation_outcome(),
             )
@@ -273,7 +274,7 @@ class AI8VideoVideoAssetArchiverTest(unittest.TestCase):
             job.cover_image_url = None
             archived = archiver.archive(
                 self._sample_request(),
-                self._sample_episode(),
+                self._sample_video(),
                 job,
                 self._sample_generation_outcome(),
             )
@@ -340,7 +341,7 @@ class AI8VideoVideoAssetArchiverTest(unittest.TestCase):
             archived = archiver.archive_local_file(
                 source_video,
                 self._sample_request(),
-                self._sample_episode(),
+                self._sample_video(),
                 self._sample_job(),
                 self._sample_generation_outcome(),
                 extra_meta={"mergeMode": "merge2"},
@@ -406,7 +407,7 @@ class AI8VideoVideoAssetArchiverTest(unittest.TestCase):
             archived = archiver.archive_local_file(
                 source_video,
                 request,
-                EpisodePrompt(index=1, title="单条视频", prompt="旁白：老板在会议室讲封号风险"),
+                VideoPrompt(index=1, title="单条视频", prompt="旁白：老板在会议室讲封号风险"),
                 self._sample_job(),
                 self._sample_generation_outcome(),
             )
@@ -458,7 +459,7 @@ class AI8VideoVideoAssetArchiverTest(unittest.TestCase):
             archived = archiver.archive_local_file(
                 source_video,
                 request,
-                self._sample_episode(),
+                self._sample_video(),
                 self._sample_job(),
                 self._sample_generation_outcome(),
             )
@@ -516,7 +517,7 @@ class AI8VideoVideoAssetArchiverTest(unittest.TestCase):
             archived = archiver.archive_local_file(
                 source_video,
                 self._sample_request(),
-                self._sample_episode(),
+                self._sample_video(),
                 self._sample_job(),
                 self._sample_generation_outcome(),
             )
@@ -553,7 +554,7 @@ class AI8VideoVideoAssetArchiverTest(unittest.TestCase):
                 archiver.archive_local_file(
                     source_video,
                     self._sample_request(),
-                    self._sample_episode(),
+                    self._sample_video(),
                     self._sample_job(),
                     self._sample_generation_outcome(),
                     extra_meta={"mergeMode": "merge2"},
@@ -602,7 +603,7 @@ class AI8VideoVideoAssetArchiverTest(unittest.TestCase):
         ), patch.object(VideoAssetArchiver, "_extract_cover_frame", side_effect=_write_cover):
             archived = archiver.archive(
                 self._sample_request(),
-                self._sample_episode(),
+                self._sample_video(),
                 job,
                 self._sample_generation_outcome(),
             )
@@ -654,7 +655,7 @@ class AI8VideoVideoAssetArchiverTest(unittest.TestCase):
         ):
             archived = archiver.archive(
                 self._sample_request(),
-                self._sample_episode(),
+                self._sample_video(),
                 self._sample_job(),
                 self._sample_generation_outcome(),
             )
@@ -721,7 +722,7 @@ class AI8VideoVideoAssetArchiverTest(unittest.TestCase):
             ):
                 archived = archiver.archive(
                     self._sample_request(),
-                    self._sample_episode(),
+                    self._sample_video(),
                     self._sample_job(),
                     self._sample_generation_outcome(),
                 )
@@ -762,6 +763,49 @@ class AI8VideoVideoAssetArchiverTest(unittest.TestCase):
         self.assertEqual(video.read_bytes(), b"trimmed-mp4")
         self.assertEqual(result["status"], "trimmed")
         self.assertEqual(result["videoEncoding"]["crf"], "16")
+
+    def test_trim_video_start_uses_videotoolbox_when_libx264_is_unavailable(self) -> None:
+        video = self.root / "video-videotoolbox.mp4"
+        video.write_bytes(b"raw-mp4")
+
+        def _run(cmd, check, capture_output, text, timeout):  # noqa: ANN001
+            Path(cmd[-1]).write_bytes(b"trimmed-mp4")
+
+        with patch(
+            "ai8video.media.video_encoding._available_video_encoders",
+            return_value=frozenset({"h264_videotoolbox"}),
+        ), patch(
+            "ai8video.assets.video_asset_archiver.subprocess.run",
+            side_effect=_run,
+        ) as run:
+            result = trim_video_start(video, ffmpeg_bin="ffmpeg-test")
+
+        cmd = run.call_args.args[0]
+        self.assertEqual(cmd[cmd.index("-c:v") + 1], "h264_videotoolbox")
+        self.assertEqual(cmd[cmd.index("-b:v") + 1], "6M")
+        self.assertNotIn("-preset", cmd)
+        self.assertNotIn("-crf", cmd)
+        self.assertEqual(result["videoEncoding"]["codec"], "h264_videotoolbox")
+        self.assertEqual(result["videoEncoding"]["bitrate"], "6M")
+
+    def test_trim_video_start_reports_ffmpeg_stderr_without_full_command(self) -> None:
+        video = self.root / "video-error.mp4"
+        video.write_bytes(b"raw-mp4")
+        error = subprocess.CalledProcessError(
+            8,
+            ["ffmpeg-test", "-preset", "veryfast"],
+            stderr="Unrecognized option 'preset'.\nError splitting the argument list: Option not found",
+        )
+
+        with patch(
+            "ai8video.assets.video_asset_archiver.subprocess.run",
+            side_effect=error,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Unrecognized option 'preset'") as raised:
+                trim_video_start(video, ffmpeg_bin="ffmpeg-test")
+
+        self.assertNotIn("Command '[", str(raised.exception))
+        self.assertNotIn(str(video), str(raised.exception))
 
 
 if __name__ == "__main__":

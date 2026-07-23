@@ -11,23 +11,23 @@
       return numberMap[text] || 0;
     }
 
-    function buildEpisodeGroups(result, meta, assets) {
-      const episodes = result.episodes || [];
-      const jobs = new Map((result.jobs || []).map((item) => [String(item.episode_index), item]));
-      const archives = new Map((result.archives || []).map((item) => [String(item.episode_index), item]));
+    function buildVideoGroups(result, meta, assets) {
+      const videos = result.videos || [];
+      const jobs = new Map((result.jobs || []).map((item) => [String(item.video_index), item]));
+      const archives = new Map((result.archives || []).map((item) => [String(item.video_index), item]));
       const payloadAssets = new Map((result.assetRecords || [])
         .filter((item) => {
-          const episodeKey = String(item.episodeIndex || item.episode_index || '').trim();
+          const videoKey = String(item.videoIndex || item.video_index || '').trim();
           const jobId = String(item.jobId || item.job_id || '').trim();
-          const job = jobs.get(episodeKey) || {};
+          const job = jobs.get(videoKey) || {};
           const expectedJobId = String(job.job_id || '').trim();
           return jobId && expectedJobId && jobId === expectedJobId;
         })
-        .map((item) => [String(item.episodeIndex || item.episode_index || ''), item]));
+        .map((item) => [String(item.videoIndex || item.video_index || ''), item]));
       const assetByJobId = new Map((assets || []).map((item) => [String(item.jobId || ''), item]));
-      const rewrittenEpisodeIndex = Number(meta?.rewrittenEpisodeIndex || 0);
-      return episodes.map((episode) => {
-        const key = String(episode.index);
+      const rewrittenVideoIndex = Number(meta?.rewrittenVideoIndex || 0);
+      return videos.map((video) => {
+        const key = String(video.index);
         const job = jobs.get(key) || {};
         const archive = archives.get(key) || {};
         const payloadAsset = payloadAssets.get(key) || {};
@@ -37,8 +37,8 @@
         const generated = isGeneratedResult({ ...asset, jobStatus: status, archiveStatus });
         const failed = isFailedResult({ ...asset, jobStatus: status, archiveStatus, error: job.error || archive.error || '' });
         return {
-          index: episode.index,
-          title: episode.title || `第 ${episode.index} 集`,
+          index: video.index,
+          title: video.title || `视频 ${video.index}`,
           jobId: job.job_id || '',
           jobStatus: status,
           error: job.error || archive.error || '',
@@ -49,7 +49,7 @@
           archiveStatus,
           archiveBackend: asset.archiveBackend || archive.backend || '',
           archiveKey: asset.archiveKey || archive.archive_key || asset.archiveLocalPath || archive.local_path || '',
-          updated: rewrittenEpisodeIndex > 0 && Number(episode.index) === rewrittenEpisodeIndex,
+          updated: rewrittenVideoIndex > 0 && Number(video.index) === rewrittenVideoIndex,
         };
       });
     }
@@ -59,7 +59,7 @@
         const successCount = groups.filter((item) => isGeneratedResult(item)).length;
         const failedCount = groups.filter((item) => isFailedResult(item)).length;
         return {
-          episodeCount: groups.length,
+          videoCount: groups.length,
           successCount,
           failedCount,
           passCount: successCount,
@@ -70,9 +70,9 @@
       }
       const jobs = result?.jobs || [];
       const successCount = jobs.filter((item) => isGeneratedResult({ jobStatus: item.status, videoUrl: item.video_url, localVideoPath: item.local_video_path })).length;
-      const failedCount = Math.max(0, (result?.episodes || []).length - successCount);
+      const failedCount = Math.max(0, (result?.videos || []).length - successCount);
       return {
-        episodeCount: (result?.episodes || []).length,
+        videoCount: (result?.videos || []).length,
         successCount,
         failedCount,
         passCount: successCount,
@@ -111,14 +111,14 @@
       const successCount = Number(summary.successCount ?? summary.passCount ?? 0);
       const failedCount = Number(summary.failedCount ?? summary.rejectCount ?? 0);
       const failedPart = failedCount ? `，${failedCount} 条生成失败` : '';
-      if (meta?.operation === 'rewrite' && meta?.rewrittenEpisodeIndex) {
-        return `已重做第 ${meta.rewrittenEpisodeIndex} 集，其他集数保持不动；当前共 ${summary.episodeCount} 集，${successCount} 条已生成，${archiveCount} 条已归档${failedPart}`;
+      if (meta?.operation === 'rewrite' && meta?.rewrittenVideoIndex) {
+        return `已重做第 ${meta.rewrittenVideoIndex} 条视频，其他视频保持不动；当前共 ${summary.videoCount} 条，${successCount} 条已生成，${archiveCount} 条已归档${failedPart}`;
       }
-      return `${summary.episodeCount} 集已完成，${successCount} 条已生成，${archiveCount} 条已归档${failedPart}`;
+      return `${summary.videoCount} 条视频已完成，${successCount} 条已生成，${archiveCount} 条已归档${failedPart}`;
     }
 
     function summarizeAwaiting(awaiting) {
-      if (awaiting === 'episode_count') return '等待补充集数';
+      if (awaiting === 'video_count') return '等待补充视频数量';
       if (awaiting === 'reference_image') return '等待确认参考图';
       if (awaiting === 'content_completion') return '等待补充台词 / 文案';
       if (awaiting === 'core_keywords') return '等待确认核心主题';
@@ -184,7 +184,7 @@
           folderTarget: null,
         };
       }
-      const groups = buildEpisodeGroups(payload.result, payload.meta, state.assets);
+      const groups = buildVideoGroups(payload.result, payload.meta, state.assets);
       const summary = summarizeResult(payload.result, groups);
       const groupByJobId = new Map(groups.filter((item) => item.jobId).map((item) => [String(item.jobId), item]));
       const payloadAssetItems = (payload.result.assetRecords || [])
@@ -208,8 +208,8 @@
           const { __payloadBound: _payloadBound, ...cleanItem } = item;
           return {
             ...cleanItem,
-            episodeIndex: group.index || item.episodeIndex,
-            episodeTitle: group.title || item.episodeTitle || `第 ${item.episodeIndex || '-'} 条`,
+            videoIndex: group.index || item.videoIndex,
+            videoTitle: group.title || item.videoTitle || `第 ${item.videoIndex || '-'} 条`,
             generationStatus: item.generationStatus || group.generationStatus || '',
             generationReasons: item.generationReasons || group.generationReasons || '',
             archiveStatus: item.archiveStatus || group.archiveStatus || '',
@@ -217,7 +217,7 @@
             archiveKey: item.archiveKey || group.archiveKey || '',
           };
         })
-        .sort((left, right) => Number(left.episodeIndex || 0) - Number(right.episodeIndex || 0));
+        .sort((left, right) => Number(left.videoIndex || 0) - Number(right.videoIndex || 0));
       const folderItem = items.find((item) => item.archiveBackend === 'local' && (item.archiveKey || item.archiveLocalPath)) || null;
       return {
         payload,
@@ -236,14 +236,14 @@
     function buildCurrentResultProgressSummary(gallery, meta) {
       if (!gallery?.summary) return '';
       const summary = gallery.summary;
-      const expectedCount = gallery.expectedCount || summary.episodeCount || 0;
+      const expectedCount = gallery.expectedCount || summary.videoCount || 0;
       const returnedCount = getPlayableResultItems(gallery).length;
       const archiveCount = (gallery.groups || []).filter((item) => item.archiveStatus && item.archiveStatus !== 'disabled').length;
       const successCount = Number(summary.successCount ?? summary.passCount ?? 0);
       const failedCount = Number(summary.failedCount ?? summary.rejectCount ?? 0);
       const failedPart = failedCount ? `，${failedCount} 条生成失败` : '';
-      const prefix = meta?.operation === 'rewrite' && meta?.rewrittenEpisodeIndex
-        ? `已重做第 ${meta.rewrittenEpisodeIndex} 集；`
+      const prefix = meta?.operation === 'rewrite' && meta?.rewrittenVideoIndex
+        ? `已重做第 ${meta.rewrittenVideoIndex} 条视频；`
         : '';
       return `${prefix}当前任务已返回 ${returnedCount}/${expectedCount} 条，${successCount} 条已生成，${archiveCount} 条已归档${failedPart}`;
     }
@@ -336,16 +336,16 @@
 
     function buildProgressResultCards(playableItems = [], stageCards = []) {
       const used = new Set();
-      const byEpisode = new Map();
+      const byVideo = new Map();
       (playableItems || []).forEach((item, index) => {
-        const episode = Number(item?.episodeIndex || 0);
-        if (episode > 0 && !byEpisode.has(episode)) {
-          byEpisode.set(episode, { item, index });
+        const video = Number(item?.videoIndex || 0);
+        if (video > 0 && !byVideo.has(video)) {
+          byVideo.set(video, { item, index });
         }
       });
       return (stageCards || []).map((card, index) => {
-        const episode = index + 1;
-        const matched = byEpisode.get(episode);
+        const video = index + 1;
+        const matched = byVideo.get(video);
         if (matched && !used.has(matched.index)) {
           used.add(matched.index);
           return matched.item;
@@ -360,7 +360,7 @@
               : 'polling';
         return {
           __progressStatus: true,
-          title: cleanDisplayText(card?.title, `视频 ${episode}`),
+          title: cleanDisplayText(card?.title, `视频 ${video}`),
           stage: stage || '生成中',
           status,
           error: card?.error || card?.generationReasons || '',
@@ -395,8 +395,8 @@
       const failedCount = visibleItems.filter((item) => isFailedResult(item)).length;
       const archiveCount = visibleItems.filter((item) => item.archiveStatus === 'archived').length;
       const failedPart = failedCount ? `，${failedCount} 条生成失败` : '';
-      if (meta?.operation === 'rewrite' && meta?.rewrittenEpisodeIndex) {
-        return `已重做第 ${meta.rewrittenEpisodeIndex} 集；当前展示 ${visibleItems.length} 条结果里，${successCount} 条已生成，${archiveCount} 条已归档${failedPart}`;
+      if (meta?.operation === 'rewrite' && meta?.rewrittenVideoIndex) {
+        return `已重做第 ${meta.rewrittenVideoIndex} 条视频；当前展示 ${visibleItems.length} 条结果里，${successCount} 条已生成，${archiveCount} 条已归档${failedPart}`;
       }
       return `当前展示 ${visibleItems.length} 条结果里，${successCount} 条已生成，${archiveCount} 条已归档${failedPart}`;
     }
@@ -450,7 +450,7 @@
       ].filter(Boolean).join('');
       return `
         <div class="asset-card-head">
-          <h4>第 ${item.episodeIndex} 条 · ${escapeHtml(item.episodeTitle || '短视频')}</h4>
+          <h4>第 ${item.videoIndex} 条 · ${escapeHtml(item.videoTitle || '短视频')}</h4>
           <div class="asset-chip-stack">
             <span class="asset-chip ${archiveState.className}">${archiveState.label}</span>
           </div>
@@ -477,4 +477,3 @@
       if (status === 'skipped') return { label: '未开启', reason: '' };
       return { label: '', reason: '' };
     }
-

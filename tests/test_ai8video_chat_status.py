@@ -25,21 +25,22 @@ from ai8video.generation.generation_progress import (
     start_generation_progress,
     mark_job_failed,
     mark_job_preparing_first_frame,
+    mark_job_submitting,
     mark_job_submitted,
     mark_job_polling,
 )
-from ai8video.core.models import EpisodePrompt, QuickVideoJob
+from ai8video.core.models import VideoPrompt, QuickVideoJob
 from ai8video.batch.task_ledger import TaskLedger
 
 
 class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
     def test_start_generation_progress_assigns_generation_batch_id(self) -> None:
         session_id = "session status batch id"
-        episodes = [EpisodePrompt(index=1, title="第一条", prompt="ep1")]
+        videos = [VideoPrompt(index=1, title="第一条", prompt="video1")]
         custom_batch_id = create_generation_batch_id(session_id)
 
         try:
-            start_generation_progress(session_id, episodes, generation_batch_id=custom_batch_id)
+            start_generation_progress(session_id, videos, generation_batch_id=custom_batch_id)
 
             progress = get_generation_progress(session_id)
             self.assertIsNotNone(progress)
@@ -51,12 +52,12 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
 
     def test_generation_progress_records_real_item_execution_events(self) -> None:
         session_id = "session-real-execution-events"
-        episode = EpisodePrompt(index=1, title="第一条", prompt="ep1")
-        job = QuickVideoJob(episode_index=1, job_id="job-events", provider_progress=42)
+        video = VideoPrompt(index=1, title="第一条", prompt="video1")
+        job = QuickVideoJob(video_index=1, job_id="job-events", provider_progress=42)
 
         try:
-            start_generation_progress(session_id, [episode])
-            mark_job_submitted(session_id, episode, job)
+            start_generation_progress(session_id, [video])
+            mark_job_submitted(session_id, video, job)
             mark_job_polling(session_id, job)
             progress = get_generation_progress(session_id)
         finally:
@@ -71,12 +72,12 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
 
     def test_generation_progress_coalesces_polling_event_updates(self) -> None:
         session_id = "session-coalesced-polling-events"
-        episode = EpisodePrompt(index=1, title="第一条", prompt="ep1")
-        job = QuickVideoJob(episode_index=1, job_id="job-events", provider_progress=33)
+        video = VideoPrompt(index=1, title="第一条", prompt="video1")
+        job = QuickVideoJob(video_index=1, job_id="job-events", provider_progress=33)
 
         try:
-            start_generation_progress(session_id, [episode])
-            mark_job_submitted(session_id, episode, job)
+            start_generation_progress(session_id, [video])
+            mark_job_submitted(session_id, video, job)
             mark_job_polling(session_id, job)
             job.provider_progress = 36
             mark_job_polling(session_id, job)
@@ -89,9 +90,79 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
         self.assertEqual(1, len(polling_events))
         self.assertEqual(36, polling_events[0]["providerProgress"])
 
+    def test_segment_progress_does_not_reuse_previous_segment_percent(self) -> None:
+        session_id = "session-segment-scoped-progress"
+        base_video = VideoPrompt(index=1, title="第一条", prompt="video1")
+        segment_one = VideoPrompt(
+            index=1,
+            title="第一条 · 片段 1",
+            prompt="segment1",
+            keyword_guidance={"segmentIndex": 1},
+        )
+        segment_two = VideoPrompt(
+            index=1,
+            title="第一条 · 片段 2",
+            prompt="segment2",
+            keyword_guidance={"segmentIndex": 2},
+        )
+        first_job = QuickVideoJob(
+            video_index=1,
+            job_id="job-segment-1",
+            segment_index=1,
+            segment_label="片段 1",
+            provider_progress=5,
+        )
+        second_job = QuickVideoJob(
+            video_index=1,
+            job_id="job-segment-2",
+            segment_index=2,
+            segment_label="片段 2",
+            provider_progress=12,
+        )
+
+        try:
+            start_generation_progress(session_id, [base_video])
+            mark_job_submitting(session_id, segment_one)
+            mark_job_submitted(session_id, segment_one, first_job)
+            mark_job_polling(session_id, first_job)
+            first_job.provider_progress = 99
+            mark_job_polling(session_id, first_job)
+
+            mark_job_submitting(session_id, segment_two)
+            after_second_submit = get_generation_progress(session_id)
+
+            mark_job_submitted(session_id, segment_two, second_job)
+            mark_job_polling(session_id, second_job)
+            mark_job_polling(
+                session_id,
+                QuickVideoJob(
+                    video_index=1,
+                    job_id=second_job.job_id,
+                    stage_label="合并中",
+                ),
+            )
+            final_progress = get_generation_progress(session_id)
+        finally:
+            clear_generation_progress(session_id)
+
+        self.assertIsNotNone(after_second_submit)
+        second_submit_item = after_second_submit["items"][0]
+        self.assertEqual(second_submit_item["segmentIndex"], 2)
+        self.assertNotIn("providerProgress", second_submit_item)
+
+        self.assertIsNotNone(final_progress)
+        final_item = final_progress["items"][0]
+        self.assertEqual(final_item["statusLabel"], "合并中")
+        self.assertNotIn("providerProgress", final_item)
+        self.assertNotIn("segmentIndex", final_item)
+        polling_events = [event for event in final_progress["events"] if event.get("status") == "polling"]
+        self.assertEqual([1, 2, None], [event.get("segmentIndex") for event in polling_events])
+        self.assertEqual([99, 12, None], [event.get("providerProgress") for event in polling_events])
+        self.assertEqual("合并中", polling_events[-1]["message"])
+
     def test_stale_batch_cannot_recreate_current_session_progress(self) -> None:
         session_id = "session-stale-batch-guard"
-        episodes = [EpisodePrompt(index=1, title="第一条", prompt="ep1")]
+        videos = [VideoPrompt(index=1, title="第一条", prompt="video1")]
         current_batch_id = create_generation_batch_id(session_id)
         stale_batch_id = create_generation_batch_id(session_id)
 
@@ -99,20 +170,20 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
             claim_generation_batch(session_id, current_batch_id)
             start_generation_progress(
                 session_id,
-                episodes,
+                videos,
                 generation_batch_id=current_batch_id,
             )
             token = generation_batch_context.set_current_generation_batch_id(stale_batch_id)
             try:
                 start_generation_progress(
                     session_id,
-                    episodes,
+                    videos,
                     generation_batch_id=stale_batch_id,
                 )
                 mark_job_submitted(
                     session_id,
-                    episodes[0],
-                    QuickVideoJob(episode_index=1, job_id="stale-job"),
+                    videos[0],
+                    QuickVideoJob(video_index=1, job_id="stale-job"),
                 )
             finally:
                 generation_batch_context.reset_current_generation_batch_id(token)
@@ -127,7 +198,7 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
 
     def test_stale_batch_cannot_finish_current_session_progress(self) -> None:
         session_id = "session-stale-batch-finish-guard"
-        episodes = [EpisodePrompt(index=1, title="第一条", prompt="ep1")]
+        videos = [VideoPrompt(index=1, title="第一条", prompt="video1")]
         current_batch_id = create_generation_batch_id(session_id)
         stale_batch_id = create_generation_batch_id(session_id)
 
@@ -135,7 +206,7 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
             claim_generation_batch(session_id, current_batch_id)
             start_generation_progress(
                 session_id,
-                episodes,
+                videos,
                 generation_batch_id=current_batch_id,
             )
             token = generation_batch_context.set_current_generation_batch_id(stale_batch_id)
@@ -155,18 +226,18 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
 
     def test_generation_progress_writes_item_updates_to_task_ledger(self) -> None:
         session_id = "session status task ledger"
-        episodes = [EpisodePrompt(index=1, title="第一条", prompt="ep1")]
+        videos = [VideoPrompt(index=1, title="第一条", prompt="video1")]
         generation_batch_id = create_generation_batch_id(session_id)
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             ledger = TaskLedger(Path(temporary_directory) / "task_ledger.sqlite3")
             with patch.object(generation_progress, "_TASK_LEDGER", ledger):
                 try:
-                    start_generation_progress(session_id, episodes, generation_batch_id=generation_batch_id)
+                    start_generation_progress(session_id, videos, generation_batch_id=generation_batch_id)
                     mark_job_submitted(
                         session_id,
-                        episodes[0],
-                        QuickVideoJob(episode_index=1, job_id="job-ledger-001"),
+                        videos[0],
+                        QuickVideoJob(video_index=1, job_id="job-ledger-001"),
                     )
 
                     record = ledger.get_generation_batch(generation_batch_id)
@@ -183,7 +254,7 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
     def test_stale_first_frame_timeout_persists_terminal_ledger_snapshot(self) -> None:
         session_id = "session first frame timeout ledger"
         generation_batch_id = create_generation_batch_id(session_id)
-        episode = EpisodePrompt(index=1, title="第一条", prompt="ep1")
+        video = VideoPrompt(index=1, title="第一条", prompt="video1")
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             ledger = TaskLedger(Path(temporary_directory) / "task_ledger.sqlite3")
@@ -191,10 +262,10 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
                 try:
                     start_generation_progress(
                         session_id,
-                        [episode],
+                        [video],
                         generation_batch_id=generation_batch_id,
                     )
-                    mark_job_preparing_first_frame(session_id, episode)
+                    mark_job_preparing_first_frame(session_id, video)
                     with patch.object(generation_progress.time, "time", return_value=time.time() + 400):
                         result = settle_stale_first_frame_progress(session_id)
                     record = ledger.get_generation_batch(generation_batch_id)
@@ -217,8 +288,8 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
             "status": "planning",
             "totalRequested": 2,
             "items": [
-                {"episodeIndex": 1, "title": "第一条", "status": "planning"},
-                {"episodeIndex": 2, "title": "第二条", "status": "planning"},
+                {"videoIndex": 1, "title": "第一条", "status": "planning"},
+                {"videoIndex": 2, "title": "第二条", "status": "planning"},
             ],
         }
 
@@ -247,7 +318,7 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
     def test_finish_generation_progress_persists_terminal_ledger_snapshot(self) -> None:
         session_id = "session finish ledger"
         generation_batch_id = create_generation_batch_id(session_id)
-        episode = EpisodePrompt(index=1, title="第一条", prompt="ep1")
+        video = VideoPrompt(index=1, title="第一条", prompt="video1")
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             ledger = TaskLedger(Path(temporary_directory) / "task_ledger.sqlite3")
@@ -255,12 +326,12 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
                 try:
                     start_generation_progress(
                         session_id,
-                        [episode],
+                        [video],
                         generation_batch_id=generation_batch_id,
                     )
                     generation_progress.mark_job_succeeded(
                         session_id,
-                        QuickVideoJob(episode_index=1, job_id="job-finish-ledger-001"),
+                        QuickVideoJob(video_index=1, job_id="job-finish-ledger-001"),
                     )
                     generation_progress.finish_generation_progress(session_id)
                     record = ledger.get_generation_batch(generation_batch_id)
@@ -275,7 +346,7 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
     def test_cancel_generation_progress_persists_terminal_ledger_snapshot(self) -> None:
         session_id = "session cancel ledger"
         generation_batch_id = create_generation_batch_id(session_id)
-        episode = EpisodePrompt(index=1, title="第一条", prompt="ep1")
+        video = VideoPrompt(index=1, title="第一条", prompt="video1")
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             ledger = TaskLedger(Path(temporary_directory) / "task_ledger.sqlite3")
@@ -283,7 +354,7 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
                 try:
                     start_generation_progress(
                         session_id,
-                        [episode],
+                        [video],
                         generation_batch_id=generation_batch_id,
                     )
                     result = cancel_generation_progress(session_id, "用户取消")
@@ -404,18 +475,18 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
 
     def test_local_timeout_terminal_progress_cannot_be_reactivated(self) -> None:
         session_id = "session-status-local-timeout-terminal"
-        episodes = [
-            EpisodePrompt(index=1, title="第一条", prompt="ep1"),
-            EpisodePrompt(index=2, title="第二条", prompt="ep2"),
+        videos = [
+            VideoPrompt(index=1, title="第一条", prompt="video1"),
+            VideoPrompt(index=2, title="第二条", prompt="video2"),
         ]
-        start_generation_progress(session_id, episodes, concurrent=True)
+        start_generation_progress(session_id, videos, concurrent=True)
         try:
             snapshot = stop_unsubmitted_generation_progress(session_id, get_generation_progress(session_id), "本地任务超时")
             self.assertEqual(snapshot["status"], "failed")
 
-            mark_job_preparing_first_frame(session_id, episodes[0])
-            start_generation_progress(session_id, episodes, concurrent=True)
-            mark_job_submitted(session_id, episodes[0], QuickVideoJob(episode_index=1, job_id="job-should-not-appear"))
+            mark_job_preparing_first_frame(session_id, videos[0])
+            start_generation_progress(session_id, videos, concurrent=True)
+            mark_job_submitted(session_id, videos[0], QuickVideoJob(video_index=1, job_id="job-should-not-appear"))
 
             progress = get_generation_progress(session_id)
             self.assertEqual(progress["status"], "failed")
@@ -428,23 +499,23 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
 
     def test_trace_recovered_timeout_blocks_late_generation_start(self) -> None:
         session_id = "session-status-trace-timeout-terminal"
-        episodes = [
-            EpisodePrompt(index=1, title="第一条", prompt="ep1"),
-            EpisodePrompt(index=2, title="第二条", prompt="ep2"),
+        videos = [
+            VideoPrompt(index=1, title="第一条", prompt="video1"),
+            VideoPrompt(index=2, title="第二条", prompt="video2"),
         ]
         trace_progress = {
             "sessionId": session_id,
             "status": "planning",
             "totalRequested": 2,
             "items": [
-                {"episodeIndex": 1, "title": "视频 1", "status": "planning"},
-                {"episodeIndex": 2, "title": "视频 2", "status": "planning"},
+                {"videoIndex": 1, "title": "视频 1", "status": "planning"},
+                {"videoIndex": 2, "title": "视频 2", "status": "planning"},
             ],
         }
         try:
             stop_unsubmitted_generation_progress(session_id, trace_progress, "本地任务超时")
-            start_generation_progress(session_id, episodes, concurrent=True)
-            mark_job_preparing_first_frame(session_id, episodes[0])
+            start_generation_progress(session_id, videos, concurrent=True)
+            mark_job_preparing_first_frame(session_id, videos[0])
 
             progress = get_generation_progress(session_id)
             self.assertEqual(progress["status"], "failed")
@@ -457,16 +528,16 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
         session = ai8video_chat_service._AI8VideoSession("live-status")
         started = threading.Event()
         release = threading.Event()
-        episodes = [
-            EpisodePrompt(index=1, title="第一集", prompt="ep1"),
-            EpisodePrompt(index=2, title="第二集", prompt="ep2"),
+        videos = [
+            VideoPrompt(index=1, title="第一条视频", prompt="video1"),
+            VideoPrompt(index=2, title="第二条视频", prompt="video2"),
         ]
 
         def fake_handle_chat_message(*, session_id: str, message: str, refresh: bool) -> dict:
             run_id = generation_batch_context.get_current_generation_batch_id()
             start_generation_progress(
                 session_id,
-                episodes,
+                videos,
                 concurrent=True,
                 generation_batch_id=run_id,
             )
@@ -477,9 +548,9 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
                     "text": "已完成",
                     "stage": "completed",
                     "meta": {"operation": "generate"},
-                    "result": {"episodes": [{}, {}], "jobs": []},
+                    "result": {"videos": [{}, {}], "jobs": []},
                 },
-                "result": {"episodes": [{}, {}], "jobs": []},
+                "result": {"videos": [{}, {}], "jobs": []},
             }
 
         result_holder: dict[str, object] = {}
@@ -556,7 +627,7 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
                     "runningCount": 1,
                     "items": [
                         {
-                            "episodeIndex": 1,
+                            "videoIndex": 1,
                             "status": "submitted",
                             "jobId": "job-ledger-recovery-001",
                         }
@@ -660,15 +731,15 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
 
     def test_snapshot_status_includes_backend_generation_progress(self) -> None:
         session = self._build_session()
-        episodes = [
-            EpisodePrompt(index=1, title="第一集", prompt="ep1"),
-            EpisodePrompt(index=2, title="第二集", prompt="ep2"),
+        videos = [
+            VideoPrompt(index=1, title="第一条视频", prompt="video1"),
+            VideoPrompt(index=2, title="第二条视频", prompt="video2"),
         ]
-        start_generation_progress("session-status", episodes, concurrent=True)
+        start_generation_progress("session-status", videos, concurrent=True)
         mark_job_submitted(
             "session-status",
-            episodes[0],
-            QuickVideoJob(episode_index=1, job_id="job-1"),
+            videos[0],
+            QuickVideoJob(video_index=1, job_id="job-1"),
         )
         try:
             status = session.snapshot_status()
@@ -683,7 +754,7 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
 
     def test_snapshot_status_includes_task_ledger_snapshot_for_current_batch(self) -> None:
         session = self._build_session()
-        episodes = [EpisodePrompt(index=1, title="第一集", prompt="ep1")]
+        videos = [VideoPrompt(index=1, title="第一条视频", prompt="video1")]
         generation_batch_id = create_generation_batch_id("session-status")
         session.current_generation_batch_id = generation_batch_id
 
@@ -691,11 +762,11 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
             ledger = TaskLedger(Path(temporary_directory) / "task_ledger.sqlite3")
             with patch.object(generation_progress, "_TASK_LEDGER", ledger):
                 try:
-                    start_generation_progress("session-status", episodes, generation_batch_id=generation_batch_id)
+                    start_generation_progress("session-status", videos, generation_batch_id=generation_batch_id)
                     mark_job_submitted(
                         "session-status",
-                        episodes[0],
-                        QuickVideoJob(episode_index=1, job_id="job-ledger-status-001"),
+                        videos[0],
+                        QuickVideoJob(video_index=1, job_id="job-ledger-status-001"),
                     )
                     status = session.snapshot_status()
                 finally:
@@ -709,14 +780,14 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
 
     def test_snapshot_status_attaches_result_reconciliation(self) -> None:
         session = self._build_session()
-        episodes = [EpisodePrompt(index=1, title="第一集", prompt="ep1")]
+        videos = [VideoPrompt(index=1, title="第一条视频", prompt="video1")]
         expected_reconciliation = {
             "generationBatchId": "gb-reconciliation-current",
             "summary": {"conflicts": 0},
         }
         start_generation_progress(
             "session-status",
-            episodes,
+            videos,
             generation_batch_id="gb-reconciliation-current",
         )
         try:
@@ -740,7 +811,7 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
             "progress": {
                 "generationBatchId": "gb-reconciliation-recovery",
                 "status": "completed",
-                "items": [{"episodeIndex": 1, "jobId": "job-1", "status": "succeeded"}],
+                "items": [{"videoIndex": 1, "jobId": "job-1", "status": "succeeded"}],
             },
         }
         expected_reconciliation = {
@@ -803,11 +874,11 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
 
     def test_snapshot_status_keeps_pre_submit_progress_as_planning(self) -> None:
         session = self._build_session()
-        episodes = [
-            EpisodePrompt(index=1, title="第一集", prompt="ep1"),
-            EpisodePrompt(index=2, title="第二集", prompt="ep2"),
+        videos = [
+            VideoPrompt(index=1, title="第一条视频", prompt="video1"),
+            VideoPrompt(index=2, title="第二条视频", prompt="video2"),
         ]
-        start_generation_progress("session-status", episodes, concurrent=True)
+        start_generation_progress("session-status", videos, concurrent=True)
         try:
             status = session.snapshot_status()
         finally:
@@ -821,16 +892,16 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
 
     def test_snapshot_status_keeps_failed_progress_pending_while_jobs_are_active(self) -> None:
         session = self._build_session()
-        episodes = [
-            EpisodePrompt(index=1, title="第一集", prompt="ep1"),
-            EpisodePrompt(index=2, title="第二集", prompt="ep2"),
+        videos = [
+            VideoPrompt(index=1, title="第一条视频", prompt="video1"),
+            VideoPrompt(index=2, title="第二条视频", prompt="video2"),
         ]
-        start_generation_progress("session-status", episodes, concurrent=True)
+        start_generation_progress("session-status", videos, concurrent=True)
         mark_job_failed("session-status", 1, "官方负载大")
         mark_job_submitted(
             "session-status",
-            episodes[1],
-            QuickVideoJob(episode_index=2, job_id="job-2"),
+            videos[1],
+            QuickVideoJob(video_index=2, job_id="job-2"),
         )
         fail_generation_progress("session-status", "部分任务失败", skip_pending=False)
         try:
@@ -848,13 +919,13 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
         self.assertNotIn("error", status["generationProgress"])
 
     def test_generation_progress_does_not_keep_global_error_while_first_frame_is_active(self) -> None:
-        episodes = [
-            EpisodePrompt(index=1, title="第一集", prompt="ep1"),
-            EpisodePrompt(index=2, title="第二集", prompt="ep2"),
+        videos = [
+            VideoPrompt(index=1, title="第一条视频", prompt="video1"),
+            VideoPrompt(index=2, title="第二条视频", prompt="video2"),
         ]
-        start_generation_progress("session-first-frame-active", episodes, concurrent=True)
+        start_generation_progress("session-first-frame-active", videos, concurrent=True)
         try:
-            mark_job_preparing_first_frame("session-first-frame-active", episodes[0])
+            mark_job_preparing_first_frame("session-first-frame-active", videos[0])
             fail_generation_progress(
                 "session-first-frame-active",
                 "图生图阶段超过 240 秒没有任何视频任务提交。本轮已判定为后台卡死。",
@@ -871,10 +942,10 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
         self.assertNotIn("error", progress)
 
     def test_stale_first_frame_timeout_scales_with_requested_count(self) -> None:
-        episodes = [EpisodePrompt(index=index, title=f"第 {index} 集", prompt=f"ep{index}") for index in range(1, 11)]
-        start_generation_progress("session-first-frame-scaled-timeout", episodes, concurrent=True)
-        for episode in episodes:
-            mark_job_preparing_first_frame("session-first-frame-scaled-timeout", episode)
+        videos = [VideoPrompt(index=index, title=f"第 {index} 集", prompt=f"ep{index}") for index in range(1, 11)]
+        start_generation_progress("session-first-frame-scaled-timeout", videos, concurrent=True)
+        for video in videos:
+            mark_job_preparing_first_frame("session-first-frame-scaled-timeout", video)
         try:
             with patch("ai8video.generation.generation_progress.time.time", return_value=time.time() + 300):
                 early = settle_stale_first_frame_progress("session-first-frame-scaled-timeout")
@@ -888,9 +959,9 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
         self.assertEqual(progress["runningCount"], 10)
 
     def test_generation_progress_humanizes_first_frame_response_lost(self) -> None:
-        episodes = [EpisodePrompt(index=1, title="第一集", prompt="ep1")]
-        start_generation_progress("session-first-frame-lost", episodes, concurrent=True)
-        mark_job_preparing_first_frame("session-first-frame-lost", episodes[0])
+        videos = [VideoPrompt(index=1, title="第一条视频", prompt="video1")]
+        start_generation_progress("session-first-frame-lost", videos, concurrent=True)
+        mark_job_preparing_first_frame("session-first-frame-lost", videos[0])
         mark_job_failed(
             "session-first-frame-lost",
             1,
@@ -916,9 +987,9 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
         self.assertNotIn("RemoteDisconnected", item["error"])
 
     def test_generation_progress_treats_ssleof_during_first_frame_as_response_lost(self) -> None:
-        episodes = [EpisodePrompt(index=1, title="第一集", prompt="ep1")]
-        start_generation_progress("session-first-frame-ssleof", episodes, concurrent=True)
-        mark_job_preparing_first_frame("session-first-frame-ssleof", episodes[0])
+        videos = [VideoPrompt(index=1, title="第一条视频", prompt="video1")]
+        start_generation_progress("session-first-frame-ssleof", videos, concurrent=True)
+        mark_job_preparing_first_frame("session-first-frame-ssleof", videos[0])
         mark_job_failed(
             "session-first-frame-ssleof",
             1,
@@ -938,12 +1009,12 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
         self.assertIn("本地没有拿到图片 URL", item["error"])
 
     def test_generation_progress_keeps_real_job_id_when_merge_failure_uses_local_placeholder(self) -> None:
-        episodes = [EpisodePrompt(index=1, title="第一集", prompt="ep1")]
-        start_generation_progress("session-real-job-preserve", episodes, concurrent=True)
+        videos = [VideoPrompt(index=1, title="第一条视频", prompt="video1")]
+        start_generation_progress("session-real-job-preserve", videos, concurrent=True)
         mark_job_submitted(
             "session-real-job-preserve",
-            episodes[0],
-            QuickVideoJob(episode_index=1, job_id="job-real-1"),
+            videos[0],
+            QuickVideoJob(video_index=1, job_id="job-real-1"),
         )
         mark_job_failed(
             "session-real-job-preserve",
@@ -961,6 +1032,34 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
         self.assertEqual(item["jobId"], "job-real-1")
         self.assertEqual(progress["submittedCount"], 1)
 
+    def test_generation_progress_labels_local_ffmpeg_failure_as_postprocessing(self) -> None:
+        session_id = "session-local-postprocess-failure"
+        videos = [VideoPrompt(index=1, title="第一条视频", prompt="video1")]
+        start_generation_progress(session_id, videos, concurrent=False)
+        mark_job_polling(
+            session_id,
+            QuickVideoJob(
+                video_index=1,
+                job_id="job-local-postprocess",
+                status="succeeded",
+                video_url="https://example.com/provider.mp4",
+            ),
+        )
+        mark_job_failed(
+            session_id,
+            1,
+            "视频开头裁剪失败：FFmpeg 不支持 libx264",
+            job_id="job-local-postprocess",
+        )
+        try:
+            progress = get_generation_progress(session_id)
+        finally:
+            clear_generation_progress(session_id)
+
+        self.assertIsNotNone(progress)
+        self.assertEqual(progress["items"][0]["status"], "failed")
+        self.assertEqual(progress["items"][0]["statusLabel"], "本地后处理失败")
+
     def test_snapshot_status_prefers_live_progress_over_background_final_payload_while_jobs_still_archiving(self) -> None:
         session = self._build_session()
         session.worker_thread = SimpleNamespace(is_alive=lambda: False)
@@ -974,16 +1073,16 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
             "status": "completed",
         }
         session.background_completed_at = time.time()
-        episodes = [
-            EpisodePrompt(index=1, title="第一集", prompt="ep1"),
-            EpisodePrompt(index=2, title="第二集", prompt="ep2"),
+        videos = [
+            VideoPrompt(index=1, title="第一条视频", prompt="video1"),
+            VideoPrompt(index=2, title="第二条视频", prompt="video2"),
         ]
-        start_generation_progress("session-status", episodes, concurrent=True)
+        start_generation_progress("session-status", videos, concurrent=True)
         mark_job_failed("session-status", 1, "官方负载大")
         mark_job_polling(
             "session-status",
             QuickVideoJob(
-                episode_index=2,
+                video_index=2,
                 job_id="job-2",
                 status="succeeded",
                 provider_status="completed",
@@ -1010,13 +1109,13 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
         self.assertIsNone(progress.get("completedAt"))
 
     def test_generation_progress_keeps_provider_progress_like_aimanju(self) -> None:
-        episodes = [EpisodePrompt(index=1, title="第一集", prompt="ep1")]
-        start_generation_progress("session-status", episodes, concurrent=False)
+        videos = [VideoPrompt(index=1, title="第一条视频", prompt="video1")]
+        start_generation_progress("session-status", videos, concurrent=False)
         try:
             mark_job_polling(
                 "session-status",
                 QuickVideoJob(
-                    episode_index=1,
+                    video_index=1,
                     job_id="job-1",
                     provider_status="processing",
                     provider_progress=12,
@@ -1025,7 +1124,7 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
             mark_job_polling(
                 "session-status",
                 QuickVideoJob(
-                    episode_index=1,
+                    video_index=1,
                     job_id="job-1",
                     provider_status="processing",
                     provider_progress=48,
@@ -1034,7 +1133,7 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
             mark_job_polling(
                 "session-status",
                 QuickVideoJob(
-                    episode_index=1,
+                    video_index=1,
                     job_id="job-1",
                     provider_status="processing",
                     provider_progress=41,
@@ -1050,13 +1149,13 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
         self.assertEqual(item["statusLabel"], "真实生成进度 48%")
 
     def test_generation_progress_marks_provider_completed_as_post_processing_until_archived(self) -> None:
-        episodes = [EpisodePrompt(index=1, title="第一集", prompt="ep1")]
-        start_generation_progress("session-status", episodes, concurrent=False)
+        videos = [VideoPrompt(index=1, title="第一条视频", prompt="video1")]
+        start_generation_progress("session-status", videos, concurrent=False)
         try:
             mark_job_polling(
                 "session-status",
                 QuickVideoJob(
-                    episode_index=1,
+                    video_index=1,
                     job_id="job-1",
                     status="succeeded",
                     video_url="https://example.com/video.mp4",
@@ -1081,9 +1180,9 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
             def __init__(self, config):
                 self.config = config
 
-            def get_job(self, job_id, episode_index=1, prompt=""):
+            def get_job(self, job_id, video_index=1, prompt=""):
                 return QuickVideoJob(
-                    episode_index=episode_index,
+                    video_index=video_index,
                     job_id=job_id,
                     status="succeeded",
                     video_url="https://example.com/provider.mp4",
@@ -1093,12 +1192,12 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
 
         session = self._build_session()
         session.config = AI8VideoConfig(dry_run=True)
-        episodes = [EpisodePrompt(index=1, title="第一集", prompt="ep1")]
-        start_generation_progress("session-status", episodes, concurrent=False)
+        videos = [VideoPrompt(index=1, title="第一条视频", prompt="video1")]
+        start_generation_progress("session-status", videos, concurrent=False)
         mark_job_submitted(
             "session-status",
-            episodes[0],
-            QuickVideoJob(episode_index=1, job_id="job-1"),
+            videos[0],
+            QuickVideoJob(video_index=1, job_id="job-1"),
         )
         try:
             with patch.object(ai8video_chat_service, "AI8VideoModelClient", FakeClient):
@@ -1115,15 +1214,15 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
         self.assertEqual(progress["postProcessingCount"], 1)
 
     def test_cancel_generation_progress_marks_unfinished_items_skipped(self) -> None:
-        episodes = [
-            EpisodePrompt(index=1, title="第一集", prompt="ep1"),
-            EpisodePrompt(index=2, title="第二集", prompt="ep2"),
+        videos = [
+            VideoPrompt(index=1, title="第一条视频", prompt="video1"),
+            VideoPrompt(index=2, title="第二条视频", prompt="video2"),
         ]
-        start_generation_progress("session-status", episodes, concurrent=True)
+        start_generation_progress("session-status", videos, concurrent=True)
         mark_job_submitted(
             "session-status",
-            episodes[0],
-            QuickVideoJob(episode_index=1, job_id="job-1"),
+            videos[0],
+            QuickVideoJob(video_index=1, job_id="job-1"),
         )
         try:
             progress = cancel_generation_progress("session-status")
@@ -1138,12 +1237,12 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
 
     def test_cancel_current_returns_cancelled_snapshot(self) -> None:
         session = self._build_session()
-        episodes = [EpisodePrompt(index=1, title="第一集", prompt="ep1")]
-        start_generation_progress("session-status", episodes, concurrent=False)
+        videos = [VideoPrompt(index=1, title="第一条视频", prompt="video1")]
+        start_generation_progress("session-status", videos, concurrent=False)
         mark_job_submitted(
             "session-status",
-            episodes[0],
-            QuickVideoJob(episode_index=1, job_id="job-1"),
+            videos[0],
+            QuickVideoJob(video_index=1, job_id="job-1"),
         )
         try:
             status = session.cancel_current()
@@ -1165,8 +1264,8 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
                 "meta": {"operation": "generate"},
                 "result": {"jobs": []},
             },
-            "summary": {"episodeCount": 1},
-            "result": {"episodes": []},
+            "summary": {"videoCount": 1},
+            "result": {"videos": []},
         }
         session.current_display_queue.put({"done": "ok"})
 
@@ -1174,7 +1273,7 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
 
         self.assertEqual(status["status"], "completed")
         self.assertEqual(status["reply"]["stage"], "completed")
-        self.assertEqual(status["summary"]["episodeCount"], 1)
+        self.assertEqual(status["summary"]["videoCount"], 1)
         self.assertIsNotNone(status["completedAt"])
 
     def test_snapshot_status_reports_synchronous_collecting_payload_as_completed(self) -> None:
@@ -1211,8 +1310,8 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
                 "meta": {"operation": "generate"},
                 "result": {"jobs": []},
             },
-            "summary": {"episodeCount": 2},
-            "result": {"episodes": [{}, {}]},
+            "summary": {"videoCount": 2},
+            "result": {"videos": [{}, {}]},
         }
 
         with patch.object(ai8video_chat_service, "get_chat_snapshot", return_value=cached):
@@ -1220,7 +1319,7 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
 
         self.assertEqual(status["status"], "completed")
         self.assertEqual(status["reply"]["stage"], "completed")
-        self.assertEqual(status["summary"]["episodeCount"], 2)
+        self.assertEqual(status["summary"]["videoCount"], 2)
         self.assertEqual(status["chatBackend"], "ai8video-runtime")
 
     def test_start_task_clears_stale_runtime_snapshot(self) -> None:

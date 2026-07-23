@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from ai8video.batch.batch_report_store import BatchReportStore
 from ai8video.batch.daily_batch_runner import DailyBatchRunner
-from ai8video.core.models import EpisodePrompt, ParsedRequest, PipelineResult, GenerationOutcome
+from ai8video.core.models import VideoPrompt, ParsedRequest, PipelineResult, GenerationOutcome
 
 
 class _FakePipeline:
@@ -18,15 +18,15 @@ class _FakePipeline:
 
     def run_from_message(self, message: str) -> PipelineResult:
         self.run_calls.append(message)
-        request = ParsedRequest(raw_text=message, mode="multi_episode_script", episode_count=2)
-        episodes = [
-            EpisodePrompt(index=1, title="第一集", prompt="ep1 prompt"),
-            EpisodePrompt(index=2, title="第二集", prompt="ep2 prompt"),
+        request = ParsedRequest(raw_text=message, mode="batch_videos", video_count=2)
+        videos = [
+            VideoPrompt(index=1, title="第一条视频", prompt="video1 prompt"),
+            VideoPrompt(index=2, title="第二条视频", prompt="video2 prompt"),
         ]
         outcomes = [
-            GenerationOutcome(episode_index=1, job_id="job-1", status="succeeded", decision="generated"),
+            GenerationOutcome(video_index=1, job_id="job-1", status="succeeded", decision="generated"),
             GenerationOutcome(
-                episode_index=2,
+                video_index=2,
                 job_id="job-2",
                 status="failed",
                 decision="failed",
@@ -34,12 +34,12 @@ class _FakePipeline:
             ),
         ]
         assets = [
-            {"episodeIndex": 1, "generationStatus": "generated", "usage": {}},
-            {"episodeIndex": 2, "generationStatus": "failed", "usage": {}},
+            {"videoIndex": 1, "generationStatus": "generated", "usage": {}},
+            {"videoIndex": 2, "generationStatus": "failed", "usage": {}},
         ]
         return PipelineResult(
             request=request,
-            episodes=episodes,
+            videos=videos,
             first_frame=None,
             jobs=[],
             dry_run=True,
@@ -48,28 +48,28 @@ class _FakePipeline:
             asset_records=assets,
         )
 
-    def rewrite_episode(
+    def rewrite_video(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         rewrite_instruction: str,
     ) -> PipelineResult:
         self.rewrite_calls.append(
             {
                 "request_mode": request.mode,
-                "request_episode_count": request.episode_count,
-                "episode_index": episode.index,
-                "episode_title": episode.title,
+                "request_video_count": request.video_count,
+                "video_index": video.index,
+                "video_title": video.title,
                 "rewrite_instruction": rewrite_instruction,
             }
         )
         outcomes = [
-            GenerationOutcome(episode_index=episode.index, job_id="job-2b", status="succeeded", decision="generated")
+            GenerationOutcome(video_index=video.index, job_id="job-2b", status="succeeded", decision="generated")
         ]
-        assets = [{"episodeIndex": episode.index, "generationStatus": "generated", "usage": {}}]
+        assets = [{"videoIndex": video.index, "generationStatus": "generated", "usage": {}}]
         return PipelineResult(
             request=request,
-            episodes=[episode],
+            videos=[video],
             first_frame=None,
             jobs=[],
             dry_run=True,
@@ -105,18 +105,18 @@ class _FakeExpansionPipeline:
     def run_from_message(self, message: str) -> PipelineResult:
         self.run_calls.append(message)
         index = len(self.run_calls)
-        request = ParsedRequest(raw_text=message, mode="single_prompt", episode_count=1)
-        episode = EpisodePrompt(index=1, title=f"第 {index} 条", prompt=message)
+        request = ParsedRequest(raw_text=message, mode="single_video", video_count=1)
+        video = VideoPrompt(index=1, title=f"第 {index} 条", prompt=message)
         outcome = GenerationOutcome(
-            episode_index=1,
+            video_index=1,
             job_id=f"job-{index}",
             status="succeeded",
             decision="generated",
         )
-        asset = {"episodeIndex": 1, "generationStatus": "generated", "usage": {}}
+        asset = {"videoIndex": 1, "generationStatus": "generated", "usage": {}}
         return PipelineResult(
             request=request,
-            episodes=[episode],
+            videos=[video],
             first_frame=None,
             jobs=[],
             dry_run=True,
@@ -174,7 +174,7 @@ class DailyBatchRunnerTest(unittest.TestCase):
         self.assertTrue(pipeline.requests[0].html_motion_overlay_enabled)
         self.assertTrue(report["htmlMotionOverlayEnabled"])
 
-    def test_multi_episode_failure_does_not_schedule_retry_after_generation_failed(self) -> None:
+    def test_multi_video_failure_does_not_schedule_retry_after_generation_failed(self) -> None:
         pipeline = _FakePipeline()
         with tempfile.TemporaryDirectory() as tempdir:
             runner = DailyBatchRunner(

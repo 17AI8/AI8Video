@@ -337,7 +337,7 @@ class _AI8VideoSession:
             try:
                 latest = client.get_job(
                     job_id,
-                    episode_index=int(item.get("episodeIndex") or 1),
+                    video_index=int(item.get("videoIndex") or 1),
                 )
             except Exception:
                 continue
@@ -824,7 +824,7 @@ def _execution_result_snapshot(payload: dict | None) -> dict | None:
     return {
         "stage": str(reply.get("stage") or payload.get("status") or "").strip() or None,
         "hasResult": isinstance(result, dict),
-        "episodeCount": len(result.get("episodes") or []) if isinstance(result, dict) else 0,
+        "videoCount": len(result.get("videos") or []) if isinstance(result, dict) else 0,
     }
 
 

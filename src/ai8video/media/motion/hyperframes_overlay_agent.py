@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from ai8video.core.models import EpisodePrompt
+from ai8video.core.models import VideoPrompt
 from ai8video.media.motion.hyperframes_overlay_legacy import _parse_json_object
 from ai8video.media.motion.hyperframes_overlay_semantic import (
     normalize_semantic_spec,
@@ -34,7 +34,7 @@ class HtmlMotionSemanticHarness:
     def __init__(
         self,
         llm: Callable[[str], str],
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         media: dict[str, Any],
         dialogue_text: str = "",
         *,
@@ -42,7 +42,7 @@ class HtmlMotionSemanticHarness:
         retry_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self._llm = llm
-        self._episode = episode
+        self._video = video
         self._media = media
         self._dialogue = str(dialogue_text or "").strip()
         self._max_turns = max(1, int(max_turns))
@@ -105,7 +105,7 @@ class HtmlMotionSemanticHarness:
         duration = float(self._media["durationSeconds"])
         safe = self._media.get("safeZone") if isinstance(self._media.get("safeZone"), dict) else {}
         payload = {
-            "videoPrompt": str(self._episode.prompt or ""),
+            "videoPrompt": str(self._video.prompt or ""),
             "dialogue": self._dialogue or "（当前无可用台词，只生成图形动效）",
             "canvas": {
                 "width": int(self._media["width"]),
@@ -183,7 +183,7 @@ audit.summary 最多 12 个中文字；最终方案通过你的自审时必须�
 
 def run_semantic_agent(
     llm: Callable[[str], str],
-    episode: EpisodePrompt,
+    video: VideoPrompt,
     media: dict[str, Any],
     dialogue_text: str = "",
     *,
@@ -192,7 +192,7 @@ def run_semantic_agent(
 ) -> AgentRunResult:
     return HtmlMotionSemanticHarness(
         llm,
-        episode,
+        video,
         media,
         dialogue_text,
         max_turns=max_turns,

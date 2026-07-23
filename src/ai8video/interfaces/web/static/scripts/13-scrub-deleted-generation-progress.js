@@ -328,7 +328,7 @@
           <textarea class="video-preview-tts-textarea" data-video-prompt-textarea></textarea>
           <div class="video-preview-tts-actions">
             <div class="video-preview-tts-ai-group">
-              <button type="button" class="video-preview-button" data-continue-video-prompt>续写上集</button>
+              <button type="button" class="video-preview-button" data-continue-video-prompt>续写视频</button>
               <button type="button" class="video-preview-button" data-transform-video-prompt="polish">润色</button>
               <button type="button" class="video-preview-button" data-transform-video-prompt="expand">扩写</button>
             </div>
@@ -350,17 +350,17 @@
       editor.querySelector('[data-close-video-prompt]')?.addEventListener('click', () => editor.remove());
       continueButton?.addEventListener('click', async () => {
         setPromptActionsDisabled(true);
-        status.textContent = '正在使用文本模型续写上集';
+        status.textContent = '正在使用文本模型续写视频';
         try {
           const res = await fetch('/api/user-generated-results/video-prompt/continue', {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userGeneratedKey: key }),
           });
           const data = await res.json().catch(() => ({}));
-          if (!res.ok || !data.ok) throw new Error(data.error || '续写上集失败');
+          if (!res.ok || !data.ok) throw new Error(data.error || '续写视频失败');
           textarea.value = data.text || '';
           status.textContent = `已续写，${data.textChars} 字，保存后才会用于生成`;
         } catch (error) {
-          status.textContent = error?.message || '续写上集失败';
+          status.textContent = error?.message || '续写视频失败';
         } finally {
           setPromptActionsDisabled(false);
         }
@@ -469,4 +469,3 @@
         return false;
       }
     }
-

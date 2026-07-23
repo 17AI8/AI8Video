@@ -220,12 +220,12 @@
           .slice(0, boundedExpected)
         : [];
       const recentByJobId = new Map(recentItems.map((item) => [String(item.jobId || '').trim(), item]));
-      const recentByEpisode = new Map(recentItems.map((item) => [Number(item.episodeIndex || 0), item]));
+      const recentByVideo = new Map(recentItems.map((item) => [Number(item.videoIndex || 0), item]));
       const videos = backendItems.length
         ? backendItems.map((item, index) => {
             const jobId = String(item.jobId || '').trim();
-            const asset = (jobId && recentByJobId.get(jobId)) || recentByEpisode.get(Number(item.episodeIndex || 0));
-            const progressTitle = `视频 ${Number(item.episodeIndex || 0) || index + 1}`;
+            const asset = (jobId && recentByJobId.get(jobId)) || recentByVideo.get(Number(item.videoIndex || 0));
+            const progressTitle = `视频 ${Number(item.videoIndex || 0) || index + 1}`;
             if (asset) {
               const stage = resolveBatchStageLabel(asset);
               return {
@@ -246,7 +246,7 @@
         : recentItems.map((item) => {
             const stage = resolveBatchStageLabel(item);
             return {
-              title: item.episodeTitle || item.title || '已生成',
+              title: item.videoTitle || item.title || '已生成',
               stage,
               percent: isTerminalProgressStage(stage) ? 100 : 0,
               pending: !isTerminalProgressStage(stage),
@@ -258,7 +258,7 @@
       const progressCards = backendItems.length
         ? backendItems.map((item, index) => {
             const jobId = String(item.jobId || '').trim();
-            const asset = (jobId && recentByJobId.get(jobId)) || recentByEpisode.get(Number(item.episodeIndex || 0));
+            const asset = (jobId && recentByJobId.get(jobId)) || recentByVideo.get(Number(item.videoIndex || 0));
             if (asset) return asset;
             return buildProgressStatusResultItem(item, index);
           })
@@ -272,7 +272,7 @@
       const terminalCount = doneCount + failedCount + deletedCount;
       const isTerminal = boundedExpected > 0 && terminalCount >= boundedExpected && runningCount === 0 && waitingCount === 0 && planningCount === 0;
       const latestNames = recentItems
-        .map((item) => cleanDisplayText(item.episodeTitle || item.title || item.fileName || item.jobId || ''))
+        .map((item) => cleanDisplayText(item.videoTitle || item.title || item.fileName || item.jobId || ''))
         .filter(Boolean)
         .slice(0, 3);
       const detailTitle = isTerminal
@@ -332,9 +332,9 @@
       const text = String(summary || '').trim();
       const labels = {
         '正在理解全文关键词': '正在读取剧本重点',
-        '关键词理解完成，准备拆分剧本': '已读懂重点，正在拆成短视频',
-        '正在智能拆分剧本': '正在把剧本拆成多条视频',
-        '拆集完成，正在整理提示词': '已拆成多条视频，正在写每条视频方案',
+        '关键词理解完成，准备规划视频': '已读懂重点，正在规划批量视频',
+        '正在智能规划视频': '正在规划多条独立视频',
+        '视频规划完成，正在整理提示词': '已规划多条视频，正在写每条视频方案',
         '正在整理视频提示词': '正在生成每条视频方案',
         '正在逐条审校视频提示词': '正在完善每条视频脚本',
         '视频提示词已规划，准备提交生成': '视频方案已完成，正在进入生成',
@@ -492,4 +492,3 @@
       const parsed = parseShortChineseNumber(raw);
       return Math.max(1, Math.min(12, parsed || 1));
     }
-

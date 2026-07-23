@@ -8,11 +8,11 @@ from dataclasses import replace
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from ai8video.generation.ai_script_splitter import LLMCallable, single_prompt_to_episode, split_script_with_ai
+from ai8video.generation.video_prompt_planner import LLMCallable, single_prompt_to_video, plan_video_prompts_with_ai
 from ai8video.generation.business_prompt import (
     _apply_custom_safety_guard,
     _custom_safety_requires_no_person,
-    finalize_episode_prompts,
+    finalize_video_prompts,
     read_business_prompt,
 )
 from ai8video.core.config import AI8VideoConfig
@@ -32,7 +32,7 @@ from ai8video.generation.generation_progress import (
     mark_job_succeeded,
     start_generation_progress,
 )
-from ai8video.core.models import ArchivedAsset, EpisodePrompt, FirstFrameAsset, GenerationOutcome, ParsedRequest, PipelineResult, QuickVideoJob
+from ai8video.core.models import ArchivedAsset, VideoPrompt, FirstFrameAsset, GenerationOutcome, ParsedRequest, PipelineResult, QuickVideoJob
 from ai8video.generation.pipeline import AI8VideoPipeline
 from ai8video.generation.prompt_trace import append_prompt_trace
 from ai8video.media.local_tts import extract_dialogue_text, prepare_narration_text
@@ -77,35 +77,35 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         segment_duration = self._segment_duration_seconds(request)
         final_request = replace(request, duration_seconds=segment_duration * self.segment_count)
         planning_text = self._planning_text(request.raw_text, segment_duration, segment_count=self.segment_count)
-        allow_mock_split = self.config.dry_run
+        allow_mock_planning = self.config.dry_run
         task_constraints = self._merged_task_constraints(final_request, segment_duration)
-        if final_request.mode == "multi_episode_script":
-            if not final_request.episode_count:
-                raise ValueError("episode_count is required for multi_episode_script mode")
-            episodes = split_script_with_ai(
+        if final_request.mode == "batch_videos":
+            if not final_request.video_count:
+                raise ValueError("video_count is required for batch_videos mode")
+            videos = plan_video_prompts_with_ai(
                 planning_text,
-                final_request.episode_count,
+                final_request.video_count,
                 final_request.style_hint,
                 final_request.core_keywords,
                 task_constraints=task_constraints,
                 final_duration_seconds=final_request.duration_seconds,
                 llm=self.llm,
-                allow_mock=allow_mock_split,
+                allow_mock=allow_mock_planning,
                 trace_session_id=progress_session_id,
             )
         else:
-            episodes = single_prompt_to_episode(planning_text, final_request.style_hint, final_request.core_keywords)
-        return self._run_final_episodes(
+            videos = single_prompt_to_video(planning_text, final_request.style_hint, final_request.core_keywords)
+        return self._run_final_videos(
             final_request,
-            episodes,
+            videos,
             segment_duration_seconds=segment_duration,
             progress_session_id=progress_session_id,
         )
 
-    def _run_final_episodes(
+    def _run_final_videos(
         self,
         request: ParsedRequest,
-        episodes: list[EpisodePrompt],
+        videos: list[VideoPrompt],
         *,
         segment_duration_seconds: int,
         progress_session_id: str | None = None,
@@ -114,52 +114,52 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             segment_duration_seconds = self.client.guard.forced_duration_seconds
             request = replace(request, duration_seconds=segment_duration_seconds * self.segment_count)
         if not self.config.dry_run:
-            self.client.guard.assert_can_create_count(len(episodes) * self.segment_count)
+            self.client.guard.assert_can_create_count(len(videos) * self.segment_count)
         task_constraints = self._merged_task_constraints(request, segment_duration_seconds)
 
         start_generation_progress(
             progress_session_id,
-            episodes,
-            concurrent=bool(request.concurrent_generation and len(episodes) > 1),
+            videos,
+            concurrent=bool(request.concurrent_generation and len(videos) > 1),
         )
 
-        final_episodes = finalize_episode_prompts(
-            episodes,
+        final_videos = finalize_video_prompts(
+            videos,
             llm=getattr(self, "llm", None),
             trace_session_id=progress_session_id,
             task_constraints=task_constraints,
         )
-        ordered_episodes = sorted(final_episodes, key=lambda item: item.index)
-        for episode in ordered_episodes:
-            self._trace_merged_final_episode_prompt(request, episode, progress_session_id, segment_duration_seconds)
+        ordered_videos = sorted(final_videos, key=lambda item: item.index)
+        for video in ordered_videos:
+            self._trace_merged_final_video_prompt(request, video, progress_session_id, segment_duration_seconds)
 
-        if request.concurrent_generation and len(ordered_episodes) > 1:
+        if request.concurrent_generation and len(ordered_videos) > 1:
             results = self._run_groups_concurrently(
                 request,
-                ordered_episodes,
+                ordered_videos,
                 segment_duration_seconds=segment_duration_seconds,
                 progress_session_id=progress_session_id,
             )
         else:
             results = [
-                self._run_one_final_episode(
+                self._run_one_final_video(
                     request,
-                    episode,
+                    video,
                     segment_duration_seconds=segment_duration_seconds,
                     progress_session_id=progress_session_id,
                 )
-                for episode in ordered_episodes
+                for video in ordered_videos
             ]
 
         jobs = [item[0] for item in results]
         outcomes = [item[1] for item in results]
         archives = [item[2] for item in results]
         asset_records = [item[3] for item in results if item[3]]
-        if len(results) >= len(ordered_episodes):
+        if len(results) >= len(ordered_videos):
             finish_generation_progress(progress_session_id)
         return PipelineResult(
             request=request,
-            episodes=ordered_episodes,
+            videos=ordered_videos,
             first_frame=None,
             jobs=jobs,
             outcomes=outcomes,
@@ -171,32 +171,32 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
     def _run_groups_concurrently(
         self,
         request: ParsedRequest,
-        episodes: list[EpisodePrompt],
+        videos: list[VideoPrompt],
         *,
         segment_duration_seconds: int,
         progress_session_id: str | None,
     ) -> list[tuple[QuickVideoJob, GenerationOutcome, ArchivedAsset, dict | None]]:
         results_by_index: dict[int, tuple[QuickVideoJob, GenerationOutcome, ArchivedAsset, dict | None]] = {}
-        with ThreadPoolExecutor(max_workers=len(episodes)) as executor:
+        with ThreadPoolExecutor(max_workers=len(videos)) as executor:
             future_map = {
                 executor.submit(
-                    self._run_one_final_episode,
+                    self._run_one_final_video,
                     request,
-                    episode,
+                    video,
                     segment_duration_seconds=segment_duration_seconds,
                     progress_session_id=progress_session_id,
-                ): episode.index
-                for episode in episodes
+                ): video.index
+                for video in videos
             }
             for future in as_completed(future_map):
                 index = future_map[future]
                 results_by_index[index] = future.result()
-        return [results_by_index[episode.index] for episode in episodes if episode.index in results_by_index]
+        return [results_by_index[video.index] for video in videos if video.index in results_by_index]
 
-    def _run_one_final_episode(
+    def _run_one_final_video(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         *,
         segment_duration_seconds: int,
         progress_session_id: str | None,
@@ -208,14 +208,14 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         task_constraints = self._merged_task_constraints(request, segment_duration_seconds)
         try:
             merge_mode = self._merge_mode
-            with tempfile.TemporaryDirectory(prefix=f"ai8video-{merge_mode}-{episode.index}-") as tempdir:
+            with tempfile.TemporaryDirectory(prefix=f"ai8video-{merge_mode}-{video.index}-") as tempdir:
                 work_dir = Path(tempdir)
                 try:
                     self._raise_if_cancelled(progress_session_id)
-                    first_frame = self._prepare_initial_first_frame(request, episode, progress_session_id)
+                    first_frame = self._prepare_initial_first_frame(request, video, progress_session_id)
                     self._raise_if_cancelled(progress_session_id)
                     segment_prompts = self._build_segment_prompts(
-                        episode,
+                        video,
                         segment_duration_seconds=segment_duration_seconds,
                         progress_session_id=progress_session_id,
                         task_constraints=task_constraints,
@@ -224,8 +224,8 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                     next_first_frame = first_frame
                     completed_segments: list[QuickVideoJob] = []
                     for segment_index in range(1, self.segment_count + 1):
-                        segment_episode = self._segment_episode(
-                            episode,
+                        segment_video = self._segment_video(
+                            video,
                             segment_index,
                             segment_duration_seconds=segment_duration_seconds,
                             progress_session_id=progress_session_id,
@@ -234,7 +234,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                         )
                         segment = self._create_and_poll_segment(
                             request,
-                            segment_episode,
+                            segment_video,
                             next_first_frame,
                             segment_duration_seconds,
                             progress_session_id,
@@ -247,10 +247,10 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                             f"segment{segment_index}",
                             first_frame=next_first_frame if segment_index > 1 else None,
                         )
-                        segment_record["segmentPrompt"] = segment_episode.prompt
+                        segment_record["segmentPrompt"] = segment_video.prompt
                         segment_record["narrationText"] = self._segment_narration_text(
-                            segment_episode.prompt,
-                            episode=episode,
+                            segment_video.prompt,
+                            video=video,
                             segment_index=segment_index,
                             progress_session_id=progress_session_id,
                         )
@@ -273,18 +273,20 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                         mark_job_polling(
                             progress_session_id,
                             QuickVideoJob(
-                                episode_index=episode.index,
+                                video_index=video.index,
                                 job_id=segment.job_id,
                                 status="pending",
-                                prompt=episode.prompt,
+                                prompt=video.prompt,
                                 stage_label=f"提取片段 {segment_index} 尾帧中",
+                                segment_index=segment_index,
+                                segment_label=f"片段 {segment_index}",
                             ),
                         )
                         self._raise_if_cancelled(progress_session_id)
                         tail_frame = extract_tail_frame(segment_video, work_dir / f"segment-{segment_index}-tail.png")
                         visible_tail_frame = self._copy_tail_frame_to_user_temp(
                             tail_frame,
-                            episode=episode,
+                            video=video,
                             segment_index=segment_index,
                             progress_session_id=progress_session_id,
                         )
@@ -295,37 +297,38 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                             first_frame_image_url=str(visible_tail_frame),
                             source=str(visible_tail_frame),
                         )
+                        mark_job_polling(progress_session_id, segment)
                         self._raise_if_cancelled(progress_session_id)
 
-                    merged_path = work_dir / f"merged-{episode.index}.mp4"
+                    merged_path = work_dir / f"merged-{video.index}.mp4"
                     mark_job_polling(
                         progress_session_id,
                         QuickVideoJob(
-                            episode_index=episode.index,
+                            video_index=video.index,
                             job_id=completed_segments[-1].job_id,
                             status="pending",
-                            prompt=episode.prompt,
+                            prompt=video.prompt,
                             stage_label="合并中",
                         ),
                     )
                     self._raise_if_cancelled(progress_session_id)
                     merge_meta = concat_videos(segment_videos, merged_path)
                     self._raise_if_cancelled(progress_session_id)
-                    raw_local_tts_narration_text = _merged_local_tts_narration_text(segment_records, episode)
+                    raw_local_tts_narration_text = _merged_local_tts_narration_text(segment_records, video)
                     local_tts_duration_fit = self._fit_local_tts_narration_to_duration(
                         raw_local_tts_narration_text,
-                        episode=episode,
+                        video=video,
                         target_duration_seconds=_merged_video_duration_seconds(merged_path)
                         or (segment_duration_seconds * self.segment_count),
                         progress_session_id=progress_session_id,
                     )
                     local_tts_narration_text = local_tts_duration_fit["text"]
                     merged_job = QuickVideoJob(
-                        episode_index=episode.index,
+                        video_index=video.index,
                         job_id=f"{merge_mode}-{'-'.join(segment.job_id for segment in completed_segments)}",
                         status="succeeded",
-                        prompt=episode.prompt,
-                        storage_key=f"merged-video/{episode.index}.mp4",
+                        prompt=video.prompt,
+                        storage_key=f"merged-video/{video.index}.mp4",
                         local_video_path=str(merged_path),
                         usage={
                             "mode": merge_mode,
@@ -340,7 +343,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                         },
                     )
                     outcome = GenerationOutcome(
-                        episode_index=episode.index,
+                        video_index=video.index,
                         job_id=merged_job.job_id,
                         status="succeeded",
                         decision="generated",
@@ -363,7 +366,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                         self.archiver.archive_local_file,
                         merged_path,
                         request,
-                        episode=episode,
+                        video=video,
                         job=merged_job,
                         outcome=outcome,
                         extra_meta={
@@ -378,14 +381,14 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                         },
                         progress_session_id=progress_session_id,
                     )
-                    asset_record = self.asset_store.append(request, episode, merged_job, outcome, None, archive)
+                    asset_record = self.asset_store.append(request, video, merged_job, outcome, None, archive)
                     mark_job_succeeded(progress_session_id, merged_job, asset_record)
                     return merged_job, outcome, archive, asset_record
                 except GenerationCancelled:
                     raise
                 except Exception as exc:
                     self._save_failed_partial_videos(
-                        episode,
+                        video,
                         exc,
                         segment_videos=segment_videos,
                         merged_path=merged_path,
@@ -394,7 +397,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                     )
                     return self._merged_failure_result(
                         request,
-                        episode,
+                        video,
                         exc,
                         segment_records=segment_records,
                         progress_session_id=progress_session_id,
@@ -402,14 +405,14 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         except GenerationCancelled as exc:
             return self._merged_cancelled_result(
                 request,
-                episode,
+                video,
                 exc,
                 segment_records=segment_records,
                 progress_session_id=progress_session_id,
             )
         except Exception as exc:
             self._save_failed_partial_videos(
-                episode,
+                video,
                 exc,
                 segment_videos=segment_videos,
                 merged_path=merged_path,
@@ -418,7 +421,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             )
             return self._merged_failure_result(
                 request,
-                episode,
+                video,
                 exc,
                 segment_records=segment_records,
                 progress_session_id=progress_session_id,
@@ -429,15 +432,15 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
     def _prepare_initial_first_frame(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         progress_session_id: str | None,
     ) -> FirstFrameAsset | None:
-        mark_job_preparing_first_frame(progress_session_id, episode)
-        return self._prepare_episode_first_frame(request, episode, progress_session_id=progress_session_id)
+        mark_job_preparing_first_frame(progress_session_id, video)
+        return self._prepare_video_first_frame(request, video, progress_session_id=progress_session_id)
 
     def _save_failed_partial_videos(
         self,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         exc: Exception,
         *,
         segment_videos: list[Path],
@@ -452,15 +455,15 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             return
         reason = str(exc).strip() or exc.__class__.__name__
         job = QuickVideoJob(
-            episode_index=episode.index,
-            job_id=f"{self._merge_mode}-failed-{episode.index}",
+            video_index=video.index,
+            job_id=f"{self._merge_mode}-failed-{video.index}",
             status="failed",
-            prompt=episode.prompt,
+            prompt=video.prompt,
             error=reason,
         )
         try:
             save_failed_video_task(
-                episode=episode,
+                video=video,
                 job=job,
                 reason=reason,
                 videos=videos,
@@ -477,7 +480,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
     def _create_and_poll_segment(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         first_frame: FirstFrameAsset | None,
         segment_duration_seconds: int,
         progress_session_id: str | None,
@@ -486,19 +489,19 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         segment_index: int,
     ) -> QuickVideoJob:
         self._raise_if_cancelled(progress_session_id)
-        mark_job_submitting(progress_session_id, episode)
+        mark_job_submitting(progress_session_id, video)
         self._raise_if_cancelled(progress_session_id)
         self._trace_video_submit(
             request,
-            episode,
+            video,
             first_frame,
             progress_session_id,
             segment_label=label,
             duration_seconds=segment_duration_seconds,
         )
         job = self.client.create_job(
-            text=episode.prompt,
-            episode_index=episode.index,
+            text=video.prompt,
+            video_index=video.index,
             first_frame=first_frame,
             duration_seconds=segment_duration_seconds,
             ratio=request.ratio,
@@ -510,14 +513,14 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         job.stage_label = f"{label}已提交"
         self._trace_video_job_created(
             request,
-            episode,
+            video,
             job,
             progress_session_id,
             segment_label=label,
             duration_seconds=segment_duration_seconds,
         )
         self._raise_if_cancelled(progress_session_id)
-        mark_job_submitted(progress_session_id, episode, job)
+        mark_job_submitted(progress_session_id, video, job)
         mark_job_polling(progress_session_id, job)
         completed = self._poll_job(job, progress_session_id)
         self._raise_if_cancelled(progress_session_id)
@@ -530,7 +533,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
     def _merged_failure_result(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         exc: Exception,
         *,
         segment_records: list[dict],
@@ -539,15 +542,15 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         error = str(exc).strip() or exc.__class__.__name__
         merge_mode = self._merge_mode
         job = QuickVideoJob(
-            episode_index=episode.index,
-            job_id=f"{merge_mode}-failed-{episode.index}",
+            video_index=video.index,
+            job_id=f"{merge_mode}-failed-{video.index}",
             status="failed",
-            prompt=episode.prompt,
+            prompt=video.prompt,
             error=error,
             usage={"mode": merge_mode, "segmentRecords": segment_records},
         )
         outcome = GenerationOutcome(
-            episode_index=episode.index,
+            video_index=video.index,
             job_id=job.job_id,
             status="failed",
             decision="failed",
@@ -559,21 +562,21 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             },
         )
         archive = ArchivedAsset(
-            episode_index=episode.index,
+            video_index=video.index,
             job_id=job.job_id,
             backend=self.config.archive_backend,
             status="failed",
             error=error,
             meta={"reason": "合并模式失败，不创建普通视频资产", "segmentRecords": segment_records},
         )
-        mark_job_failed(progress_session_id, episode.index, error, job_id=job.job_id)
+        mark_job_failed(progress_session_id, video.index, error, job_id=job.job_id)
         fail_generation_progress(progress_session_id, error, skip_pending=False)
         return job, outcome, archive, None
 
     def _merged_cancelled_result(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         exc: Exception,
         *,
         segment_records: list[dict],
@@ -583,15 +586,15 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         reason = str(exc).strip() or "用户强行终止，本地停止等待结果回填"
         merge_mode = self._merge_mode
         job = QuickVideoJob(
-            episode_index=episode.index,
-            job_id=f"{merge_mode}-cancelled-{episode.index}",
+            video_index=video.index,
+            job_id=f"{merge_mode}-cancelled-{video.index}",
             status="skipped",
-            prompt=episode.prompt,
+            prompt=video.prompt,
             error=reason,
             usage={"mode": merge_mode, "segmentRecords": segment_records},
         )
         outcome = GenerationOutcome(
-            episode_index=episode.index,
+            video_index=video.index,
             job_id=job.job_id,
             status="skipped",
             decision="failed",
@@ -604,7 +607,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             },
         )
         archive = ArchivedAsset(
-            episode_index=episode.index,
+            video_index=video.index,
             job_id=job.job_id,
             backend=self.config.archive_backend,
             status="skipped",
@@ -618,19 +621,19 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         if is_generation_stopped(progress_session_id):
             raise GenerationCancelled(generation_stop_reason(progress_session_id))
 
-    def _segment_episode(
+    def _segment_video(
         self,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         segment_index: int,
         *,
         segment_duration_seconds: int,
         progress_session_id: str | None = None,
         segment_prompt: str | None = None,
         task_constraints: str | None = None,
-    ) -> EpisodePrompt:
-        title = f"{episode.title} · 片段 {segment_index}"
+    ) -> VideoPrompt:
+        title = f"{video.title} · 片段 {segment_index}"
         raw_segment_prompt = segment_prompt or self._build_segment_prompt(
-            episode.prompt,
+            video.prompt,
             segment_index=segment_index,
             segment_duration_seconds=segment_duration_seconds,
             split_single_block=self.segment_count == 2,
@@ -640,21 +643,21 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             "merged_segment_video_prompt",
             session_id=progress_session_id,
             payload={
-                "episodeIndex": episode.index,
+                "videoIndex": video.index,
                 "title": title,
                 "segmentIndex": segment_index,
                 "segmentDurationSeconds": segment_duration_seconds,
                 "prompt": final_segment_prompt,
-                "sourcePrompt": episode.prompt,
+                "sourcePrompt": video.prompt,
             },
         )
-        return EpisodePrompt(
-            index=episode.index,
+        return VideoPrompt(
+            index=video.index,
             title=title,
             prompt=final_segment_prompt,
-            source_summary=episode.source_summary,
+            source_summary=video.source_summary,
             keyword_guidance={
-                **(episode.keyword_guidance or {}),
+                **(video.keyword_guidance or {}),
                 "mergeMode": self._merge_mode,
                 "segmentIndex": segment_index,
             },
@@ -664,10 +667,10 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
     def _merge_mode(self) -> str:
         return f"merge{self.segment_count}"
 
-    def _trace_merged_final_episode_prompt(
+    def _trace_merged_final_video_prompt(
         self,
         request: ParsedRequest,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         progress_session_id: str | None,
         segment_duration_seconds: int,
     ) -> None:
@@ -675,15 +678,15 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             "merged_final_video_prompt",
             session_id=progress_session_id,
             payload={
-                "episodeIndex": episode.index,
-                "title": episode.title,
-                "prompt": episode.prompt,
+                "videoIndex": video.index,
+                "title": video.title,
+                "prompt": video.prompt,
                 "segmentDurationSeconds": segment_duration_seconds,
                 "finalDurationSeconds": segment_duration_seconds * self.segment_count,
                 "mergeMode": self._merge_mode,
                 "request": {
                     "mode": request.mode,
-                    "episodeCount": request.episode_count,
+                    "videoCount": request.video_count,
                     "durationSeconds": request.duration_seconds,
                     "ratio": request.ratio,
                     "resolution": request.resolution,
@@ -750,18 +753,18 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             f"由 {segment_count} 个连续的 {segment_duration_seconds} 秒片段组成；规划时按最终成片节奏设计。"
             f"先把 0-{final_duration} 秒（也就是整条 1-{final_duration} 秒观感）作为同一条完整成片来规划，再写内部时间轴；"
             f"不要把{first_segment_count_text}规划成独立短视频。每个后续片段必须能接住上一片段最后一帧继续发展。\n"
-            f"每条最终视频必须按同一集的四个连续镜头来写，不要写成多个独立小视频；{segment_mapping_text}："
+            f"每条最终视频必须按同一条完整视频的四个连续镜头来写，不要写成多个独立小视频；{segment_mapping_text}："
             f"{'、'.join(lens_lines)}。"
             f"所有镜头都必须有镜头景别、场景描述、运镜动作、人物动作、台词/口播、音效和情绪推进，不能只写成一句整体收束。\n"
             f"口播时长源头约束：最终成片约 {final_duration} 秒，必须在文本生成阶段就写好能自然读完的完整口播；"
             f"不要等后置 TTS 再压缩正文。口播要有开场、事件解释、转折和落点，不能写成流水账短句。\n"
-            f"输出每集提示词时请统一使用以下结构，方便后续文本模型准确提取 {segment_count} 个视频片段：\n"
+            f"输出每条视频提示词时请统一使用以下结构，方便后续文本模型准确提取 {segment_count} 个视频片段：\n"
             f"{chr(10).join(template_lines)}"
         )
 
     def _build_segment_prompts(
         self,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         *,
         segment_duration_seconds: int,
         progress_session_id: str | None,
@@ -770,7 +773,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         if self.llm is not None:
             try:
                 return self._build_segment_prompts_with_ai(
-                    episode,
+                    video,
                     segment_duration_seconds=segment_duration_seconds,
                     progress_session_id=progress_session_id,
                     task_constraints=task_constraints,
@@ -780,14 +783,14 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                     "merged_segment_extract_model_error",
                     session_id=progress_session_id,
                     payload={
-                        "episodeIndex": episode.index,
+                        "videoIndex": video.index,
                         "errorType": exc.__class__.__name__,
                         "error": str(exc),
                     },
                 )
         return {
             1: self._build_segment_prompt(
-                episode.prompt,
+                video.prompt,
                 segment_index=1,
                 segment_duration_seconds=segment_duration_seconds,
                 split_single_block=self.segment_count == 2,
@@ -795,7 +798,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             ),
             **{
                 segment_index: self._build_segment_prompt(
-                    episode.prompt,
+                    video.prompt,
                     segment_index=segment_index,
                     segment_duration_seconds=segment_duration_seconds,
                     split_single_block=self.segment_count == 2,
@@ -807,14 +810,14 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
 
     def _build_segment_prompts_with_ai(
         self,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         *,
         segment_duration_seconds: int,
         progress_session_id: str | None,
         task_constraints: str | None = None,
     ) -> dict[int, str]:
         model_prompt = self._build_segment_extraction_prompt(
-            episode,
+            video,
             segment_duration_seconds,
             segment_count=self.segment_count,
         )
@@ -822,8 +825,8 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             "merged_segment_extract_model_input",
             session_id=progress_session_id,
             payload={
-                "episodeIndex": episode.index,
-                "title": episode.title,
+                "videoIndex": video.index,
+                "title": video.title,
                 "segmentDurationSeconds": segment_duration_seconds,
                 "prompt": model_prompt,
             },
@@ -833,7 +836,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             "merged_segment_extract_model_output",
             session_id=progress_session_id,
             payload={
-                "episodeIndex": episode.index,
+                "videoIndex": video.index,
                 "raw": raw,
             },
         )
@@ -848,7 +851,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             self._validate_ai_segment_body(
                 raw_segment,
                 segment_index=segment_index,
-                source_prompt=episode.prompt,
+                source_prompt=video.prompt,
                 min_time_blocks=2 if self.segment_count == 2 else 1,
             )
             wrapped = self._wrap_segment_body(
@@ -867,20 +870,20 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         self,
         prompt: str,
         *,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         segment_index: int,
         progress_session_id: str | None,
     ) -> str:
         candidate = self._extract_segment_narration(
             prompt,
-            episode=episode,
+            video=video,
             segment_index=segment_index,
             progress_session_id=progress_session_id,
         )
         return self._review_segment_narration(
             prompt,
             candidate,
-            episode=episode,
+            video=video,
             segment_index=segment_index,
             progress_session_id=progress_session_id,
         )
@@ -889,7 +892,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         self,
         prompt: str,
         *,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         segment_index: int,
         progress_session_id: str | None,
     ) -> str:
@@ -897,16 +900,16 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             try:
                 model_prompt = self._build_narration_extraction_prompt(
                     prompt,
-                    episode=episode,
+                    video=video,
                     segment_index=segment_index,
                 )
                 append_prompt_trace(
                     "local_tts_narration_model_input",
                     session_id=progress_session_id,
                     payload={
-                        "episodeIndex": episode.index,
+                        "videoIndex": video.index,
                         "segmentIndex": segment_index,
-                        "title": episode.title,
+                        "title": video.title,
                         "prompt": model_prompt,
                     },
                 )
@@ -915,7 +918,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                     "local_tts_narration_model_output",
                     session_id=progress_session_id,
                     payload={
-                        "episodeIndex": episode.index,
+                        "videoIndex": video.index,
                         "segmentIndex": segment_index,
                         "raw": raw,
                     },
@@ -935,7 +938,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                     "local_tts_narration_model_error",
                     session_id=progress_session_id,
                     payload={
-                        "episodeIndex": episode.index,
+                        "videoIndex": video.index,
                         "segmentIndex": segment_index,
                         "errorType": exc.__class__.__name__,
                         "error": str(exc),
@@ -948,7 +951,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         prompt: str,
         candidate: str,
         *,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         segment_index: int,
         progress_session_id: str | None,
     ) -> str:
@@ -969,7 +972,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                 "local_tts_narration_review",
                 session_id=progress_session_id,
                 payload={
-                    "episodeIndex": episode.index,
+                    "videoIndex": video.index,
                     "segmentIndex": segment_index,
                     **result,
                 },
@@ -980,7 +983,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                 "local_tts_narration_review_error",
                 session_id=progress_session_id,
                 payload={
-                    "episodeIndex": episode.index,
+                    "videoIndex": video.index,
                     "segmentIndex": segment_index,
                     "errorType": exc.__class__.__name__,
                     "error": str(exc),
@@ -992,7 +995,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
     def _build_narration_extraction_prompt(
         prompt: str,
         *,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         segment_index: int,
     ) -> str:
         return f"""你是AI8video 的 TTS 台词抽取模型。
@@ -1011,8 +1014,8 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
   "narration_text": "TTS 应该读出的完整正文"
 }}
 
-当前集数：{episode.index}
-当前标题：{episode.title}
+当前视频序号：{video.index}
+当前标题：{video.title}
 当前片段：{segment_index}
 
 视频模型子提示词：
@@ -1023,7 +1026,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         self,
         text: str,
         *,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         target_duration_seconds: float | int | None,
         progress_session_id: str | None,
         allow_model_rewrite: bool = False,
@@ -1054,15 +1057,15 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         try:
             model_prompt = self._build_tts_duration_fit_prompt(
                 cleaned,
-                episode=episode,
+                video=video,
                 target_duration_seconds=target,
             )
             append_prompt_trace(
                 "local_tts_duration_fit_model_input",
                 session_id=progress_session_id,
                 payload={
-                    "episodeIndex": episode.index,
-                    "title": episode.title,
+                    "videoIndex": video.index,
+                    "title": video.title,
                     "targetDurationSeconds": target,
                     "prompt": model_prompt,
                 },
@@ -1072,7 +1075,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                 "local_tts_duration_fit_model_output",
                 session_id=progress_session_id,
                 payload={
-                    "episodeIndex": episode.index,
+                    "videoIndex": video.index,
                     "raw": raw,
                 },
             )
@@ -1097,7 +1100,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                 "local_tts_duration_fit_model_error",
                 session_id=progress_session_id,
                 payload={
-                    "episodeIndex": episode.index,
+                    "videoIndex": video.index,
                     "errorType": exc.__class__.__name__,
                     "error": str(exc),
                 },
@@ -1113,7 +1116,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
     def _build_tts_duration_fit_prompt(
         text: str,
         *,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         target_duration_seconds: float,
     ) -> str:
         return f"""你是AI8video 的 TTS 时长校准模型。
@@ -1136,8 +1139,8 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
   "notes": "一句话说明是否改写"
 }}
 
-当前集数：{episode.index}
-当前标题：{episode.title}
+当前视频序号：{video.index}
+当前标题：{video.title}
 目标视频时长：{target_duration_seconds:.2f} 秒
 
 已抽取 TTS 台词：
@@ -1146,7 +1149,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
 
     @staticmethod
     def _build_segment_extraction_prompt(
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         segment_duration_seconds: int,
         *,
         segment_count: int = 2,
@@ -1206,17 +1209,17 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
   "notes": "一句话说明如何提取"
 }}
 
-当前集数标题：
-{episode.title}
+当前视频标题：
+{video.title}
 
 来源摘要：
-{episode.source_summary or "（无）"}
+{video.source_summary or "（无）"}
 
 关键词指导：
-{json.dumps(episode.keyword_guidance or {}, ensure_ascii=False, indent=2)}
+{json.dumps(video.keyword_guidance or {}, ensure_ascii=False, indent=2)}
 
 最终视频提示词：
-{episode.prompt}
+{video.prompt}
 """
 
     @staticmethod
@@ -1418,14 +1421,14 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
     def _copy_tail_frame_to_user_temp(
         tail_frame: Path,
         *,
-        episode: EpisodePrompt,
+        video: VideoPrompt,
         segment_index: int,
         progress_session_id: str | None,
     ) -> Path:
         session_part = re.sub(r"[^0-9A-Za-z_-]+", "-", str(progress_session_id or "unknown")).strip("-") or "unknown"
         target_dir = MERGE_TEMP_MEDIA_DIR / session_part
         target_dir.mkdir(parents=True, exist_ok=True)
-        target = target_dir / f"{episode.index:02d}-segment-{segment_index}-tail.png"
+        target = target_dir / f"{video.index:02d}-segment-{segment_index}-tail.png"
         shutil.copy2(tail_frame, target)
         return target
 
@@ -1433,7 +1436,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
 def _job_record(job: QuickVideoJob, role: str, *, first_frame: FirstFrameAsset | None = None) -> dict:
     return {
         "role": role,
-        "episodeIndex": job.episode_index,
+        "videoIndex": job.video_index,
         "jobId": job.job_id,
         "status": job.status,
         "videoUrl": job.video_url,
@@ -1449,7 +1452,7 @@ def _segment_narration_text(prompt: str) -> str:
     return prepare_narration_text(text) if text else ""
 
 
-def _merged_local_tts_narration_text(segment_records: list[dict], episode: EpisodePrompt) -> str:
+def _merged_local_tts_narration_text(segment_records: list[dict], video: VideoPrompt) -> str:
     pieces: list[str] = []
     for record in segment_records:
         text = str(record.get("narrationText") or "").strip()

@@ -8,7 +8,7 @@ from typing import Any
 class ParsedRequest:
     raw_text: str
     mode: str
-    episode_count: int | None = None
+    video_count: int | None = None
     reference_image: str | None = None
     reference_image_custom_prompt: str | None = None
     style_hint: str | None = None
@@ -26,7 +26,7 @@ class ParsedRequest:
 class ConversationDraft:
     raw_text: str | None = None
     mode: str | None = None
-    episode_count: int | None = None
+    video_count: int | None = None
     reference_image: str | None = None
     reference_image_custom_prompt: str | None = None
     reference_image_enabled: bool | None = None
@@ -44,11 +44,11 @@ class ConversationDraft:
     def to_request(self) -> ParsedRequest:
         if not self.raw_text:
             raise ValueError("draft.raw_text is required")
-        mode = self.mode or ("multi_episode_script" if (self.episode_count or 0) > 1 else "single_prompt")
+        mode = self.mode or ("batch_videos" if (self.video_count or 0) > 1 else "single_video")
         return ParsedRequest(
             raw_text=self.raw_text,
             mode=mode,
-            episode_count=self.episode_count,
+            video_count=self.video_count,
             reference_image=self.reference_image if self.reference_image_enabled else None,
             reference_image_custom_prompt=(
                 self.reference_image_custom_prompt.strip()
@@ -74,7 +74,7 @@ class ConversationDraft:
         return {
             "rawText": self.raw_text,
             "mode": self.mode,
-            "episodeCount": self.episode_count,
+            "videoCount": self.video_count,
             "referenceImage": self.reference_image,
             "referenceImageCustomPrompt": self.reference_image_custom_prompt,
             "referenceImageEnabled": self.reference_image_enabled,
@@ -92,7 +92,7 @@ class ConversationDraft:
 
 
 @dataclass
-class EpisodePrompt:
+class VideoPrompt:
     index: int
     title: str
     prompt: str
@@ -110,7 +110,7 @@ class FirstFrameAsset:
 
 @dataclass
 class QuickVideoJob:
-    episode_index: int
+    video_index: int
     job_id: str
     status: str = "pending"
     prompt: str = ""
@@ -133,7 +133,7 @@ class QuickVideoJob:
 
 @dataclass
 class ArchivedAsset:
-    episode_index: int
+    video_index: int
     job_id: str
     backend: str
     status: str
@@ -153,7 +153,7 @@ class ArchivedAsset:
 @dataclass
 class PipelineResult:
     request: ParsedRequest
-    episodes: list[EpisodePrompt]
+    videos: list[VideoPrompt]
     first_frame: FirstFrameAsset | None
     jobs: list[QuickVideoJob]
     dry_run: bool
@@ -164,7 +164,7 @@ class PipelineResult:
     def to_dict(self) -> dict[str, Any]:
         return {
             "request": self.request.__dict__,
-            "episodes": [item.__dict__ for item in self.episodes],
+            "videos": [item.__dict__ for item in self.videos],
             "firstFrame": None if self.first_frame is None else self.first_frame.__dict__,
             "jobs": [item.__dict__ for item in self.jobs],
             "outcomes": [item.__dict__ for item in self.outcomes],
@@ -207,7 +207,7 @@ class ChatReply:
 
 @dataclass
 class GenerationOutcome:
-    episode_index: int
+    video_index: int
     job_id: str
     status: str
     decision: str

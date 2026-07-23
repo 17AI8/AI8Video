@@ -491,5 +491,5 @@
         </div>
       `;
     }
-    const settingsCategoryOrder = ['运行模式', 'TTS', 'AI8video', '文本/拆集模型', '多模态模型', '图片模型', '视频模型', 'HTML 动效', '归档', '其他'];
+    const settingsCategoryOrder = ['运行模式', 'TTS', 'AI8video', '文本/视频规划模型', '多模态模型', '图片模型', '视频模型', 'HTML 动效', '归档', '其他'];
     const settingsCategoryAliasMap = {};

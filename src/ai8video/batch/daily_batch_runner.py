@@ -9,7 +9,7 @@ from ai8video.batch.batch_report_store import BatchReportStore
 from ai8video.core.config import AI8VideoConfig
 from ai8video.media.motion.html_motion_overlay import default_html_motion_overlay_enabled
 from ai8video.application.message_parser import parse_employee_message
-from ai8video.core.models import EpisodePrompt, ParsedRequest, PipelineResult
+from ai8video.core.models import VideoPrompt, ParsedRequest, PipelineResult
 from ai8video.generation.pipeline import AI8VideoPipeline
 
 
@@ -19,7 +19,7 @@ class BatchTask:
     source_message: str
     attempt: int = 0
     request: ParsedRequest | None = None
-    episode: EpisodePrompt | None = None
+    video: VideoPrompt | None = None
     rewrite_instruction: str | None = None
 
 
@@ -100,15 +100,15 @@ class DailyBatchRunner:
             task = queue.popleft()
             if task.attempt == 0:
                 seeded_tasks_used += 1
-            if task.request is not None and task.episode is not None and task.rewrite_instruction:
-                result = self.pipeline.rewrite_episode(task.request, task.episode, task.rewrite_instruction)
+            if task.request is not None and task.video is not None and task.rewrite_instruction:
+                result = self.pipeline.rewrite_video(task.request, task.video, task.rewrite_instruction)
             else:
                 request = parse_employee_message(task.message)
                 request.html_motion_overlay_enabled = html_motion_overlay_enabled
                 result = self._run_new_request(request, task.message)
             results.append(result)
 
-            for episode, outcome, asset in zip(result.episodes, result.outcomes, result.asset_records):
+            for video, outcome, asset in zip(result.videos, result.outcomes, result.asset_records):
                 total_video_attempts += 1
                 if outcome.decision == "generated":
                     success_count += 1
@@ -238,21 +238,21 @@ class DailyBatchRunner:
         return strategy, deduped_messages
 
 
-def _build_retry_message(source_message: str, episode_prompt: str, reasons: list[str]) -> str:
+def _build_retry_message(source_message: str, video_prompt: str, reasons: list[str]) -> str:
     retry_reasons = "；".join(reason for reason in reasons if reason) or "画面质量不稳定"
     return (
         f"{source_message}\n"
         f"重做要求：沿用原目标，但重点修正以下问题：{retry_reasons}。"
-        f"如果需要，以当前这条视频提示词为主进行优化：{episode_prompt}"
+        f"如果需要，以当前这条视频提示词为主进行优化：{video_prompt}"
     )
 
 
-def _build_retry_instruction(episode_prompt: str, reasons: list[str]) -> str:
+def _build_retry_instruction(video_prompt: str, reasons: list[str]) -> str:
     retry_reasons = "；".join(reason for reason in reasons if reason) or "画面质量不稳定"
     return (
         f"沿用原目标，只重做这一条视频。"
         f"重点修正：{retry_reasons}。"
-        f"必要时参考当前提示词继续优化：{episode_prompt}"
+        f"必要时参考当前提示词继续优化：{video_prompt}"
     )
 
 

@@ -24,7 +24,7 @@ from ai8video.generation.merged_video_pipeline import (
     TAIL_FRAME_PROMPT_SUFFIX,
     _merged_local_tts_narration_text,
 )
-from ai8video.core.models import ArchivedAsset, EpisodePrompt, FirstFrameAsset, ParsedRequest, QuickVideoJob
+from ai8video.core.models import ArchivedAsset, VideoPrompt, FirstFrameAsset, ParsedRequest, QuickVideoJob
 
 
 class _FakeClient:
@@ -32,16 +32,16 @@ class _FakeClient:
         self.guard = SimpleNamespace(forced_duration_seconds=0, assert_can_create_count=lambda _count: None)
         self.created: list[dict] = []
 
-    def create_job(self, *, text, episode_index, first_frame, duration_seconds, ratio, resolution, preset):
+    def create_job(self, *, text, video_index, first_frame, duration_seconds, ratio, resolution, preset):
         self.created.append({
-            "episodeIndex": episode_index,
+            "videoIndex": video_index,
             "prompt": text,
             "firstFrameSource": None if first_frame is None else first_frame.source,
             "durationSeconds": duration_seconds,
         })
         job_id = f"job-{len(self.created)}"
         return QuickVideoJob(
-            episode_index=episode_index,
+            video_index=video_index,
             job_id=job_id,
             status="succeeded",
             prompt=text,
@@ -58,14 +58,14 @@ class _BarrierClient(_FakeClient):
         self.barrier = barrier
         self.lock = threading.Lock()
 
-    def create_job(self, *, text, episode_index, first_frame, duration_seconds, ratio, resolution, preset):
+    def create_job(self, *, text, video_index, first_frame, duration_seconds, ratio, resolution, preset):
         if first_frame is None:
             self.barrier.wait(timeout=2)
             time.sleep(0.01)
         with self.lock:
             return super().create_job(
                 text=text,
-                episode_index=episode_index,
+                video_index=video_index,
                 first_frame=first_frame,
                 duration_seconds=duration_seconds,
                 ratio=ratio,
@@ -88,7 +88,7 @@ class _FailSecondPollClient(_FakeClient):
     def poll_job(self, job: QuickVideoJob) -> QuickVideoJob:
         if len(self.created) >= 2:
             return QuickVideoJob(
-                episode_index=job.episode_index,
+                video_index=job.video_index,
                 job_id=job.job_id,
                 status="failed",
                 prompt=job.prompt,
@@ -101,15 +101,15 @@ class _FakeArchiver:
     def __init__(self) -> None:
         self.archived: list[Path] = []
 
-    def archive_local_file(self, source_video, request, episode, job, outcome, *, extra_meta=None):
+    def archive_local_file(self, source_video, request, video, job, outcome, *, extra_meta=None):
         source = Path(source_video)
         self.archived.append(source)
         return ArchivedAsset(
-            episode_index=episode.index,
+            video_index=video.index,
             job_id=job.job_id,
             backend="test",
             status="archived",
-            archive_key=f"video/{episode.index}.mp4",
+            archive_key=f"video/{video.index}.mp4",
             local_path=str(source),
             meta=extra_meta or {},
         )
@@ -119,8 +119,8 @@ class _FakeAssetStore:
     def __init__(self) -> None:
         self.records: list[dict] = []
 
-    def append(self, request, episode, job, outcome, first_frame, archive):
-        record = {"episodeIndex": episode.index, "jobId": job.job_id, "archiveKey": archive.archive_key}
+    def append(self, request, video, job, outcome, first_frame, archive):
+        record = {"videoIndex": video.index, "jobId": job.job_id, "archiveKey": archive.archive_key}
         self.records.append(record)
         return record
 
@@ -130,11 +130,11 @@ class _TempTransformedReferencePreprocessor:
         self.output_dir = output_dir
         self.paths: list[Path] = []
 
-    def prepare_first_frame(self, request: ParsedRequest, episode=None, trace_session_id=None):
+    def prepare_first_frame(self, request: ParsedRequest, video=None, trace_session_id=None):
         del request, trace_session_id
-        if episode is None:
+        if video is None:
             return None
-        path = self.output_dir / f"reference-i2i-merge-{episode.index}.png"
+        path = self.output_dir / f"reference-i2i-merge-{video.index}.png"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"png")
         self.paths.append(path)
@@ -147,7 +147,7 @@ def _build_pipeline(client=None, *, segment_count: int = 2) -> AI8VideoMergedPip
     pipeline.llm = None
     pipeline.segment_count = segment_count
     pipeline.client = client or _FakeClient()
-    pipeline.reference_image_preprocessor = SimpleNamespace(prepare_first_frame=lambda _request, episode=None, trace_session_id=None: None)
+    pipeline.reference_image_preprocessor = SimpleNamespace(prepare_first_frame=lambda _request, video=None, trace_session_id=None: None)
     pipeline.archiver = _FakeArchiver()
     pipeline.asset_store = _FakeAssetStore()
     return pipeline
@@ -192,26 +192,26 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
 
     def test_run_request_plans_final_video_with_double_duration(self) -> None:
         pipeline = _build_pipeline()
-        request = ParsedRequest(raw_text="生成一条", mode="single_prompt", duration_seconds=8)
+        request = ParsedRequest(raw_text="生成一条", mode="single_video", duration_seconds=8)
         captured = {}
 
-        def fake_run(final_request, episodes, *, segment_duration_seconds, progress_session_id=None):
+        def fake_run(final_request, videos, *, segment_duration_seconds, progress_session_id=None):
             captured["request"] = final_request
-            captured["episodes"] = episodes
+            captured["videos"] = videos
             captured["segmentDurationSeconds"] = segment_duration_seconds
             return SimpleNamespace(request=final_request)
 
-        with patch.object(pipeline, "_run_final_episodes", side_effect=fake_run):
+        with patch.object(pipeline, "_run_final_videos", side_effect=fake_run):
             pipeline.run_request(request, progress_session_id="merge-plan")
 
         self.assertEqual(captured["request"].duration_seconds, 16)
         self.assertEqual(captured["segmentDurationSeconds"], 8)
-        self.assertIn("16 秒", captured["episodes"][0].prompt)
+        self.assertIn("16 秒", captured["videos"][0].prompt)
 
-    def test_merge2_starts_progress_before_finalize_episode_prompts(self) -> None:
+    def test_merge2_starts_progress_before_finalize_video_prompts(self) -> None:
         pipeline = _build_pipeline()
-        request = ParsedRequest(raw_text="生成一条", mode="single_prompt", duration_seconds=10)
-        episodes = [EpisodePrompt(index=1, title="第一条", prompt="原始提示词")]
+        request = ParsedRequest(raw_text="生成一条", mode="single_video", duration_seconds=10)
+        videos = [VideoPrompt(index=1, title="第一条", prompt="原始提示词")]
         session_id = "merge-progress-before-finalize"
 
         def fake_finalize(*_args, **_kwargs):
@@ -223,11 +223,11 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
             raise RuntimeError("stop after progress assertion")
 
         try:
-            with patch("ai8video.generation.merged_video_pipeline.finalize_episode_prompts", side_effect=fake_finalize):
+            with patch("ai8video.generation.merged_video_pipeline.finalize_video_prompts", side_effect=fake_finalize):
                 with self.assertRaisesRegex(RuntimeError, "stop after progress assertion"):
-                    pipeline._run_final_episodes(
+                    pipeline._run_final_videos(
                         request,
-                        episodes,
+                        videos,
                         segment_duration_seconds=10,
                         progress_session_id=session_id,
                     )
@@ -236,8 +236,8 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
 
     def test_merge2_creates_two_segments_and_uses_tail_frame_as_second_first_frame(self) -> None:
         pipeline = _build_pipeline()
-        request = ParsedRequest(raw_text="生成一条", mode="single_prompt", duration_seconds=10)
-        episodes = [EpisodePrompt(
+        request = ParsedRequest(raw_text="生成一条", mode="single_video", duration_seconds=10)
+        videos = [VideoPrompt(
             index=1,
             title="第一条",
             prompt=(
@@ -249,11 +249,11 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
             ),
         )]
 
-        with patch("ai8video.generation.merged_video_pipeline.finalize_episode_prompts", return_value=episodes), \
+        with patch("ai8video.generation.merged_video_pipeline.finalize_video_prompts", return_value=videos), \
                 _patch_postprocess():
-            result = pipeline._run_final_episodes(
+            result = pipeline._run_final_videos(
                 request,
-                episodes,
+                videos,
                 segment_duration_seconds=10,
                 progress_session_id="merge-one",
             )
@@ -293,14 +293,15 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
         self.assertEqual(progress["items"][0]["status"], "succeeded")
         segment_status = progress["items"][0]["segmentStatus"]
         self.assertEqual([item["segmentLabel"] for item in segment_status], ["片段 1", "片段 2"])
-        self.assertEqual([item["status"] for item in segment_status], ["archiving", "archiving"])
+        self.assertEqual([item["status"] for item in segment_status], ["polling", "polling"])
+        self.assertTrue(all("片段已生成" in item["statusLabel"] for item in segment_status))
         self.assertEqual([item["jobId"] for item in segment_status], ["job-1", "job-2"])
         clear_generation_progress("merge-one")
 
     def test_merge2_local_tts_narration_uses_ordered_segment_dialogue(self) -> None:
         pipeline = _build_pipeline()
-        request = ParsedRequest(raw_text="生成一条", mode="single_prompt", duration_seconds=10)
-        episodes = [EpisodePrompt(
+        request = ParsedRequest(raw_text="生成一条", mode="single_video", duration_seconds=10)
+        videos = [VideoPrompt(
             index=1,
             title="第一条",
             prompt=(
@@ -311,11 +312,11 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
             ),
         )]
 
-        with patch("ai8video.generation.merged_video_pipeline.finalize_episode_prompts", return_value=episodes), \
+        with patch("ai8video.generation.merged_video_pipeline.finalize_video_prompts", return_value=videos), \
                 _patch_postprocess():
-            result = pipeline._run_final_episodes(
+            result = pipeline._run_final_videos(
                 request,
-                episodes,
+                videos,
                 segment_duration_seconds=10,
                 progress_session_id="merge-tts-text",
             )
@@ -329,24 +330,24 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
         self.assertEqual(result.outcomes[0].meta["segmentRecords"][0]["narrationText"], "片段一第一句。 片段一第二句")
 
     def test_merge2_local_tts_narration_preserves_pause_between_segments(self) -> None:
-        episode = EpisodePrompt(index=1, title="第一条", prompt="兜底口播")
+        video = VideoPrompt(index=1, title="第一条", prompt="兜底口播")
 
         text = _merged_local_tts_narration_text(
             [
                 {"narrationText": "不用切换应用，一个入口，触达全球"},
                 {"narrationText": "AI实时翻译，覆盖文本、语音、视频"},
             ],
-            episode,
+            video,
         )
 
         self.assertIn("触达全球。 AI实时翻译", text)
 
-    def test_empty_reviewed_narration_does_not_fallback_to_episode_prompt(self) -> None:
-        episode = EpisodePrompt(index=1, title="第一条", prompt="禁止朗读的完整视频提示词")
+    def test_empty_reviewed_narration_does_not_fallback_to_video_prompt(self) -> None:
+        video = VideoPrompt(index=1, title="第一条", prompt="禁止朗读的完整视频提示词")
 
         text = _merged_local_tts_narration_text(
             [{"narrationText": ""}, {"narrationText": ""}],
-            episode,
+            video,
         )
 
         self.assertEqual(text, "")
@@ -360,11 +361,11 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
             return '{"narration_text":"压缩后的口播。","estimated_seconds":8.2,"notes":"已按时长压缩"}'
 
         pipeline.llm = llm
-        episode = EpisodePrompt(index=1, title="第一条", prompt="原始提示词")
+        video = VideoPrompt(index=1, title="第一条", prompt="原始提示词")
 
         result = pipeline._fit_local_tts_narration_to_duration(
             "这是一段明显偏长的口播，需要让模型按时长处理。",
-            episode=episode,
+            video=video,
             target_duration_seconds=10,
             progress_session_id="merge-tts-duration-fit",
             allow_model_rewrite=True,
@@ -378,11 +379,11 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
     def test_local_tts_narration_duration_fit_locks_source_by_default(self) -> None:
         pipeline = _build_pipeline()
         pipeline.llm = lambda _prompt: '{"narration_text":"不应该出现"}'
-        episode = EpisodePrompt(index=1, title="第一条", prompt="原始提示词")
+        video = VideoPrompt(index=1, title="第一条", prompt="原始提示词")
 
         result = pipeline._fit_local_tts_narration_to_duration(
             "源头已经按最终时长写好的自然口播。",
-            episode=episode,
+            video=video,
             target_duration_seconds=20,
             progress_session_id="merge-tts-source-locked",
         )
@@ -392,8 +393,8 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
 
     def test_merge2_local_tts_narration_extracts_parenthesized_voiceover_dialogue(self) -> None:
         pipeline = _build_pipeline()
-        request = ParsedRequest(raw_text="生成一条", mode="single_prompt", duration_seconds=10)
-        episodes = [EpisodePrompt(
+        request = ParsedRequest(raw_text="生成一条", mode="single_video", duration_seconds=10)
+        videos = [VideoPrompt(
             index=2,
             title="第二条",
             prompt=(
@@ -417,11 +418,11 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
             ),
         )]
 
-        with patch("ai8video.generation.merged_video_pipeline.finalize_episode_prompts", return_value=episodes), \
+        with patch("ai8video.generation.merged_video_pipeline.finalize_video_prompts", return_value=videos), \
                 _patch_postprocess():
-            result = pipeline._run_final_episodes(
+            result = pipeline._run_final_videos(
                 request,
-                episodes,
+                videos,
                 segment_duration_seconds=10,
                 progress_session_id="merge-tts-parenthesized",
             )
@@ -467,8 +468,8 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
 
         pipeline = _build_pipeline()
         pipeline.llm = llm
-        request = ParsedRequest(raw_text="生成一条", mode="single_prompt", duration_seconds=10)
-        episodes = [EpisodePrompt(
+        request = ParsedRequest(raw_text="生成一条", mode="single_video", duration_seconds=10)
+        videos = [VideoPrompt(
             index=1,
             title="AI抽取台词",
             prompt=(
@@ -483,11 +484,11 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
             ),
         )]
 
-        with patch("ai8video.generation.merged_video_pipeline.finalize_episode_prompts", return_value=episodes), \
+        with patch("ai8video.generation.merged_video_pipeline.finalize_video_prompts", return_value=videos), \
                 _patch_postprocess():
-            result = pipeline._run_final_episodes(
+            result = pipeline._run_final_videos(
                 request,
-                episodes,
+                videos,
                 segment_duration_seconds=10,
                 progress_session_id="merge-tts-ai-extract",
             )
@@ -501,8 +502,8 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
 
     def test_merge2_saves_completed_segment_to_recycle_bin_before_tempdir_cleanup(self) -> None:
         pipeline = _build_pipeline(client=_FailSecondPollClient())
-        request = ParsedRequest(raw_text="生成一条", mode="single_prompt", duration_seconds=10)
-        episodes = [EpisodePrompt(
+        request = ParsedRequest(raw_text="生成一条", mode="single_video", duration_seconds=10)
+        videos = [VideoPrompt(
             index=2,
             title="第二条",
             prompt=(
@@ -515,9 +516,9 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
         )]
         captured: dict[str, object] = {}
 
-        def fake_save_failed_video_task(*, episode, job=None, reason, videos, meta=None):
+        def fake_save_failed_video_task(*, video, job=None, reason, videos, meta=None):
             video_paths = [Path(item) for item in videos]
-            captured["episode"] = episode.index
+            captured["video"] = video.index
             captured["reason"] = reason
             captured["videos"] = video_paths
             captured["meta"] = meta
@@ -525,26 +526,26 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
             self.assertTrue(all(path.is_file() for path in video_paths))
             return {"ok": True, "videoCount": len(video_paths)}
 
-        with patch("ai8video.generation.merged_video_pipeline.finalize_episode_prompts", return_value=episodes), \
+        with patch("ai8video.generation.merged_video_pipeline.finalize_video_prompts", return_value=videos), \
                 patch("ai8video.generation.merged_video_pipeline.save_failed_video_task", side_effect=fake_save_failed_video_task), \
                 _patch_postprocess():
-            result = pipeline._run_final_episodes(
+            result = pipeline._run_final_videos(
                 request,
-                episodes,
+                videos,
                 segment_duration_seconds=10,
                 progress_session_id="merge-save-partial",
             )
 
         self.assertEqual(result.jobs[0].status, "failed")
-        self.assertEqual(captured["episode"], 2)
+        self.assertEqual(captured["video"], 2)
         self.assertIn("上游敏感信息失败", str(captured["reason"]))
         self.assertEqual(len(captured["videos"]), 1)
         self.assertEqual(captured["meta"]["source"], "merged-partial-failure")
 
     def test_merge4_creates_four_segments_with_tail_frame_chain(self) -> None:
         pipeline = _build_pipeline(segment_count=4)
-        request = ParsedRequest(raw_text="生成一条", mode="single_prompt", duration_seconds=10)
-        episodes = [EpisodePrompt(
+        request = ParsedRequest(raw_text="生成一条", mode="single_video", duration_seconds=10)
+        videos = [VideoPrompt(
             index=1,
             title="第一条",
             prompt=(
@@ -556,11 +557,11 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
             ),
         )]
 
-        with patch("ai8video.generation.merged_video_pipeline.finalize_episode_prompts", return_value=episodes), \
+        with patch("ai8video.generation.merged_video_pipeline.finalize_video_prompts", return_value=videos), \
                 _patch_postprocess():
-            result = pipeline._run_final_episodes(
+            result = pipeline._run_final_videos(
                 request,
-                episodes,
+                videos,
                 segment_duration_seconds=10,
                 progress_session_id="merge-four",
             )
@@ -588,8 +589,8 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
 
     def test_merge4_local_tts_narration_uses_all_four_segment_dialogues(self) -> None:
         pipeline = _build_pipeline(segment_count=4)
-        request = ParsedRequest(raw_text="生成一条", mode="single_prompt", duration_seconds=10)
-        episodes = [EpisodePrompt(
+        request = ParsedRequest(raw_text="生成一条", mode="single_video", duration_seconds=10)
+        videos = [VideoPrompt(
             index=1,
             title="第一条",
             prompt=(
@@ -600,11 +601,11 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
             ),
         )]
 
-        with patch("ai8video.generation.merged_video_pipeline.finalize_episode_prompts", return_value=episodes), \
+        with patch("ai8video.generation.merged_video_pipeline.finalize_video_prompts", return_value=videos), \
                 _patch_postprocess():
-            result = pipeline._run_final_episodes(
+            result = pipeline._run_final_videos(
                 request,
-                episodes,
+                videos,
                 segment_duration_seconds=10,
                 progress_session_id="merge4-tts-text",
             )
@@ -623,12 +624,12 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
             pipeline.reference_image_preprocessor = preprocessor
             request = ParsedRequest(
                 raw_text="生成一条",
-                mode="single_prompt",
+                mode="single_video",
                 duration_seconds=10,
                 reference_image="/tmp/default.png",
                 reference_image_transform_options={"autoChangeBackground": True},
             )
-            episodes = [EpisodePrompt(
+            videos = [VideoPrompt(
                 index=1,
                 title="第一条",
                 prompt=(
@@ -640,12 +641,12 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
                 ),
             )]
 
-            with patch("ai8video.generation.merged_video_pipeline.finalize_episode_prompts", return_value=episodes), \
+            with patch("ai8video.generation.merged_video_pipeline.finalize_video_prompts", return_value=videos), \
                     patch("ai8video.generation.reference_image_preprocessor.TRANSFORMED_REFERENCE_DIR", output_dir), \
                     _patch_postprocess():
-                result = pipeline._run_final_episodes(
+                result = pipeline._run_final_videos(
                     request,
-                    episodes,
+                    videos,
                     segment_duration_seconds=10,
                     progress_session_id="merge-cleanup",
                 )
@@ -775,7 +776,7 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
         text = AI8VideoMergedPipeline._planning_text("生成一条", 10)
 
         self.assertIn("先把 0-20 秒（也就是整条 1-20 秒观感）作为同一条完整成片来规划", text)
-        self.assertIn("按同一集的四个连续镜头来写", text)
+        self.assertIn("按同一条完整视频的四个连续镜头来写", text)
         self.assertIn("前两个镜头合成片段 1，后两个镜头合成片段 2", text)
         self.assertIn("镜头三（10-15s）", text)
         self.assertIn("镜头四（15-20s）", text)
@@ -803,8 +804,8 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
 
         pipeline = _build_pipeline()
         pipeline.llm = llm
-        request = ParsedRequest(raw_text="生成一条", mode="single_prompt", duration_seconds=10)
-        episodes = [EpisodePrompt(
+        request = ParsedRequest(raw_text="生成一条", mode="single_video", duration_seconds=10)
+        videos = [VideoPrompt(
             index=1,
             title="第一条",
             prompt=(
@@ -816,11 +817,11 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
             ),
         )]
 
-        with patch("ai8video.generation.merged_video_pipeline.finalize_episode_prompts", return_value=episodes), \
+        with patch("ai8video.generation.merged_video_pipeline.finalize_video_prompts", return_value=videos), \
                 _patch_postprocess():
-            pipeline._run_final_episodes(
+            pipeline._run_final_videos(
                 request,
-                episodes,
+                videos,
                 segment_duration_seconds=10,
                 progress_session_id="merge-ai-segment",
             )
@@ -852,18 +853,18 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
 
         pipeline = _build_pipeline()
         pipeline.llm = llm
-        request = ParsedRequest(raw_text="生成一条", mode="single_prompt", duration_seconds=10)
-        episodes = [EpisodePrompt(
+        request = ParsedRequest(raw_text="生成一条", mode="single_video", duration_seconds=10)
+        videos = [VideoPrompt(
             index=1,
             title="第一条",
             prompt="一条已经完成整稿终审的连续 20 秒视频提示词。",
         )]
 
-        with patch("ai8video.generation.merged_video_pipeline.finalize_episode_prompts", return_value=episodes), \
+        with patch("ai8video.generation.merged_video_pipeline.finalize_video_prompts", return_value=videos), \
                 _patch_postprocess():
-            pipeline._run_final_episodes(
+            pipeline._run_final_videos(
                 request,
-                episodes,
+                videos,
                 segment_duration_seconds=10,
                 progress_session_id="merge-segment-source-locked",
             )
@@ -885,8 +886,8 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
 
         pipeline = _build_pipeline()
         pipeline.llm = llm
-        request = ParsedRequest(raw_text="生成一条", mode="single_prompt", duration_seconds=10)
-        episodes = [EpisodePrompt(
+        request = ParsedRequest(raw_text="生成一条", mode="single_video", duration_seconds=10)
+        videos = [VideoPrompt(
             index=1,
             title="第一条",
             prompt=(
@@ -898,11 +899,11 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
             ),
         )]
 
-        with patch("ai8video.generation.merged_video_pipeline.finalize_episode_prompts", return_value=episodes), \
+        with patch("ai8video.generation.merged_video_pipeline.finalize_video_prompts", return_value=videos), \
                 _patch_postprocess():
-            pipeline._run_final_episodes(
+            pipeline._run_final_videos(
                 request,
-                episodes,
+                videos,
                 segment_duration_seconds=10,
                 progress_session_id="merge-ai-fallback",
             )
@@ -914,21 +915,21 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
 
     def test_tail_frame_failure_returns_merge_failure_without_asset_record(self) -> None:
         pipeline = _build_pipeline()
-        request = ParsedRequest(raw_text="生成一条", mode="single_prompt", duration_seconds=10)
-        episodes = [EpisodePrompt(index=1, title="第一条", prompt="视频提示词")]
+        request = ParsedRequest(raw_text="生成一条", mode="single_video", duration_seconds=10)
+        videos = [VideoPrompt(index=1, title="第一条", prompt="视频提示词")]
 
         def materialize(job, work_dir, *, name, dry_run=False, duration_seconds=1, timeout_seconds=180):
             path = Path(work_dir) / f"{name}.mp4"
             path.write_bytes(b"segment")
             return path
 
-        with patch("ai8video.generation.merged_video_pipeline.finalize_episode_prompts", return_value=episodes), \
+        with patch("ai8video.generation.merged_video_pipeline.finalize_video_prompts", return_value=videos), \
                 patch("ai8video.generation.merged_video_pipeline.materialize_segment_video", side_effect=materialize), \
                 patch("ai8video.generation.merged_video_pipeline.extract_tail_frame", side_effect=RuntimeError("尾帧失败")), \
                 patch("ai8video.generation.merged_video_pipeline.save_failed_video_task") as save_failed:
-            result = pipeline._run_final_episodes(
+            result = pipeline._run_final_videos(
                 request,
-                episodes,
+                videos,
                 segment_duration_seconds=10,
                 progress_session_id="merge-fail",
             )
@@ -945,31 +946,31 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
         pipeline = _build_pipeline(client=client)
         request = ParsedRequest(
             raw_text="生成两条",
-            mode="multi_episode_script",
-            episode_count=2,
+            mode="batch_videos",
+            video_count=2,
             duration_seconds=10,
             concurrent_generation=True,
         )
-        episodes = [
-            EpisodePrompt(index=1, title="第一条", prompt="提示词一"),
-            EpisodePrompt(index=2, title="第二条", prompt="提示词二"),
+        videos = [
+            VideoPrompt(index=1, title="第一条", prompt="提示词一"),
+            VideoPrompt(index=2, title="第二条", prompt="提示词二"),
         ]
 
-        with patch("ai8video.generation.merged_video_pipeline.finalize_episode_prompts", return_value=episodes), \
+        with patch("ai8video.generation.merged_video_pipeline.finalize_video_prompts", return_value=videos), \
                 _patch_postprocess():
-            result = pipeline._run_final_episodes(
+            result = pipeline._run_final_videos(
                 request,
-                episodes,
+                videos,
                 segment_duration_seconds=10,
                 progress_session_id="merge-concurrent",
             )
 
-        self.assertEqual([job.episode_index for job in result.jobs], [1, 2])
-        per_episode_sources: dict[int, list[str | None]] = {}
+        self.assertEqual([job.video_index for job in result.jobs], [1, 2])
+        per_video_sources: dict[int, list[str | None]] = {}
         for item in client.created:
-            per_episode_sources.setdefault(item["episodeIndex"], []).append(item["firstFrameSource"])
-        self.assertEqual(set(per_episode_sources), {1, 2})
-        for sources in per_episode_sources.values():
+            per_video_sources.setdefault(item["videoIndex"], []).append(item["firstFrameSource"])
+        self.assertEqual(set(per_video_sources), {1, 2})
+        for sources in per_video_sources.values():
             self.assertEqual(len(sources), 2)
             self.assertIsNone(sources[0])
             self.assertIsNotNone(sources[1])
@@ -978,14 +979,14 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
         session_id = "merge-cancel-before-segment2"
         client = _CancelAfterFirstPollClient(session_id)
         pipeline = _build_pipeline(client=client)
-        request = ParsedRequest(raw_text="生成一条", mode="single_prompt", duration_seconds=10)
-        episodes = [EpisodePrompt(index=1, title="第一条", prompt="视频提示词")]
+        request = ParsedRequest(raw_text="生成一条", mode="single_video", duration_seconds=10)
+        videos = [VideoPrompt(index=1, title="第一条", prompt="视频提示词")]
 
-        with patch("ai8video.generation.merged_video_pipeline.finalize_episode_prompts", return_value=episodes), \
+        with patch("ai8video.generation.merged_video_pipeline.finalize_video_prompts", return_value=videos), \
                 _patch_postprocess():
-            result = pipeline._run_final_episodes(
+            result = pipeline._run_final_videos(
                 request,
-                episodes,
+                videos,
                 segment_duration_seconds=10,
                 progress_session_id=session_id,
             )
@@ -1000,14 +1001,14 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
 
     def test_cancelled_progress_cannot_be_rewritten_by_late_polling_update(self) -> None:
         session_id = "merge-cancel-sticky"
-        episode = EpisodePrompt(index=1, title="第一条", prompt="视频提示词")
-        start_generation_progress(session_id, [episode])
+        video = VideoPrompt(index=1, title="第一条", prompt="视频提示词")
+        start_generation_progress(session_id, [video])
         cancel_generation_progress(session_id, "用户强行终止")
 
         mark_job_polling(
             session_id,
             QuickVideoJob(
-                episode_index=1,
+                video_index=1,
                 job_id="late-job",
                 status="pending",
                 prompt="视频提示词",

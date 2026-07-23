@@ -78,7 +78,7 @@ class RealGenerationGuard:
             f"{next_available_part}"
         )
 
-    def record_job(self, job_id: str, episode_index: int, prompt: str) -> None:
+    def record_job(self, job_id: str, video_index: int, prompt: str) -> None:
         if not self.enabled():
             return
         created_at_ts = time.time()
@@ -86,7 +86,7 @@ class RealGenerationGuard:
             "createdAt": datetime.fromtimestamp(created_at_ts, tz=timezone.utc).isoformat(),
             "createdAtTs": created_at_ts,
             "jobId": job_id,
-            "episodeIndex": int(episode_index or 0),
+            "videoIndex": int(video_index or 0),
             "durationSeconds": self.forced_duration_seconds or None,
             "promptPreview": prompt[:160],
         }

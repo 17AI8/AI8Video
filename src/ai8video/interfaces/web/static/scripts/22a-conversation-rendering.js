@@ -35,7 +35,7 @@
       if (payload.result || payload.summary || payload.pendingStatus) return true;
       if (['pending', 'planning', 'batch_run', 'rewrite', 'error'].includes(String(payload.meta?.operation || ''))) return true;
       if (Array.isArray(payload.results) && payload.results.length) return true;
-      if (Array.isArray(payload.episodes) && payload.episodes.length) return true;
+      if (Array.isArray(payload.videos) && payload.videos.length) return true;
       if (Array.isArray(payload.files) && payload.files.length) return true;
       return false;
     }
@@ -92,6 +92,12 @@
       const blocks = [];
       const isBatchRun = payload.meta?.operation === 'batch_run';
       const isGeneratedResult = !!(payload.result && !isBatchRun);
+      const resultGroups = isGeneratedResult ? buildVideoGroups(payload.result, payload.meta, state.assets) : [];
+      const summary = isGeneratedResult ? summarizeResult(payload.result, resultGroups) : null;
+      const renderedPendingStatus = payload.pendingStatus?.generationProgress
+        ? payload.pendingStatus
+        : buildTerminalAgentPendingStatus(payload, resultGroups, summary, context.sessionId);
+      const hasAgentProgress = !!renderedPendingStatus?.generationProgress;
       const isStaleDryRunResult = !!(isGeneratedResult && payload.result?.dryRun && state.health && !state.health.dryRun);
       if (isStaleDryRunResult) {
         return `
@@ -111,8 +117,8 @@
       } else if (payload.text && !isGeneratedResult && payload.meta?.operation !== 'pending') {
         blocks.push(renderParagraphs(payload.text));
       }
-      if (payload.meta?.operation === 'pending' || (payload.pendingStatus?.generationProgress && !isGeneratedResult)) {
-        const pending = normalizePendingStatusProgress(payload.pendingStatus || {});
+      if (payload.meta?.operation === 'pending' || hasAgentProgress) {
+        const pending = normalizePendingStatusProgress(renderedPendingStatus || payload.pendingStatus || {});
         const pendingProgress = buildPendingProgressFromRecentResults(pending);
         const pendingOverview = buildProgressOverview({ videos: pendingProgress.videos });
         const pendingActive = isPendingStatusActive(pending);
@@ -159,24 +165,67 @@
         `);
       }
       if (payload.meta?.operation === 'rewrite') {
-        const episodeIndex = payload.meta.rewrittenEpisodeIndex;
+        const videoIndex = payload.meta.rewrittenVideoIndex;
         const instruction = payload.meta.rewriteInstruction;
         blocks.push(`
           <div class="mini-card">
-            <strong>已只重做第 ${escapeHtml(String(episodeIndex || '-'))} 集</strong>
-            <div>${escapeHtml(instruction || '其他集数保持不动。')}</div>
+            <strong>已只重做第 ${escapeHtml(String(videoIndex || '-'))} 条视频</strong>
+            <div>${escapeHtml(instruction || '其他视频保持不动。')}</div>
           </div>
         `);
       }
       if (payload.meta?.guide) {
         blocks.push(renderCompletionGuide(payload.meta.guide));
       }
-      const resultGroups = isGeneratedResult ? buildEpisodeGroups(payload.result, payload.meta, state.assets) : [];
-      const summary = isGeneratedResult ? summarizeResult(payload.result, resultGroups) : null;
-      if (isGeneratedResult && summary) {
+      if (isGeneratedResult && summary && !hasAgentProgress) {
         blocks.push(renderAssistantResultCards(getActiveSession(), payload, resultGroups, summary));
       }
       return blocks.join('');
+    }
+
+    function buildTerminalAgentPendingStatus(payload, resultGroups, summary, sessionId) {
+      if (!payload?.result || !summary || !Array.isArray(resultGroups) || !resultGroups.length) return null;
+      const items = resultGroups.map((group, index) => {
+        const succeeded = isGeneratedResult(group);
+        const failedStatusLabel = getGenerationFailureStageLabel(group);
+        return {
+          videoIndex: Number(group?.index || 0) || index + 1,
+          title: group?.title || `视频 ${index + 1}`,
+          status: succeeded ? 'succeeded' : 'failed',
+          statusLabel: succeeded ? '已生成' : failedStatusLabel,
+          jobId: group?.jobId || null,
+          archiveStatus: group?.archiveStatus || '',
+          archiveBackend: group?.archiveBackend || '',
+          archiveKey: group?.archiveKey || '',
+          error: group?.error || group?.generationReasons || '',
+          hasLocalAsset: succeeded,
+        };
+      });
+      const succeededCount = items.filter((item) => item.status === 'succeeded').length;
+      const failedCount = items.filter((item) => item.status === 'failed').length;
+      const status = failedCount ? (succeededCount ? 'completed_with_error' : 'failed') : 'completed';
+      return {
+        status,
+        sessionId: sessionId || state.activeId || '',
+        videoCount: items.length,
+        generationProgress: {
+          status,
+          totalRequested: items.length,
+          items,
+          submittedCount: items.length,
+          runningCount: 0,
+          postProcessingCount: 0,
+          waitingCount: 0,
+          succeededCount,
+          failedCount,
+          skippedCount: 0,
+          events: [{
+            kind: 'terminal_result',
+            status: failedCount ? 'failed' : 'succeeded',
+            message: failedCount ? '本轮任务已结束，失败原因已回填' : '视频已生成并回填',
+          }],
+        },
+      };
     }
 
     function buildAgentStepChainModel(pending = {}) {
@@ -186,22 +235,26 @@
       const status = String(pending.status || '').trim();
       const total = Number(progress.totalRequested || pending.videoCount || 0) || 0;
       const submitted = Number(progress.submittedCount || 0) || 0;
-      const running = Number(progress.runningCount || 0) || 0;
+      const generatingStatuses = new Set(['submitting', 'preparing_first_frame', 'submitted', 'polling']);
+      const generating = items.filter((item) => generatingStatuses.has(String(item?.status || '').trim())).length;
       const finished = Number(progress.succeededCount || 0) || 0;
       const failed = Number(progress.failedCount || 0) || 0;
       const archiving = items.filter((item) => String(item?.status || '').trim() === 'archiving').length;
+      const archiveStarted = archiving > 0 || (Array.isArray(progress.events) && progress.events.some(
+        (event) => String(event?.status || '').trim() === 'archiving'
+      ));
       const terminal = ['cancelled', 'canceled'].includes(status)
         || (total > 0 && finished + failed >= total);
       const planning = phase === 'planning' || String(progress.status || '').trim() === 'planning';
-      const planningState = planning ? 'active' : (submitted || running || terminal ? 'done' : 'waiting');
+      const planningState = planning ? 'active' : (submitted || generating || archiveStarted || terminal ? 'done' : 'waiting');
       const understandingState = planningState === 'waiting' ? 'active' : (planning ? 'active' : 'done');
-      const generationState = running ? 'active' : (terminal ? (failed ? 'error' : 'done') : 'waiting');
+      const generationState = generating ? 'active' : (archiveStarted ? 'done' : (terminal ? (failed ? 'error' : 'done') : 'waiting'));
       const archiveState = archiving ? 'active' : (terminal ? (failed ? 'error' : 'done') : 'waiting');
       return [
         { label: '理解需求', state: understandingState, detail: understandingState === 'active' ? '正在整理你的目标、数量和已附带素材。' : '已识别本次任务的核心要求。' },
         { label: '规划任务', state: planningState, detail: planningState === 'active' ? '正在拆分可执行的视频任务并核对生成条件。' : planningState === 'done' ? '已形成生成任务和执行顺序。' : '等待需求理解完成后开始规划。' },
-        { label: '提交生成', state: submitted || running || terminal ? 'done' : 'waiting', detail: submitted ? `已提交 ${submitted}/${total || submitted} 个生成任务。` : '等待任务规划完成后提交。' },
-        { label: '生成视频', state: generationState, detail: running ? `正在生成 ${running} 个视频任务。` : terminal ? `已生成 ${finished} 个${failed ? `，${failed} 个失败` : ''}。` : '等待上游视频服务开始处理。' },
+        { label: '提交生成', state: submitted || generating || archiveStarted || terminal ? 'done' : 'waiting', detail: submitted ? `已提交 ${submitted}/${total || submitted} 个生成任务。` : '等待任务规划完成后提交。' },
+        { label: '生成视频', state: generationState, detail: generating ? `正在生成 ${generating} 个视频任务。` : archiveStarted ? '视频生成已完成，正在处理本地结果。' : terminal ? `已生成 ${finished} 个${failed ? `，${failed} 个失败` : ''}。` : '等待上游视频服务开始处理。' },
         { label: '归档结果', state: archiveState, detail: archiving ? `正在整理 ${archiving} 个已生成结果。` : terminal ? '本轮任务已结束，结果会保留在当前对话和结果库。' : '视频完成后会自动整理到结果库。' },
       ];
     }
@@ -238,11 +291,16 @@
       }
       return `
         <div class="agent-step-details" aria-label="后台真实执行事件">
-          ${events.map((event) => {
+          ${events.map((event, index) => {
             const status = String(event.status || '').trim();
-            const state = status === 'failed' ? 'error' : ['succeeded', 'completed'].includes(status) ? 'done' : 'active';
-            const prefix = event.episodeIndex ? `第 ${event.episodeIndex} 条 · ` : '';
-            const progress = Number.isFinite(Number(event.providerProgress)) ? ` · ${Number(event.providerProgress)}%` : '';
+            const state = status === 'failed'
+              ? 'error'
+              : (index === 0 && !['succeeded', 'completed'].includes(status) ? 'active' : 'done');
+            const segmentPrefix = String(event.segmentLabel || '').trim();
+            const prefix = segmentPrefix ? `${segmentPrefix} · ` : (event.videoIndex ? `第 ${event.videoIndex} 条 · ` : '');
+            const progress = status === 'polling' && Number.isFinite(Number(event.providerProgress))
+              ? ` · ${Number(event.providerProgress)}%`
+              : '';
             return `<div class="agent-step-detail ${state}"><span class="agent-step-detail-marker" aria-hidden="true"></span><div><strong>${escapeHtml(prefix + (event.title || '后台任务'))}</strong><span>${escapeHtml(String(event.message || '状态已更新') + progress)}</span></div></div>`;
           }).join('')}
         </div>
@@ -256,33 +314,39 @@
       const latestStatusIndex = new Map();
       rawEvents.slice(-20).forEach((event) => {
         const status = String(event?.status || '').trim();
-        if (status && latestStatusIndex.has(status)) {
-          events[latestStatusIndex.get(status)] = { ...event, episodeIndex: null, title: '后台任务' };
+        const videoIndex = Number(event?.videoIndex || 0) || 0;
+        const segmentIndex = Number(event?.segmentIndex || 0) || 0;
+        const eventKind = String(event?.kind || status).trim();
+        const eventKey = status ? `${videoIndex}:${segmentIndex}:${status}:${eventKind}` : '';
+        if (eventKey && latestStatusIndex.has(eventKey)) {
+          events[latestStatusIndex.get(eventKey)] = event;
           return;
         }
         events.push(event);
-        if (status) latestStatusIndex.set(status, events.length - 1);
+        if (eventKey) latestStatusIndex.set(eventKey, events.length - 1);
       });
       return events.reverse();
     }
 
     function renderAgentVideoThumbnails(pending = {}) {
-      const progressItems = Array.isArray(pending.generationProgress?.items)
-        ? pending.generationProgress.items
+      const progress = pending.generationProgress || {};
+      const planning = String(pending.phase || '').trim() === 'planning'
+        || String(progress.status || '').trim() === 'planning';
+      if (planning) return '';
+      const progressItems = Array.isArray(progress.items)
+        ? progress.items
         : [];
       const items = progressItems
         .map((item, index) => {
           const mirror = findUserGeneratedMirror(item);
           if (mirror?.userGeneratedKey) return mirror;
-          const status = String(item?.status || '').trim();
-          if (['succeeded', 'completed'].includes(status)) return null;
           return buildProgressStatusResultItem(item, index);
         })
         .filter(Boolean);
       if (!items.length) {
         const pendingCount = Math.max(
           0,
-          Number(pending.generationProgress?.totalRequested || pending.videoCount || 0) || 0
+          Number(progress.totalRequested || pending.videoCount || 0) || 0
         );
         if (!pendingCount) return '';
         return `<div class="agent-video-results" aria-label="待生成视频">${renderProgressResultStrip([], pendingCount)}</div>`;
@@ -343,7 +407,7 @@
       const successCount = Number(summary.successCount ?? summary.passCount ?? 0);
       const failedCount = Number(summary.failedCount ?? summary.rejectCount ?? 0);
       const failedPart = failedCount ? `，${failedCount} 条生成失败` : '';
-      return `${action}：共 ${summary.episodeCount} 条，${successCount} 条已生成，${archiveCount} 条已归档${failedPart}。`;
+      return `${action}：共 ${summary.videoCount} 条，${successCount} 条已生成，${archiveCount} 条已归档${failedPart}。`;
     }
 
     function renderStatus() {

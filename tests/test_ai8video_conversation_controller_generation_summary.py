@@ -7,7 +7,7 @@ from unittest.mock import Mock
 from unittest.mock import patch
 
 from ai8video.application.conversation_controller import AI8VideoConversationController
-from ai8video.core.models import ConversationState, EpisodePrompt, ParsedRequest, PipelineResult, QuickVideoJob, GenerationOutcome
+from ai8video.core.models import ConversationState, VideoPrompt, ParsedRequest, PipelineResult, QuickVideoJob, GenerationOutcome
 from ai8video.assets import user_materials
 
 
@@ -46,18 +46,18 @@ class AI8VideoConversationControllerGenerationSummaryTest(unittest.TestCase):
 
     @staticmethod
     def _build_result(*, generated: bool = True) -> PipelineResult:
-        request = ParsedRequest(raw_text="负责人在会议室讲素材返工风险", mode="single_prompt")
-        episode = EpisodePrompt(index=1, title="单条视频", prompt="负责人在会议室讲素材返工风险")
+        request = ParsedRequest(raw_text="负责人在会议室讲素材返工风险", mode="single_video")
+        video = VideoPrompt(index=1, title="单条视频", prompt="负责人在会议室讲素材返工风险")
         job = QuickVideoJob(
-            episode_index=1,
+            video_index=1,
             job_id="job-generation-summary",
             status="succeeded" if generated else "failed",
-            prompt=episode.prompt,
+            prompt=video.prompt,
             storage_key="mobile:job-generation-summary" if generated else None,
             final_frame_storage_key="mobile:job-generation-summary/final" if generated else None,
         )
         outcome = GenerationOutcome(
-            episode_index=1,
+            video_index=1,
             job_id=job.job_id,
             status=job.status,
             decision="generated" if generated else "failed",
@@ -66,7 +66,7 @@ class AI8VideoConversationControllerGenerationSummaryTest(unittest.TestCase):
         )
         return PipelineResult(
             request=request,
-            episodes=[episode],
+            videos=[video],
             first_frame=None,
             jobs=[job],
             outcomes=[outcome],
@@ -80,25 +80,38 @@ class AI8VideoConversationControllerGenerationSummaryTest(unittest.TestCase):
         pipeline.run_request.return_value = self._build_result()
         agent = self._agent(pipeline)
 
-        first = agent.handle_message("generation-summary", "生成一条短视频：负责人在会议室讲素材返工风险")
-        self.assertEqual(first.awaiting, "reference_image")
+        reply = agent.handle_message("generation-summary", "生成一条短视频：负责人在会议室讲素材返工风险")
 
-        second = agent.handle_message("generation-summary", "不用参考图")
-
-        self.assertIn("创建任务和归档", second.text)
+        self.assertEqual(reply.stage, "completed")
+        self.assertIn("创建任务和归档", reply.text)
+        request = pipeline.run_request.call_args.args[0]
+        self.assertIsNone(request.reference_image)
 
     def test_completed_reply_does_not_mention_removed_review_chain(self) -> None:
         pipeline = Mock()
         pipeline.run_request.return_value = self._build_result()
         agent = self._agent(pipeline)
 
-        agent.handle_message("generation-clean", "生成一条短视频：负责人在会议室讲素材返工风险")
-        second = agent.handle_message("generation-clean", "不用参考图")
+        reply = agent.handle_message("generation-clean", "生成一条短视频：负责人在会议室讲素材返工风险")
 
-        self.assertNotIn("审" + "核", second.text)
-        self.assertNotIn("抽" + "检", second.text)
+        self.assertNotIn("审" + "核", reply.text)
+        self.assertNotIn("抽" + "检", reply.text)
 
-    def test_multi_episode_request_with_count_and_reference_generates_when_keywords_present(self) -> None:
+    def test_explicit_reference_request_still_waits_when_tab_has_no_selection(self) -> None:
+        pipeline = Mock()
+        pipeline.run_request.return_value = self._build_result()
+        agent = self._agent(pipeline)
+
+        reply = agent.handle_message(
+            "generation-explicit-reference",
+            "生成一条短视频：负责人在会议室讲素材返工风险，需要参考图",
+        )
+
+        self.assertEqual(reply.awaiting, "reference_image")
+        self.assertIn("标签页当前没有选中图片", reply.text)
+        pipeline.run_request.assert_not_called()
+
+    def test_multi_video_request_with_count_and_reference_generates_when_keywords_present(self) -> None:
         pipeline = Mock()
         pipeline.run_request.return_value = self._build_result()
         agent = self._agent(pipeline)
@@ -111,7 +124,7 @@ class AI8VideoConversationControllerGenerationSummaryTest(unittest.TestCase):
         self.assertEqual(reply.stage, "completed")
         pipeline.run_request.assert_called_once()
         request = pipeline.run_request.call_args.args[0]
-        self.assertEqual(request.episode_count, 2)
+        self.assertEqual(request.video_count, 2)
         self.assertEqual(request.duration_seconds, 10)
         self.assertEqual(request.reference_image, "/tmp/612.png")
         self.assertEqual(request.core_keywords, "全球发布倒计时")
@@ -150,7 +163,7 @@ class AI8VideoConversationControllerGenerationSummaryTest(unittest.TestCase):
         request = pipeline.run_request.call_args.args[0]
         self.assertTrue(request.html_motion_overlay_enabled)
 
-    def test_multi_episode_defaults_to_normal_generation_without_mode_prompt(self) -> None:
+    def test_multi_video_defaults_to_normal_generation_without_mode_prompt(self) -> None:
         pipeline = Mock()
         pipeline.run_request.return_value = self._build_result()
         agent = self._agent(pipeline)

@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ai8video.core.config import AI8VideoConfig
-from ai8video.integrations.llm_provider import build_openai_compat_splitter
+from ai8video.integrations.llm_provider import build_openai_compat_llm
 
 
 QueryLLM = Callable[[str], str]
@@ -21,7 +21,7 @@ def build_script_query_llm(config: AI8VideoConfig) -> QueryLLM | None:
     if not _query_model_enabled():
         return None
     timeout = _bounded_env_int("AI8VIDEO_QUERY_MODEL_TIMEOUT_SECONDS", 8, 3, 20)
-    return build_openai_compat_splitter(
+    return build_openai_compat_llm(
         config,
         timeout_seconds=timeout,
         system_prompt=QUERY_SYSTEM_PROMPT,
