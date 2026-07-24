@@ -82,7 +82,7 @@ if defined EXISTING_URL (
 
 echo 使用 Python: %PYTHON_BIN%
 echo 检查 AI8video 工作台依赖...
-"%PYTHON_BIN%" -c "import importlib; [importlib.import_module(name) for name in ('bottle','requests','charset_normalizer','PIL')]"
+"%PYTHON_BIN%" -c "import importlib; [importlib.import_module(name) for name in ('bottle','requests','charset_normalizer','PIL','faster_whisper')]"
 if errorlevel 1 (
   echo 依赖缺失或原生扩展异常，正在修复最小短视频工作台依赖...
   "%PYTHON_BIN%" -m pip install --upgrade pip setuptools wheel

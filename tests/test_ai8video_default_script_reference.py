@@ -14,6 +14,45 @@ from ai8video.core.models import ConversationState, VideoPrompt, ParsedRequest, 
 
 
 class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
+    def test_temporary_script_knowledge_is_bounded_and_can_add_default_reference(self) -> None:
+        payload = {
+            "title": "猜剧本临时知识库 · TEMU 教程",
+            "summary": "根据宫格、台词和剧本骨架生成。",
+            "tags": ["临时知识库", "猜剧本"],
+            "leaves": [
+                {
+                    "path": ["开场", "冲突"],
+                    "heading": "开场 / 冲突",
+                    "content": "前三秒先展示新手最容易踩的坑。" + ("细节" * 5000),
+                },
+                {"heading": "收束", "content": "最后给出可执行步骤。"},
+            ],
+        }
+
+        enriched = default_script_reference.apply_temporary_script_knowledge(
+            "生成 2 条 10 秒视频",
+            payload,
+            include_default_reference=True,
+        )
+
+        self.assertIn("[临时知识库｜猜剧本临时知识库 · TEMU 教程]", enriched)
+        self.assertIn("[叶节点 1｜开场 / 冲突]", enriched)
+        self.assertIn("发送后自动解绑，不会写入正式知识库", enriched)
+        self.assertIn("同时使用当前已选知识库参考", enriched)
+        self.assertLessEqual(len(enriched), default_script_reference.TEMPORARY_SCRIPT_REFERENCE_MAX_CHARS + 100)
+        control_text, context = default_script_reference.split_temporary_script_knowledge(enriched)
+        self.assertIn("生成 2 条 10 秒视频", control_text)
+        self.assertIn("同时使用当前已选知识库参考", control_text)
+        self.assertNotIn("前三秒先展示", control_text)
+        self.assertIn("前三秒先展示", context)
+
+    def test_temporary_script_knowledge_requires_leaf_content(self) -> None:
+        with self.assertRaisesRegex(ValueError, "leaves is required"):
+            default_script_reference.apply_temporary_script_knowledge(
+                "生成视频",
+                {"title": "空临时库", "leaves": []},
+            )
+
     def test_docx_preview_falls_back_to_word_xml(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             docx_path = Path(tempdir) / "表格剧本.docx"

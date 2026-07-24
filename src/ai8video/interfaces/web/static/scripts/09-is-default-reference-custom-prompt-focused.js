@@ -36,20 +36,25 @@
       const ref = state.scriptReference || {};
       const item = ref.item || {};
       const enabled = !!ref.enabled && !!item;
+      const temporary = state.temporaryScriptKnowledge || null;
       const selecting = !!ref.selecting;
-      button.classList.toggle('is-ready', enabled);
+      button.classList.toggle('is-ready', enabled || !!temporary);
       button.classList.toggle('is-open', !!state.scriptReferenceDrawer?.visible);
       button.disabled = selecting;
-      button.textContent = '剧本参考';
+    button.textContent = '知识库参考';
       button.setAttribute('aria-expanded', state.scriptReferenceDrawer?.visible ? 'true' : 'false');
       if (selecting) {
-        button.title = '正在切换剧本参考';
+        button.title = '正在切换知识库参考';
+      } else if (temporary && enabled) {
+        button.title = `本次已锁定临时知识库，并额外选择：${item.name || item.relativePath || '知识文档'}。`;
+      } else if (temporary) {
+        button.title = '本次已锁定猜剧本临时知识库。点击后可额外任选一个常驻知识库。';
       } else if (enabled) {
-        button.title = `当前剧本参考：${item.name || item.relativePath || '剧本素材'}。点击展开列表，可切换或取消。`;
+        button.title = `当前知识库参考：${item.name || item.relativePath || '知识文档'}。点击展开列表，可切换或取消。`;
       } else if (ref.error) {
-        button.title = `剧本参考设置失败：${ref.error}`;
+        button.title = `知识库参考设置失败：${ref.error}`;
       } else {
-        button.title = '从剧本素材库选择默认剧本参考。';
+        button.title = '从剧本知识库选择默认参考文档。';
       }
     }
 
@@ -62,49 +67,56 @@
       els.scriptReferenceButton?.setAttribute('aria-expanded', visible ? 'true' : 'false');
       if (!visible) return;
       const ref = state.scriptReference || {};
-      const scripts = Array.isArray(state.userMaterials?.scripts) ? state.userMaterials.scripts : [];
+      const temporary = state.temporaryScriptKnowledge || null;
+      const scripts = Array.isArray(state.scriptReferenceDrawer.items) ? state.scriptReferenceDrawer.items : [];
       const selectedPath = String(ref.item?.relativePath || '');
       const loading = !!state.scriptReferenceDrawer.loading;
       const selecting = !!ref.selecting;
       const error = String(ref.error || '').trim();
-      const statusText = selecting ? '正在切换剧本参考...' : error ? `提示：${error}` : '选择后会自动附带到后续生成';
+      const statusText = selecting
+        ? '正在切换知识库参考...'
+        : error
+          ? `提示：${error}`
+          : temporary
+            ? '临时知识库已锁定；下方常驻知识库可额外任选 1 个'
+            : '选择后会按当前需求检索知识树，必要时回退原文';
       let listMarkup = '';
       if (loading) {
-        listMarkup = '<div class="empty">正在读取剧本素材...</div>';
+        listMarkup = '<div class="empty">正在读取知识库...</div>';
       } else if (!scripts.length) {
-        listMarkup = '<div class="empty">还没有剧本素材。先添加 txt、md 或 docx。</div>';
+        listMarkup = '<div class="empty">还没有知识库文档。先导入 txt、md 或 docx。</div>';
       } else {
-        listMarkup = `
-          <div class="background-music-list">
-            ${scripts.map((item) => buildScriptReferenceItemMarkup(item, selectedPath)).join('')}
-          </div>
-        `;
+        listMarkup = scripts.map((item) => buildScriptReferenceItemMarkup(item, selectedPath, !!temporary)).join('');
       }
+      const temporaryMarkup = temporary ? buildTemporaryScriptKnowledgeReferenceMarkup(temporary) : '';
       els.scriptReferenceDrawerBody.innerHTML = `
         <div class="background-music-head">
           <div class="background-music-status">${escapeHtml(statusText)}</div>
           <div class="background-music-actions">
-            <button type="button" class="background-music-add-button" data-add-script-reference>添加剧本</button>
+            <button type="button" class="background-music-add-button" data-add-script-reference>导入文档</button>
           </div>
         </div>
-        ${listMarkup}
+        <div class="background-music-list">
+          ${temporaryMarkup}
+          ${listMarkup}
+        </div>
       `;
     }
 
-    function buildScriptReferenceItemMarkup(item, selectedPath) {
+    function buildScriptReferenceItemMarkup(item, selectedPath, additional = false) {
       const relativePath = String(item?.relativePath || item?.name || '');
       const selected = !!selectedPath && selectedPath === relativePath;
-      const name = String(item?.name || relativePath || '剧本素材');
-      const preview = normalizeMaterialPreview(item?.preview || '');
+      const name = String(item?.title || item?.stem || item?.name || relativePath || '知识文档');
+      const preview = normalizeMaterialPreview(item?.summary || item?.preview || '暂无摘要');
+      const sectionCount = Number(item?.sectionCount || 0);
       return `
-        <button type="button" class="material-option background-music-option script-reference-option${selected ? ' selected' : ''}" data-select-script-reference="${escapeHtml(relativePath)}" data-script-reference-selected="${selected ? '1' : '0'}">
-          <span class="material-option-thumb" aria-hidden="true">文</span>
-          <span>
-            <span class="material-title-row">
-              <span class="material-title">${escapeHtml(name)}</span>
-              ${selected ? '<span class="material-selected-badge">已选择</span>' : ''}
-            </span>
-            ${preview ? `<span class="material-option-preview">${escapeHtml(preview)}</span>` : ''}
+        <button type="button" class="script-knowledge-list-card script-reference-knowledge-card${selected ? ' is-active' : ''}" data-select-script-reference="${escapeHtml(relativePath)}" data-script-reference-selected="${selected ? '1' : '0'}">
+          <span class="script-knowledge-list-title">${escapeHtml(name)}${selected ? `<span class="material-selected-badge">${additional ? '额外已选择' : '已选择'}</span>` : ''}</span>
+          ${buildScriptKnowledgeTagsMarkup(item?.tags || [])}
+          <span class="script-knowledge-list-preview">${escapeHtml(preview)}</span>
+          <span class="script-knowledge-list-foot">
+            <span>${sectionCount ? `${sectionCount} 个叶节点` : '未知识入库'}</span>
+            <span>${escapeHtml(formatFileSize(item?.sizeBytes || 0) || '0 B')}</span>
           </span>
         </button>
       `;
@@ -485,4 +497,3 @@
         button.title = '点击展开并发模式设置。';
       }
     }
-

@@ -28,6 +28,14 @@ class AI8VideoAI8VideoBridgeTest(unittest.TestCase):
             "ai8video.knowledge.default_script_reference.load_default_script_reference",
             return_value=None,
         )
+        self.default_reference_image_patcher = patch(
+            "ai8video.application.conversation_controller.default_reference_image_path",
+            return_value=None,
+        )
+        self.smart_split_patcher = patch(
+            "ai8video.application.conversation_controller.default_smart_split_enabled",
+            return_value=False,
+        )
         self.ai_interpreter_patcher = patch(
             "ai8video.application.conversation_controller.AI8VideoConversationController._interpret_request_with_ai",
             return_value=None,
@@ -52,6 +60,8 @@ class AI8VideoAI8VideoBridgeTest(unittest.TestCase):
             Path(self.tempdir.name) / "merge_temp",
         )
         self.default_script_reference_patcher.start()
+        self.default_reference_image_patcher.start()
+        self.smart_split_patcher.start()
         self.ai_interpreter_patcher.start()
         self.llm_patcher.start()
         self.trace_patcher.start()
@@ -61,6 +71,8 @@ class AI8VideoAI8VideoBridgeTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.merge_temp_patcher.stop()
+        self.smart_split_patcher.stop()
+        self.default_reference_image_patcher.stop()
         self.ledger_patcher.stop()
         self.trace_patcher.stop()
         self.llm_patcher.stop()

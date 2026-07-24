@@ -34,6 +34,19 @@ from ai8video.integrations.video_model_settings import (
 )
 
 
+class MockStreamResponse:
+    status_code = 200
+    headers = {"Content-Type": "text/event-stream"}
+
+    def __init__(self, lines: list[bytes]) -> None:
+        self._lines = lines
+        self.chunk_sizes: list[int | None] = []
+
+    def iter_lines(self, chunk_size=None, decode_unicode=False):
+        self.chunk_sizes.append(chunk_size)
+        return iter(self._lines)
+
+
 class AI8VideoVideoModelSettingsTest(unittest.TestCase):
     def test_api_request_disables_system_proxy_by_default(self) -> None:
         class FakeSession:
@@ -129,6 +142,39 @@ class AI8VideoVideoModelSettingsTest(unittest.TestCase):
             self.assertEqual(llm("只输出对象"), "{}")
 
         self.assertEqual(request.call_count, 2)
+
+    def test_llm_provider_retries_empty_stream_once(self) -> None:
+        empty = MockStreamResponse([
+            b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+            b'data: [DONE]',
+        ])
+        success = MockStreamResponse([
+            b'data: {"choices":[{"delta":{"content":"{\\"ok\\":true}"}}]}',
+            b'data: [DONE]',
+        ])
+        config = AI8VideoConfig(llm_base_url="https://api.example.com", llm_api_key="sk-test", llm_model="deepseek-test")
+        llm = build_openai_compat_llm(config, transport_retry_count=1)
+
+        with patch(
+            "ai8video.integrations.llm_provider.api_request",
+            side_effect=[empty, success],
+        ) as request:
+            self.assertEqual(llm("只输出对象"), '{"ok":true}')
+
+        self.assertEqual(request.call_count, 2)
+
+    def test_llm_provider_accepts_message_content_in_stream_event(self) -> None:
+        response = MockStreamResponse([
+            b'data: {"choices":[{"message":{"content":"{\\"ok\\":true}"}}]}',
+            b'data: [DONE]',
+        ])
+        config = AI8VideoConfig(llm_base_url="https://api.example.com", llm_api_key="sk-test", llm_model="deepseek-test")
+        llm = build_openai_compat_llm(config)
+
+        with patch("ai8video.integrations.llm_provider.api_request", return_value=response):
+            self.assertEqual(llm("只输出对象"), '{"ok":true}')
+
+        self.assertEqual(response.chunk_sizes, [1])
 
     def test_llm_provider_does_not_retry_read_timeout(self) -> None:
         config = AI8VideoConfig(llm_base_url="https://api.example.com", llm_api_key="sk-test", llm_model="deepseek-test")

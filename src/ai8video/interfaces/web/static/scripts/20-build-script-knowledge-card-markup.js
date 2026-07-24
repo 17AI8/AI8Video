@@ -1,6 +1,6 @@
     function getScriptKnowledgeActiveTab() {
-      const tab = String(state.scriptKnowledge.activeTab || 'sections').trim();
-      return ['sections', 'edit', 'source'].includes(tab) ? tab : 'sections';
+      const tab = String(state.scriptKnowledge.activeTab || 'tree').trim();
+      return ['tree', 'edit', 'source'].includes(tab) ? tab : 'tree';
     }
 
     function buildScriptKnowledgeCardMarkup(item) {
@@ -17,7 +17,7 @@
           ${tags}
           <span class="script-knowledge-list-preview">${escapeHtml(normalizeMaterialPreview(preview))}</span>
           <span class="script-knowledge-list-foot">
-            <span>${Number(item?.sectionCount || 0)} 段</span>
+            <span>${Number(item?.sectionCount || 0)} 个叶节点</span>
             <span>${escapeHtml(formatFileSize(item?.sizeBytes || 0) || '0 B')}</span>
             ${scoreCopy}
           </span>
@@ -43,27 +43,127 @@
       `;
     }
 
+    function formatScriptKnowledgeLeafContent(value) {
+      return normalizeMaterialPreview(value)
+        .replace(/\*\*([^*]+)\*\*/g, '$1')
+        .replace(/`([^`]+)`/g, '$1')
+        .replace(/(^|\s)>\s+/g, '$1')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+    }
+
+    function buildScriptKnowledgeTreeNodeMarkup(node, sectionByHeading, parentPath = [], depth = 0, isLast = true) {
+      const title = String(node?.title || '未命名节点').trim();
+      const summary = String(node?.summary || '').trim();
+      const children = Array.isArray(node?.children) ? node.children : [];
+      const path = [...parentPath, title];
+      let inner = '';
+      if (!children.length) {
+        const unitCount = Array.isArray(node?.sourceUnitIds) ? node.sourceUnitIds.length : 0;
+        const section = sectionByHeading.get(path.join(' / '));
+        const content = formatScriptKnowledgeLeafContent(section?.content || summary);
+        const meta = unitCount
+          ? `<span class="script-knowledge-tree-meta">${unitCount} 单元</span>`
+          : (content ? '<span class="script-knowledge-tree-meta">详情</span>' : '');
+        if (!content) {
+          inner = `
+            <article class="script-knowledge-tree-leaf is-empty" role="treeitem">
+              <span class="script-knowledge-tree-dot" aria-hidden="true"></span>
+              <strong>${escapeHtml(title)}</strong>
+              ${meta}
+            </article>
+          `;
+        } else {
+          inner = `
+            <article class="script-knowledge-tree-leaf" role="treeitem" aria-expanded="false">
+              <button type="button" class="script-knowledge-tree-summary" data-script-knowledge-tree-toggle>
+                <i class="script-knowledge-tree-chevron" aria-hidden="true"></i>
+                <strong>${escapeHtml(title)}</strong>
+                ${meta}
+              </button>
+              <div class="script-knowledge-tree-drawer">
+                <div class="script-knowledge-tree-drawer-slot">
+                  <div class="script-knowledge-tree-leaf-body">${escapeHtml(content)}</div>
+                </div>
+              </div>
+            </article>
+          `;
+        }
+      } else {
+        const open = depth === 0;
+        inner = `
+          <article class="script-knowledge-tree-branch${open ? ' is-open' : ''}" data-depth="${depth}" role="treeitem" aria-expanded="${open ? 'true' : 'false'}">
+            <button type="button" class="script-knowledge-tree-summary"${summary ? ` title="${escapeHtml(summary)}"` : ''} data-script-knowledge-tree-toggle>
+              <i class="script-knowledge-tree-chevron" aria-hidden="true"></i>
+              <strong>${escapeHtml(title)}</strong>
+              <span class="script-knowledge-tree-meta">${children.length}</span>
+            </button>
+            <div class="script-knowledge-tree-drawer">
+              <div class="script-knowledge-tree-drawer-slot">
+                <div class="script-knowledge-tree-children" role="group">
+                  ${children.map((child, index) => buildScriptKnowledgeTreeNodeMarkup(
+                    child,
+                    sectionByHeading,
+                    path,
+                    depth + 1,
+                    index === children.length - 1
+                  )).join('')}
+                </div>
+              </div>
+            </div>
+          </article>
+        `;
+      }
+      return `
+        <div class="script-knowledge-tree-node" data-depth="${depth}" data-last="${isLast ? 'true' : 'false'}">
+          ${inner}
+        </div>
+      `;
+    }
+
+    function buildScriptKnowledgeTreeMarkup(detail) {
+      const tree = Array.isArray(detail?.metadata?.knowledgeTree)
+        ? detail.metadata.knowledgeTree.filter((node) => node && typeof node === 'object')
+        : [];
+      if (!tree.length) return buildScriptKnowledgeIngestionMarkup(detail);
+      const sections = Array.isArray(detail?.sections) ? detail.sections : [];
+      const sectionByHeading = new Map(sections.map((section) => [String(section?.heading || '').trim(), section]));
+      const staleNotice = buildScriptKnowledgeStaleNotice(detail, sections);
+      return `
+        ${staleNotice}
+        <div class="script-knowledge-tree-head">
+          <strong>${tree.length} 个一级节点</strong>
+          <span>点叶节点展开正文</span>
+        </div>
+        <div class="script-knowledge-tree" role="tree">
+          ${tree.map((node, index) => buildScriptKnowledgeTreeNodeMarkup(
+            node,
+            sectionByHeading,
+            [],
+            0,
+            index === tree.length - 1
+          )).join('')}
+        </div>
+      `;
+    }
+
     function buildScriptKnowledgeDetailMarkup(detail) {
       if (!detail) {
-        return '<div class="script-knowledge-empty"><strong>选择左侧剧本</strong><p>可阅读知识段、编辑信息，或查看原文。</p></div>';
+        return '<div class="script-knowledge-empty"><strong>选择左侧剧本</strong><p>可查看知识树、编辑信息，或阅读原文。</p></div>';
       }
       const isSelected = String(state.scriptReference?.item?.relativePath || '') === String(detail.relativePath || '');
-      const sections = Array.isArray(detail.sections) ? detail.sections : [];
       const activeTab = getScriptKnowledgeActiveTab();
-      const sectionPanel = sections.length
-        ? `<div class="script-knowledge-section-list">${sections.map(buildScriptKnowledgeSectionMarkup).join('')}</div>`
-        : buildScriptKnowledgeIngestionMarkup();
       return `
         <div class="script-knowledge-detail-inner">
           ${buildScriptKnowledgeDetailHeadMarkup(detail, isSelected)}
           <div class="script-knowledge-tabs" role="tablist" aria-label="剧本详情分区">
-            ${buildScriptKnowledgeTabButton('sections', '知识段', activeTab)}
+            ${buildScriptKnowledgeTabButton('tree', '知识树', activeTab)}
             ${buildScriptKnowledgeTabButton('edit', '编辑信息', activeTab)}
             ${buildScriptKnowledgeTabButton('source', '原文', activeTab)}
           </div>
           <div class="script-knowledge-panels">
-            <div class="script-knowledge-panel${activeTab === 'sections' ? ' is-active' : ''}" data-script-knowledge-panel="sections">
-              ${sectionPanel}
+            <div class="script-knowledge-panel${activeTab === 'tree' ? ' is-active' : ''}" data-script-knowledge-panel="tree">
+              ${buildScriptKnowledgeTreeMarkup(detail)}
             </div>
             <div class="script-knowledge-panel${activeTab === 'edit' ? ' is-active' : ''}" data-script-knowledge-panel="edit">
               ${buildScriptKnowledgeFormMarkup(detail)}
@@ -77,30 +177,70 @@
     }
 
     function buildScriptKnowledgeDetailHeadMarkup(detail, isSelected) {
+      const job = getScriptKnowledgeIngestionJob(detail?.id);
+      const ingesting = ['queued', 'running'].includes(job?.state);
       return `
         <div class="script-knowledge-detail-head">
           <div>
             <div class="script-knowledge-detail-title">${escapeHtml(detail.title || detail.name || '未命名剧本')}</div>
-            <div class="script-knowledge-meta">${escapeHtml(detail.relativePath || '')} · ${Number(detail.sectionCount || 0)} 个知识段</div>
+            <div class="script-knowledge-meta">${escapeHtml(detail.relativePath || '')} · ${Number(detail.sectionCount || 0)} 个叶节点</div>
           </div>
           <div class="script-knowledge-detail-actions">
-            <button type="button" class="button-primary" data-script-knowledge-ingest="${Number(detail.id || 0)}">${state.scriptKnowledge.ingesting ? '知识入库中' : '知识入库'}</button>
-            <button type="button" class="button-secondary" data-script-knowledge-reference="${escapeHtml(detail.relativePath || '')}">${isSelected ? '已设为剧本参考' : '设为剧本参考'}</button>
+            <button type="button" class="button-primary" data-script-knowledge-ingest="${Number(detail.id || 0)}"${ingesting ? ' disabled' : ''}>${ingesting ? '知识入库中' : '知识入库'}</button>
+            <button type="button" class="button-secondary" data-script-knowledge-reference="${escapeHtml(detail.relativePath || '')}">${isSelected ? '已设为知识库参考' : '设为知识库参考'}</button>
             <button type="button" class="material-wall-delete-button" data-delete-user-material-kind="script" data-delete-user-material-path="${escapeHtml(detail.relativePath || '')}" data-delete-user-material-name="${escapeHtml(detail.name || '')}">删除</button>
           </div>
         </div>
       `;
     }
 
-    function buildScriptKnowledgeIngestionMarkup() {
-      const job = state.scriptKnowledge.ingestionJob;
-      const events = Array.isArray(job?.events) ? job.events : [];
-      if (!state.scriptKnowledge.ingesting && !events.length) {
-        return '<div class="script-knowledge-empty is-inline"><strong>尚未知识入库</strong><p>点击上方“知识入库”，后台会建立目录、知识段与检索索引。</p></div>';
+    function buildScriptKnowledgeIngestionMarkup(detail) {
+      const job = getScriptKnowledgeIngestionJob(detail?.id);
+      const events = compactScriptKnowledgeIngestionEvents(
+        Array.isArray(job?.events) ? job.events : [],
+      );
+      const ingesting = ['queued', 'running'].includes(job?.state);
+      if (!ingesting && !events.length) {
+        return '<div class="script-knowledge-empty is-inline"><strong>尚未知识入库</strong><p>点击上方“知识入库”，后台会建立知识树、叶子内容与检索索引。</p></div>';
       }
-      const body = events.map((event) => `<p class="script-knowledge-ingestion-line is-${escapeHtml(event.kind || 'step')}" data-stage="${escapeHtml(event.stage || '')}">${escapeHtml(event.text || '')}</p>`).join('');
+      const body = events.map((event) => buildScriptKnowledgeIngestionLineMarkup(event, job)).join('');
       const title = job?.state === 'failed' ? '知识入库失败' : job?.state === 'succeeded' ? '知识入库完成' : '正在知识入库';
       return `<div class="script-knowledge-ingestion"><strong>${title}</strong><div class="script-knowledge-ingestion-stream">${body || '<p>正在准备任务…</p>'}</div></div>`;
+    }
+
+    function buildScriptKnowledgeIngestionLineMarkup(event, job) {
+      const kind = escapeHtml(event?.kind || 'step');
+      const stage = escapeHtml(event?.stage || '');
+      const text = formatScriptKnowledgeIngestionEvent(event, job);
+      const isLiveProgress = ['knowledge_agent', 'reviewer'].includes(event?.stage)
+        && event?.kind === 'progress'
+        && job?.state === 'running';
+      const typewriter = isLiveProgress ? ` data-typewriter-text="${escapeHtml(text)}"` : '';
+      return `<p class="script-knowledge-ingestion-line is-${kind}" data-stage="${stage}"${typewriter}>${escapeHtml(text)}</p>`;
+    }
+
+    function formatScriptKnowledgeIngestionEvent(event, job) {
+      const text = String(event?.text || '');
+      if (event?.stage === 'reviewer' && text === 'Reviewer 正在审核原子性、覆盖度与检索价值') {
+        return 'Reviewer 正在进行全树审核：原子性、覆盖度与检索价值';
+      }
+      const liveStage = ['knowledge_agent', 'reviewer'].includes(event?.stage);
+      if (job?.state === 'running' && liveStage && event?.kind === 'step') {
+        const elapsedSeconds = Math.max(0, Math.floor(Date.now() / 1000 - Number(event?.at || 0)));
+        return `${text}（等待模型返回 ${elapsedSeconds} 秒）`;
+      }
+      return text;
+    }
+
+    function compactScriptKnowledgeIngestionEvents(events) {
+      const liveStages = new Set(['knowledge_agent', 'reviewer']);
+      const latestIndex = new Map();
+      events.forEach((event, index) => {
+        if (liveStages.has(event?.stage)) latestIndex.set(event.stage, index);
+      });
+      return events.filter((event, index) => (
+        !liveStages.has(event?.stage) || latestIndex.get(event.stage) === index
+      ));
     }
 
     function buildScriptKnowledgeFormMarkup(detail) {
@@ -113,12 +253,6 @@
           <div class="script-knowledge-detail-actions is-wide"><button type="button" class="button-primary" data-script-knowledge-save>${state.scriptKnowledge.saving ? '保存中' : '保存元数据'}</button></div>
         </div>
       `;
-    }
-
-    function buildScriptKnowledgeSectionMarkup(section, index) {
-      const heading = section?.heading || `知识段 ${index + 1}`;
-      const content = normalizeMaterialPreview(section?.content || '');
-      return `<div class="script-knowledge-section"><strong>${escapeHtml(heading)}</strong><span>${escapeHtml(content || '（空段落）')}</span></div>`;
     }
 
     function getMaterialMentionName(item) {
@@ -389,141 +523,4 @@
           </div>
         </article>
       `;
-    }
-
-    function humanizeGenerationFailureReason(value) {
-      const text = String(value || '').trim();
-      const lowered = text.toLowerCase();
-      const imageStage = lowered.includes('/v1/images/generations') || text.includes('首帧') || text.includes('图生图');
-      if (!text) return '视频生成失败，请重新生成这一条。';
-      if (
-        text.includes('视频开头裁剪失败')
-        && (lowered.includes('libx264') || lowered.includes("unrecognized option 'preset'"))
-      ) {
-        return '本机视频后处理编码器不兼容，开头裁剪失败。已自动改用可用编码器，请重试这一条。';
-      }
-      if (text.includes('未配置图片模型') || text.includes('请设置图片模型')) {
-        return '请设置图片模型。';
-      }
-      if (
-        text.includes('前序任务已结束')
-        || text.includes('前序失败未提交')
-        || text.includes('未提交上游生成')
-        || text.includes('前面的视频已经失败')
-      ) {
-        return '这条未提交给生成服务；没有上游返回。';
-      }
-      if (
-        text.includes('视频未提交')
-        || text.includes('没有成功提交')
-        || text.includes('没有拿到可轮询')
-        || text.includes('没有留下可轮询')
-      ) {
-        return '后台中断了，这条视频未提交给生成服务。请重新生成。';
-      }
-      if (
-        lowered.includes("didn't pass content review")
-        || lowered.includes('content review')
-        || text.includes('内容审核')
-        || text.includes('敏感信息')
-        || lowered.includes('protected ip')
-      ) {
-        return '内容审核未通过，请换图或改成非真人风格后重试。';
-      }
-      if (
-        lowered.includes('httpsconnectionpool')
-        || lowered.includes('max retries exceeded')
-        || lowered.includes('sslerror')
-        || lowered.includes('ssleoferror')
-        || lowered.includes('eof occurred in violation of protocol')
-      ) {
-        return imageStage ? '首帧图上游连接中断，请稍后重试。' : '上游生成服务连接中断，请稍后重试。';
-      }
-      if (
-        lowered.includes('cannot connect to proxy')
-        || lowered.includes('proxyerror')
-        || lowered.includes('remote end closed connection')
-        || lowered.includes('connection refused')
-        || lowered.includes('connection aborted')
-        || lowered.includes('connection reset')
-      ) {
-        return imageStage ? '首帧图上游连接中断，请稍后重试。' : '上游生成服务连接中断，请稍后重试。';
-      }
-      if (
-        text.includes('本地任务超时')
-        || text.includes('没有提交给上游生成服务')
-        || text.includes('未提交给生成服务')
-      ) {
-        return '本地任务超时，视频没有提交给上游生成服务。请重新发送或缩短输入后再试。';
-      }
-      if (lowered.includes('read timed out') || lowered.includes('timed out') || text.includes('超时')) {
-        return imageStage ? '首帧图生成超时，请稍后重试。' : '生成服务超时，请稍后重试。';
-      }
-      if (
-        lowered.includes('invalid_seconds')
-        || lowered.includes('seconds is invalid')
-        || lowered.includes('must be 4, 8, or 12')
-      ) {
-        return '当前时长不支持，请切换到支持的秒数后重试。';
-      }
-      if (
-        lowered.includes('only [4, 6, 8] seconds')
-        || lowered.includes('only [4,6,8] seconds')
-        || (text.includes('4, 6, 8') && lowered.includes('seconds') && lowered.includes('supported'))
-      ) {
-        return '当前模型只支持 4、6 或 8 秒，请把视频时长改成支持的秒数后重试。';
-      }
-      if (lowered.includes('duration must be 5 or 10 seconds') || text.includes('5 or 10 seconds')) {
-        return '视频时长不支持，请切到 5 秒或 10 秒。';
-      }
-      if (lowered.includes('size must be') || lowered.includes('supported resolution')) {
-        return '清晰度不支持，请切换清晰度后重试。';
-      }
-      if (
-        lowered.includes('invalid media')
-        || lowered.includes('media url')
-        || lowered.includes('media type')
-      ) {
-        return imageStage ? '首帧图不符合生成要求，请换图后重试。' : '素材不符合生成要求，请更换后重试。';
-      }
-      if (
-        lowered.includes('insufficient')
-        || lowered.includes('quota')
-        || text.includes('额度不足')
-        || text.includes('余额不足')
-      ) {
-        return '当前账号额度不足，请更换账号或稍后重试。';
-      }
-      if ((text.includes('上游') && text.includes('失败')) || text.includes('生成未成功') || text.includes('生成状态')) {
-        return '生成服务没有成功，请重新生成这一条。';
-      }
-      if (looksTechnicalError(text)) {
-        return imageStage ? '首帧图处理失败，请稍后重试。' : '视频处理失败，请稍后重试。';
-      }
-      return text;
-    }
-
-    function summarizeGenerationFailureReason(value) {
-      const reason = humanizeGenerationFailureReason(value);
-      if (reason.includes('请设置图片模型')) return '请设置图片模型';
-      if (reason.includes('内容审核未通过')) return '内容审核未通过';
-      if (reason.includes('首帧图上游连接中断') || reason.includes('首帧图连接生成服务失败')) return '首帧图上游断连';
-      if (reason.includes('上游生成服务连接中断') || reason.includes('生成服务连接失败')) return '上游连接中断';
-      if (reason.includes('没有提交给上游生成服务')) return '本地超时未提交上游';
-      if (reason.includes('首帧图生成超时')) return '首帧图超时';
-      if (reason.includes('生成服务超时')) return '生成超时';
-      if (reason.includes('当前模型只支持 4、6 或 8 秒')) return '时长仅支持4/6/8秒';
-      if (reason.includes('当前时长不支持')) return '当前时长不支持';
-      if (reason.includes('视频时长不支持')) return '视频时长不支持';
-      if (reason.includes('清晰度不支持')) return '清晰度不支持';
-      if (reason.includes('首帧图不符合生成要求')) return '首帧图不符合要求';
-      if (reason.includes('素材不符合生成要求')) return '素材不符合要求';
-      if (reason.includes('当前账号额度不足')) return '账号额度不足';
-      if (reason.includes('首帧图处理失败')) return '首帧图处理失败';
-      if (reason.includes('视频处理失败')) return '视频处理失败';
-      if (reason.includes('生成服务没有成功')) return '生成服务失败';
-      if (reason.includes('没有上游返回')) return '未提交，无上游返回';
-      if (reason.includes('未提交给生成服务')) return '未提交，无上游返回';
-      if (reason.includes('后台中断了')) return '后台中断，未提交';
-      return reason.length > 14 ? `${reason.slice(0, 14)}…` : reason;
     }

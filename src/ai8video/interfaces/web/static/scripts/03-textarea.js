@@ -27,6 +27,18 @@
       await saveGenerationMode(!!toggle.checked);
     });
 
+    els.smartSplitDrawer?.addEventListener('change', async (event) => {
+      const smartToggle = event.target.closest('[data-smart-split-toggle]');
+      const confirmToggle = event.target.closest('[data-smart-split-confirm-toggle]');
+      const tailFrameToggle = event.target.closest('[data-tail-frame-chaining-toggle]');
+      if (!smartToggle && !confirmToggle && !tailFrameToggle) return;
+      await saveGenerationMode({
+        smartSplit: smartToggle ? !!smartToggle.checked : !!state.generationMode.smartSplit,
+        confirmSmartSplit: confirmToggle ? !!confirmToggle.checked : !!state.generationMode.confirmSmartSplit,
+        tailFrameChaining: tailFrameToggle ? !!tailFrameToggle.checked : !!state.generationMode.tailFrameChaining,
+      });
+    });
+
     els.htmlMotionOverlayDrawer?.addEventListener('change', async (event) => {
       const toggle = event.target.closest('[data-html-motion-overlay-toggle]');
       if (!toggle) return;
@@ -482,4 +494,3 @@
       setFlowerTextSaveStatus(state.flowerText.notice);
       scheduleFlowerTextPositionSave();
     });
-

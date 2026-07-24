@@ -20,5 +20,6 @@
       if (last.payload?.awaiting === 'content_completion') return '等待补充台词';
       if (last.payload?.awaiting === 'core_keywords') return '等待确认核心主题';
       if (last.payload?.awaiting === 'concurrent_generation') return '等待选择生成模式';
+      if (last.payload?.awaiting === 'smart_split_confirmation') return '等待确认智能分集';
       return '继续补充需求';
     }

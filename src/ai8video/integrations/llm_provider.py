@@ -29,6 +29,9 @@ def build_openai_compat_llm(
             except requests.RequestException as exc:
                 if attempt >= transport_retry_count or not _should_retry_transport_error(exc):
                     raise RuntimeError(_transport_error_message(exc, attempt)) from exc
+            except RuntimeError as exc:
+                if attempt >= transport_retry_count or not _is_retryable_empty_response(exc):
+                    raise
         raise RuntimeError("文本模型请求未执行")
 
     return _call
@@ -77,14 +80,24 @@ def _request_completion(
 
 def _transport_error_message(exc: Exception, retries_completed: int) -> str:
     attempts = retries_completed + 1
+    detail = str(exc).strip() or exc.__class__.__name__
+    lowered = detail.lower()
+    if "ended prematurely" in lowered or "connection reset" in lowered:
+        detail = "上游响应提前结束，多半是网络抖动或模型服务超时"
+    elif "timed out" in lowered or "timeout" in lowered:
+        detail = "等待模型响应超时"
     prefix = "文本模型连接中断"
     if retries_completed:
         prefix += f"，已自动重试 {retries_completed} 次"
-    return f"{prefix}（共 {attempts} 次请求）：{str(exc).strip() or exc.__class__.__name__}"
+    return f"{prefix}（共 {attempts} 次请求）：{detail}"
 
 
 def _should_retry_transport_error(exc: requests.RequestException) -> bool:
     return not isinstance(exc, requests.exceptions.Timeout)
+
+
+def _is_retryable_empty_response(exc: RuntimeError) -> bool:
+    return str(exc).strip() == "LLM stream response missing text content"
 
 
 def _raise_for_llm_http_error(response) -> None:
@@ -164,7 +177,7 @@ def _is_event_stream_response(response) -> bool:
 
 def _read_openai_chat_stream(response, *, on_delta: Callable[[str], None] | None = None) -> str:
     chunks: list[str] = []
-    for raw_line in response.iter_lines(decode_unicode=False):
+    for raw_line in response.iter_lines(chunk_size=1, decode_unicode=False):
         if isinstance(raw_line, bytes):
             line = raw_line.decode("utf-8", errors="replace").strip()
         else:
@@ -181,9 +194,8 @@ def _read_openai_chat_stream(response, *, on_delta: Callable[[str], None] | None
         choices = data.get("choices") or []
         if not choices:
             continue
-        delta = choices[0].get("delta") or {}
-        content = delta.get("content")
-        if isinstance(content, str):
+        content = _extract_stream_text(data, choices[0])
+        if content:
             chunks.append(content)
             if on_delta is not None:
                 on_delta(content)
@@ -191,6 +203,36 @@ def _read_openai_chat_stream(response, *, on_delta: Callable[[str], None] | None
     if text:
         return text
     raise RuntimeError("LLM stream response missing text content")
+
+
+def _extract_stream_text(data: dict, choice: dict) -> str:
+    delta = choice.get("delta") or {}
+    candidates = (
+        delta.get("content"),
+        delta.get("text"),
+        (choice.get("message") or {}).get("content"),
+        choice.get("text"),
+        data.get("output_text"),
+    )
+    for value in candidates:
+        text = _content_text(value)
+        if text:
+            return text
+    return ""
+
+
+def _content_text(value) -> str:
+    if isinstance(value, str):
+        return value
+    if not isinstance(value, list):
+        return ""
+    parts = []
+    for item in value:
+        if isinstance(item, str):
+            parts.append(item)
+        elif isinstance(item, dict) and isinstance(item.get("text"), str):
+            parts.append(item["text"])
+    return "".join(parts)
 
 
 def normalize_chat_completions_url(base_url: str) -> str:

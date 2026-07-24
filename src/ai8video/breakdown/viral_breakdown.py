@@ -14,7 +14,7 @@ from urllib.parse import unquote
 
 from PIL import Image, ImageOps
 
-from ai8video.media.ffmpeg_utils import resolve_ffmpeg_bin
+from ai8video.media.ffmpeg_utils import probe_media_metadata, resolve_ffmpeg_bin
 from ai8video.core.config import AI8VideoConfig
 from ai8video.integrations.http_client import api_request
 from ai8video.integrations.llm_provider import normalize_chat_completions_url
@@ -26,9 +26,12 @@ VIRAL_BREAKDOWN_SOURCE_VIDEO_DIR = (VIRAL_BREAKDOWN_ROOT / "原视频").resolve(
 VIRAL_BREAKDOWN_FRAME_DIR = (VIRAL_BREAKDOWN_ROOT / "截图").resolve()
 VIRAL_BREAKDOWN_GRID_DIR = (VIRAL_BREAKDOWN_ROOT / "宫格图").resolve()
 VIRAL_BREAKDOWN_TRANSCRIPT_DIR = (VIRAL_BREAKDOWN_ROOT / "台词").resolve()
+VIRAL_BREAKDOWN_SCRIPT_DRAFT_DIR = (VIRAL_BREAKDOWN_ROOT / "剧本草稿").resolve()
+VIRAL_BREAKDOWN_GENERATE_SESSION_DIR = (VIRAL_BREAKDOWN_ROOT / "生成会话").resolve()
 VIRAL_BREAKDOWN_GENERATED_VIDEO_DIR = (VIRAL_BREAKDOWN_ROOT / "用户生成视频").resolve()
 VIRAL_BREAKDOWN_WHISPER_CACHE_DIR = (VIRAL_BREAKDOWN_ROOT / ".model-cache" / "faster-whisper").resolve()
-DEFAULT_WHISPER_MODEL_DOWNLOAD_ENDPOINT = "https://hf-mirror.com"
+DEFAULT_WHISPER_MODEL_DOWNLOAD_ENDPOINT = "https://huggingface.co"
+WHISPER_MODEL_DOWNLOAD_ENDPOINT_ENV = "AI8VIDEO_WHISPER_HF_ENDPOINT"
 
 SUPPORTED_VIRAL_BREAKDOWN_VIDEO_EXTENSIONS = {
     ".mp4",
@@ -53,6 +56,8 @@ def ensure_viral_breakdown_dirs() -> Path:
         VIRAL_BREAKDOWN_FRAME_DIR,
         VIRAL_BREAKDOWN_GRID_DIR,
         VIRAL_BREAKDOWN_TRANSCRIPT_DIR,
+        VIRAL_BREAKDOWN_SCRIPT_DRAFT_DIR,
+        VIRAL_BREAKDOWN_GENERATE_SESSION_DIR,
         VIRAL_BREAKDOWN_GENERATED_VIDEO_DIR,
         VIRAL_BREAKDOWN_WHISPER_CACHE_DIR,
     ):
@@ -159,6 +164,7 @@ def transcribe_viral_breakdown_video(
     model_name: str = "base",
 ) -> dict[str, Any]:
     video_path, relative_video_key = resolve_viral_breakdown_video_path(video_key)
+    _configure_whisper_download_endpoint()
     try:
         from faster_whisper import WhisperModel
     except ImportError as exc:  # pragma: no cover - depends on local environment
@@ -232,6 +238,410 @@ def save_viral_breakdown_transcript(
     return payload
 
 
+def save_viral_breakdown_script_draft(
+    video_key: object,
+    *,
+    script_text: object | None = None,
+    composed_text: object | None = None,
+    tree: object | None = None,
+    leaves: object | None = None,
+    detail: object | None = None,
+    quality: object | None = None,
+    saved: bool | None = None,
+    relative_path: object | None = None,
+    document_id: object | None = None,
+    clear_tree: bool = False,
+) -> dict[str, Any]:
+    video_path, relative_video_key = resolve_viral_breakdown_video_path(video_key)
+    draft_path = VIRAL_BREAKDOWN_SCRIPT_DRAFT_DIR / f"{video_path.stem}.json"
+    existing = _read_json(draft_path)
+    next_script = (
+        str(script_text)
+        if script_text is not None
+        else str(existing.get("scriptText") or "")
+    )
+    if composed_text is not None:
+        next_composed = str(composed_text)
+    elif clear_tree:
+        next_composed = ""
+    else:
+        next_composed = str(existing.get("text") or "")
+    next_tree, next_leaves, next_detail, next_quality = _merge_script_draft_tree(
+        existing,
+        tree=tree,
+        leaves=leaves,
+        detail=detail,
+        quality=quality,
+        clear_tree=clear_tree,
+    )
+    next_saved = bool(existing.get("saved")) if saved is None else bool(saved)
+    next_relative = (
+        str(existing.get("relativePath") or "")
+        if relative_path is None
+        else str(relative_path or "")
+    )
+    if document_id is None:
+        next_document_id = int(existing.get("documentId") or 0) or 0
+    else:
+        try:
+            next_document_id = int(document_id or 0)
+        except (TypeError, ValueError):
+            next_document_id = 0
+    if clear_tree:
+        next_saved, next_relative, next_document_id = False, "", 0
+    payload = {
+        "videoKey": relative_video_key,
+        "scriptText": next_script,
+        "text": next_composed,
+        "tree": next_tree,
+        "leaves": next_leaves,
+        "detail": next_detail,
+        "quality": next_quality,
+        "saved": next_saved,
+        "relativePath": next_relative,
+        "documentId": next_document_id,
+        "updatedAt": datetime.now(timezone.utc).isoformat(),
+    }
+    _write_json(draft_path, payload)
+    payload["scriptDraftKey"] = draft_path.relative_to(VIRAL_BREAKDOWN_ROOT).as_posix()
+    payload["ok"] = True
+    return payload
+
+
+def _merge_script_draft_tree(
+    existing: dict[str, Any],
+    *,
+    tree: object | None,
+    leaves: object | None,
+    detail: object | None,
+    quality: object | None,
+    clear_tree: bool,
+) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any] | None, dict[str, Any] | None]:
+    if clear_tree:
+        return {}, [], None, None
+    next_tree = dict(tree) if isinstance(tree, dict) else (
+        dict(existing.get("tree") or {}) if isinstance(existing.get("tree"), dict) else {}
+    )
+    source_leaves = leaves if leaves is not None else existing.get("leaves")
+    next_leaves = [dict(item) for item in list(source_leaves or []) if isinstance(item, dict)]
+    next_detail = detail if isinstance(detail, dict) else (
+        existing.get("detail") if isinstance(existing.get("detail"), dict) else None
+    )
+    next_quality = quality if isinstance(quality, dict) else (
+        existing.get("quality") if isinstance(existing.get("quality"), dict) else None
+    )
+    return next_tree, next_leaves, next_detail, next_quality
+
+
+def load_viral_breakdown_script_draft(video_stem: str) -> dict[str, Any] | None:
+    draft_path = VIRAL_BREAKDOWN_SCRIPT_DRAFT_DIR / f"{video_stem}.json"
+    payload = _read_json(draft_path)
+    if not payload:
+        return None
+    script_text = str(payload.get("scriptText") or "").strip()
+    tree = payload.get("tree") if isinstance(payload.get("tree"), dict) else {}
+    leaves = [item for item in list(payload.get("leaves") or []) if isinstance(item, dict)]
+    if not script_text and not leaves:
+        return None
+    return {
+        "scriptText": script_text,
+        "text": str(payload.get("text") or ""),
+        "tree": tree,
+        "leaves": leaves,
+        "detail": payload.get("detail") if isinstance(payload.get("detail"), dict) else None,
+        "quality": payload.get("quality") if isinstance(payload.get("quality"), dict) else None,
+        "saved": bool(payload.get("saved")),
+        "relativePath": str(payload.get("relativePath") or ""),
+        "documentId": int(payload.get("documentId") or 0) or 0,
+        "updatedAt": str(payload.get("updatedAt") or ""),
+        "scriptDraftKey": draft_path.relative_to(VIRAL_BREAKDOWN_ROOT).as_posix(),
+    }
+
+
+def prepare_viral_breakdown_generate(
+    video_key: object,
+    *,
+    script_text: object | None = None,
+    transcript_text: object | None = None,
+    leaves: object | None = None,
+    target_ratio: object | None = None,
+) -> dict[str, Any]:
+    """组装仿拍生成任务：同步宫格到图片素材库，并返回可直接交给主 Agent 的消息。"""
+    from ai8video.assets.user_materials import USER_IMAGE_MATERIAL_DIR, ensure_user_material_dirs
+
+    video_path, relative_video_key = resolve_viral_breakdown_video_path(video_key)
+    video_stem = video_path.stem
+    draft = load_viral_breakdown_script_draft(video_stem) or {}
+    resolved_script = str(script_text if script_text is not None else draft.get("scriptText") or "").strip()
+    transcript_payload = _read_json(VIRAL_BREAKDOWN_TRANSCRIPT_DIR / f"{video_stem}.json")
+    resolved_transcript = str(
+        transcript_text if transcript_text is not None else transcript_payload.get("text") or ""
+    ).strip()
+    if not resolved_transcript:
+        transcript_txt = VIRAL_BREAKDOWN_TRANSCRIPT_DIR / f"{video_stem}.txt"
+        if transcript_txt.is_file():
+            resolved_transcript = transcript_txt.read_text(encoding="utf-8", errors="ignore").strip()
+    resolved_leaves = [
+        item for item in list(leaves if leaves is not None else draft.get("leaves") or [])
+        if isinstance(item, dict)
+    ]
+    grid_image_path = _find_latest_grid_image_path(video_stem)
+    readiness = assess_viral_breakdown_generate_readiness(
+        has_grid=bool(grid_image_path and grid_image_path.is_file()),
+        transcript_text=resolved_transcript,
+        script_text=resolved_script,
+    )
+    if not readiness["ready"]:
+        raise RuntimeError(readiness["message"])
+    assert grid_image_path is not None
+    ensure_user_material_dirs()
+    material_name = f"viral-bd-{video_stem}-grid{SUPPORTED_GRID_IMAGE_EXTENSION}"
+    material_path = USER_IMAGE_MATERIAL_DIR / material_name
+    shutil.copy2(grid_image_path, material_path)
+    ratio_key = str(target_ratio or "16:9").strip()
+    if ratio_key not in SUPPORTED_TARGET_RATIOS:
+        ratio_key = "16:9"
+    session_id = f"viral-breakdown:{video_stem}"
+    message = build_viral_breakdown_generate_message(
+        script_text=resolved_script,
+        transcript_text=resolved_transcript,
+        leaves=resolved_leaves,
+        material_name=material_name,
+        target_ratio=ratio_key,
+        video_name=video_path.name,
+    )
+    return {
+        "ok": True,
+        "ready": True,
+        "videoKey": relative_video_key,
+        "sessionId": session_id,
+        "message": message,
+        "materialName": material_name,
+        "materialPath": str(material_path),
+        "targetRatio": ratio_key,
+        "missing": [],
+    }
+
+
+def assess_viral_breakdown_generate_readiness(
+    *,
+    has_grid: bool,
+    transcript_text: object,
+    script_text: object,
+) -> dict[str, Any]:
+    missing: list[str] = []
+    if not has_grid:
+        missing.append("grid")
+    if not str(transcript_text or "").strip():
+        missing.append("transcript")
+    if not str(script_text or "").strip():
+        missing.append("script")
+    labels = {
+        "grid": "拼接宫格",
+        "transcript": "识别台词",
+        "script": "剧本骨架",
+    }
+    if missing:
+        missing_labels = "、".join(labels[key] for key in missing if key in labels)
+        return {
+            "ready": False,
+            "missing": missing,
+            "message": f"还不能开始生成，请先完成：{missing_labels}",
+        }
+    return {"ready": True, "missing": [], "message": ""}
+
+
+def build_viral_breakdown_generate_message(
+    *,
+    script_text: str,
+    transcript_text: str,
+    leaves: list[dict[str, Any]] | None,
+    material_name: str,
+    target_ratio: str,
+    video_name: str,
+) -> str:
+    leaf_lines: list[str] = []
+    for index, leaf in enumerate(leaves or [], start=1):
+        title = str(leaf.get("title") or leaf.get("name") or f"段落 {index}").strip()
+        body = str(leaf.get("content") or leaf.get("text") or leaf.get("body") or "").strip()
+        if not body:
+            continue
+        leaf_lines.append(f"{index}. {title}\n{body}")
+    leaf_block = "\n\n".join(leaf_lines[:12]).strip()
+    parts = [
+        (
+            f"请根据以下爆款拆解素材，直接生成 1 条 {target_ratio} 短视频。"
+            "不要追问确认，不要再问条数/参考图/台词，立刻开始生成。"
+        ),
+        f"源视频：{video_name}",
+        "任务：仿拍这条爆款短视频的结构、节奏与卖点，保留核心台词节奏。",
+        f"请使用参考图 @{material_name} 作为分镜/画面参考。",
+        "【剧本骨架】",
+        script_text.strip(),
+        "【台词 / 口播文案】",
+        transcript_text.strip(),
+    ]
+    if leaf_block:
+        parts.extend(["【临时知识树要点】", leaf_block])
+    return "\n\n".join(parts)
+
+
+def attach_viral_breakdown_generated_video(
+    video_key: object,
+    *,
+    user_generated_key: object | None = None,
+    local_path: object | None = None,
+) -> dict[str, Any]:
+    """把主 Agent 生成的成片复制到爆款拆解「用户生成视频」目录。"""
+    from ai8video.assets.user_files import USER_GENERATED_RESULT_ROOT
+    from ai8video.assets.user_generated_results import ensure_user_generated_result_dir
+
+    video_path, relative_video_key = resolve_viral_breakdown_video_path(video_key)
+    source = _resolve_attach_source_video(
+        user_generated_key=user_generated_key,
+        local_path=local_path,
+        result_root=ensure_user_generated_result_dir().resolve(),
+        generated_root=USER_GENERATED_RESULT_ROOT.resolve(),
+    )
+    ensure_viral_breakdown_dirs()
+    target = VIRAL_BREAKDOWN_GENERATED_VIDEO_DIR / f"{video_path.stem}{source.suffix.lower()}"
+    if target.exists():
+        target.unlink()
+    shutil.copy2(source, target)
+    relative_generated_key = target.relative_to(VIRAL_BREAKDOWN_ROOT).as_posix()
+    return {
+        "ok": True,
+        "videoKey": relative_video_key,
+        "generatedVideoKey": relative_generated_key,
+        "generatedVideoUrl": f"/api/viral-breakdown/file?key={relative_generated_key}",
+        "sourcePath": str(source),
+    }
+
+
+def load_viral_breakdown_generate_session(video_stem: str) -> dict[str, Any] | None:
+    ensure_viral_breakdown_dirs()
+    session_path = VIRAL_BREAKDOWN_GENERATE_SESSION_DIR / f"{video_stem}.json"
+    payload = _read_json(session_path)
+    if not payload:
+        return None
+    messages = [
+        item for item in list(payload.get("messages") or [])
+        if isinstance(item, dict) and str(item.get("text") or "").strip()
+    ]
+    if not messages and str(payload.get("status") or "").strip() in {"", "idle"}:
+        return None
+    return {
+        "videoKey": str(payload.get("videoKey") or ""),
+        "sessionId": str(payload.get("sessionId") or f"viral-breakdown:{video_stem}"),
+        "status": str(payload.get("status") or "idle"),
+        "messages": messages,
+        "generationBatchId": str(payload.get("generationBatchId") or ""),
+        "startedAt": str(payload.get("startedAt") or ""),
+        "updatedAt": str(payload.get("updatedAt") or ""),
+        "error": str(payload.get("error") or ""),
+        "generatedVideoKey": str(payload.get("generatedVideoKey") or ""),
+        "generateSessionKey": session_path.relative_to(VIRAL_BREAKDOWN_ROOT).as_posix(),
+    }
+
+
+def save_viral_breakdown_generate_session(
+    video_key: object,
+    *,
+    session_id: object | None = None,
+    status: object | None = None,
+    messages: object | None = None,
+    generation_batch_id: object | None = None,
+    started_at: object | None = None,
+    error: object | None = None,
+    generated_video_key: object | None = None,
+) -> dict[str, Any]:
+    video_path, relative_video_key = resolve_viral_breakdown_video_path(video_key)
+    ensure_viral_breakdown_dirs()
+    session_path = VIRAL_BREAKDOWN_GENERATE_SESSION_DIR / f"{video_path.stem}.json"
+    existing = _read_json(session_path)
+    next_messages = messages if messages is not None else existing.get("messages")
+    normalized_messages = _normalize_generate_session_messages(next_messages)
+    payload = {
+        "videoKey": relative_video_key,
+        "sessionId": str(session_id if session_id is not None else existing.get("sessionId") or f"viral-breakdown:{video_path.stem}"),
+        "status": str(status if status is not None else existing.get("status") or "idle"),
+        "messages": normalized_messages,
+        "generationBatchId": str(
+            generation_batch_id if generation_batch_id is not None else existing.get("generationBatchId") or ""
+        ),
+        "startedAt": str(started_at if started_at is not None else existing.get("startedAt") or ""),
+        "updatedAt": datetime.now(timezone.utc).isoformat(),
+        "error": str(error if error is not None else existing.get("error") or ""),
+        "generatedVideoKey": str(
+            generated_video_key if generated_video_key is not None else existing.get("generatedVideoKey") or ""
+        ),
+    }
+    _write_json(session_path, payload)
+    payload["ok"] = True
+    payload["generateSessionKey"] = session_path.relative_to(VIRAL_BREAKDOWN_ROOT).as_posix()
+    return payload
+
+
+def _normalize_generate_session_messages(raw_messages: object) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for index, item in enumerate(list(raw_messages or [])):
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text") or "").strip()
+        if not text:
+            continue
+        role = str(item.get("role") or "assistant").strip().lower()
+        if role not in {"user", "assistant"}:
+            role = "assistant"
+        normalized.append(
+            {
+                "id": str(item.get("id") or f"msg-{index + 1}"),
+                "role": role,
+                "text": text,
+                "kind": str(item.get("kind") or "text"),
+                "tone": str(item.get("tone") or "info"),
+                "at": str(item.get("at") or ""),
+                "videoUrl": str(item.get("videoUrl") or ""),
+            }
+        )
+    return normalized[-120:]
+
+
+def _resolve_attach_source_video(
+    *,
+    user_generated_key: object | None,
+    local_path: object | None,
+    result_root: Path,
+    generated_root: Path,
+) -> Path:
+    key = str(user_generated_key or "").strip().lstrip("/")
+    if key:
+        candidate = (result_root / key).resolve()
+        if not _is_within(result_root, candidate) or not candidate.is_file():
+            filename = Path(key).name
+            for alt in (result_root / "video" / filename, result_root / filename):
+                resolved = alt.resolve()
+                if _is_within(result_root, resolved) and resolved.is_file():
+                    candidate = resolved
+                    break
+        if not candidate.is_file():
+            raise FileNotFoundError("找不到对应的用户生成视频")
+        if candidate.suffix.lower() not in SUPPORTED_VIRAL_BREAKDOWN_VIDEO_EXTENSIONS:
+            raise ValueError("userGeneratedKey must point to a video")
+        return candidate
+    raw_path = str(local_path or "").strip()
+    if not raw_path:
+        raise ValueError("userGeneratedKey or localPath is required")
+    candidate = Path(raw_path).expanduser().resolve()
+    if not candidate.is_file():
+        raise FileNotFoundError("localPath video not found")
+    if candidate.suffix.lower() not in SUPPORTED_VIRAL_BREAKDOWN_VIDEO_EXTENSIONS:
+        raise ValueError("localPath must point to a video")
+    if not (_is_within(result_root, candidate) or _is_within(generated_root, candidate)):
+        raise ValueError("localPath must be inside user generated results")
+    return candidate
+
+
 def guess_viral_breakdown_script(
     video_key: object,
     *,
@@ -252,6 +662,11 @@ def guess_viral_breakdown_script(
         config,
         grid_image_path=grid_image_path,
         transcript_text=normalized_transcript_text,
+    )
+    save_viral_breakdown_script_draft(
+        relative_video_key,
+        script_text=response_text,
+        clear_tree=True,
     )
     return {
         "ok": True,
@@ -278,7 +693,7 @@ def stream_viral_breakdown_script_guess(
     normalized_transcript_text = str(transcript_text if transcript_text is not None else "").strip()
     if not normalized_transcript_text:
         raise RuntimeError("还没有可用台词，请先点击“分析台词”或手动填写台词")
-    yield from _stream_multimodal_script_guess(
+    return _stream_multimodal_script_guess(
         config,
         grid_image_path=grid_image_path,
         transcript_text=normalized_transcript_text,
@@ -287,8 +702,7 @@ def stream_viral_breakdown_script_guess(
 
 def _load_faster_whisper_model(whisper_model_class: type, model_name: str):
     ensure_viral_breakdown_dirs()
-    os.environ.setdefault("HF_ENDPOINT", DEFAULT_WHISPER_MODEL_DOWNLOAD_ENDPOINT)
-    os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+    download_endpoint = _configure_whisper_download_endpoint()
     try:
         return whisper_model_class(
             model_name,
@@ -301,6 +715,8 @@ def _load_faster_whisper_model(whisper_model_class: type, model_name: str):
         lowered_message = error_message.lower()
         if (
             "localentrynotfounderror" in lowered_message
+            or "trying to locate the file on the hub" in lowered_message
+            or "cannot find the requested files in the local cache" in lowered_message
             or "snapshot folder" in lowered_message
             or "connecterror" in lowered_message
             or "huggingface" in lowered_message
@@ -308,11 +724,18 @@ def _load_faster_whisper_model(whisper_model_class: type, model_name: str):
             or "unexpected_eof_while_reading" in lowered_message
         ):
             raise RuntimeError(
-                "Whisper 模型还没缓存到本机，且当前直连 huggingface.co 失败。"
-                f"系统已默认切到 {DEFAULT_WHISPER_MODEL_DOWNLOAD_ENDPOINT} 作为模型镜像，并会把模型缓存到本地。"
-                "请再点一次“分析台词”重试下载；如果仍失败，再检查本机网络或代理。"
+                f"Whisper 模型尚未完整缓存，且从 {download_endpoint} 下载失败。"
+                "请检查本机网络或代理后再点一次“分析台词”；下载成功后会复用本地缓存。"
             ) from exc
         raise RuntimeError(f"Whisper 模型加载失败：{error_message}") from exc
+
+
+def _configure_whisper_download_endpoint() -> str:
+    configured_endpoint = str(os.getenv(WHISPER_MODEL_DOWNLOAD_ENDPOINT_ENV, "") or "").strip()
+    download_endpoint = (configured_endpoint or DEFAULT_WHISPER_MODEL_DOWNLOAD_ENDPOINT).rstrip("/")
+    os.environ["HF_ENDPOINT"] = download_endpoint
+    os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+    return download_endpoint
 
 
 def _request_multimodal_script_guess(
@@ -334,14 +757,24 @@ def _request_multimodal_script_guess(
             "messages": [
                 {
                     "role": "system",
-                    "content": "你是短剧编剧。只根据分镜宫格图和台词反推完整剧本，直接输出剧本正文，不要解释、不要寒暄、不要写分析过程。",
+                    "content": (
+                        "你是短剧编剧。只根据分镜宫格图和台词反推剧本骨架："
+                        "抓住情节逻辑、场景推进、角色关系与冲突主线。"
+                        "直接输出剧本正文，不要解释、不要寒暄、不要写分析过程；"
+                        "细节血肉留给后续知识库 Agent，不必写成最终成稿。"
+                    ),
                 },
                 {
                     "role": "user",
                     "content": [
                         {
                             "type": "text",
-                            "text": "请根据这张拼接后的分镜宫格图和下面识别到的台词，反推出可直接拍摄/生成的完整剧本。只输出剧本，不要废话。\n\n台词：\n" + transcript_text,
+                            "text": (
+                                "请根据这张拼接后的分镜宫格图和下面识别到的台词，反推剧本骨架。"
+                                "重点写清情节结构与推进逻辑；对白可概括，不必逐字抠细节。"
+                                "只输出剧本正文，不要废话。\n\n台词：\n"
+                                + transcript_text
+                            ),
                         },
                         {
                             "type": "image_url",
@@ -386,14 +819,24 @@ def _stream_multimodal_script_guess(
             "messages": [
                 {
                     "role": "system",
-                    "content": "你是短剧编剧。只根据分镜宫格图和台词反推完整剧本，直接输出剧本正文，不要解释、不要寒暄、不要写分析过程。",
+                    "content": (
+                        "你是短剧编剧。只根据分镜宫格图和台词反推剧本骨架："
+                        "抓住情节逻辑、场景推进、角色关系与冲突主线。"
+                        "直接输出剧本正文，不要解释、不要寒暄、不要写分析过程；"
+                        "细节血肉留给后续知识库 Agent，不必写成最终成稿。"
+                    ),
                 },
                 {
                     "role": "user",
                     "content": [
                         {
                             "type": "text",
-                            "text": "请根据这张拼接后的分镜宫格图和下面识别到的台词，反推出可直接拍摄/生成的完整剧本。只输出剧本，不要废话。\n\n台词：\n" + transcript_text,
+                            "text": (
+                                "请根据这张拼接后的分镜宫格图和下面识别到的台词，反推剧本骨架。"
+                                "重点写清情节结构与推进逻辑；对白可概括，不必逐字抠细节。"
+                                "只输出剧本正文，不要废话。\n\n台词：\n"
+                                + transcript_text
+                            ),
                         },
                         {
                             "type": "image_url",
@@ -410,6 +853,10 @@ def _stream_multimodal_script_guess(
     )
     if response.status_code >= 400:
         raise RuntimeError(_format_multimodal_http_error(response))
+    return _iter_multimodal_script_guess_response(response)
+
+
+def _iter_multimodal_script_guess_response(response):
     content_type = str(response.headers.get("Content-Type") or "").lower()
     if "text/event-stream" not in content_type:
         data = response.json()
@@ -466,6 +913,8 @@ def _format_multimodal_http_error(response) -> str:
         payload = json.loads(body)
     except json.JSONDecodeError:
         return f"多模态模型请求失败（HTTP {status_code}）：{body[:500]}"
+    if "unknown variant `image_url`" in body.lower():
+        return "当前多模态模型不支持图片输入，请在设置中选择支持视觉理解的模型"
     error_payload = payload.get("error") if isinstance(payload, dict) else None
     if isinstance(error_payload, dict):
         message = str(error_payload.get("message") or "").strip()
@@ -500,6 +949,17 @@ def _build_viral_breakdown_item(source_video_path: Path) -> dict[str, Any]:
         related_size_bytes += _directory_size_bytes(frame_dir_path)
     if generated_video_path and generated_video_path.is_file():
         related_size_bytes += generated_video_path.stat().st_size
+    script_draft = load_viral_breakdown_script_draft(source_video_path.stem)
+    if script_draft and script_draft.get("scriptDraftKey"):
+        draft_path = VIRAL_BREAKDOWN_ROOT / str(script_draft["scriptDraftKey"])
+        if draft_path.is_file():
+            related_size_bytes += draft_path.stat().st_size
+    generate_session = load_viral_breakdown_generate_session(source_video_path.stem)
+    if generate_session and generate_session.get("generateSessionKey"):
+        session_path = VIRAL_BREAKDOWN_ROOT / str(generate_session["generateSessionKey"])
+        if session_path.is_file():
+            related_size_bytes += session_path.stat().st_size
+    media = _cached_media_metadata(source_video_path, stat)
     return {
         "name": source_video_path.name,
         "videoKey": relative_video_key,
@@ -517,7 +977,23 @@ def _build_viral_breakdown_item(source_video_path: Path) -> dict[str, Any]:
         "transcriptJsonKey": transcript_json_path.relative_to(VIRAL_BREAKDOWN_ROOT).as_posix() if transcript_json_path.is_file() else "",
         "generatedVideoKey": generated_video_path.relative_to(VIRAL_BREAKDOWN_ROOT).as_posix() if generated_video_path else "",
         "generatedVideoUrl": f"/api/viral-breakdown/file?key={generated_video_path.relative_to(VIRAL_BREAKDOWN_ROOT).as_posix()}" if generated_video_path else "",
+        "media": media,
+        "scriptDraft": script_draft,
+        "generateSession": generate_session,
     }
+
+
+_MEDIA_METADATA_CACHE: dict[str, tuple[float, int, dict[str, Any]]] = {}
+
+
+def _cached_media_metadata(video_path: Path, stat: os.stat_result) -> dict[str, Any]:
+    cache_key = str(video_path.resolve())
+    cached = _MEDIA_METADATA_CACHE.get(cache_key)
+    if cached and cached[0] == stat.st_mtime and cached[1] == stat.st_size:
+        return dict(cached[2])
+    media = probe_media_metadata(video_path) or {}
+    _MEDIA_METADATA_CACHE[cache_key] = (stat.st_mtime, stat.st_size, dict(media))
+    return dict(media)
 
 
 def _find_generated_video_path(video_stem: str) -> Path | None:

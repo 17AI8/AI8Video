@@ -102,6 +102,10 @@
       position: relative;
       flex: 1 1 auto;
       min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      align-items: start;
+      align-content: start;
       gap: 9px;
       overflow-x: hidden;
       overflow-y: auto;
@@ -109,17 +113,16 @@
     }
 
     #hotRadarModal .hot-radar-topic-list.is-two-columns {
-      display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      align-items: start;
-      gap: 9px;
     }
 
     #hotRadarModal .hot-radar-topic-column {
       display: flex;
       flex-direction: column;
+      align-items: stretch;
       gap: 9px;
       min-width: 0;
+      min-height: min-content;
     }
 
     #hotRadarModal .hot-radar-topic-list.is-switching {
@@ -191,13 +194,13 @@
       #hotRadarModal .hot-radar-topic-list.is-two-columns {
         grid-template-columns: minmax(0, 1fr);
       }
-
-      #hotRadarModal .hot-radar-topic-column {
-        display: contents;
-      }
     }
 
     #hotRadarModal .hot-radar-topic-list .hot-radar-topic-card {
+      flex: 0 0 auto;
+      min-height: min-content;
+      align-content: start;
+      grid-template-rows: auto auto;
       border: 1px solid var(--hot-radar-line);
       border-radius: 11px;
       background: #fff;

@@ -25,6 +25,43 @@ from ai8video.generation.video_prompt_support import (
 )
 
 LLMCallable = Callable[[str], str]
+SMART_SPLIT_MAX_VIDEOS = 12
+
+
+def infer_smart_video_count_with_ai(
+    script: str,
+    *,
+    llm: LLMCallable,
+    duration_seconds: int,
+    trace_session_id: str | None = None,
+) -> int:
+    duration = max(1, int(duration_seconds))
+    model_script = prepare_script_for_model(script, SMART_SPLIT_MAX_VIDEOS)
+    prompt = f"""你是AI8video 的智能分集规划器。
+请通读素材，判断拆成多少条彼此独立、可单独发布的短视频最合理。
+不要按段落或标点机械切割；每条都必须有足够信息形成完整的开场、主体和收束。
+当前视频模型设置的单条成片时长为 {duration} 秒。数量判断必须服从这个实时容量，不能把明显无法在 {duration} 秒内完整表达的长内容压成一条。
+素材中若明确提出期望条数，应优先尊重；只有与单条时长或内容完整性明显冲突时才调整。
+数量范围为 1 到 {SMART_SPLIT_MAX_VIDEOS}。只返回严格 JSON：{{"video_count":整数,"reason":"一句话依据"}}。
+
+用户素材：
+{model_script}
+"""
+    raw = llm(prompt)
+    data = parse_json_object(raw)
+    count = int(data.get("video_count") or 0)
+    if count < 1 or count > SMART_SPLIT_MAX_VIDEOS:
+        raise ValueError("智能分集数量超出允许范围")
+    append_prompt_trace(
+        "smart_split_count_output",
+        session_id=trace_session_id,
+        payload={
+            "videoCount": count,
+            "durationSeconds": duration,
+            "reason": str(data.get("reason") or ""),
+        },
+    )
+    return count
 
 
 def build_video_planning_prompt(

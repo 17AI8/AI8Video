@@ -43,13 +43,6 @@
       line-height: 1.7;
     }
 
-    .viral-breakdown-footer {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 16px;
-    }
-
     .viral-breakdown-primary-button {
       width: auto;
       min-width: 172px;
@@ -71,46 +64,205 @@
 
     .viral-breakdown-toolbar {
       margin: 0 18px;
-      padding: 12px 16px;
+      padding: 12px 14px;
       display: grid;
       gap: 10px;
       flex-shrink: 0;
     }
 
-    .viral-breakdown-toolbar-row {
+    .viral-breakdown-toolbar-bar,
+    .viral-breakdown-toolbar-main {
       display: flex;
       flex-wrap: wrap;
       gap: 10px 12px;
       align-items: center;
+    }
+
+    .viral-breakdown-toolbar-bar {
       justify-content: space-between;
     }
 
+    .viral-breakdown-toolbar-meta {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .viral-breakdown-kicker {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .viral-breakdown-toolbar-files,
     .viral-breakdown-toolbar-actions {
-      display: flex;
+      display: inline-flex;
       flex-wrap: wrap;
       gap: 8px;
       align-items: center;
     }
 
-    .viral-breakdown-inline-field {
-      flex: 1 1 148px;
-      min-width: 148px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      color: var(--muted);
-      font-size: 13px;
-      font-weight: 600;
+    .viral-breakdown-toolbar-main {
+      justify-content: space-between;
+      padding-top: 2px;
     }
 
-    .viral-breakdown-inline-field .config-input {
+    .viral-breakdown-toolbar-fields {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      min-width: 0;
+      flex: 1 1 420px;
+    }
+
+    .viral-breakdown-field {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .viral-breakdown-field.is-video {
+      flex: 1 1 260px;
+      min-width: min(100%, 240px);
+    }
+
+    .viral-breakdown-field.is-compact {
+      flex: 0 1 auto;
+      grid-template-columns: auto auto auto;
+    }
+
+    .viral-breakdown-field em {
+      font-style: normal;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .viral-breakdown-field .config-input {
       min-width: 0;
       width: 100%;
-      border-radius: 8px;
+      border-radius: 10px;
       background: rgba(255, 255, 255, 0.92);
       border: 1px solid var(--line);
     }
 
+    .viral-breakdown-field.is-compact .config-input {
+      width: auto;
+      min-width: 64px;
+    }
+
+    .viral-breakdown-field.is-compact select.config-input {
+      min-width: 78px;
+    }
+
+    .viral-breakdown-select {
+      position: relative;
+      min-width: 0;
+      width: 100%;
+    }
+
+    .viral-breakdown-select-trigger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      width: 100%;
+      min-height: 34px;
+      padding: 0 12px;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .viral-breakdown-select-trigger > span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .viral-breakdown-select-trigger::after {
+      content: "";
+      flex: 0 0 auto;
+      width: 8px;
+      height: 8px;
+      margin-top: -3px;
+      border-right: 1.5px solid currentColor;
+      border-bottom: 1.5px solid currentColor;
+      transform: rotate(45deg);
+      opacity: 0.55;
+    }
+
+    .viral-breakdown-select.is-open .viral-breakdown-select-trigger::after {
+      margin-top: 3px;
+      transform: rotate(225deg);
+    }
+
+    .viral-breakdown-select-trigger:disabled {
+      cursor: not-allowed;
+      opacity: 0.62;
+    }
+
+    .viral-breakdown-select-list {
+      position: absolute;
+      z-index: 40;
+      top: calc(100% + 6px);
+      left: 0;
+      right: 0;
+      display: grid;
+      gap: 2px;
+      max-height: min(280px, 42vh);
+      padding: 6px;
+      overflow: auto;
+      border: 1px solid rgba(79, 109, 255, 0.16);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.98);
+      box-shadow: 0 16px 36px rgba(28, 40, 84, 0.16);
+    }
+
+    .viral-breakdown-select-list[hidden] {
+      display: none;
+    }
+
+    .viral-breakdown-select-option {
+      display: block;
+      width: 100%;
+      min-height: 34px;
+      padding: 7px 10px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: #1a2242;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 650;
+      text-align: left;
+      cursor: pointer;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .viral-breakdown-select-option:hover,
+    .viral-breakdown-select-option:focus-visible {
+      background: rgba(79, 109, 255, 0.1);
+      outline: none;
+    }
+
+    .viral-breakdown-select-option.is-active {
+      background: rgba(79, 109, 255, 0.14);
+      color: #3550d4;
+    }
+
+    .viral-breakdown-run-button,
     .viral-breakdown-toolbar .button-secondary,
     .viral-breakdown-toolbar .material-library-button {
       width: auto;
@@ -128,19 +280,18 @@
     }
 
     .viral-breakdown-status {
-      display: inline-flex;
+      display: flex;
       align-items: center;
-      min-height: 28px;
+      gap: 10px;
+      min-height: 0;
       max-width: 100%;
-      padding: 0 10px;
-      border-radius: 999px;
-      background: rgba(24, 160, 88, 0.1);
-      color: #0b7a43;
+      margin: 0;
+      padding: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--muted);
       font-size: 12px;
-      font-weight: 800;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      font-weight: 600;
     }
 
     .viral-breakdown-status:empty {
@@ -148,8 +299,41 @@
     }
 
     .viral-breakdown-status.is-error {
-      background: rgba(210, 38, 38, 0.1);
+      background: transparent;
       color: #b42318;
+    }
+
+    .viral-breakdown-status-message {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .viral-breakdown-retry-button {
+      flex: 0 0 auto;
+      min-height: 28px;
+      padding: 0 10px;
+      border: 1px solid rgba(180, 35, 24, 0.28);
+      border-radius: 999px;
+      background: rgba(180, 35, 24, 0.06);
+      color: #b42318;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 750;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .viral-breakdown-retry-button:hover {
+      background: rgba(180, 35, 24, 0.12);
+    }
+
+    .viral-breakdown-status:not(.is-error) .viral-breakdown-retry-button {
+      border-color: rgba(73, 100, 220, 0.28);
+      background: rgba(73, 100, 220, 0.08);
+      color: #4964dc;
     }
 
     .viral-breakdown-workspace-layout {
@@ -166,31 +350,76 @@
     .viral-breakdown-detail-column {
       min-height: 0;
       display: grid;
-      gap: 0;
-    }
-
-    .viral-breakdown-preview-column {
-      grid-template-rows: minmax(0, 1fr);
-    }
-
-    .viral-breakdown-detail-column {
       grid-template-rows: auto minmax(0, 1fr);
+      gap: 0;
       overflow: hidden;
       border: 1px solid rgba(79, 109, 255, 0.14);
       border-radius: 18px;
       background: rgba(255, 255, 255, 0.66);
     }
 
+    .viral-breakdown-detail-column {
+      grid-template-rows: auto auto minmax(0, 1fr);
+    }
+
+    .viral-breakdown-info-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      column-gap: 28px;
+      row-gap: 14px;
+      margin: 0;
+      padding: 6px 4px 10px;
+      align-content: start;
+    }
+
+    .viral-breakdown-info-row {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      align-items: flex-start;
+      min-width: 0;
+      padding: 0;
+      border: 0;
+    }
+
+    @media (max-width: 420px) {
+      .viral-breakdown-info-list {
+        grid-template-columns: minmax(0, 1fr);
+        column-gap: 0;
+        row-gap: 12px;
+      }
+    }
+
+    .viral-breakdown-info-row dt {
+      margin: 0;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      line-height: 1.3;
+    }
+
+    .viral-breakdown-info-row dd {
+      margin: 0;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.35;
+      font-variant-numeric: tabular-nums;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
     .viral-breakdown-tabs {
       display: flex;
-      gap: 4px;
-      padding: 0 10px;
-      border-bottom: 1px solid rgba(79, 109, 255, 0.12);
+      gap: 2px;
+      padding: 8px 10px 0;
+      border-bottom: 1px solid rgba(79, 109, 255, 0.1);
       overflow-x: auto;
     }
 
     button.viral-breakdown-tab {
-      min-height: 38px;
+      min-height: 36px;
       padding: 0 12px;
       border: 0;
       border-bottom: 2px solid transparent;
@@ -215,6 +444,110 @@
       border-bottom-color: #4964dc;
     }
 
+    .viral-breakdown-script-drawer {
+      display: grid;
+      grid-template-rows: 0fr;
+      opacity: 0;
+      pointer-events: none;
+      background: transparent;
+      border-bottom: 1px solid transparent;
+      transition:
+        grid-template-rows 280ms ease,
+        opacity 220ms ease,
+        border-bottom-color 220ms ease;
+    }
+
+    .viral-breakdown-script-drawer.is-open {
+      grid-template-rows: 1fr;
+      opacity: 1;
+      pointer-events: auto;
+      border-bottom-color: rgba(79, 109, 255, 0.1);
+    }
+
+    .viral-breakdown-detail-column:has(.viral-breakdown-script-drawer.is-open) .viral-breakdown-tabs {
+      border-bottom-color: transparent;
+    }
+
+    .viral-breakdown-script-drawer-slot {
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .viral-breakdown-script-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-width: 0;
+      padding: 6px 10px 8px;
+      box-sizing: border-box;
+    }
+
+    .viral-breakdown-script-toolbar-end {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      min-width: 0;
+      margin-left: auto;
+      flex: 0 1 auto;
+    }
+
+    .viral-breakdown-script-toolbar-end .material-meta {
+      flex: 0 1 auto;
+      min-width: 0;
+      text-align: right;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .viral-breakdown-subtabs {
+      display: inline-flex;
+      width: max-content;
+      max-width: min(100%, 320px);
+      gap: 2px;
+      margin: 0;
+      padding: 3px;
+      border: 1px solid rgba(79, 109, 255, 0.14);
+      border-radius: 10px;
+      background: rgba(79, 109, 255, 0.07);
+      box-sizing: border-box;
+      overflow-x: auto;
+      flex: 0 0 auto;
+    }
+
+    button.viral-breakdown-subtab {
+      min-height: 26px;
+      padding: 0 11px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 650;
+      line-height: 1;
+      box-shadow: none;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+
+    button.viral-breakdown-subtab:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.45);
+    }
+
+    button.viral-breakdown-subtab.is-active {
+      color: #2f49b8;
+      background: rgba(255, 255, 255, 0.96);
+      font-weight: 750;
+      box-shadow: 0 1px 2px rgba(20, 27, 58, 0.08);
+    }
+
     .viral-breakdown-panels {
       min-height: 0;
       overflow: hidden;
@@ -232,10 +565,32 @@
       display: block;
     }
 
+    .viral-breakdown-script-tree {
+      display: grid;
+      gap: 0;
+      min-height: 0;
+      flex: 1 1 auto;
+    }
+
+    .viral-breakdown-script-tree .script-knowledge-tree-head {
+      display: none;
+    }
+
+    .viral-breakdown-script-tree .script-knowledge-tree {
+      max-height: none;
+      overflow: visible;
+      padding-right: 2px;
+    }
+
     .viral-breakdown-script-guess-editor {
       flex: 1;
-      min-height: 220px;
+      min-height: 180px;
       resize: vertical;
+    }
+
+    #viralBreakdownInfoPane {
+      overflow: auto;
+      background: rgba(255, 255, 255, 0.92);
     }
 
     .viral-breakdown-text-output.viral-breakdown-text-editor {
@@ -302,6 +657,15 @@
     .viral-breakdown-pane.area-generated .viral-breakdown-pane-body {
       flex: 1 1 auto;
       min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .viral-breakdown-script-guess-card .viral-breakdown-pane-body {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow: auto;
     }
 
     .viral-breakdown-pane {
@@ -315,6 +679,195 @@
 
     .viral-breakdown-pane.area-generated .viral-breakdown-empty {
       min-height: 96px;
+      color: var(--viral-muted, #536084);
+    }
+
+    #viralBreakdownModal .viral-breakdown-generate-ready {
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: 24px 18px;
+      text-align: center;
+      animation: viralGenerateReadyIn 420ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    #viralBreakdownModal .viral-breakdown-generate-ready p {
+      margin: 0;
+      max-width: 28em;
+      color: var(--viral-muted, #536084);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    #viralBreakdownModal .viral-breakdown-generate-ready.is-result video {
+      width: min(100%, 420px);
+      max-height: 260px;
+      border-radius: 16px;
+      background: #0b1020;
+    }
+
+    #viralBreakdownModal .viral-breakdown-start-bubble {
+      appearance: none;
+      border: 0;
+      min-width: 148px;
+      min-height: 52px;
+      padding: 14px 28px;
+      border-radius: 999px;
+      cursor: pointer;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 650;
+      letter-spacing: 0.02em;
+      background: linear-gradient(135deg, #4f6dff 0%, #6d72ff 52%, #8b5cf6 100%);
+      box-shadow:
+        0 16px 36px rgba(79, 109, 255, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.35);
+      transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
+      animation: viralStartBubblePulse 2.4s ease-in-out infinite;
+    }
+
+    #viralBreakdownModal .viral-breakdown-start-bubble:hover {
+      transform: translateY(-2px) scale(1.02);
+      box-shadow: 0 20px 42px rgba(79, 109, 255, 0.34);
+      filter: brightness(1.04);
+    }
+
+    #viralBreakdownModal .viral-breakdown-start-bubble:active {
+      transform: translateY(0) scale(0.98);
+    }
+
+    #viralBreakdownModal .viral-breakdown-ghost-button {
+      appearance: none;
+      border: 1px solid rgba(79, 109, 255, 0.22);
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--viral-brand, #4f6dff);
+      border-radius: 999px;
+      min-height: 36px;
+      padding: 0 14px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    #viralBreakdownModal .viral-breakdown-chat {
+      min-height: 0;
+      flex: 1 1 auto;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 8px 4px 4px;
+      animation: viralChatEnter 420ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    #viralBreakdownModal .viral-breakdown-chat-messages {
+      min-height: 0;
+      flex: 1 1 auto;
+      overflow: auto;
+      display: grid;
+      gap: 14px;
+      padding: 4px 8px 8px;
+      max-width: none;
+      margin: 0;
+    }
+
+    #viralBreakdownModal .viral-breakdown-chat-message {
+      opacity: 0;
+      transform: translateY(10px);
+      animation: viralChatMessageIn 360ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      animation-delay: calc(min(var(--viral-chat-i, 0), 8) * 35ms);
+    }
+
+    #viralBreakdownModal .viral-breakdown-chat-message .avatar {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 650;
+      color: #fff;
+      background: linear-gradient(135deg, #4f6dff, #8b5cf6);
+    }
+
+    #viralBreakdownModal .viral-breakdown-chat-message.user .avatar {
+      background: linear-gradient(135deg, #202b20, #495848);
+    }
+
+    #viralBreakdownModal .viral-breakdown-chat-message .bubble {
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid rgba(79, 109, 255, 0.12);
+      box-shadow: 0 8px 22px rgba(31, 42, 68, 0.06);
+      font-size: 13px;
+      line-height: 1.65;
+      color: var(--viral-text, #1f2a44);
+      width: auto;
+      max-width: min(100%, 520px);
+      margin-top: 0;
+    }
+
+    #viralBreakdownModal .viral-breakdown-chat-message.user .bubble {
+      background: linear-gradient(135deg, #4f6dff 0%, #6d72ff 52%, #8b5cf6 100%);
+      color: #fff;
+      border-color: rgba(255, 255, 255, 0.28);
+    }
+
+    #viralBreakdownModal .viral-breakdown-chat-message .bubble > p {
+      margin: 0;
+      white-space: pre-wrap;
+    }
+
+    #viralBreakdownModal .viral-breakdown-chat-message .bubble video {
+      display: block;
+      width: 100%;
+      max-height: 220px;
+      margin-top: 10px;
+      border-radius: 12px;
+      background: #0b1020;
+    }
+
+    #viralBreakdownModal .viral-breakdown-chat-message.tone-warn .bubble {
+      border-color: rgba(180, 120, 24, 0.28);
+      color: #8a5a00;
+    }
+
+    #viralBreakdownModal .viral-breakdown-chat-message.tone-error .bubble {
+      border-color: rgba(180, 35, 24, 0.24);
+      color: #b42318;
+    }
+
+    #viralBreakdownModal .viral-breakdown-chat-message.tone-ok .bubble {
+      border-color: rgba(24, 140, 90, 0.24);
+    }
+
+    #viralBreakdownModal .viral-breakdown-chat-footer {
+      display: flex;
+      justify-content: flex-end;
+      padding: 0 8px 4px;
+    }
+
+    @keyframes viralGenerateReadyIn {
+      from { opacity: 0; transform: translateY(8px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @keyframes viralStartBubblePulse {
+      0%, 100% { box-shadow: 0 16px 36px rgba(79, 109, 255, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.35); }
+      50% { box-shadow: 0 18px 42px rgba(79, 109, 255, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.4); }
+    }
+
+    @keyframes viralChatEnter {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes viralChatMessageIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     @media (max-width: 980px) {
@@ -333,7 +886,7 @@
         grid-template-rows: minmax(220px, 0.7fr) minmax(280px, 1.3fr);
       }
 
-      .viral-breakdown-inline-field {
+      .viral-breakdown-field {
         flex-basis: 100%;
       }
     }
@@ -361,13 +914,13 @@
         overflow: visible;
       }
 
-      .viral-breakdown-toolbar .material-actions,
+      .viral-breakdown-toolbar-files,
       .viral-breakdown-toolbar-actions {
         width: 100%;
       }
 
       .viral-breakdown-toolbar .button-secondary,
-      .viral-breakdown-toolbar .material-library-button {
+      .viral-breakdown-toolbar .viral-breakdown-run-button {
         flex: 1 1 0;
       }
     }

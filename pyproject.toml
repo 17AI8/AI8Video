@@ -19,6 +19,7 @@ ai8video = [
     "pillow>=9.0",
     "boto3>=1.34",
     "sherpa-onnx>=1.13",
+    "faster-whisper>=1.2,<2",
 ]
 
 [build-system]

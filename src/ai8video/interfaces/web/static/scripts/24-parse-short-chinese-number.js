@@ -123,6 +123,7 @@
       if (awaiting === 'content_completion') return '等待补充台词 / 文案';
       if (awaiting === 'core_keywords') return '等待确认核心主题';
       if (awaiting === 'concurrent_generation') return '等待选择生成模式';
+      if (awaiting === 'smart_split_confirmation') return '等待确认智能分集';
       if (awaiting === 'batch_seed_messages') return '等待补充批量候选';
       return '信息已齐';
     }

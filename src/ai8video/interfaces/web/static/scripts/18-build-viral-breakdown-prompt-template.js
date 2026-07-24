@@ -66,7 +66,7 @@
       const trackLabel = String(values.track || '').trim() || '待定赛道';
       const reuseDirectionLabel = String(values.reuseDirection || '').trim() || '待补充复用方向';
       if (stageTitle) {
-        stageTitle.textContent = `${trackLabel} 微短剧观影台`;
+        stageTitle.textContent = `${trackLabel} 爆款拆解工作台`;
       }
       if (stageMeta) {
         const videoLinkLabel = String(values.videoLink || '').trim() || '待补充视频链接 / 文件';
@@ -114,8 +114,10 @@
       if (!items.length) {
         return `<div class="viral-breakdown-empty">${hotRadar.loading ? '正在拉取热榜...' : '暂无热点，尝试刷新热榜。'}</div>`;
       }
+      // 单双列都包进 column：卡片作 grid 直子项时 overflow:hidden 会把标题行压成 0 高。
       if (!twoColumns) {
-        return items.map((item) => buildHotRadarTopicCardMarkup(item, hotRadar)).join('');
+        const cards = items.map((item) => buildHotRadarTopicCardMarkup(item, hotRadar)).join('');
+        return `<div class="hot-radar-topic-column" data-hot-radar-column="0">${cards}</div>`;
       }
       const left = items.filter((_, index) => index % 2 === 0)
         .map((item) => buildHotRadarTopicCardMarkup(item, hotRadar)).join('');
@@ -305,7 +307,8 @@
         ) {
           hotRadar.expandedTopicId = '';
         }
-        const twoColumns = Number(hotRadar.columnCount) === 2;
+        const preferTwoColumns = Number(hotRadar.columnCount) === 2;
+        const twoColumns = preferTwoColumns && window.matchMedia('(min-width: 901px)').matches;
         topicList.classList.toggle('is-two-columns', twoColumns);
         topicList.classList.toggle('is-switching', !!hotRadar.loading);
         topicList.setAttribute('aria-busy', hotRadar.loading ? 'true' : 'false');
@@ -465,6 +468,7 @@
     }
 
     function closeViralBreakdownModal() {
+      closeViralBreakdownVideoMenu();
       document.getElementById('viralBreakdownModal')?.classList.add('hidden');
     }
 
@@ -520,16 +524,15 @@
       state.viralBreakdown.sizeLabel = String(data?.sizeLabel || humanizeByteSize(data?.sizeBytes || 0));
       state.viralBreakdown.archiveDisplay = String(data?.archiveDisplay || `${state.viralBreakdown.itemCount} 个视频 · ${state.viralBreakdown.sizeLabel}`);
       state.viralBreakdown.items = Array.isArray(data?.items) ? data.items : [];
+      hydrateViralBreakdownScriptDraftsFromItems(state.viralBreakdown.items);
       const hasSelectedVideoAfterRefresh = state.viralBreakdown.items.some((item) => String(item?.videoKey || '') === selectedVideoKeyBeforeRefresh);
       state.viralBreakdown.selectedVideoKey = hasSelectedVideoAfterRefresh
         ? selectedVideoKeyBeforeRefresh
         : String(state.viralBreakdown.items[0]?.videoKey || '');
       state.viralBreakdown.loading = false;
       if (!state.viralBreakdown.error) {
-        state.viralBreakdown.notice = state.viralBreakdown.items.length
-          ? `当前归档：${state.viralBreakdown.archiveDisplay}`
-          : '还没有上传视频。先上传一个视频，再进行抽帧和台词识别。';
+        state.viralBreakdown.notice = '';
       }
+      syncViralBreakdownScriptResumeAvailability();
       renderViralBreakdownWorkbench();
     }
-

@@ -329,21 +329,35 @@
       });
     }
 
-    async function saveGenerationMode(concurrentGeneration) {
-      const previous = !!state.generationMode?.concurrentGeneration;
+    async function saveGenerationMode(patch) {
+      const previous = { ...(state.generationMode || {}) };
+      const changes = typeof patch === 'boolean' ? { concurrentGeneration: patch } : (patch || {});
+      const nextMode = {
+        concurrentGeneration: !!(changes.concurrentGeneration ?? previous.concurrentGeneration),
+        smartSplit: !!(changes.smartSplit ?? previous.smartSplit),
+        confirmSmartSplit: !!(changes.confirmSmartSplit ?? previous.confirmSmartSplit),
+        tailFrameChaining: !!(changes.tailFrameChaining ?? previous.tailFrameChaining),
+      };
+      if (!nextMode.smartSplit) {
+        nextMode.confirmSmartSplit = false;
+        nextMode.tailFrameChaining = false;
+      }
+      if (nextMode.tailFrameChaining) nextMode.concurrentGeneration = false;
       state.generationMode = {
         ...(state.generationMode || {}),
-        concurrentGeneration: !!concurrentGeneration,
+        ...nextMode,
         saving: true,
         error: '',
       };
       renderGenerationModeButton();
       renderGenerationModeDrawer();
+      renderSmartSplitButton();
+      renderSmartSplitDrawer();
       try {
         const res = await fetch('/api/generation-mode', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ concurrentGeneration: !!concurrentGeneration }),
+          body: JSON.stringify(nextMode),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.ok) {
@@ -352,19 +366,24 @@
         state.generationMode = {
           ...(state.generationMode || {}),
           concurrentGeneration: !!data.concurrentGeneration,
+          smartSplit: !!data.smartSplit,
+          confirmSmartSplit: !!data.confirmSmartSplit,
+          tailFrameChaining: !!data.tailFrameChaining,
           saving: false,
           error: '',
         };
       } catch (error) {
         state.generationMode = {
           ...(state.generationMode || {}),
-          concurrentGeneration: previous,
+          ...previous,
           saving: false,
           error: error?.message || String(error),
         };
       } finally {
         renderGenerationModeButton();
         renderGenerationModeDrawer();
+        renderSmartSplitButton();
+        renderSmartSplitDrawer();
       }
     }
 
@@ -479,4 +498,3 @@
       };
       renderFlowerTextDrawer();
     }
-

@@ -351,17 +351,63 @@
       }
     });
 
-    document.getElementById('viralBreakdownVideoSelect')?.addEventListener('change', (event) => {
-      state.viralBreakdown.selectedVideoKey = String(event.target?.value || '');
-      state.viralBreakdown.activeTab = 'grid';
-      state.viralBreakdown.error = '';
-      if (!state.viralBreakdown.loading) {
-        state.viralBreakdown.notice = state.viralBreakdown.selectedVideoKey ? '已切换当前视频。' : state.viralBreakdown.notice;
+    document.getElementById('viralBreakdownModal')?.addEventListener('click', async (event) => {
+      const videoOption = event.target.closest('[data-viral-video-key]');
+      if (videoOption) {
+        event.preventDefault();
+        selectViralBreakdownVideo(videoOption.getAttribute('data-viral-video-key') || '');
+        return;
       }
-      renderViralBreakdownWorkbench();
-    });
-
-    document.getElementById('viralBreakdownModal')?.addEventListener('click', (event) => {
+      const videoTrigger = event.target.closest('#viralBreakdownVideoSelectButton');
+      if (videoTrigger) {
+        event.preventDefault();
+        const root = document.querySelector('[data-viral-select="video"]');
+        const list = document.getElementById('viralBreakdownVideoSelectList');
+        const willOpen = !root?.classList.contains('is-open');
+        closeViralBreakdownVideoMenu();
+        if (willOpen && root && list && !videoTrigger.disabled) {
+          root.classList.add('is-open');
+          videoTrigger.setAttribute('aria-expanded', 'true');
+          list.hidden = false;
+        }
+        return;
+      }
+      if (!event.target.closest('[data-viral-select="video"]')) {
+        closeViralBreakdownVideoMenu();
+      }
+      const treeToggle = event.target.closest('#viralBreakdownModal [data-script-knowledge-tree-toggle]');
+      if (treeToggle) {
+        event.preventDefault();
+        toggleViralBreakdownScriptTreeNode(treeToggle);
+        return;
+      }
+      const saveTreeButton = event.target.closest('#viralBreakdownSaveScriptTreeButton');
+      if (saveTreeButton) {
+        event.preventDefault();
+        const currentItem = getSelectedViralBreakdownItem();
+        if (!currentItem?.videoKey) return;
+        try {
+          await saveViralBreakdownScriptTreeDraft(currentItem.videoKey);
+        } catch (error) {
+          console.error(error);
+          state.viralBreakdown.error = error?.message || String(error);
+          renderViralBreakdownWorkbench();
+        }
+        return;
+      }
+      const previewTabTrigger = event.target.closest('[data-viral-breakdown-preview-tab]');
+      if (previewTabTrigger) {
+        event.preventDefault();
+        activateViralBreakdownPreviewTab(previewTabTrigger.getAttribute('data-viral-breakdown-preview-tab'));
+        return;
+      }
+      const scriptSubTabTrigger = event.target.closest('[data-viral-breakdown-script-tab]');
+      if (scriptSubTabTrigger) {
+        event.preventDefault();
+        activateViralBreakdownScriptSubTab(scriptSubTabTrigger.getAttribute('data-viral-breakdown-script-tab'));
+        renderViralBreakdownWorkbench();
+        return;
+      }
       const tabTrigger = event.target.closest('[data-viral-breakdown-tab]');
       if (!tabTrigger) return;
       event.preventDefault();
@@ -401,7 +447,22 @@
 
     document.getElementById('viralBreakdownGuessScriptButton')?.addEventListener('click', async () => {
       try {
-        await guessSelectedViralBreakdownScript();
+        await guessSelectedViralBreakdownScript({ resumeFrom: 'full' });
+      } catch (error) {
+        console.error(error);
+        if (!state.viralBreakdown.error) {
+          state.viralBreakdown.error = friendlyViralBreakdownScriptError(error, 'skeleton');
+        }
+        renderViralBreakdownWorkbench();
+      }
+    });
+
+    document.getElementById('viralBreakdownGeneratedPane')?.addEventListener('click', async (event) => {
+      const trigger = event.target.closest('[data-viral-breakdown-start-generate]');
+      if (!trigger) return;
+      event.preventDefault();
+      try {
+        await startViralBreakdownGeneration();
       } catch (error) {
         console.error(error);
         state.viralBreakdown.error = error?.message || String(error);
@@ -410,10 +471,6 @@
     });
 
     document.getElementById('viralBreakdownCloseButton')?.addEventListener('click', () => {
-      closeViralBreakdownModal();
-    });
-
-    document.getElementById('viralBreakdownCancelButton')?.addEventListener('click', () => {
       closeViralBreakdownModal();
     });
 
@@ -517,4 +574,3 @@
         renderHotRadarWorkbench();
       }
     });
-

@@ -9,10 +9,15 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from ai8video.batch.specialist_agent_observer import (
-    observe_planner_shadow,
+    record_planner_execution,
     observe_reviewer_shadow,
 )
-from ai8video.generation.video_prompt_planner import LLMCallable, single_prompt_to_video, plan_video_prompts_with_ai
+from ai8video.generation.video_prompt_planner import (
+    LLMCallable,
+    infer_smart_video_count_with_ai,
+    plan_video_prompts_with_ai,
+    single_prompt_to_video,
+)
 from ai8video.generation.business_prompt import (
     _apply_custom_safety_guard,
     _custom_safety_requires_no_person,
@@ -39,6 +44,10 @@ from ai8video.generation.generation_progress import (
 from ai8video.core.models import ArchivedAsset, VideoPrompt, FirstFrameAsset, GenerationOutcome, ParsedRequest, PipelineResult, QuickVideoJob
 from ai8video.generation.pipeline import AI8VideoPipeline
 from ai8video.generation.prompt_trace import append_prompt_trace
+from ai8video.generation.tail_frame_chaining import (
+    append_tail_frame_chain_prompt,
+    build_next_tail_frame_request,
+)
 from ai8video.media.local_tts import extract_dialogue_text, prepare_narration_text
 from ai8video.media.narration_review import narration_review_status, review_narration_text
 from ai8video.assets.user_files import USER_FILE_ROOT
@@ -78,17 +87,52 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         self.segment_count = max(2, int(segment_count or 2))
 
     def run_request(self, request: ParsedRequest, *, progress_session_id: str | None = None) -> PipelineResult:
+        videos = self.plan_request(
+            request,
+            progress_session_id=progress_session_id,
+        )
+        return self.run_planned_request(request, videos, progress_session_id=progress_session_id)
+
+    def plan_request(
+        self,
+        request: ParsedRequest,
+        *,
+        progress_session_id: str | None = None,
+        smart_split: bool = False,
+    ) -> list[VideoPrompt]:
+        _, videos, _ = self.plan_merged_request(
+            request,
+            progress_session_id=progress_session_id,
+            smart_split=smart_split,
+        )
+        return videos
+
+    def plan_merged_request(
+        self,
+        request: ParsedRequest,
+        *,
+        progress_session_id: str | None = None,
+        smart_split: bool = False,
+    ) -> tuple[ParsedRequest, list[VideoPrompt], int]:
         segment_duration = self._segment_duration_seconds(request)
         final_request = replace(request, duration_seconds=segment_duration * self.segment_count)
         planning_text = self._planning_text(request.raw_text, segment_duration, segment_count=self.segment_count)
         allow_mock_planning = self.config.dry_run
         task_constraints = self._merged_task_constraints(final_request, segment_duration)
-        if final_request.mode == "batch_videos":
-            if not final_request.video_count:
-                raise ValueError("video_count is required for batch_videos mode")
+        video_count = final_request.video_count
+        if smart_split:
+            video_count = infer_smart_video_count_with_ai(
+                planning_text,
+                llm=self.llm,
+                duration_seconds=final_request.duration_seconds,
+                trace_session_id=progress_session_id,
+            )
+        if smart_split or final_request.mode == "batch_videos":
+            if not video_count:
+                raise ValueError("video_count is required for video planning")
             videos = plan_video_prompts_with_ai(
                 planning_text,
-                final_request.video_count,
+                video_count,
                 final_request.style_hint,
                 final_request.core_keywords,
                 task_constraints=task_constraints,
@@ -99,12 +143,23 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             )
         else:
             videos = single_prompt_to_video(planning_text, final_request.style_hint, final_request.core_keywords)
-        observe_planner_shadow(
+        record_planner_execution(
             videos,
             session_id=progress_session_id,
             source_stage="merged_planning_output",
             merge_mode=self._merge_mode,
         )
+        return final_request, videos, segment_duration
+
+    def run_planned_request(
+        self,
+        request: ParsedRequest,
+        videos: list[VideoPrompt],
+        *,
+        progress_session_id: str | None = None,
+    ) -> PipelineResult:
+        segment_duration = self._segment_duration_seconds(request)
+        final_request = replace(request, duration_seconds=segment_duration * self.segment_count)
         return self._run_final_videos(
             final_request,
             videos,
@@ -130,7 +185,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         start_generation_progress(
             progress_session_id,
             videos,
-            concurrent=bool(request.concurrent_generation and len(videos) > 1),
+            concurrent=bool(request.concurrent_generation and not request.tail_frame_chaining and len(videos) > 1),
         )
 
         final_videos = finalize_video_prompts(
@@ -140,6 +195,8 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             task_constraints=task_constraints,
         )
         ordered_videos = sorted(final_videos, key=lambda item: item.index)
+        if request.tail_frame_chaining:
+            ordered_videos = [append_tail_frame_chain_prompt(video) for video in ordered_videos]
         observe_reviewer_shadow(
             ordered_videos,
             session_id=progress_session_id,
@@ -149,7 +206,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         for video in ordered_videos:
             self._trace_merged_final_video_prompt(request, video, progress_session_id, segment_duration_seconds)
 
-        if request.concurrent_generation and len(ordered_videos) > 1:
+        if request.concurrent_generation and not request.tail_frame_chaining and len(ordered_videos) > 1:
             results = self._run_groups_concurrently(
                 request,
                 ordered_videos,
@@ -157,15 +214,24 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                 progress_session_id=progress_session_id,
             )
         else:
-            results = [
-                self._run_one_final_video(
-                    request,
-                    video,
-                    segment_duration_seconds=segment_duration_seconds,
-                    progress_session_id=progress_session_id,
-                )
-                for video in ordered_videos
-            ]
+            results = []
+            active_request = request
+            with tempfile.TemporaryDirectory(prefix="ai8video-tail-chain-") as tail_dir:
+                for position, video in enumerate(ordered_videos):
+                    result = self._run_one_final_video(
+                        active_request,
+                        video,
+                        segment_duration_seconds=segment_duration_seconds,
+                        progress_session_id=progress_session_id,
+                    )
+                    results.append(result)
+                    if request.tail_frame_chaining and position < len(ordered_videos) - 1:
+                        active_request = build_next_tail_frame_request(
+                            active_request,
+                            result[0],
+                            result[2],
+                            Path(tail_dir) / f"video-{video.index}-tail.png",
+                        )
 
         jobs = [item[0] for item in results]
         outcomes = [item[1] for item in results]
@@ -712,9 +778,8 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             },
         )
 
-    @staticmethod
-    def _segment_duration_seconds(request: ParsedRequest) -> int:
-        return max(1, int(request.duration_seconds or 10))
+    def _segment_duration_seconds(self, request: ParsedRequest) -> int:
+        return self._effective_video_duration_seconds(request.duration_seconds)
 
     def _merged_task_constraints(self, request: ParsedRequest, segment_duration_seconds: int) -> str:
         return _join_constraint_blocks(

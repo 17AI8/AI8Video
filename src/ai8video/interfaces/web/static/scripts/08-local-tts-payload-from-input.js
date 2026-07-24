@@ -250,6 +250,8 @@
       renderFlowerTextDrawer();
       renderGenerationModeButton();
       renderGenerationModeDrawer();
+      renderSmartSplitButton();
+      renderSmartSplitDrawer();
       renderHtmlMotionOverlayButton();
       renderHtmlMotionOverlayDrawer();
       renderMessages();

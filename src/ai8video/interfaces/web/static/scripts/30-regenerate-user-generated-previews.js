@@ -438,7 +438,7 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.ok) {
-          throw new Error(data.error || '剧本参考切换失败');
+          throw new Error(data.error || '知识库参考切换失败');
         }
         state.scriptReference = {
           ...data,
@@ -469,7 +469,7 @@
         const res = await fetch('/api/default-script-reference/clear', { method: 'POST' });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.ok) {
-          throw new Error(data.error || '剧本参考取消失败');
+          throw new Error(data.error || '知识库参考取消失败');
         }
         state.scriptReference = {
           ...data,
@@ -494,4 +494,3 @@
         state.flowerText.autoSaveTimer = null;
       }
     }
-

@@ -10,6 +10,7 @@ from ai8video.generation.video_prompt_planner import (
     build_rewrite_prompt,
     build_video_planning_prompt,
     extract_script_keywords_with_ai,
+    infer_smart_video_count_with_ai,
     rewrite_video_with_ai,
     single_prompt_to_video,
     plan_video_prompts_with_ai,
@@ -36,6 +37,23 @@ class AI8VideoVideoPromptPlannerTest(unittest.TestCase):
         self.assertIn("不得把批量视频自动理解为连续故事或章节", prompt)
         self.assertIn("受众、痛点、场景、人物视角、开场方式、证据或行动引导", prompt)
         self.assertNotIn("强痛点/冲突开场 -> 解决方案/结果收束", prompt)
+
+    def test_smart_split_count_uses_realtime_video_duration(self) -> None:
+        prompts: list[str] = []
+
+        def fake_llm(prompt: str) -> str:
+            prompts.append(prompt)
+            return '{"video_count":6,"reason":"每条时长较短"}'
+
+        count = infer_smart_video_count_with_ai(
+            "完整长素材，明确计划拆成六条发布。",
+            llm=fake_llm,
+            duration_seconds=15,
+        )
+
+        self.assertEqual(count, 6)
+        self.assertIn("单条成片时长为 15 秒", prompts[0])
+        self.assertIn("不能把明显无法在 15 秒内完整表达的长内容压成一条", prompts[0])
 
     def test_planning_prompt_requires_whole_source_coverage(self) -> None:
         prompt = build_video_planning_prompt("脚本1 开头\n脚本10 后段", 10, "商务真实感")

@@ -120,6 +120,24 @@
   background: rgba(224, 233, 255, 0.92);
 }
 
+.script-reference-knowledge-card.is-temporary {
+  cursor: default;
+  border-color: rgba(139, 92, 246, 0.38);
+  background: linear-gradient(135deg, rgba(237, 233, 254, 0.96), rgba(224, 233, 255, 0.94));
+}
+
+.script-reference-knowledge-card.is-temporary:hover {
+  border-color: rgba(139, 92, 246, 0.38);
+  background: linear-gradient(135deg, rgba(237, 233, 254, 0.96), rgba(224, 233, 255, 0.94));
+}
+
+.material-selected-badge.script-reference-temporary-badge {
+  margin-left: 6px;
+  color: #6d28d9;
+  border-color: rgba(109, 40, 217, 0.24);
+  background: rgba(139, 92, 246, 0.12);
+}
+
 .script-knowledge-list-title,
 .script-knowledge-detail-title {
   font-weight: 900;
@@ -302,31 +320,280 @@
   word-break: break-word;
 }
 
-.script-knowledge-section-list {
-  display: grid;
-  gap: 8px;
-}
-
-.script-knowledge-section {
-  padding: 11px 12px;
-  border-left: 3px solid rgba(79, 109, 255, 0.34);
-  border-radius: 0 8px 8px 0;
-  background: rgba(238, 243, 255, 0.68);
-}
-
-.script-knowledge-section strong {
-  display: block;
-  margin-bottom: 5px;
-  font-size: 13px;
-}
-
-.script-knowledge-section span {
+.script-knowledge-tree-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 6px;
+  padding: 0 4px 8px;
+  border-bottom: 1px solid rgba(37, 54, 94, 0.08);
   color: var(--muted);
   font-size: 12px;
-  line-height: 1.65;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
+
+.script-knowledge-tree-head strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.script-knowledge-tree {
+  --tree-chevron: 14px;
+  --tree-chevron-ink: 5px;
+  --tree-pad-x: 0px;
+  --tree-pad-right: 8px;
+  --tree-gap: 6px;
+  /* 折叠图标中心；summary 无左内边距 */
+  --tree-spine: calc(var(--tree-chevron) / 2);
+  /* 恢复原先横折行程，不再用过短的 16px */
+  --tree-indent: 24px;
+  /* 略大于 1px，避免开合为 v 时与横折连体 */
+  --tree-icon-gap: 3px;
+  --tree-line: rgba(55, 72, 120, 0.32);
+  --tree-row: 32px;
+  --tree-drawer-ms: 300ms;
+  display: grid;
+  gap: 0;
+  padding: 2px 0 8px;
+}
+
+.script-knowledge-tree-node {
+  position: relative;
+  padding-left: var(--tree-indent);
+}
+
+.script-knowledge-tree-node[data-depth="0"] {
+  padding-left: 0;
+}
+
+.script-knowledge-tree-node::before {
+  content: '';
+  position: absolute;
+  left: var(--tree-spine);
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 1px;
+  background: var(--tree-line);
+  pointer-events: none;
+}
+
+.script-knowledge-tree-node[data-last="true"]::before {
+  bottom: auto;
+  height: calc(var(--tree-row) / 2);
+}
+
+.script-knowledge-tree-node::after {
+  content: '';
+  position: absolute;
+  left: var(--tree-spine);
+  top: calc(var(--tree-row) / 2);
+  z-index: 1;
+  /* > 字形在 14px 盒内居中，左缘有空档；横折要接到字形而不是热区左缘 */
+  width: calc(
+    var(--tree-indent)
+    - var(--tree-spine)
+    + (var(--tree-chevron) - var(--tree-chevron-ink)) / 2
+    - var(--tree-icon-gap)
+  );
+  height: 1px;
+  background: var(--tree-line);
+  pointer-events: none;
+}
+
+.script-knowledge-tree-node[data-depth="0"]::before,
+.script-knowledge-tree-node[data-depth="0"]::after {
+  content: none;
+}
+
+.script-knowledge-tree-children {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.script-knowledge-tree-branch,
+.script-knowledge-tree-leaf {
+  position: relative;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.script-knowledge-tree-drawer {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows var(--tree-drawer-ms) ease,
+    opacity 200ms ease;
+}
+
+.script-knowledge-tree-branch.is-open > .script-knowledge-tree-drawer,
+.script-knowledge-tree-leaf.is-open > .script-knowledge-tree-drawer {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.script-knowledge-tree-drawer-slot {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.script-knowledge-tree-summary,
+.script-knowledge-tree-leaf.is-empty {
+  display: grid;
+  grid-template-columns: var(--tree-chevron) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--tree-gap);
+  width: 100%;
+  height: var(--tree-row);
+  min-height: var(--tree-row);
+  margin: 0;
+  padding: 0 var(--tree-pad-right) 0 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+
+.script-knowledge-tree-summary:hover,
+.script-knowledge-tree-leaf.is-empty:hover {
+  background: rgba(55, 72, 120, 0.05);
+}
+
+.script-knowledge-tree-branch.is-open > .script-knowledge-tree-summary {
+  background: transparent;
+}
+
+.script-knowledge-tree-leaf.is-open > .script-knowledge-tree-summary {
+  background: rgba(55, 72, 120, 0.06);
+}
+
+.script-knowledge-tree-branch.is-open::before {
+  content: '';
+  position: absolute;
+  left: var(--tree-spine);
+  /* 父折叠图标底边 + 与横线相同的 icon-gap */
+  top: calc(var(--tree-row) / 2 + var(--tree-chevron) / 2 + var(--tree-icon-gap));
+  width: 1px;
+  height: calc(var(--tree-row) / 2 - var(--tree-chevron) / 2 - var(--tree-icon-gap));
+  background: var(--tree-line);
+  pointer-events: none;
+}
+
+.script-knowledge-tree-chevron {
+  position: relative;
+  width: var(--tree-chevron);
+  height: var(--tree-chevron);
+  border-radius: 3px;
+  background: transparent;
+  color: transparent;
+  transition: transform 0.16s ease;
+}
+
+.script-knowledge-tree-chevron::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 5px;
+  height: 5px;
+  margin: auto;
+  border-right: 1.5px solid #6a7696;
+  border-bottom: 1.5px solid #6a7696;
+  transform: rotate(-45deg);
+  transform-origin: center;
+}
+
+.script-knowledge-tree-branch.is-open > .script-knowledge-tree-summary .script-knowledge-tree-chevron,
+.script-knowledge-tree-leaf.is-open > .script-knowledge-tree-summary .script-knowledge-tree-chevron {
+  transform: rotate(90deg);
+}
+
+.script-knowledge-tree-summary strong,
+.script-knowledge-tree-leaf strong {
+  min-width: 0;
+  color: #2a3550;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.script-knowledge-tree-node[data-depth="0"] > .script-knowledge-tree-branch > .script-knowledge-tree-summary strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1f2a44;
+}
+
+.script-knowledge-tree-leaf strong {
+  font-weight: 500;
+}
+
+.script-knowledge-tree-meta {
+  color: #8a93a8;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.script-knowledge-tree-dot {
+  width: 5px;
+  height: 5px;
+  margin: 0 auto;
+  border-radius: 50%;
+  background: #9aa3b8;
+}
+
+.script-knowledge-tree-leaf-body {
+  /* 粗强调线与树脊柱同 X，正文缩进到标题列 */
+  margin: 0 4px 8px calc(var(--tree-spine) - var(--tree-indent));
+  padding: 6px 0 8px calc(var(--tree-indent) - var(--tree-spine) + var(--tree-chevron) + var(--tree-gap));
+  border-left: 2px solid rgba(55, 72, 120, 0.22);
+  background: transparent;
+  color: #4d5a78;
+  font-size: 12px;
+  line-height: 1.6;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .script-knowledge-tree-drawer,
+  .script-knowledge-tree-chevron {
+    transition: none;
+  }
+}
+
+.script-knowledge-stale-notice {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(214, 133, 26, 0.24);
+  border-radius: 10px;
+  background: rgba(255, 247, 231, 0.92);
+  color: #8a5715;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.script-knowledge-stale-notice strong { color: #75420b; font-size: 12px; }
+.script-knowledge-stale-notice small { color: #9b671f; }
 
 .script-knowledge-empty {
   display: grid;
@@ -365,8 +632,12 @@
 }
 
 .script-knowledge-ingestion-stream {
+  min-height: 0;
   max-height: 300px;
-  overflow: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  touch-action: pan-y;
   padding: 10px 12px;
   border: 1px solid rgba(91, 105, 255, 0.15);
   border-radius: 12px;
@@ -379,7 +650,7 @@
   word-break: break-word;
 }
 
-.script-knowledge-ingestion-line.is-delta {
+.script-knowledge-ingestion-line.is-progress {
   color: #5662c9;
 }
 

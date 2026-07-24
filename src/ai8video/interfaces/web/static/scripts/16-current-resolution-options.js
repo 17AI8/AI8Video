@@ -121,6 +121,7 @@
       closeScriptReferenceDrawer();
       closeFlowerTextDrawer();
       closeGenerationModeDrawer();
+      closeSmartSplitDrawer();
       closeHtmlMotionOverlayDrawer();
       state.settingsModal.visible = true;
       state.settingsModal.revealedSecrets = {};
@@ -181,6 +182,7 @@
       if (state.scriptReferenceDrawer.visible) closeScriptReferenceDrawer();
       if (state.flowerTextDrawer.visible) closeFlowerTextDrawer();
       if (state.generationModeDrawer.visible) closeGenerationModeDrawer();
+      if (state.smartSplitDrawer.visible) closeSmartSplitDrawer();
       if (state.htmlMotionOverlayDrawer.visible) closeHtmlMotionOverlayDrawer();
     }
 
@@ -202,7 +204,9 @@
       closeScriptReferenceDrawer();
       closeFlowerTextDrawer();
       closeGenerationModeDrawer();
+      closeSmartSplitDrawer();
       closeHtmlMotionOverlayDrawer();
+      closeSmartSplitDrawer();
       state.systemPromptModal.visible = true;
       state.systemPromptModal.loading = true;
       state.systemPromptModal.error = '';
@@ -286,6 +290,7 @@
       closeScriptReferenceDrawer();
       closeFlowerTextDrawer();
       closeGenerationModeDrawer();
+      closeSmartSplitDrawer();
       closeHtmlMotionOverlayDrawer();
       state.defaultReferenceDrawer.visible = true;
       state.defaultReferenceDrawer.loading = true;
@@ -331,6 +336,7 @@
       closeDefaultReferenceDrawer();
       closeFlowerTextDrawer();
       closeGenerationModeDrawer();
+      closeSmartSplitDrawer();
       closeHtmlMotionOverlayDrawer();
       state.scriptReferenceDrawer.visible = true;
       state.scriptReferenceDrawer.loading = true;
@@ -341,8 +347,11 @@
       renderScriptReferenceButton();
       renderScriptReferenceDrawer();
       try {
-        await refreshUserMaterials();
-        await refreshScriptReference();
+        await Promise.all([
+          refreshUserMaterials(),
+          refreshScriptReference(),
+          refreshScriptReferenceKnowledgeItems(),
+        ]);
       } catch (error) {
         state.scriptReference = {
           ...(state.scriptReference || {}),
@@ -376,6 +385,7 @@
       closeDefaultReferenceDrawer();
       closeScriptReferenceDrawer();
       closeGenerationModeDrawer();
+      closeSmartSplitDrawer();
       closeHtmlMotionOverlayDrawer();
       state.flowerTextDrawer.visible = true;
       state.flowerTextDrawer.loading = true;
@@ -478,6 +488,7 @@
       closeScriptReferenceDrawer();
       closeFlowerTextDrawer();
       closeGenerationModeDrawer();
+      closeSmartSplitDrawer();
       state.htmlMotionOverlayDrawer.visible = true;
       state.htmlMotionOverlayDrawer.loading = true;
       state.htmlMotionOverlay = { ...(state.htmlMotionOverlay || {}), error: '' };

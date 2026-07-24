@@ -18,6 +18,7 @@ class ParsedRequest:
     resolution: str = "480p"
     preset: str = "custom"
     concurrent_generation: bool = False
+    tail_frame_chaining: bool = False
     html_motion_overlay_enabled: bool = False
     reference_image_transform_options: dict[str, bool] | None = None
 
@@ -38,6 +39,7 @@ class ConversationDraft:
     resolution: str = "480p"
     preset: str = "custom"
     concurrent_generation: bool | None = None
+    tail_frame_chaining: bool | None = None
     html_motion_overlay_enabled: bool | None = None
     reference_image_transform_options: dict[str, bool] | None = None
 
@@ -62,6 +64,7 @@ class ConversationDraft:
             resolution=self.resolution,
             preset=self.preset,
             concurrent_generation=bool(self.concurrent_generation),
+            tail_frame_chaining=bool(self.tail_frame_chaining),
             html_motion_overlay_enabled=bool(self.html_motion_overlay_enabled),
             reference_image_transform_options=(
                 self.reference_image_transform_options
@@ -86,6 +89,7 @@ class ConversationDraft:
             "resolution": self.resolution,
             "preset": self.preset,
             "concurrentGeneration": self.concurrent_generation,
+            "tailFrameChaining": self.tail_frame_chaining,
             "htmlMotionOverlayEnabled": self.html_motion_overlay_enabled,
             "referenceImageTransformOptions": self.reference_image_transform_options,
         }
@@ -183,6 +187,7 @@ class ConversationState:
     completed_runs: int = 0
     last_result: dict[str, Any] | None = None
     batch_request: dict[str, Any] | None = None
+    planned_videos: list[VideoPrompt] = field(default_factory=list)
 
 
 @dataclass

@@ -80,6 +80,18 @@ def probe_media_video_info(
     return fallback or info
 
 
+def probe_media_metadata(
+    media_path: Path | str,
+    *,
+    ffprobe_bin: str | None = None,
+) -> dict[str, Any] | None:
+    """读取时长/分辨率/帧率/编码/码率等媒体元数据。"""
+    payload = _read_ffprobe_json(Path(media_path), ffprobe_bin=ffprobe_bin)
+    if not payload:
+        return None
+    return _build_media_metadata(payload)
+
+
 def pixel_format_has_alpha(pixel_format: object) -> bool:
     value = str(pixel_format or "").lower()
     return value.startswith(("yuva", "gbrap", "rgba", "argb", "abgr", "bgra", "ayuv")) or bool(
@@ -88,6 +100,21 @@ def pixel_format_has_alpha(pixel_format: object) -> bool:
 
 
 def _probe_media_video_info_with_ffprobe(
+    media_path: Path,
+    *,
+    ffprobe_bin: str | None = None,
+) -> dict[str, Any] | None:
+    data = _read_ffprobe_json(media_path, ffprobe_bin=ffprobe_bin)
+    if not data:
+        return None
+    streams = data.get("streams") if isinstance(data, dict) else []
+    stream = next((item for item in streams if isinstance(item, dict) and item.get("codec_type") == "video"), None)
+    format_data = data.get("format") if isinstance(data, dict) else None
+    duration = format_data.get("duration") if isinstance(format_data, dict) else None
+    return _build_video_info(stream, duration)
+
+
+def _read_ffprobe_json(
     media_path: Path,
     *,
     ffprobe_bin: str | None = None,
@@ -107,11 +134,123 @@ def _probe_media_video_info_with_ffprobe(
         data = json.loads(proc.stdout or "{}")
     except Exception:
         return None
-    streams = data.get("streams") if isinstance(data, dict) else []
-    stream = next((item for item in streams if isinstance(item, dict) and item.get("codec_type") == "video"), None)
-    format_data = data.get("format") if isinstance(data, dict) else None
-    duration = format_data.get("duration") if isinstance(format_data, dict) else None
-    return _build_video_info(stream, duration)
+    return data if isinstance(data, dict) else None
+
+
+def _build_media_metadata(data: dict[str, Any]) -> dict[str, Any] | None:
+    streams = [item for item in list(data.get("streams") or []) if isinstance(item, dict)]
+    video = next((item for item in streams if item.get("codec_type") == "video"), None)
+    audio = next((item for item in streams if item.get("codec_type") == "audio"), None)
+    format_data = data.get("format") if isinstance(data.get("format"), dict) else {}
+    if not video:
+        return None
+    try:
+        width = int(video.get("width") or 0)
+        height = int(video.get("height") or 0)
+    except (TypeError, ValueError):
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    duration = _safe_float(format_data.get("duration") or video.get("duration"))
+    bitrate = int(_safe_float(format_data.get("bit_rate") or video.get("bit_rate")))
+    fps = _parse_frame_rate(video.get("avg_frame_rate") or video.get("r_frame_rate"))
+    display_width, display_height = _apply_rotation(width, height, video)
+    return {
+        "width": display_width,
+        "height": display_height,
+        "resolution": f"{display_width}×{display_height}",
+        "aspectRatio": _aspect_ratio_label(display_width, display_height),
+        "durationSeconds": duration if duration > 0 else None,
+        "durationLabel": _format_duration_label(duration) if duration > 0 else "",
+        "fps": fps,
+        "fpsLabel": f"{fps:g} fps" if fps > 0 else "",
+        "videoCodec": str(video.get("codec_name") or "").strip(),
+        "audioCodec": str((audio or {}).get("codec_name") or "").strip(),
+        "audioChannels": int(_safe_float((audio or {}).get("channels"))),
+        "sampleRate": int(_safe_float((audio or {}).get("sample_rate"))),
+        "bitrate": bitrate if bitrate > 0 else 0,
+        "bitrateLabel": _format_bitrate_label(bitrate) if bitrate > 0 else "",
+        "container": str(format_data.get("format_name") or "").split(",")[0].strip(),
+        "pixelFormat": str(video.get("pix_fmt") or "").strip(),
+        "hasAlpha": pixel_format_has_alpha(video.get("pix_fmt")),
+    }
+
+
+def _parse_frame_rate(value: object) -> float:
+    text = str(value or "").strip()
+    if not text or text in {"0/0", "N/A"}:
+        return 0.0
+    if "/" in text:
+        left, right = text.split("/", 1)
+        try:
+            numerator = float(left)
+            denominator = float(right)
+        except ValueError:
+            return 0.0
+        return round(numerator / denominator, 3) if denominator else 0.0
+    try:
+        return round(float(text), 3)
+    except ValueError:
+        return 0.0
+
+
+def _apply_rotation(width: int, height: int, stream: dict[str, Any]) -> tuple[int, int]:
+    rotation = 0.0
+    try:
+        rotation = abs(float(stream.get("rotation") or 0))
+    except (TypeError, ValueError):
+        rotation = 0.0
+    tags = stream.get("tags") if isinstance(stream.get("tags"), dict) else {}
+    if not rotation:
+        try:
+            rotation = abs(float(tags.get("rotate") or 0))
+        except (TypeError, ValueError):
+            rotation = 0.0
+    if int(rotation) % 180 == 90:
+        return height, width
+    return width, height
+
+
+def _aspect_ratio_label(width: int, height: int) -> str:
+    if width <= 0 or height <= 0:
+        return ""
+    ratio = width / height
+    presets = (
+        (16 / 9, "16:9"),
+        (9 / 16, "9:16"),
+        (1, "1:1"),
+        (4 / 3, "4:3"),
+        (3 / 4, "3:4"),
+        (21 / 9, "21:9"),
+    )
+    for target, label in presets:
+        if abs(ratio - target) < 0.03:
+            return label
+    return f"{width}:{height}"
+
+
+def _format_duration_label(seconds: float) -> str:
+    total = max(0, int(round(seconds)))
+    hours, rem = divmod(total, 3600)
+    minutes, secs = divmod(rem, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
+
+
+def _format_bitrate_label(bitrate: int) -> str:
+    if bitrate >= 1_000_000:
+        return f"{bitrate / 1_000_000:.2f} Mbps"
+    if bitrate >= 1_000:
+        return f"{bitrate / 1_000:.0f} kbps"
+    return f"{bitrate} bps"
+
+
+def _safe_float(value: object) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _probe_media_video_info_with_ffmpeg(

@@ -20,27 +20,40 @@
         key: 'planner',
         label: 'Planner',
         mark: 'P',
-        status: '影子模式',
-        tone: 'shadow',
-        description: '当前只保留计划节点与快照位置。',
+        status: '已接入',
+        tone: 'live',
+        description: '负责智能分集与视频任务规划。',
         responsibilities: [
-          '读取既有请求和计划快照，为结构化拆解预留接口',
-          '记录规划证据，但不参与当前生成参数决策',
+          '理解全文并判断合理的分集数量与内容边界',
+          '为每集生成独立主题、提示词与可追踪规划结果',
         ],
-        boundary: '暂不独立调用模型，不改写提示词，不调整生成参数。',
+        boundary: '只负责内容规划与智能分集，不提交视频模型、不审核成片、不归档结果。',
       },
       {
         key: 'reviewer',
         label: 'Reviewer',
         mark: 'R',
-        status: '影子模式',
-        tone: 'shadow',
-        description: '当前只保留审核节点与确定性证据位。',
+        status: '知识库已接入',
+        tone: 'live',
+        description: '已接管知识入库语义审核；媒体审核仍处于影子模式。',
         responsibilities: [
-          '记录上游响应、产物状态与失败证据',
-          '为未来媒体审看和迭代建议保留接入边界',
+          '审核知识叶子的原子性、覆盖度、层级与检索价值',
+          '返回 accept、revise 或 reject，并提供可验证的返工证据',
         ],
-        boundary: '暂不审看 MP4，不触发自动重试，不宣称质量已经通过。',
+        boundary: '最多要求一次知识建树返工；暂不审看 MP4，不直接写库或自行重跑生成。',
+      },
+      {
+        key: 'knowledge-base',
+        label: '知识库 Agent',
+        mark: 'K',
+        status: '已接入',
+        tone: 'live',
+        description: '负责单份文档的知识树规划与原文单元归属。',
+        responsibilities: [
+          '把原始文档规划为最多三层的可检索知识树',
+          '只选择原文单元编号，正文由程序确定性提取',
+        ],
+        boundary: '不审核自己的结果、不生成知识正文；只读单份文档，不改业务提示词、生成参数或媒体结果。',
       },
       {
         key: 'shared-model',
@@ -132,11 +145,14 @@
             <div class="multi-agent-hero-copy">
               <div class="multi-agent-eyebrow">AGENT ORCHESTRATION</div>
               <h3 class="multi-agent-title">Multi-Agent 协作设置</h3>
-              <p class="multi-agent-summary">当前已接入任务调度基座；Planner 与 Reviewer 仍处于影子模式，不会独立调用模型或改变用户输入。</p>
+              <p class="multi-agent-summary">Planner 已接入智能分集；知识库 Agent 与 Reviewer 已接入知识入库闭环，Reviewer 的媒体审核能力仍处于影子模式。</p>
             </div>
             <div class="multi-agent-badges" aria-label="当前实现状态">
               <span class="multi-agent-badge is-live">调度基座 · 已接入</span>
-              <span class="multi-agent-badge is-shadow">Planner / Reviewer · 影子模式</span>
+              <span class="multi-agent-badge is-live">知识库 Agent · 已接入</span>
+              <span class="multi-agent-badge is-live">Reviewer · 知识库已接入</span>
+              <span class="multi-agent-badge is-live">Planner · 智能分集已接入</span>
+              <span class="multi-agent-badge is-shadow">Reviewer · 媒体审核影子模式</span>
               <span class="multi-agent-badge">共享模型 · ${sharedModelReady ? '已配置' : '待补齐'}</span>
             </div>
           </div>
@@ -215,7 +231,7 @@
     function buildMultiAgentSharedModelPanel(group, sharedModelReady) {
       return `
         <div class="multi-agent-shared-note">
-          <div><strong>共享核心模型</strong><p>Supervisor、Planner、Reviewer 尚未拥有各自独立模型；以下仍是当前 AI8video 共用配置。</p></div>
+          <div><strong>共享核心模型</strong><p>Planner、知识库 Agent 与 Reviewer 当前复用 AI8video 核心模型；Supervisor 不调用模型。</p></div>
           <span class="multi-agent-role-status is-${sharedModelReady ? 'live' : 'shadow'}">${sharedModelReady ? '配置完整' : '等待补齐'}</span>
         </div>
         <div class="settings-grid">

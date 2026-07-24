@@ -1,7 +1,52 @@
+    function closeViralBreakdownVideoMenu() {
+      const root = document.querySelector('[data-viral-select="video"]');
+      const button = document.getElementById('viralBreakdownVideoSelectButton');
+      const list = document.getElementById('viralBreakdownVideoSelectList');
+      root?.classList.remove('is-open');
+      if (button) button.setAttribute('aria-expanded', 'false');
+      if (list) list.hidden = true;
+    }
+
+    function syncViralBreakdownVideoSelect(currentItem) {
+      const button = document.getElementById('viralBreakdownVideoSelectButton');
+      const label = document.getElementById('viralBreakdownVideoSelectLabel');
+      const list = document.getElementById('viralBreakdownVideoSelectList');
+      if (!button || !label || !list) return;
+      const items = Array.isArray(state.viralBreakdown.items) ? state.viralBreakdown.items : [];
+      const selectedKey = currentItem ? String(currentItem.videoKey || '') : '';
+      const labelText = currentItem
+        ? String(currentItem.name || currentItem.videoKey || '未命名视频')
+        : (items.length ? '请选择视频' : '还没有上传视频');
+      button.disabled = !items.length || !!state.viralBreakdown.loading;
+      label.textContent = labelText;
+      button.title = labelText;
+      list.innerHTML = items.map((item) => {
+        const key = String(item?.videoKey || '');
+        const name = String(item?.name || item?.videoKey || '未命名视频');
+        const active = key && key === selectedKey ? ' is-active' : '';
+        return `<button type="button" class="viral-breakdown-select-option${active}" role="option" aria-selected="${key === selectedKey ? 'true' : 'false'}" data-viral-video-key="${escapeHtml(key)}" title="${escapeHtml(name)}">${escapeHtml(name)}</button>`;
+      }).join('');
+    }
+
+    function selectViralBreakdownVideo(videoKey) {
+      const nextKey = String(videoKey || '');
+      if (nextKey && nextKey === String(state.viralBreakdown.selectedVideoKey || '')) {
+        closeViralBreakdownVideoMenu();
+        return;
+      }
+      state.viralBreakdown.selectedVideoKey = nextKey;
+      state.viralBreakdown.activeTab = 'grid';
+      state.viralBreakdown.error = '';
+      if (!state.viralBreakdown.loading) {
+        state.viralBreakdown.notice = nextKey ? '已切换当前视频。' : '';
+      }
+      closeViralBreakdownVideoMenu();
+      renderViralBreakdownWorkbench();
+    }
+
     function renderViralBreakdownWorkbench() {
       const archiveMeta = document.getElementById('viralBreakdownArchiveMeta');
       const statusText = document.getElementById('viralBreakdownStatusText');
-      const videoSelect = document.getElementById('viralBreakdownVideoSelect');
       const intervalInput = document.getElementById('viralBreakdownIntervalInput');
       const targetRatioSelect = document.getElementById('viralBreakdownTargetRatio');
       const processFramesButton = document.getElementById('viralBreakdownProcessFramesButton');
@@ -9,11 +54,13 @@
       const guessScriptButton = document.getElementById('viralBreakdownGuessScriptButton');
       const saveTranscriptButton = document.getElementById('viralBreakdownSaveTranscriptButton');
       const originalMeta = document.getElementById('viralBreakdownOriginalMeta');
+      const infoMeta = document.getElementById('viralBreakdownInfoMeta');
       const scriptGuessMeta = document.getElementById('viralBreakdownScriptGuessMeta');
       const gridMeta = document.getElementById('viralBreakdownGridMeta');
       const transcriptMeta = document.getElementById('viralBreakdownTranscriptMeta');
       const generatedMeta = document.getElementById('viralBreakdownGeneratedMeta');
       const originalPane = document.getElementById('viralBreakdownOriginalPane');
+      const infoPane = document.getElementById('viralBreakdownInfoPane');
       const scriptGuessPane = document.getElementById('viralBreakdownScriptGuessPane');
       const gridPane = document.getElementById('viralBreakdownGridPane');
       const transcriptPane = document.getElementById('viralBreakdownTranscriptPane');
@@ -26,18 +73,15 @@
       const scriptGuessDisplayText = currentItem
         ? getViralBreakdownScriptGuessDraft(currentItem.videoKey)
         : '';
+      const scriptTreeDraft = currentItem
+        ? getViralBreakdownScriptTreeDraft(currentItem.videoKey)
+        : null;
+      const scriptSubTab = getViralBreakdownScriptSubTab();
       const transcriptHasUnsavedChanges = !!currentItem && transcriptDisplayText !== transcriptTextFromItem;
       if (archiveMeta) {
         archiveMeta.textContent = state.viralBreakdown.archiveDisplay || '0 个视频 · 0 B';
       }
-      if (videoSelect) {
-        const items = Array.isArray(state.viralBreakdown.items) ? state.viralBreakdown.items : [];
-        videoSelect.innerHTML = items.length
-          ? items.map((item) => `<option value="${escapeHtml(String(item?.videoKey || ''))}">${escapeHtml(String(item?.name || item?.videoKey || '未命名视频'))}</option>`).join('')
-          : '<option value="">还没有上传视频</option>';
-        videoSelect.value = currentItem ? String(currentItem.videoKey || '') : '';
-        videoSelect.disabled = !items.length || !!state.viralBreakdown.loading;
-      }
+      syncViralBreakdownVideoSelect(currentItem);
       if (intervalInput) {
         intervalInput.value = String(state.viralBreakdown.intervalSeconds || 1);
       }
@@ -53,9 +97,13 @@
         transcribeButton.textContent = state.viralBreakdown.transcriptProcessing ? '识别中...' : '分析台词';
       }
       if (guessScriptButton) {
-        guessScriptButton.disabled = !currentItem || !!state.viralBreakdown.scriptGuessProcessing || !!state.viralBreakdown.loading;
-        guessScriptButton.textContent = state.viralBreakdown.scriptGuessProcessing ? '猜测中...' : '猜剧本';
+        const guessing = !!state.viralBreakdown.scriptGuessProcessing || !!state.viralBreakdown.scriptTreeProcessing;
+        guessScriptButton.disabled = !currentItem || guessing || !!state.viralBreakdown.loading;
+        guessScriptButton.textContent = state.viralBreakdown.scriptGuessProcessing
+          ? '猜测中...'
+          : (state.viralBreakdown.scriptTreeProcessing ? '建树中...' : '猜剧本');
       }
+      syncViralBreakdownSaveScriptTreeButton(scriptTreeDraft);
       if (saveTranscriptButton) {
         saveTranscriptButton.disabled = !currentItem || !!state.viralBreakdown.transcriptSaving || !transcriptHasUnsavedChanges;
         saveTranscriptButton.textContent = state.viralBreakdown.transcriptSaving
@@ -65,15 +113,67 @@
             : '已保存';
       }
       if (statusText) {
-        const status = state.viralBreakdown.error || state.viralBreakdown.notice || '';
-        statusText.textContent = status;
-        statusText.classList.toggle('is-error', Boolean(state.viralBreakdown.error));
+        const error = String(state.viralBreakdown.error || '');
+        const notice = String(state.viralBreakdown.notice || '');
+        const resumeStage = String(state.viralBreakdown.scriptResumeStage || '');
+        const message = error || notice;
+        statusText.classList.toggle('is-error', Boolean(error));
+        if (!message) {
+          statusText.innerHTML = '';
+        } else {
+          const retryLabel = resumeStage === 'tree'
+            ? '从知识库建树重试'
+            : (resumeStage === 'skeleton' ? '重新生成骨架' : '');
+          statusText.innerHTML = `
+            <span class="viral-breakdown-status-message" title="${escapeHtml(message)}">${escapeHtml(message)}</span>
+            ${retryLabel ? `<button type="button" id="viralBreakdownRetryButton" class="viral-breakdown-retry-button">${escapeHtml(retryLabel)}</button>` : ''}
+          `;
+          const retryButton = document.getElementById('viralBreakdownRetryButton');
+          if (retryButton) {
+            retryButton.disabled = !!state.viralBreakdown.scriptGuessProcessing
+              || !!state.viralBreakdown.scriptTreeProcessing
+              || !!state.viralBreakdown.loading;
+            retryButton.onclick = async () => {
+              try {
+                await retryViralBreakdownScriptFromBreakpoint();
+              } catch (error) {
+                console.error(error);
+                state.viralBreakdown.error = friendlyViralBreakdownScriptError(
+                  error,
+                  state.viralBreakdown.scriptResumeStage || 'tree',
+                );
+                renderViralBreakdownWorkbench();
+              }
+            };
+          }
+        }
       }
       if (originalMeta) {
         originalMeta.textContent = currentItem ? `${currentItem.sizeLabel || humanizeByteSize(currentItem.sizeBytes || 0)}` : '';
       }
+      if (infoMeta) {
+        infoMeta.textContent = currentItem ? viralBreakdownMediaSummary(currentItem) : '';
+      }
       if (scriptGuessMeta) {
-        scriptGuessMeta.textContent = scriptGuessDisplayText ? `${scriptGuessDisplayText.length} 字 · 可编辑` : '等待猜剧本';
+        if (scriptSubTab === 'tree') {
+          if (scriptTreeDraft?.saved) {
+            const leafCount = Array.isArray(scriptTreeDraft.leaves) ? scriptTreeDraft.leaves.length : 0;
+            scriptGuessMeta.textContent = leafCount ? `${leafCount} 段 · 已存入知识库` : '已存入知识库';
+          } else if (scriptTreeDraft?.tree) {
+            const leafCount = Array.isArray(scriptTreeDraft.leaves) ? scriptTreeDraft.leaves.length : 0;
+            scriptGuessMeta.textContent = `临时树 ${leafCount} 段 · 未存入前只留本窗`;
+          } else if (state.viralBreakdown.scriptTreeProcessing) {
+            scriptGuessMeta.textContent = '建树中...';
+          } else {
+            scriptGuessMeta.textContent = '等待建树';
+          }
+        } else if (state.viralBreakdown.scriptGuessProcessing) {
+          scriptGuessMeta.textContent = scriptGuessDisplayText
+            ? `${scriptGuessDisplayText.length} 字 · 生成中`
+            : '生成中';
+        } else {
+          scriptGuessMeta.textContent = scriptGuessDisplayText ? `${scriptGuessDisplayText.length} 字 · 可编辑` : '等待猜剧本';
+        }
       }
       if (gridMeta) {
         gridMeta.textContent = currentItem?.frameCount ? `${currentItem.frameCount} 张截图` : '';
@@ -82,15 +182,23 @@
         transcriptMeta.textContent = transcriptDisplayText ? `${transcriptDisplayText.length} 字` : '';
       }
       if (generatedMeta) {
-        generatedMeta.textContent = currentItem?.generatedVideoUrl ? '已存在' : '暂无';
+        generatedMeta.textContent = currentItem?.generatedVideoUrl
+          ? '已有成片'
+          : (isViralBreakdownGenerateReady(currentItem) ? '可回填' : '待准备');
       }
       if (originalPane) {
         originalPane.innerHTML = currentItem?.videoUrl
           ? `<video src="${escapeHtml(String(currentItem.videoUrl || ''))}" controls playsinline preload="metadata"></video>`
           : '<div class="viral-breakdown-empty">请先上传一个视频。</div>';
       }
+      if (infoPane) {
+        infoPane.innerHTML = buildViralBreakdownVideoInfoMarkup(currentItem);
+      }
       if (scriptGuessPane) {
-        scriptGuessPane.innerHTML = `<textarea class="viral-breakdown-text-output viral-breakdown-text-editor viral-breakdown-script-guess-editor" spellcheck="false" placeholder="点击“猜剧本”后，这里会显示多模态模型反推的剧本；也可以先手动输入或粘贴剧本。">${escapeHtml(scriptGuessDisplayText)}</textarea>`;
+        scriptGuessPane.innerHTML = buildViralBreakdownScriptGuessPaneMarkup(
+          scriptGuessDisplayText,
+          scriptTreeDraft,
+        );
         const scriptGuessEditor = scriptGuessPane.querySelector('.viral-breakdown-script-guess-editor');
         if (scriptGuessEditor instanceof HTMLTextAreaElement && currentItem?.videoKey) {
           scriptGuessEditor.oninput = () => {
@@ -100,9 +208,22 @@
               ...(state.viralBreakdown.scriptGuessDrafts || {}),
               [normalizedVideoKey]: nextScriptGuessText,
             };
-            if (scriptGuessMeta) {
+            const existingTree = getViralBreakdownScriptTreeDraft(normalizedVideoKey);
+            const treeScriptText = String(existingTree?.scriptText || '');
+            if (existingTree && treeScriptText && treeScriptText !== nextScriptGuessText) {
+              setViralBreakdownScriptTreeDraft(normalizedVideoKey, null);
+              syncViralBreakdownSaveScriptTreeButton(null);
+            }
+            if (scriptGuessMeta && getViralBreakdownScriptSubTab() === 'skeleton') {
               scriptGuessMeta.textContent = nextScriptGuessText ? `${nextScriptGuessText.length} 字 · 可编辑` : '等待猜剧本';
             }
+            clearTimeout(state.viralBreakdown.scriptDraftSaveTimer);
+            state.viralBreakdown.scriptDraftSaveTimer = setTimeout(() => {
+              persistViralBreakdownScriptDraft(normalizedVideoKey, {
+                scriptText: nextScriptGuessText,
+                clearTree: !!(existingTree && treeScriptText && treeScriptText !== nextScriptGuessText),
+              }).catch((error) => console.warn(error));
+            }, 800);
           };
         }
       }
@@ -135,257 +256,11 @@
         }
       }
       if (generatedPane) {
-        generatedPane.innerHTML = currentItem?.generatedVideoUrl
-          ? `<video src="${escapeHtml(String(currentItem.generatedVideoUrl || ''))}" controls playsinline preload="metadata"></video>`
-          : '<div class="viral-breakdown-empty">暂无生成结果</div>';
+        generatedPane.innerHTML = buildViralBreakdownGeneratedPaneMarkup(currentItem);
       }
+      syncViralBreakdownPreviewTab();
       syncViralBreakdownActiveTab();
-    }
-
-    function getViralBreakdownActiveTab() {
-      const tab = String(state.viralBreakdown.activeTab || 'grid').trim();
-      return ['grid', 'transcript', 'script', 'generated'].includes(tab) ? tab : 'grid';
-    }
-
-    function activateViralBreakdownTab(tabName) {
-      const tab = ['grid', 'transcript', 'script', 'generated'].includes(String(tabName || ''))
-        ? String(tabName)
-        : 'grid';
-      state.viralBreakdown.activeTab = tab;
-      syncViralBreakdownActiveTab();
-    }
-
-    function syncViralBreakdownActiveTab() {
-      const tab = getViralBreakdownActiveTab();
-      const root = document.getElementById('viralBreakdownModal');
-      if (!root) return;
-      root.querySelectorAll('[data-viral-breakdown-tab]').forEach((button) => {
-        const active = button.getAttribute('data-viral-breakdown-tab') === tab;
-        button.classList.toggle('is-active', active);
-        button.setAttribute('aria-selected', active ? 'true' : 'false');
-      });
-      root.querySelectorAll('[data-viral-breakdown-panel]').forEach((panel) => {
-        panel.classList.toggle('is-active', panel.getAttribute('data-viral-breakdown-panel') === tab);
-      });
-    }
-
-    function beginViralBreakdownUpload() {
-      const input = document.getElementById('viralBreakdownUploadInput');
-      if (!input) return;
-      input.click();
-    }
-
-    async function uploadViralBreakdownVideos(files) {
-      const formData = new FormData();
-      Array.from(files || []).forEach((file) => formData.append('files', file, file.name));
-      state.viralBreakdown.uploading = true;
-      state.viralBreakdown.error = '';
-      state.viralBreakdown.notice = '正在上传视频...';
-      renderViralBreakdownWorkbench();
-      try {
-        const res = await fetch('/api/viral-breakdown/upload', {
-          method: 'POST',
-          body: formData,
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.ok) {
-          throw new Error(data?.error || '上传爆款拆解视频失败');
-        }
-        state.viralBreakdown.notice = Array.isArray(data?.saved) && data.saved.length
-          ? `已上传 ${data.saved.length} 个视频`
-          : '没有新增视频';
-        await refreshViralBreakdownWorkspace({ keepSelection: false });
-      } finally {
-        state.viralBreakdown.uploading = false;
-        renderViralBreakdownWorkbench();
-      }
-    }
-
-    async function openViralBreakdownFolder(trigger) {
-      const previous = trigger?.textContent || '打开文件夹';
-      if (trigger) trigger.textContent = '打开中...';
-      const res = await fetch('/api/open-viral-breakdown-folder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-      if (!res.ok) {
-        if (trigger) {
-          trigger.textContent = '打开失败';
-          setTimeout(() => { trigger.textContent = previous; }, 1600);
-        }
-        throw new Error('open viral breakdown folder failed');
-      }
-      if (trigger) {
-        trigger.textContent = '已打开';
-        setTimeout(() => { trigger.textContent = previous; }, 1200);
-      }
-    }
-
-    async function processSelectedViralBreakdownFrames() {
-      const currentItem = getSelectedViralBreakdownItem();
-      if (!currentItem?.videoKey) return;
-      state.viralBreakdown.frameProcessing = true;
-      state.viralBreakdown.error = '';
-      state.viralBreakdown.notice = '正在按设定间隔截图并拼接宫格图...';
-      renderViralBreakdownWorkbench();
-      try {
-        const res = await fetch('/api/viral-breakdown/process-frames', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            videoKey: currentItem.videoKey,
-            intervalSeconds: Number(state.viralBreakdown.intervalSeconds || 1),
-            targetRatio: String(state.viralBreakdown.targetRatio || '16:9'),
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.ok) {
-          throw new Error(data?.error || '拆解画面失败');
-        }
-        state.viralBreakdown.notice = `已完成 ${Number(data?.frameCount || 0) || 0} 张截图，并拼成 ${String(data?.targetRatio || state.viralBreakdown.targetRatio)}`;
-        await refreshViralBreakdownWorkspace({ keepSelection: true });
-      } finally {
-        state.viralBreakdown.frameProcessing = false;
-        renderViralBreakdownWorkbench();
-      }
-    }
-
-    async function transcribeSelectedViralBreakdownVideo() {
-      const currentItem = getSelectedViralBreakdownItem();
-      if (!currentItem?.videoKey) return;
-      state.viralBreakdown.transcriptProcessing = true;
-      state.viralBreakdown.error = '';
-      state.viralBreakdown.notice = '正在调用 Whisper 识别台词...';
-      renderViralBreakdownWorkbench();
-      try {
-        const res = await fetch('/api/viral-breakdown/transcribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            videoKey: currentItem.videoKey,
-            model: 'base',
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.ok) {
-          throw new Error(data?.error || '分析台词失败');
-        }
-        state.viralBreakdown.transcriptDrafts = {
-          ...(state.viralBreakdown.transcriptDrafts || {}),
-          [String(currentItem.videoKey || '')]: String(data?.text || ''),
-        };
-        state.viralBreakdown.notice = data?.text ? '台词识别完成' : '没有识别到可用台词';
-        await refreshViralBreakdownWorkspace({ keepSelection: true });
-      } finally {
-        state.viralBreakdown.transcriptProcessing = false;
-        renderViralBreakdownWorkbench();
-      }
-    }
-
-    async function guessSelectedViralBreakdownScript() {
-      const currentItem = getSelectedViralBreakdownItem();
-      if (!currentItem?.videoKey) return;
-      const transcriptTextFromItem = String(currentItem?.transcriptText || '');
-      const transcriptText = getViralBreakdownTranscriptDraft(currentItem.videoKey, transcriptTextFromItem);
-      const normalizedVideoKey = String(currentItem.videoKey || '');
-      state.viralBreakdown.scriptGuessProcessing = true;
-      state.viralBreakdown.error = '';
-      state.viralBreakdown.notice = '正在把宫格图和台词发给多模态模型猜剧本...';
-      state.viralBreakdown.scriptGuessDrafts = {
-        ...(state.viralBreakdown.scriptGuessDrafts || {}),
-        [normalizedVideoKey]: '',
-      };
-      renderViralBreakdownWorkbench();
-      try {
-        const res = await fetch('/api/viral-breakdown/guess-script?stream=1', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            videoKey: currentItem.videoKey,
-            text: transcriptText,
-          }),
-        });
-        if (!res.ok) {
-          const errorText = await res.text().catch(() => '');
-          throw new Error(errorText || '猜剧本失败');
-        }
-        if (!res.body) {
-          throw new Error('当前浏览器不支持流式读取');
-        }
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let streamedScriptText = '';
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          streamedScriptText += decoder.decode(value, { stream: true });
-          state.viralBreakdown.scriptGuessDrafts = {
-            ...(state.viralBreakdown.scriptGuessDrafts || {}),
-            [normalizedVideoKey]: streamedScriptText,
-          };
-          const scriptGuessEditor = document.querySelector('#viralBreakdownScriptGuessPane .viral-breakdown-script-guess-editor');
-          const scriptGuessMeta = document.getElementById('viralBreakdownScriptGuessMeta');
-          if (scriptGuessEditor instanceof HTMLTextAreaElement) {
-            scriptGuessEditor.value = streamedScriptText;
-            scriptGuessEditor.scrollTop = scriptGuessEditor.scrollHeight;
-          }
-          if (scriptGuessMeta) {
-            scriptGuessMeta.textContent = streamedScriptText ? `${streamedScriptText.length} 字 · 生成中` : '生成中';
-          }
-        }
-        const trailingText = decoder.decode();
-        if (trailingText) {
-          streamedScriptText += trailingText;
-        }
-        state.viralBreakdown.scriptGuessDrafts = {
-          ...(state.viralBreakdown.scriptGuessDrafts || {}),
-          [normalizedVideoKey]: streamedScriptText,
-        };
-        if (!streamedScriptText) {
-          state.viralBreakdown.error = '多模态模型请求结束，但没有返回任何剧本文本；请检查当前多模态模型是否支持图片输入和 Chat Completions 文本返回。';
-        }
-        state.viralBreakdown.notice = streamedScriptText ? '剧本已生成，可在左下方编辑' : '多模态模型没有返回可用剧本';
-      } finally {
-        state.viralBreakdown.scriptGuessProcessing = false;
-        renderViralBreakdownWorkbench();
-      }
-    }
-
-    async function saveSelectedViralBreakdownTranscript() {
-      const currentItem = getSelectedViralBreakdownItem();
-      if (!currentItem?.videoKey) return;
-      const normalizedVideoKey = String(currentItem.videoKey || '');
-      const transcriptText = getViralBreakdownTranscriptDraft(normalizedVideoKey, currentItem.transcriptText || '');
-      state.viralBreakdown.transcriptSaving = true;
-      state.viralBreakdown.error = '';
-      state.viralBreakdown.notice = '正在保存台词...';
-      renderViralBreakdownWorkbench();
-      try {
-        const res = await fetch('/api/viral-breakdown/save-transcript', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            videoKey: normalizedVideoKey,
-            text: transcriptText,
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.ok) {
-          throw new Error(data?.error || '保存台词失败');
-        }
-        currentItem.transcriptText = String(data?.text || transcriptText);
-        currentItem.transcriptJsonKey = String(data?.transcriptJsonKey || currentItem.transcriptJsonKey || '');
-        currentItem.transcriptTextKey = String(data?.transcriptTextKey || currentItem.transcriptTextKey || '');
-        state.viralBreakdown.transcriptDrafts = {
-          ...(state.viralBreakdown.transcriptDrafts || {}),
-          [normalizedVideoKey]: currentItem.transcriptText,
-        };
-        state.viralBreakdown.notice = '台词已保存';
-      } finally {
-        state.viralBreakdown.transcriptSaving = false;
-        renderViralBreakdownWorkbench();
-      }
+      syncViralBreakdownScriptSubTab();
     }
 
     function renderMaterialLibrary(container, kind, items, title, emptyText) {
@@ -450,6 +325,11 @@
 
     function renderScriptKnowledgeModal() {
       const knowledge = state.scriptKnowledge;
+      const previousStream = els.materialLibraryWall.querySelector('.script-knowledge-ingestion-stream');
+      const previousScrollTop = previousStream?.scrollTop || 0;
+      const shouldStickToBottom = previousStream
+        ? previousStream.scrollHeight - previousStream.scrollTop - previousStream.clientHeight < 24
+        : true;
       if (els.scriptKnowledgeSearchInput && document.activeElement !== els.scriptKnowledgeSearchInput) {
         els.scriptKnowledgeSearchInput.value = knowledge.query || '';
       }
@@ -457,6 +337,11 @@
       els.scriptKnowledgeStatus.textContent = statusModel.text;
       els.scriptKnowledgeStatus.classList.toggle('is-error', statusModel.error);
       els.materialLibraryWall.innerHTML = buildScriptKnowledgeLayoutMarkup();
+      const nextStream = els.materialLibraryWall.querySelector('.script-knowledge-ingestion-stream');
+      if (nextStream) {
+        nextStream.scrollTop = shouldStickToBottom ? nextStream.scrollHeight : previousScrollTop;
+        syncScriptKnowledgeTypewriter(nextStream);
+      }
       if (knowledge.resetDetailScroll) {
         const panel = els.materialLibraryWall.querySelector('.script-knowledge-panel.is-active');
         if (panel) panel.scrollTop = 0;
@@ -464,18 +349,45 @@
       }
     }
 
-    function getScriptKnowledgeStatusModel() {
-      const knowledge = state.scriptKnowledge;
-      const status = knowledge.status || {};
-      if (knowledge.ingesting) return { text: '正在知识入库', error: false };
-      if (knowledge.loading) return { text: '正在检索', error: false };
-      if (!status.available) {
-        const databaseMissing = String(status.error || '').toLowerCase().includes('database "ai8video" does not exist');
-        return { text: databaseMissing ? '数据库待初始化' : 'PostgreSQL 未连接', error: true };
+    function syncScriptKnowledgeTypewriter(stream) {
+      const documentId = Number(state.scriptKnowledge.selectedId || 0);
+      const lines = stream.querySelectorAll('[data-typewriter-text]');
+      const activeKeys = new Set();
+      lines.forEach((line) => {
+        const key = `${documentId}:${line.dataset.stage || ''}`;
+        const target = line.dataset.typewriterText || '';
+        const current = scriptKnowledgeTypewriterLines.get(key);
+        const shown = current && target.startsWith(current.shown) ? current.shown : '';
+        scriptKnowledgeTypewriterLines.set(key, { shown, target });
+        line.dataset.typewriterKey = key;
+        line.textContent = shown;
+        activeKeys.add(key);
+      });
+      for (const key of scriptKnowledgeTypewriterLines.keys()) {
+        if (!activeKeys.has(key)) scriptKnowledgeTypewriterLines.delete(key);
       }
-      const ready = Number(status.readyCount || 0);
-      const total = Number(status.documentCount || 0);
-      return { text: `${ready}/${total} 已索引 · 无向量模型`, error: false };
+      startScriptKnowledgeTypewriter();
+    }
+
+    function startScriptKnowledgeTypewriter() {
+      if (scriptKnowledgeTypewriterTimer || !scriptKnowledgeTypewriterLines.size) return;
+      scriptKnowledgeTypewriterTimer = window.setInterval(tickScriptKnowledgeTypewriter, 32);
+    }
+
+    function tickScriptKnowledgeTypewriter() {
+      let pending = false;
+      scriptKnowledgeTypewriterLines.forEach((lineState, key) => {
+        if (lineState.shown.length >= lineState.target.length) return;
+        const remaining = lineState.target.length - lineState.shown.length;
+        const step = remaining > 120 ? 3 : remaining > 40 ? 2 : 1;
+        lineState.shown = lineState.target.slice(0, lineState.shown.length + step);
+        const line = els.materialLibraryWall.querySelector(`[data-typewriter-key="${key}"]`);
+        if (line) line.textContent = lineState.shown;
+        pending = true;
+      });
+      if (pending) return;
+      window.clearInterval(scriptKnowledgeTypewriterTimer);
+      scriptKnowledgeTypewriterTimer = null;
     }
 
     function buildScriptKnowledgeLayoutMarkup() {

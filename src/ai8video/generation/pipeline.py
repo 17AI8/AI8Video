@@ -3,14 +3,16 @@ from __future__ import annotations
 import inspect
 import logging
 import os
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from ai8video.batch.specialist_agent_observer import observe_planner_shadow
+from ai8video.batch.specialist_agent_observer import record_planner_execution
 from ai8video.generation.video_prompt_planner import (
     LLMCallable,
     expand_batch_seed_messages_with_ai,
+    infer_smart_video_count_with_ai,
     rewrite_video_with_ai,
     single_prompt_to_video,
     plan_video_prompts_with_ai,
@@ -39,8 +41,13 @@ from ai8video.knowledge.script_knowledge_rerank import build_script_rerank_llm
 from ai8video.knowledge.script_knowledge_query import build_script_query_llm
 from ai8video.application.message_parser import parse_employee_message
 from ai8video.integrations.direct_video_model_client import AI8VideoModelClient
+from ai8video.integrations.video_model_settings import load_video_model_settings
 from ai8video.core.models import ArchivedAsset, VideoPrompt, FirstFrameAsset, ParsedRequest, PipelineResult, QuickVideoJob, GenerationOutcome
 from ai8video.generation.prompt_trace import append_prompt_trace
+from ai8video.generation.tail_frame_chaining import (
+    append_tail_frame_chain_prompt,
+    build_next_tail_frame_request,
+)
 from ai8video.generation.output_review import review_final_outputs
 from ai8video.generation.reference_image_preprocessor import (
     TRANSFORMED_REFERENCE_DIR,
@@ -80,28 +87,68 @@ class AI8VideoPipeline:
         return self.run_request(request, progress_session_id=progress_session_id)
 
     def run_request(self, request: ParsedRequest, *, progress_session_id: str | None = None) -> PipelineResult:
+        videos = self.plan_request(request, progress_session_id=progress_session_id)
+        return self.run_planned_request(request, videos, progress_session_id=progress_session_id)
+
+    def plan_request(
+        self,
+        request: ParsedRequest,
+        *,
+        progress_session_id: str | None = None,
+        smart_split: bool = False,
+    ) -> list[VideoPrompt]:
         allow_mock_planning = self.config.dry_run
         task_constraints = self._reference_task_constraints(request)
-        if request.mode == "batch_videos":
-            if not request.video_count:
-                raise ValueError("video_count is required for batch_videos mode")
+        target_duration = self._effective_video_duration_seconds(request.duration_seconds)
+        video_count = request.video_count
+        if smart_split:
+            video_count = infer_smart_video_count_with_ai(
+                request.raw_text,
+                llm=self.llm,
+                duration_seconds=target_duration,
+                trace_session_id=progress_session_id,
+            )
+        if smart_split or request.mode == "batch_videos":
+            if not video_count:
+                raise ValueError("video_count is required for video planning")
             videos = plan_video_prompts_with_ai(
                 request.raw_text,
-                request.video_count,
+                video_count,
                 request.style_hint,
                 request.core_keywords,
                 task_constraints=task_constraints,
+                final_duration_seconds=target_duration,
                 llm=self.llm,
                 allow_mock=allow_mock_planning,
                 trace_session_id=progress_session_id,
             )
         else:
             videos = single_prompt_to_video(request.raw_text, request.style_hint, request.core_keywords)
-        observe_planner_shadow(
+        record_planner_execution(
             videos,
             session_id=progress_session_id,
             source_stage="planning_output",
         )
+        return videos
+
+    def _effective_video_duration_seconds(self, requested: int | None) -> int:
+        settings = load_video_model_settings(
+            llm_base_url=getattr(self.config, "llm_base_url", None),
+            llm_api_key=getattr(self.config, "llm_api_key", None),
+        )
+        duration = settings.seconds if requested in (None, 10) else int(requested)
+        guard = getattr(getattr(self, "client", None), "guard", None)
+        if not self.config.dry_run and guard and guard.forced_duration_seconds > 0:
+            duration = guard.forced_duration_seconds
+        return max(1, int(duration))
+
+    def run_planned_request(
+        self,
+        request: ParsedRequest,
+        videos: list[VideoPrompt],
+        *,
+        progress_session_id: str | None = None,
+    ) -> PipelineResult:
         return self._run_videos(request, videos, progress_session_id=progress_session_id)
 
     def rewrite_video(
@@ -199,18 +246,18 @@ class AI8VideoPipeline:
         start_generation_progress(
             progress_session_id,
             videos,
-            concurrent=bool(request.concurrent_generation and len(videos) > 1),
+            concurrent=bool(request.concurrent_generation and not request.tail_frame_chaining and len(videos) > 1),
         )
         logger.info(
             "ai8video generation start session=%s videos=%s concurrent=%s reference=%s transform=%s custom_prompt=%s",
             progress_session_id,
             len(videos),
-            bool(request.concurrent_generation and len(videos) > 1),
+            bool(request.concurrent_generation and not request.tail_frame_chaining and len(videos) > 1),
             bool(request.reference_image),
             bool(request.reference_image_transform_options and any(request.reference_image_transform_options.values())),
             bool(str(request.reference_image_custom_prompt or "").strip()),
         )
-        if request.concurrent_generation and len(videos) > 1:
+        if request.concurrent_generation and not request.tail_frame_chaining and len(videos) > 1:
             return self._run_videos_concurrently(request, videos, progress_session_id=progress_session_id)
 
         jobs = []
@@ -220,6 +267,7 @@ class AI8VideoPipeline:
         final_videos = []
         first_frames = []
         task_constraints = self._reference_task_constraints(request)
+        tail_dir = None
         try:
             finalized_video_queue = finalize_video_prompts(
                 videos,
@@ -232,13 +280,17 @@ class AI8VideoPipeline:
                 llm=getattr(self, "llm", None),
                 trace_session_id=progress_session_id,
             )
-            for final_video in finalized_video_queue:
+            if request.tail_frame_chaining:
+                finalized_video_queue = [append_tail_frame_chain_prompt(video) for video in finalized_video_queue]
+            active_request = request
+            tail_dir = tempfile.TemporaryDirectory(prefix="ai8video-tail-chain-")
+            for position, final_video in enumerate(finalized_video_queue):
                 final_videos.append(final_video)
-                self._trace_final_video_prompt(request, final_video, progress_session_id)
+                self._trace_final_video_prompt(active_request, final_video, progress_session_id)
                 try:
                     mark_job_preparing_first_frame(progress_session_id, final_video)
                     first_frame = self._prepare_video_first_frame(
-                        request,
+                        active_request,
                         final_video,
                         progress_session_id=progress_session_id,
                     )
@@ -247,7 +299,7 @@ class AI8VideoPipeline:
                         result_first_frame = first_frame
                     mark_job_submitting(progress_session_id, final_video)
                     self._trace_video_submit(
-                        request,
+                        active_request,
                         final_video,
                         first_frame,
                         progress_session_id,
@@ -256,23 +308,23 @@ class AI8VideoPipeline:
                         text=final_video.prompt,
                         video_index=final_video.index,
                         first_frame=first_frame,
-                        duration_seconds=request.duration_seconds,
-                        ratio=request.ratio,
-                        resolution=request.resolution,
-                        preset=request.preset,
+                        duration_seconds=active_request.duration_seconds,
+                        ratio=active_request.ratio,
+                        resolution=active_request.resolution,
+                        preset=active_request.preset,
                     )
                     self._trace_video_job_created(
-                        request,
+                        active_request,
                         final_video,
                         job,
                         progress_session_id,
-                        duration_seconds=request.duration_seconds,
+                        duration_seconds=active_request.duration_seconds,
                     )
                     mark_job_submitted(progress_session_id, final_video, job)
                     mark_job_polling(progress_session_id, job)
                     completed_job = self._poll_job(job, progress_session_id)
                     outcome, archive, asset_record = self._record_completed_job(
-                        request,
+                        active_request,
                         final_video,
                         completed_job,
                         first_frame,
@@ -286,7 +338,16 @@ class AI8VideoPipeline:
                 outcomes.append(outcome)
                 archives.append(archive)
                 asset_records.append(asset_record)
+                if request.tail_frame_chaining and position < len(finalized_video_queue) - 1:
+                    active_request = build_next_tail_frame_request(
+                        active_request,
+                        completed_job,
+                        archive,
+                        Path(tail_dir.name) / f"video-{final_video.index}-tail.png",
+                    )
         finally:
+            if tail_dir is not None:
+                tail_dir.cleanup()
             if len(jobs) + sum(1 for item in asset_records if item) >= len(videos):
                 finish_generation_progress(progress_session_id)
 

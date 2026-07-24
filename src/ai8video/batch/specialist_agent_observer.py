@@ -35,34 +35,35 @@ _SHADOW_SCHEDULER: AgentTaskScheduler | None = None
 _SHADOW_SCHEDULER_LEDGER_ID: int | None = None
 
 
-def observe_planner_shadow(
+def record_planner_execution(
     videos: list[VideoPrompt],
     *,
     session_id: str | None,
     source_stage: str,
     merge_mode: str | None = None,
 ) -> None:
-    """复用既有规划输出，不触发新的模型请求。"""
+    """把 Planner 已完成的真实规划结果登记到 Agent 运行账本。"""
     batch_id = str(get_current_generation_batch_id() or "").strip()
     try:
         identity = _current_identity(session_id)
         if identity is None or not videos:
             return
         batch_id, effective_session_id = identity
-        _execute_shadow_task(
+        _execute_snapshot_task(
             AgentTaskSpec(
                 task_id=_planner_task_id(batch_id),
                 generation_batch_id=batch_id,
                 session_id=effective_session_id,
-                task_type="video_plan_shadow",
+                task_type="video_plan_completed",
                 agent_role="planner",
                 input_snapshot=_task_input_snapshot(
                     len(videos),
                     source=source_stage,
                     merge_mode=merge_mode,
+                    observation_mode="active",
                 ),
                 parent_task_id=batch_id,
-                idempotency_key="shadow:planner:v1",
+                idempotency_key="planner:video-planning:v1",
                 priority=20,
             ),
             _planner_snapshot(videos, source_stage=source_stage, merge_mode=merge_mode),
@@ -91,7 +92,7 @@ def observe_reviewer_shadow(
             videos,
             merge_mode=merge_mode,
         )
-        _execute_shadow_task(
+        _execute_snapshot_task(
             AgentTaskSpec(
                 task_id=_reviewer_task_id(batch_id),
                 generation_batch_id=batch_id,
@@ -114,7 +115,7 @@ def observe_reviewer_shadow(
         _log_observer_failure("reviewer", batch_id, exc)
 
 
-def _execute_shadow_task(
+def _execute_snapshot_task(
     spec: AgentTaskSpec,
     output_snapshot: dict[str, Any],
     *,
@@ -135,7 +136,7 @@ def _execute_shadow_task(
     )
     completed = scheduler.wait_for_terminal(task.task_id, timeout_seconds=0.5)
     if completed is None or completed.state not in TERMINAL_TASK_STATES:
-        raise RuntimeError("specialist shadow task did not converge")
+        raise RuntimeError("specialist snapshot task did not converge")
     return completed
 
 
@@ -180,7 +181,7 @@ def _build_shadow_scheduler() -> AgentTaskScheduler:
         worker_prefix=_SHADOW_WORKER_ID,
     )
     handler_spec = AgentTaskHandlerSpec(_shadow_task_handler, replay_safe=True)
-    scheduler.register_handler("video_plan_shadow", handler_spec)
+    scheduler.register_handler("video_plan_completed", handler_spec)
     scheduler.register_handler("semantic_review_shadow", handler_spec)
     return scheduler
 
@@ -213,20 +214,21 @@ def _ensure_planner_task(
     planner = _TASK_LEDGER.agent_tasks.get_task(task_id)
     if planner is not None and planner.state in TERMINAL_TASK_STATES:
         return planner
-    completed = _execute_shadow_task(
+    completed = _execute_snapshot_task(
         AgentTaskSpec(
             task_id=task_id,
             generation_batch_id=batch_id,
             session_id=session_id,
-            task_type="video_plan_shadow",
+            task_type="video_plan_completed",
             agent_role="planner",
             input_snapshot=_task_input_snapshot(
                 len(videos),
                 source="reviewer_recovery",
                 merge_mode=merge_mode,
+                observation_mode="active",
             ),
             parent_task_id=batch_id,
-            idempotency_key="shadow:planner:v1",
+            idempotency_key="planner:video-planning:v1",
             priority=20,
         ),
         _planner_snapshot(
@@ -236,7 +238,7 @@ def _ensure_planner_task(
         ),
     )
     if completed is None:
-        raise RuntimeError("planner shadow task did not converge")
+        raise RuntimeError("planner task did not converge")
     return completed
 
 
@@ -270,7 +272,8 @@ def _planner_snapshot(
         for video in videos
     ]
     return {
-        "observationMode": "shadow",
+        "observationMode": "active",
+        "capability": "smart_split",
         "sourceStage": str(source_stage or "planned").strip() or "planned",
         "mergeMode": str(merge_mode or "").strip() or None,
         "videoCount": len(items),
@@ -336,9 +339,10 @@ def _task_input_snapshot(
     *,
     source: str,
     merge_mode: str | None,
+    observation_mode: str = "shadow",
 ) -> dict[str, Any]:
     return {
-        "observationMode": "shadow",
+        "observationMode": observation_mode,
         "source": str(source or "existing_output").strip() or "existing_output",
         "mergeMode": str(merge_mode or "").strip() or None,
         "videoCount": max(0, int(video_count)),

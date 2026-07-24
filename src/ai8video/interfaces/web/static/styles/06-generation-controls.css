@@ -96,6 +96,7 @@
     .composer-wrap:has(#scriptReferenceButton.is-open) .system-prompt-drawer.open,
     .composer-wrap:has(#flowerTextButton.is-open) .system-prompt-drawer.open,
     .composer-wrap:has(#generationModeButton.is-open) .system-prompt-drawer.open,
+    .composer-wrap:has(#smartSplitButton.is-open) .system-prompt-drawer.open,
     .composer-wrap:has(#htmlMotionOverlayButton.is-open) .system-prompt-drawer.open {
       border-top-right-radius: 0;
     }

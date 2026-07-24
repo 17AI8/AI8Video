@@ -84,6 +84,10 @@
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && !document.getElementById('viralBreakdownModal')?.classList.contains('hidden')) {
         event.preventDefault();
+        if (document.querySelector('[data-viral-select="video"]')?.classList.contains('is-open')) {
+          closeViralBreakdownVideoMenu();
+          return;
+        }
         closeViralBreakdownModal();
         return;
       }
@@ -329,9 +333,16 @@
     async function loadScriptKnowledgeDocument(documentId, options = {}) {
       const id = Number(documentId || 0);
       if (!id) return;
+      const currentJobId = Number(state.scriptKnowledge.ingestionJob?.documentId || 0);
+      if (currentJobId && currentJobId !== id) {
+        window.clearTimeout(state.scriptKnowledge.ingestionTimer);
+        state.scriptKnowledge.ingestionTimer = null;
+        state.scriptKnowledge.ingestionJob = null;
+        state.scriptKnowledge.ingesting = false;
+      }
       if (Number(state.scriptKnowledge.selectedId || 0) !== id) {
         state.scriptKnowledge.resetDetailScroll = true;
-        state.scriptKnowledge.activeTab = 'sections';
+        state.scriptKnowledge.activeTab = 'tree';
       }
       state.scriptKnowledge.selectedId = id;
       if (options.renderAfter !== false) renderMaterialLibraryModal();
@@ -342,6 +353,7 @@
         if (Number(state.scriptKnowledge.selectedId || 0) !== id) return;
         state.scriptKnowledge.detail = data?.document || null;
         state.scriptKnowledge.error = '';
+        await loadScriptKnowledgeIngestionStatus(id, { renderAfter: false });
       } catch (error) {
         state.scriptKnowledge.error = formatScriptKnowledgeError(error?.message || String(error));
       }
@@ -350,7 +362,8 @@
 
     async function startScriptKnowledgeIngestion(documentId) {
       const id = Number(documentId || state.scriptKnowledge.detail?.id || 0);
-      if (!id || state.scriptKnowledge.ingesting) return;
+      const activeJob = getScriptKnowledgeIngestionJob(id);
+      if (!id || ['queued', 'running'].includes(activeJob?.state)) return;
       state.scriptKnowledge.ingesting = true;
       state.scriptKnowledge.ingestionJob = { documentId: id, state: 'queued', events: [] };
       state.scriptKnowledge.error = '';
@@ -359,6 +372,7 @@
         const res = await fetch(`/api/script-knowledge/${id}/ingest`, { method: 'POST' });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data?.ok === false) throw buildRequestError(data);
+        if (Number(state.scriptKnowledge.selectedId || 0) !== id) return;
         state.scriptKnowledge.ingestionJob = data.job || state.scriptKnowledge.ingestionJob;
         pollScriptKnowledgeIngestion(id);
       } catch (error) {
@@ -371,17 +385,8 @@
     async function pollScriptKnowledgeIngestion(documentId) {
       window.clearTimeout(state.scriptKnowledge.ingestionTimer);
       try {
-        const res = await fetch(`/api/script-knowledge/${documentId}/ingest`);
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || data?.ok === false) throw buildRequestError(data);
-        const job = data.job || {};
-        state.scriptKnowledge.ingestionJob = job;
-        state.scriptKnowledge.ingesting = ['queued', 'running'].includes(job.state);
-        renderMaterialLibraryModal();
-        if (state.scriptKnowledge.ingesting) {
-          state.scriptKnowledge.ingestionTimer = window.setTimeout(() => pollScriptKnowledgeIngestion(documentId), 280);
-          return;
-        }
+        const job = await loadScriptKnowledgeIngestionStatus(documentId);
+        if (!job || ['queued', 'running'].includes(job.state)) return;
         if (job.state === 'succeeded') await refreshScriptKnowledge({ preserveSelection: true });
         if (job.state === 'failed') state.scriptKnowledge.error = formatScriptKnowledgeError(job.error || '知识入库失败');
       } catch (error) {
@@ -389,6 +394,30 @@
         state.scriptKnowledge.error = formatScriptKnowledgeError(error?.message || String(error));
         renderMaterialLibraryModal();
       }
+    }
+
+    function getScriptKnowledgeIngestionJob(documentId = state.scriptKnowledge.selectedId) {
+      const id = Number(documentId || 0);
+      const job = state.scriptKnowledge.ingestionJob;
+      return id && Number(job?.documentId || 0) === id ? job : null;
+    }
+
+    async function loadScriptKnowledgeIngestionStatus(documentId, options = {}) {
+      const id = Number(documentId || 0);
+      if (!id || Number(state.scriptKnowledge.selectedId || 0) !== id) return null;
+      const res = await fetch(`/api/script-knowledge/${id}/ingest`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.ok === false) throw buildRequestError(data);
+      if (Number(state.scriptKnowledge.selectedId || 0) !== id) return null;
+      const job = data.job || { documentId: id, state: 'idle', events: [] };
+      state.scriptKnowledge.ingestionJob = job;
+      state.scriptKnowledge.ingesting = ['queued', 'running'].includes(job.state);
+      window.clearTimeout(state.scriptKnowledge.ingestionTimer);
+      state.scriptKnowledge.ingestionTimer = state.scriptKnowledge.ingesting
+        ? window.setTimeout(() => pollScriptKnowledgeIngestion(id), 280)
+        : null;
+      if (options.renderAfter !== false) renderMaterialLibraryModal();
+      return job;
     }
 
     async function saveScriptKnowledgeMetadata() {
@@ -424,9 +453,9 @@
     }
 
     function activateScriptKnowledgeTab(tabName) {
-      const tab = ['sections', 'edit', 'source'].includes(String(tabName || ''))
+      const tab = ['tree', 'edit', 'source'].includes(String(tabName || ''))
         ? String(tabName)
-        : 'sections';
+        : 'tree';
       state.scriptKnowledge.activeTab = tab;
       const root = els.materialLibraryWall;
       if (!root) return;
@@ -447,6 +476,17 @@
         event.preventDefault();
         event.stopPropagation();
         activateScriptKnowledgeTab(tabTrigger.getAttribute('data-script-knowledge-tab'));
+        return true;
+      }
+      const treeToggle = event.target.closest('[data-script-knowledge-tree-toggle]');
+      if (treeToggle) {
+        event.preventDefault();
+        event.stopPropagation();
+        const item = treeToggle.closest('.script-knowledge-tree-branch, .script-knowledge-tree-leaf');
+        if (!item || item.classList.contains('is-empty')) return true;
+        const open = !item.classList.contains('is-open');
+        item.classList.toggle('is-open', open);
+        item.setAttribute('aria-expanded', open ? 'true' : 'false');
         return true;
       }
       const documentTrigger = event.target.closest('[data-script-knowledge-document]');
@@ -504,6 +544,13 @@
         selecting: false,
         error: data?.error || '',
       };
+    }
+
+    async function refreshScriptReferenceKnowledgeItems() {
+      const res = await fetch('/api/script-knowledge?limit=100');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.ok === false) throw buildRequestError(data);
+      state.scriptReferenceDrawer.items = Array.isArray(data?.items) ? data.items : [];
     }
 
     async function refreshFlowerText() {

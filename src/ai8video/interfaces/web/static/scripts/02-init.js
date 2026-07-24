@@ -185,6 +185,10 @@
       await openGenerationModeDrawer();
     });
 
+    els.smartSplitButton?.addEventListener('click', async () => {
+      await openSmartSplitDrawer();
+    });
+
     els.htmlMotionOverlayButton?.addEventListener('click', async () => {
       await openHtmlMotionOverlayDrawer();
     });

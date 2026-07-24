@@ -143,6 +143,7 @@ class DefaultScriptReferenceTopKTest(unittest.TestCase):
         state = ConversationState(session_id="top-k-gating")
 
         self.assertFalse(controller._prefer_full_script_reference(state, "使用当前剧本参考写私域老板"))
+        self.assertTrue(controller._uses_saved_script_reference("使用当前知识库参考写私域老板"))
         self.assertFalse(controller._prefer_full_script_reference(state, "5 个"))
         self.assertTrue(controller._prefer_full_script_reference(state, "开始生成"))
         self.assertTrue(controller._prefer_full_script_reference(state, "使用当前剧本参考生成10条视频"))

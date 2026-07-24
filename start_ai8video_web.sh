@@ -3,7 +3,7 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_DIR"
-export PATH="$HOME/.local/bin:$PATH"
+export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
 
 # 兼容旧环境变量；新变量优先，后续进程只读取 AI8VIDEO_ 前缀。
 while IFS='=' read -r legacy_name legacy_value; do
@@ -132,7 +132,7 @@ echo "使用 Python: $PYTHON_BIN"
 echo "检查 AI8video 工作台依赖..."
 if ! "$PYTHON_BIN" - <<'PY'
 import importlib
-modules = ("bottle", "requests", "charset_normalizer", "PIL")
+modules = ("bottle", "requests", "charset_normalizer", "PIL", "faster_whisper")
 missing = []
 for name in modules:
     try:

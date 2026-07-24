@@ -255,6 +255,11 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn('function selectHotRadarTopicCard(topicCard)', source)
         self.assertIn('function buildHotRadarTopicListMarkup(items, hotRadar, twoColumns)', source)
         self.assertIn('hot-radar-topic-column', source)
+        self.assertIn('data-hot-radar-column="0"', source)
+        self.assertIn("卡片作 grid 直子项时 overflow:hidden 会把标题行压成 0 高", source)
+        self.assertIn("window.matchMedia('(min-width: 901px)').matches", source)
+        self.assertIn("min-height: min-content", source)
+        self.assertIn("grid-template-rows: auto auto", source)
         self.assertIn('is-expanded', source)
         self.assertIn("#hotRadarModal #hotRadarTopicList .hot-radar-topic-details {\n      max-height: 0;\n      opacity: 0;\n      overflow: hidden;", source)
         self.assertIn("#hotRadarModal #hotRadarTopicList .hot-radar-topic-preview {\n      max-height: 220px;\n      overflow: auto;", source)
@@ -891,7 +896,12 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         finally:
             ai8video_web.request = request_backup
 
-        update.assert_called_once_with(concurrent_generation=True)
+        update.assert_called_once_with(
+            concurrent_generation=True,
+            smart_split=False,
+            confirm_smart_split=False,
+            tail_frame_chaining=False,
+        )
         self.assertTrue(body["ok"])
         self.assertTrue(body["concurrentGeneration"])
 
@@ -5415,6 +5425,17 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertNotIn("真实生成已就绪", html)
         self.assertNotIn("checkboxMarkup('watermark', '加水印', settings.watermark)", html)
 
+    def test_static_multi_agent_settings_lists_live_knowledge_base_agent(self) -> None:
+        html = read_static_source()
+
+        self.assertIn("label: '知识库 Agent'", html)
+        self.assertIn("知识库 Agent · 已接入", html)
+        self.assertIn("status: '知识库已接入'", html)
+        self.assertIn("Reviewer · 知识库已接入", html)
+        self.assertIn("正文由程序确定性提取", html)
+        self.assertIn("本次知识入库未通过审核", html)
+        self.assertIn("以下仍展示上一次成功索引", html)
+
     def test_static_deleted_progress_card_uses_soft_deleted_style(self) -> None:
         html = read_static_source()
 
@@ -5778,8 +5799,30 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("data-script-knowledge-tab", html)
         self.assertIn("data-script-knowledge-panel", html)
         self.assertIn("data-script-knowledge-ingest", html)
+        self.assertIn("function formatScriptKnowledgeLeafContent(value)", html)
+        self.assertIn("script-knowledge-tree-chevron", html)
+        self.assertIn("script-knowledge-tree-leaf-body", html)
+        self.assertIn("script-knowledge-tree-drawer", html)
+        self.assertIn("data-script-knowledge-tree-toggle", html)
+        self.assertIn("script-knowledge-tree-node", html)
+        self.assertIn('data-last="${isLast ? \'true\' : \'false\'}"', html)
+        self.assertIn("点叶节点展开正文", html)
+        self.assertIn("script-knowledge-tree-meta", html)
+        knowledge_css = (STATIC_ROOT / "script-knowledge.css").read_text(encoding="utf-8")
+        self.assertIn("--tree-spine:", knowledge_css)
+        self.assertIn("--tree-icon-gap:", knowledge_css)
+        self.assertIn('data-depth="0"]::before', knowledge_css)
+        self.assertIn(".script-knowledge-tree-node::before", knowledge_css)
+        self.assertIn(".script-knowledge-tree-node::after", knowledge_css)
+        self.assertIn(".script-knowledge-tree-drawer", knowledge_css)
+        self.assertIn("grid-template-rows: 0fr", knowledge_css)
+        self.assertNotIn("script-knowledge-tree-count-pill", html)
         self.assertIn("/api/script-knowledge/${id}/ingest", html)
         self.assertIn("正在知识入库", html)
+        self.assertIn("await loadScriptKnowledgeIngestionStatus(id, { renderAfter: false });", html)
+        self.assertIn("Number(job?.documentId || 0) === id ? job : null", html)
+        self.assertIn("Number(state.scriptKnowledge.selectedId || 0) !== id) return null;", html)
+        self.assertNotIn("${state.scriptKnowledge.ingesting ? '知识入库中' : '知识入库'}", html)
         self.assertNotIn('id="scriptKnowledgeSyncButton"', html)
         self.assertNotIn(
             "? '后台真实进度'",

@@ -26,8 +26,16 @@ from ai8video.assets.default_reference_image import (
     default_reference_image_path,
     enabled_default_reference_image_options,
 )
-from ai8video.knowledge.default_script_reference import apply_default_script_reference
-from ai8video.generation.generation_mode import default_concurrent_generation_enabled
+from ai8video.knowledge.default_script_reference import (
+    apply_default_script_reference,
+    split_temporary_script_knowledge,
+)
+from ai8video.generation.generation_mode import (
+    default_concurrent_generation_enabled,
+    default_smart_split_confirmation_enabled,
+    default_smart_split_enabled,
+    default_tail_frame_chaining_enabled,
+)
 from ai8video.media.motion.html_motion_overlay import default_html_motion_overlay_enabled
 from ai8video.batch.daily_batch_runner import DailyBatchRunner
 from ai8video.core.models import ChatReply, ConversationState, VideoPrompt, ParsedRequest
@@ -68,7 +76,8 @@ class AI8VideoConversationController:
         )
 
     def handle_message(self, session_id: str, message: str) -> ChatReply:
-        text = message.strip()
+        text, temporary_script_knowledge = split_temporary_script_knowledge(message)
+        text = text.strip()
         if not text:
             return ChatReply(
                 text="我还没收到内容。直接把提示词、脚本素材、批量视频需求或参考图路径发我就行。",
@@ -79,6 +88,8 @@ class AI8VideoConversationController:
         if state is None:
             state = ConversationState(session_id=session_id)
             self.sessions[session_id] = state
+        if state.awaiting == "smart_split_confirmation":
+            return self._handle_smart_split_followup(state, text)
         ai_interpretation = self._interpret_request_with_ai(text)
         if state.completed_runs > 0 and self._is_rewrite_request(text, ai_interpretation):
             return self._handle_rewrite(state, text)
@@ -123,6 +134,8 @@ class AI8VideoConversationController:
         if not default_script_reference_applied and self._is_batch_request(text, ai_interpretation):
             return self._handle_batch_request(state, text, ai_interpretation)
 
+        if temporary_script_knowledge:
+            text = f"{text.rstrip()}\n\n{temporary_script_knowledge}"
         self._merge_message(state, text, control_text=control_text, ai_interpretation=ai_interpretation)
 
         if not state.draft.raw_text:
@@ -138,7 +151,11 @@ class AI8VideoConversationController:
                 meta={"operation": "collect"},
             )
 
-        if state.draft.mode == "batch_videos" and not state.draft.video_count:
+        if (
+            state.draft.mode == "batch_videos"
+            and not state.draft.video_count
+            and not default_smart_split_enabled()
+        ):
             state.awaiting = "video_count"
             return ChatReply(
                 text=self._prepend_material_receipt(
@@ -187,7 +204,25 @@ class AI8VideoConversationController:
         self._apply_default_generation_mode(state)
         self._apply_default_html_motion_overlay(state)
         request = state.draft.to_request()
-        result = self._run_generation_request(request, progress_session_id=state.session_id)
+        if default_smart_split_enabled() and self._supports_planned_generation():
+            state.planned_videos = self._plan_generation_request(
+                request,
+                progress_session_id=state.session_id,
+                smart_split=True,
+            )
+            state.draft.video_count = len(state.planned_videos)
+            state.draft.mode = "batch_videos" if len(state.planned_videos) > 1 else "single_video"
+            if default_smart_split_confirmation_enabled():
+                state.awaiting = "smart_split_confirmation"
+                return self._build_smart_split_confirmation_reply(state)
+            request = state.draft.to_request()
+            result = self._run_planned_generation_request(
+                request,
+                state.planned_videos,
+                progress_session_id=state.session_id,
+            )
+        else:
+            result = self._run_generation_request(request, progress_session_id=state.session_id)
         state.last_result = result.to_dict()
         state.completed_runs += 1
         return ChatReply(
@@ -199,6 +234,67 @@ class AI8VideoConversationController:
             draft=state.draft,
             result=result,
             meta={"operation": "generate", "materials": material_context},
+        )
+
+    def _handle_smart_split_followup(self, state: ConversationState, text: str) -> ChatReply:
+        compact = re.sub(r"\s+", "", text)
+        if compact in {"确认分集", "确认并继续", "确认", "继续生成", "开始生成"}:
+            if not state.planned_videos:
+                raise RuntimeError("智能分集方案已失效，请重新发送原始需求")
+            state.awaiting = None
+            request = state.draft.to_request()
+            result = self._run_planned_generation_request(
+                request,
+                state.planned_videos,
+                progress_session_id=state.session_id,
+            )
+            state.last_result = result.to_dict()
+            state.completed_runs += 1
+            return ChatReply(
+                text=self._build_generation_result_text(state, result),
+                stage="completed",
+                draft=state.draft,
+                result=result,
+                meta={"operation": "generate"},
+            )
+        if compact not in {"重新分集", "重分", "重新规划"}:
+            state.draft.raw_text = self._append_draft_text(
+                state.draft.raw_text,
+                f"分集调整要求：{text}",
+            )
+        request = state.draft.to_request()
+        state.planned_videos = self._plan_generation_request(
+            request,
+            progress_session_id=state.session_id,
+            smart_split=True,
+        )
+        state.draft.video_count = len(state.planned_videos)
+        state.draft.mode = "batch_videos" if len(state.planned_videos) > 1 else "single_video"
+        return self._build_smart_split_confirmation_reply(state)
+
+    def _build_smart_split_confirmation_reply(self, state: ConversationState) -> ChatReply:
+        lines = [f"已智能分为 {len(state.planned_videos)} 集："]
+        for video in state.planned_videos:
+            summary = video.source_summary or "已生成独立内容方案"
+            lines.append(f"{video.index}. {video.title}：{summary}")
+        lines.append("确认后进入视频生成；也可以直接回复调整要求，我会重新分集。")
+        return ChatReply(
+            text="\n".join(lines),
+            stage="collecting",
+            awaiting="smart_split_confirmation",
+            draft=state.draft,
+            meta={
+                "operation": "collect",
+                "guide": {
+                    "kind": "smart_split_confirmation",
+                    "title": "确认智能分集",
+                    "summary": f"Planner 已完成 {len(state.planned_videos)} 集规划。",
+                    "actions": [
+                        {"kind": "send", "label": "确认并继续", "value": "确认分集"},
+                        {"kind": "send", "label": "重新分集", "value": "重新分集"},
+                    ],
+                },
+            },
         )
 
     def _build_generation_result_text(self, state: ConversationState, result) -> str:
@@ -806,6 +902,44 @@ class AI8VideoConversationController:
             return self._merged_video_pipeline(mode).run_request(request, progress_session_id=progress_session_id)
         return self.pipeline.run_request(request, progress_session_id=progress_session_id)
 
+    def _plan_generation_request(
+        self,
+        request: ParsedRequest,
+        *,
+        progress_session_id: str | None = None,
+        smart_split: bool = False,
+    ) -> list[VideoPrompt]:
+        mode = normalize_video_merge_mode(self._merge_mode_loader())
+        pipeline = self._merged_video_pipeline(mode) if mode in {"merge2", "merge4"} else self.pipeline
+        return pipeline.plan_request(
+            request,
+            progress_session_id=progress_session_id,
+            smart_split=smart_split,
+        )
+
+    def _supports_planned_generation(self) -> bool:
+        mode = normalize_video_merge_mode(self._merge_mode_loader())
+        pipeline = self._merged_video_pipeline(mode) if mode in {"merge2", "merge4"} else self.pipeline
+        pipeline_type = type(pipeline)
+        return callable(getattr(pipeline_type, "plan_request", None)) and callable(
+            getattr(pipeline_type, "run_planned_request", None)
+        )
+
+    def _run_planned_generation_request(
+        self,
+        request: ParsedRequest,
+        videos: list[VideoPrompt],
+        *,
+        progress_session_id: str | None = None,
+    ):
+        mode = normalize_video_merge_mode(self._merge_mode_loader())
+        pipeline = self._merged_video_pipeline(mode) if mode in {"merge2", "merge4"} else self.pipeline
+        return pipeline.run_planned_request(
+            request,
+            videos,
+            progress_session_id=progress_session_id,
+        )
+
     def _merged_video_pipeline(self, mode: str = "merge2"):
         mode = normalize_video_merge_mode(mode)
         if mode not in {"merge2", "merge4"}:
@@ -937,9 +1071,12 @@ class AI8VideoConversationController:
 
     @staticmethod
     def _apply_default_generation_mode(state: ConversationState) -> None:
-        if state.draft.concurrent_generation is not None:
-            return
-        state.draft.concurrent_generation = default_concurrent_generation_enabled()
+        if state.draft.concurrent_generation is None:
+            state.draft.concurrent_generation = default_concurrent_generation_enabled()
+        if state.draft.tail_frame_chaining is None:
+            state.draft.tail_frame_chaining = default_tail_frame_chaining_enabled()
+        if state.draft.tail_frame_chaining:
+            state.draft.concurrent_generation = False
 
     @staticmethod
     def _apply_default_html_motion_overlay(state: ConversationState) -> None:
@@ -953,7 +1090,7 @@ class AI8VideoConversationController:
 
     @staticmethod
     def _uses_saved_script_reference(text: str) -> bool:
-        return bool(re.search(r"(当前|默认|已选|选中|设置里|面板里).{0,8}(剧本参考|脚本参考|剧本素材|素材)", text))
+        return bool(re.search(r"(当前|默认|已选|选中|设置里|面板里).{0,8}(知识库参考|剧本参考|脚本参考|剧本素材|素材)", text))
 
     @staticmethod
     def _merge_style_hints(current: str | None, incoming: str) -> str:

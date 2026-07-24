@@ -3,12 +3,33 @@ from __future__ import annotations
 import queue
 import threading
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from ai8video.application import ai8video_chat_service
+from ai8video.application import runtime
 
 
 class RuntimeExecutionStateTest(unittest.TestCase):
+    def test_runtime_refresh_preserves_conversation_sessions(self) -> None:
+        sessions = {"chat-1": object()}
+        previous = SimpleNamespace(
+            conversation_controller=SimpleNamespace(sessions=sessions)
+        )
+        replacement = SimpleNamespace(
+            conversation_controller=SimpleNamespace(sessions={})
+        )
+        original_runtime = runtime._RUNTIME
+        runtime._RUNTIME = previous
+        try:
+            with patch.object(runtime, "AI8VideoRuntime", return_value=replacement):
+                refreshed = runtime.get_runtime(refresh=True)
+        finally:
+            runtime._RUNTIME = original_runtime
+
+        self.assertIs(refreshed, replacement)
+        self.assertIs(refreshed.conversation_controller.sessions, sessions)
+
     def test_error_payload_is_persisted_as_failed_execution(self) -> None:
         session = ai8video_chat_service._AI8VideoSession.__new__(
             ai8video_chat_service._AI8VideoSession

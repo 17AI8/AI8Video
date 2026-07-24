@@ -4,6 +4,9 @@
       state.generationMode = {
         ...(state.generationMode || {}),
         concurrentGeneration: !!data?.concurrentGeneration,
+        smartSplit: !!data?.smartSplit,
+        confirmSmartSplit: !!data?.confirmSmartSplit,
+        tailFrameChaining: !!data?.tailFrameChaining,
         saving: false,
         error: data?.error || '',
       };
@@ -55,6 +58,10 @@
       }
 
       const session = getActiveSession();
+      const temporaryKnowledge = buildTemporaryScriptKnowledgeChatPayload();
+      const useDefaultKnowledgeReference = !!temporaryKnowledge
+        && !!state.scriptReference?.enabled
+        && !!state.scriptReference?.item;
       const pendingPayload = buildLocalPendingPayload(session.id, value);
       const welcomeNode = takeWelcomeMessageNode(session);
       session.messages.push({ role: 'user', text: value });
@@ -75,12 +82,19 @@
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId: session.id, message: value, refresh }),
+          body: JSON.stringify({
+            sessionId: session.id,
+            message: value,
+            refresh,
+            temporaryKnowledge,
+            useDefaultKnowledgeReference,
+          }),
         });
         const data = await res.json();
         if (!res.ok) {
           const recovered = await tryRecoverTimedOutChat(session, value, data);
           if (recovered) {
+            clearTemporaryScriptKnowledgeReference();
             clearGenerationProgress();
             persistSessions();
             await refreshHealth();
@@ -96,6 +110,7 @@
           }
           throw buildRequestError(data);
         }
+        clearTemporaryScriptKnowledgeReference();
         replaceLocalPendingPayload(session, buildAssistantPayload(data, session.id));
         clearGenerationProgress();
         persistSessions();
@@ -372,7 +387,7 @@
       const value = String(text || '').trim();
       if (!value) return false;
       if (/^\d{1,3}$/.test(value)) return true;
-      if (/^(并发模式|普通模式|不用参考图|需要参考图|有参考图|跳过关键词|不用关键词|无关键词)$/u.test(value)) {
+      if (/^(并发模式|普通模式|不用参考图|需要参考图|有参考图|跳过关键词|不用关键词|无关键词|确认分集|确认并继续|重新分集)$/u.test(value)) {
         return true;
       }
       return false;
@@ -482,4 +497,3 @@
       event.preventDefault();
       event.clipboardData?.setData('text/plain', text);
     });
-

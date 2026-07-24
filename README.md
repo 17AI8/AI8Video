@@ -115,6 +115,7 @@ AI8video 采用**本地有界多 Agent**，不是让多个通用 Agent 任意调
 - Python `3.10` 至 `3.13`。
 - 完整媒体链路需要 FFmpeg 与 FFprobe。请使用系统安装或 LGPL 兼容构建。
 - 使用剧本知识库时需要 PostgreSQL `16+`。
+- 爆款拆解的台词识别使用 `faster-whisper`；源码启动器会自动安装运行时，模型在首次分析时按需下载。
 - 使用可选 HyperFrames HTML 动效时需要 Node.js 与 npm；核心工作台和 CLI 不依赖 Node。
 - Electron 桌面壳需要在 `desktop/electron/` 中单独安装 Node 依赖。
 
@@ -136,7 +137,9 @@ cp mykey_template.py mykey.py
 ./start_ai8video_web.sh
 ```
 
-首次启动会自动创建 `.venv`、安装 Python 依赖，并从 `18720-18820` 中选择可用端口。检测到 Node.js 与 npm 时，启动器还会安装可选的 HyperFrames 依赖；安装失败不会阻止核心工作台启动。
+首次启动会自动创建 `.venv`、安装 Python 依赖，并从 `18720-18820` 中选择可用端口。已有环境若缺少 `faster-whisper`，启动器也会自动补装。检测到 Node.js 与 npm 时，启动器还会安装可选的 HyperFrames 依赖；安装失败不会阻止核心工作台启动。
+
+爆款拆解默认使用 `base` 模型进行本地 CPU 台词识别。模型权重不提交到仓库，首次分析时从模型源下载，并缓存到 `用户文件夹/爆款拆解/.model-cache/faster-whisper/`；后续分析复用本地缓存。商业发行若把 Python 运行时和模型一并打包，请同时保留 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) 中列出的许可证声明。
 
 ### 各平台入口
 

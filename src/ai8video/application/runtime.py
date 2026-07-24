@@ -350,7 +350,13 @@ def get_runtime(refresh: bool = False) -> AI8VideoRuntime:
     global _RUNTIME
     with _RUNTIME_LOCK:
         if refresh or _RUNTIME is None:
-            _RUNTIME = AI8VideoRuntime()
+            previous_runtime = _RUNTIME
+            next_runtime = AI8VideoRuntime()
+            if previous_runtime is not None:
+                next_runtime.conversation_controller.sessions = (
+                    previous_runtime.conversation_controller.sessions
+                )
+            _RUNTIME = next_runtime
         return _RUNTIME
 
 

@@ -94,6 +94,8 @@
         items: [],
         selectedVideoKey: '',
         activeTab: 'grid',
+        previewTab: 'preview',
+        scriptSubTab: 'skeleton',
         intervalSeconds: 1,
         targetRatio: '16:9',
         loading: false,
@@ -102,7 +104,11 @@
         transcriptProcessing: false,
         transcriptDrafts: {},
         scriptGuessProcessing: false,
+        scriptTreeProcessing: false,
+        scriptTreeSaving: false,
         scriptGuessDrafts: {},
+        scriptGuessTrees: {},
+        scriptResumeStage: '',
         error: '',
         notice: '',
       },
@@ -156,9 +162,11 @@
         selecting: false,
         error: '',
       },
+      temporaryScriptKnowledge: null,
       scriptReferenceDrawer: {
         visible: false,
         loading: false,
+        items: [],
       },
       flowerText: {
         enabled: false,
@@ -215,10 +223,17 @@
       },
       generationMode: {
         concurrentGeneration: false,
+        smartSplit: false,
+        confirmSmartSplit: false,
+        tailFrameChaining: false,
         saving: false,
         error: '',
       },
       generationModeDrawer: {
+        visible: false,
+        loading: false,
+      },
+      smartSplitDrawer: {
         visible: false,
         loading: false,
       },
@@ -352,7 +367,7 @@
         status: null,
         selectedId: 0,
         detail: null,
-        activeTab: 'sections',
+        activeTab: 'tree',
         resetDetailScroll: false,
         error: '',
       },
@@ -371,6 +386,8 @@
     let flowerTextFontFaceSignature = '';
     let flowerTextSavePipeline = Promise.resolve();
     let scriptKnowledgeSearchTimer = null;
+    let scriptKnowledgeTypewriterTimer = null;
+    const scriptKnowledgeTypewriterLines = new Map();
     const pendingPollTimers = new Map();
     const pendingPollInflight = new Set();
     const pendingCancelInflight = new Set();
@@ -391,6 +408,7 @@
       scriptReferenceButton: document.getElementById('scriptReferenceButton'),
       flowerTextButton: document.getElementById('flowerTextButton'),
       generationModeButton: document.getElementById('generationModeButton'),
+      smartSplitButton: document.getElementById('smartSplitButton'),
       htmlMotionOverlayButton: document.getElementById('htmlMotionOverlayButton'),
       imageMaterialList: document.getElementById('imageMaterialList'),
       scriptMaterialList: document.getElementById('scriptMaterialList'),
@@ -453,6 +471,8 @@
       flowerTextDrawerBody: document.getElementById('flowerTextDrawerBody'),
       generationModeDrawer: document.getElementById('generationModeDrawer'),
       generationModeDrawerBody: document.getElementById('generationModeDrawerBody'),
+      smartSplitDrawer: document.getElementById('smartSplitDrawer'),
+      smartSplitDrawerBody: document.getElementById('smartSplitDrawerBody'),
       htmlMotionOverlayDrawer: document.getElementById('htmlMotionOverlayDrawer'),
       htmlMotionOverlayDrawerBody: document.getElementById('htmlMotionOverlayDrawerBody'),
       systemPromptModal: document.getElementById('systemPromptModal'),

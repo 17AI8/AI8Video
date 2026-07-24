@@ -33,7 +33,7 @@ class SpecialistAgentObserverTest(unittest.TestCase):
     def tearDown(self) -> None:
         specialist_agent_observer.shutdown_specialist_agent_scheduler(grace_seconds=0.2)
 
-    def test_planner_and_reviewer_form_depth_one_shadow_graph(self) -> None:
+    def test_active_planner_and_shadow_reviewer_form_depth_one_graph(self) -> None:
         secret_title = "内部保密标题"
         secret_prompt = "内部保密提示词，不应进入任务快照"
         videos = [
@@ -72,6 +72,9 @@ class SpecialistAgentObserverTest(unittest.TestCase):
             ensure_ascii=False,
         )
         self.assertEqual(planner.state, "succeeded")
+        self.assertEqual(planner.task_type, "video_plan_completed")
+        self.assertEqual(planner.output_snapshot["observationMode"], "active")
+        self.assertEqual(planner.output_snapshot["capability"], "smart_split")
         self.assertEqual(reviewer.state, "succeeded")
         self.assertEqual(planner.parent_task_id, "gb-shadow")
         self.assertEqual(reviewer.parent_task_id, "gb-shadow")
@@ -91,10 +94,10 @@ class SpecialistAgentObserverTest(unittest.TestCase):
                     task_id="gb-missing-plan:planner",
                     generation_batch_id="gb-missing-plan",
                     session_id="session-shadow",
-                    task_type="video_plan_shadow",
+                    task_type="video_plan_completed",
                     agent_role="planner",
                     parent_task_id="gb-missing-plan",
-                    idempotency_key="shadow:planner:v1",
+                    idempotency_key="planner:video-planning:v1",
                 )
             )
             ledger.agent_tasks.transition_task(
@@ -137,7 +140,7 @@ class SpecialistAgentObserverTest(unittest.TestCase):
                 self._with_context(
                     "gb-broken",
                     "session-broken",
-                    lambda: specialist_agent_observer.observe_planner_shadow(
+                    lambda: specialist_agent_observer.record_planner_execution(
                         [video],
                         session_id="session-broken",
                         source_stage="planning_output",
@@ -162,7 +165,7 @@ class SpecialistAgentObserverTest(unittest.TestCase):
                         self._with_context(
                             "gb-locked",
                             "session-locked",
-                            lambda: specialist_agent_observer.observe_planner_shadow(
+                            lambda: specialist_agent_observer.record_planner_execution(
                                 [video],
                                 session_id="session-locked",
                                 source_stage="planning_output",
@@ -203,7 +206,7 @@ class SpecialistAgentObserverTest(unittest.TestCase):
 
     def _observe_pair(self, videos: list[VideoPrompt], batch_id: str, session_id: str) -> None:
         def observe() -> None:
-            specialist_agent_observer.observe_planner_shadow(
+            specialist_agent_observer.record_planner_execution(
                 videos,
                 session_id=session_id,
                 source_stage="planning_output",
@@ -228,6 +231,17 @@ class SpecialistAgentObserverTest(unittest.TestCase):
 
 
 class SpecialistAgentPipelineHookTest(unittest.TestCase):
+    def test_planner_uses_current_video_model_seconds_for_default_duration(self) -> None:
+        pipeline = AI8VideoPipeline.__new__(AI8VideoPipeline)
+        pipeline.config = SimpleNamespace(dry_run=True, llm_base_url=None, llm_api_key=None)
+
+        with patch(
+            "ai8video.generation.pipeline.load_video_model_settings",
+            return_value=SimpleNamespace(seconds=18),
+        ):
+            self.assertEqual(pipeline._effective_video_duration_seconds(10), 18)
+            self.assertEqual(pipeline._effective_video_duration_seconds(7), 7)
+
     def test_normal_pipeline_observes_existing_plan_without_extra_model_call(self) -> None:
         pipeline = AI8VideoPipeline.__new__(AI8VideoPipeline)
         pipeline.config = SimpleNamespace(dry_run=True)
@@ -236,7 +250,7 @@ class SpecialistAgentPipelineHookTest(unittest.TestCase):
         sentinel = object()
 
         with patch.object(pipeline, "_run_videos", return_value=sentinel), patch(
-            "ai8video.generation.pipeline.observe_planner_shadow"
+            "ai8video.generation.pipeline.record_planner_execution"
         ) as observer:
             result = pipeline.run_request(request, progress_session_id="session-hook")
 
@@ -283,7 +297,7 @@ class SpecialistAgentPipelineHookTest(unittest.TestCase):
 
         with patch.object(pipeline, "_run_final_videos", return_value=sentinel), patch.object(
             merged_video_pipeline,
-            "observe_planner_shadow",
+            "record_planner_execution",
         ) as planner_observer:
             result = pipeline.run_request(request, progress_session_id="session-merge")
 

@@ -11,9 +11,13 @@ GENERATION_MODE_SETTINGS_PATH = GENERATION_MODE_DIR / "settings.json"
 
 
 def generation_mode_status() -> dict[str, Any]:
+    data = _read_settings()
     return {
         "ok": True,
-        "concurrentGeneration": default_concurrent_generation_enabled(),
+        "concurrentGeneration": bool(data.get("concurrentGeneration")),
+        "smartSplit": bool(data.get("smartSplit")),
+        "confirmSmartSplit": bool(data.get("confirmSmartSplit")),
+        "tailFrameChaining": bool(data.get("tailFrameChaining")),
     }
 
 
@@ -22,8 +26,34 @@ def default_concurrent_generation_enabled() -> bool:
     return bool(data.get("concurrentGeneration"))
 
 
-def update_generation_mode(*, concurrent_generation: bool) -> dict[str, Any]:
-    _write_settings({"concurrentGeneration": bool(concurrent_generation)})
+def default_smart_split_enabled() -> bool:
+    return bool(_read_settings().get("smartSplit"))
+
+
+def default_smart_split_confirmation_enabled() -> bool:
+    return bool(_read_settings().get("confirmSmartSplit"))
+
+
+def default_tail_frame_chaining_enabled() -> bool:
+    return bool(_read_settings().get("tailFrameChaining"))
+
+
+def update_generation_mode(
+    *,
+    concurrent_generation: bool,
+    smart_split: bool = False,
+    confirm_smart_split: bool = False,
+    tail_frame_chaining: bool = False,
+) -> dict[str, Any]:
+    chained = bool(smart_split and tail_frame_chaining)
+    _write_settings(
+        {
+            "concurrentGeneration": bool(concurrent_generation and not chained),
+            "smartSplit": bool(smart_split),
+            "confirmSmartSplit": bool(smart_split and confirm_smart_split),
+            "tailFrameChaining": chained,
+        }
+    )
     return generation_mode_status()
 
 

@@ -29,7 +29,7 @@ from ai8video.knowledge.script_knowledge_text import (
 
 DATABASE_URL_ENV = "AI8VIDEO_SCRIPT_DATABASE_URL"
 DEFAULT_DATABASE_URL = "postgresql:///ai8video"
-SCRIPT_INDEX_VERSION = 3
+SCRIPT_INDEX_VERSION = 4
 
 
 class ScriptKnowledgeUnavailable(RuntimeError):
@@ -183,8 +183,15 @@ class ScriptKnowledgeStore:
         document_id: int,
         tree: dict[str, Any],
         leaves: list[dict[str, Any]],
+        *,
+        ingestion_metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         self.initialize()
+        metadata = {
+            "knowledgeTree": tree.get("tree") or [],
+            "ingestion": "multi_agent_reviewed",
+            **dict(ingestion_metadata or {}),
+        }
         with self._connect() as connection, connection.cursor() as cursor:
             cursor.execute(
                 "UPDATE ai8_script_documents SET title = %s, summary = %s, tags = %s, "
@@ -194,7 +201,7 @@ class ScriptKnowledgeStore:
                     str(tree.get("title") or ""),
                     str(tree.get("summary") or ""),
                     _normalize_tags(list(tree.get("tags") or [])),
-                    json.dumps({"knowledgeTree": tree.get("tree") or [], "ingestion": "llm_tree"}),
+                    json.dumps(metadata),
                     SCRIPT_INDEX_VERSION,
                     int(document_id),
                 ),

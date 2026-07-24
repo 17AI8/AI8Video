@@ -68,6 +68,7 @@ from ai8video.assets.default_reference_image import (
 )
 from ai8video.knowledge.default_script_reference import (
     apply_default_script_reference,
+    apply_temporary_script_knowledge,
     clear_default_script_reference,
     default_script_reference_status,
     load_default_script_reference,
@@ -216,14 +217,22 @@ from ai8video.breakdown.viral_breakdown import (
     SUPPORTED_VIRAL_BREAKDOWN_VIDEO_EXTENSIONS,
     VIRAL_BREAKDOWN_ROOT,
     VIRAL_BREAKDOWN_SOURCE_VIDEO_DIR,
+    attach_viral_breakdown_generated_video,
     ensure_viral_breakdown_dirs,
     list_viral_breakdown_items,
     process_viral_breakdown_video_frames,
     guess_viral_breakdown_script,
+    prepare_viral_breakdown_generate,
     resolve_viral_breakdown_asset_path,
+    save_viral_breakdown_generate_session,
+    save_viral_breakdown_script_draft,
     save_viral_breakdown_transcript,
     stream_viral_breakdown_script_guess,
     transcribe_viral_breakdown_video,
+)
+from ai8video.breakdown.viral_breakdown_script_knowledge import (
+    build_viral_breakdown_script_tree,
+    persist_viral_breakdown_script_tree,
 )
 from ai8video.interfaces.web.routes.hot_topics import (
     api_hot_topic_sources,
@@ -590,6 +599,158 @@ def api_viral_breakdown_guess_script():
         return {"ok": False, "error": str(exc)}
 
 
+@app.route("/api/viral-breakdown/build-script-tree", method=["POST", "OPTIONS"])
+def api_viral_breakdown_build_script_tree():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    if not isinstance(payload, dict):
+        response.status = 400
+        return {"ok": False, "error": "payload must be an object"}
+    try:
+        return build_viral_breakdown_script_tree(
+            payload.get("videoKey"),
+            script_text=payload.get("text") or payload.get("scriptText"),
+            transcript_text=payload.get("transcript") or payload.get("transcriptText"),
+            config=AI8VideoConfig.from_env(),
+        )
+    except FileNotFoundError as exc:
+        response.status = 404
+        return {"ok": False, "error": str(exc)}
+    except (ValueError, RuntimeError) as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+
+
+@app.route("/api/viral-breakdown/save-script-draft", method=["POST", "OPTIONS"])
+def api_viral_breakdown_save_script_draft():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    if not isinstance(payload, dict):
+        response.status = 400
+        return {"ok": False, "error": "payload must be an object"}
+    try:
+        return save_viral_breakdown_script_draft(
+            payload.get("videoKey"),
+            script_text=payload.get("text") if "text" in payload else payload.get("scriptText"),
+            composed_text=payload.get("composedText"),
+            tree=payload.get("tree"),
+            leaves=payload.get("leaves"),
+            detail=payload.get("detail"),
+            quality=payload.get("quality"),
+            saved=payload.get("saved"),
+            relative_path=payload.get("relativePath"),
+            document_id=payload.get("documentId"),
+            clear_tree=bool(payload.get("clearTree")),
+        )
+    except FileNotFoundError as exc:
+        response.status = 404
+        return {"ok": False, "error": str(exc)}
+    except (ValueError, RuntimeError) as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+
+
+@app.route("/api/viral-breakdown/prepare-generate", method=["POST", "OPTIONS"])
+def api_viral_breakdown_prepare_generate():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    if not isinstance(payload, dict):
+        response.status = 400
+        return {"ok": False, "error": "payload must be an object"}
+    try:
+        return prepare_viral_breakdown_generate(
+            payload.get("videoKey"),
+            script_text=payload.get("text") if "text" in payload else payload.get("scriptText"),
+            transcript_text=payload.get("transcript") if "transcript" in payload else payload.get("transcriptText"),
+            leaves=payload.get("leaves"),
+            target_ratio=payload.get("targetRatio"),
+        )
+    except FileNotFoundError as exc:
+        response.status = 404
+        return {"ok": False, "error": str(exc)}
+    except (ValueError, RuntimeError) as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+
+
+@app.route("/api/viral-breakdown/attach-generated", method=["POST", "OPTIONS"])
+def api_viral_breakdown_attach_generated():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    if not isinstance(payload, dict):
+        response.status = 400
+        return {"ok": False, "error": "payload must be an object"}
+    try:
+        return attach_viral_breakdown_generated_video(
+            payload.get("videoKey"),
+            user_generated_key=payload.get("userGeneratedKey"),
+            local_path=payload.get("localPath") or payload.get("localVideoPath"),
+        )
+    except FileNotFoundError as exc:
+        response.status = 404
+        return {"ok": False, "error": str(exc)}
+    except (ValueError, RuntimeError) as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+
+
+@app.route("/api/viral-breakdown/save-generate-session", method=["POST", "OPTIONS"])
+def api_viral_breakdown_save_generate_session():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    if not isinstance(payload, dict):
+        response.status = 400
+        return {"ok": False, "error": "payload must be an object"}
+    try:
+        return save_viral_breakdown_generate_session(
+            payload.get("videoKey"),
+            session_id=payload.get("sessionId"),
+            status=payload.get("status"),
+            messages=payload.get("messages"),
+            generation_batch_id=payload.get("generationBatchId"),
+            started_at=payload.get("startedAt"),
+            error=payload.get("error"),
+            generated_video_key=payload.get("generatedVideoKey"),
+        )
+    except FileNotFoundError as exc:
+        response.status = 404
+        return {"ok": False, "error": str(exc)}
+    except (ValueError, RuntimeError) as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+
+
+@app.route("/api/viral-breakdown/save-script-tree", method=["POST", "OPTIONS"])
+def api_viral_breakdown_save_script_tree():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    if not isinstance(payload, dict):
+        response.status = 400
+        return {"ok": False, "error": "payload must be an object"}
+    try:
+        return persist_viral_breakdown_script_tree(
+            payload.get("videoKey"),
+            script_text=payload.get("text"),
+            tree=payload.get("tree"),
+            leaves=payload.get("leaves"),
+        )
+    except ScriptKnowledgeUnavailable as exc:
+        response.status = 503
+        return {"ok": False, "error": str(exc)}
+    except FileNotFoundError as exc:
+        response.status = 404
+        return {"ok": False, "error": str(exc)}
+    except (KeyError, ValueError, RuntimeError) as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+
+
 @app.route("/api/delete-user-material", method=["POST", "OPTIONS"])
 def api_delete_user_material():
     if request.method == "OPTIONS":
@@ -870,7 +1031,12 @@ def api_generation_mode():
     if not isinstance(payload, dict):
         response.status = 400
         return {"ok": False, "error": "payload must be an object"}
-    return update_generation_mode(concurrent_generation=bool(payload.get("concurrentGeneration")))
+    return update_generation_mode(
+        concurrent_generation=bool(payload.get("concurrentGeneration")),
+        smart_split=bool(payload.get("smartSplit")),
+        confirm_smart_split=bool(payload.get("confirmSmartSplit")),
+        tail_frame_chaining=bool(payload.get("tailFrameChaining")),
+    )
 
 
 @app.route("/api/html-motion-overlay", method=["GET", "POST", "OPTIONS"])
@@ -4873,6 +5039,17 @@ def api_chat():
     if not message:
         response.status = 400
         return {"error": "message is required"}
+    temporary_knowledge = payload.get("temporaryKnowledge")
+    if temporary_knowledge is not None:
+        try:
+            message = apply_temporary_script_knowledge(
+                message,
+                temporary_knowledge,
+                include_default_reference=bool(payload.get("useDefaultKnowledgeReference")),
+            )
+        except ValueError as exc:
+            response.status = 400
+            return {"error": str(exc)}
     config = AI8VideoConfig.from_env()
     if not config.has_llm():
         response.status = 503

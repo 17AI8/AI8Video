@@ -41,6 +41,11 @@ class _MergedPipeline:
 
 
 class AI8VideoVideoMergeRoutingTest(unittest.TestCase):
+    @staticmethod
+    def _apply_retrieved_script_reference(text, _material_context, **_kwargs):
+        content = "剧本参考《2.docx》相关知识段（Top 1）：\nAI8video 全球发布倒计时。"
+        return f"{text}\n\n{content}", {"scripts": [{"name": "2.docx"}]}
+
     def test_none_mode_uses_only_normal_pipeline(self) -> None:
         normal = _NormalPipeline()
         factory_calls = {"count": 0}
@@ -136,8 +141,10 @@ class AI8VideoVideoMergeRoutingTest(unittest.TestCase):
             "preview": "AI8video 发布倒计时。",
         }
 
-        with patch("ai8video.knowledge.default_script_reference.load_default_script_reference", return_value=script_item), \
-                patch("ai8video.knowledge.default_script_reference.read_script_material_text", return_value="参考剧本正文：AI8video 全球发布倒计时。"), \
+        with patch(
+                "ai8video.application.conversation_controller.apply_default_script_reference",
+                side_effect=self._apply_retrieved_script_reference,
+        ), \
                 patch("ai8video.application.conversation_controller.default_reference_image_path", return_value="/tmp/default.png"), \
                 patch(
                     "ai8video.application.conversation_controller.enabled_default_reference_image_options",
@@ -149,7 +156,7 @@ class AI8VideoVideoMergeRoutingTest(unittest.TestCase):
         self.assertEqual(normal.called, 0)
         self.assertEqual(merged.called, 1)
         request = merged.requests[0]
-        self.assertIn("剧本参考《2.docx》内容", request.raw_text)
+        self.assertIn("剧本参考《2.docx》相关知识段（Top 1）", request.raw_text)
         self.assertEqual(request.reference_image, "/tmp/default.png")
         self.assertEqual(request.reference_image_transform_options, {
             "autoChangeClothes": False,
@@ -174,8 +181,10 @@ class AI8VideoVideoMergeRoutingTest(unittest.TestCase):
             "preview": "AI8video 发布倒计时。",
         }
 
-        with patch("ai8video.knowledge.default_script_reference.load_default_script_reference", return_value=script_item), \
-                patch("ai8video.knowledge.default_script_reference.read_script_material_text", return_value="参考剧本正文：AI8video 全球发布倒计时。"), \
+        with patch(
+                "ai8video.application.conversation_controller.apply_default_script_reference",
+                side_effect=self._apply_retrieved_script_reference,
+        ), \
                 patch("ai8video.application.conversation_controller.default_reference_image_path", return_value="/tmp/default.png"), \
                 patch(
                     "ai8video.application.conversation_controller.enabled_default_reference_image_options",
@@ -187,7 +196,7 @@ class AI8VideoVideoMergeRoutingTest(unittest.TestCase):
         self.assertEqual(normal.called, 0)
         self.assertEqual(merged.called, 1)
         request = merged.requests[0]
-        self.assertIn("剧本参考《2.docx》内容", request.raw_text)
+        self.assertIn("剧本参考《2.docx》相关知识段（Top 1）", request.raw_text)
         self.assertEqual(request.reference_image, "/tmp/default.png")
         self.assertEqual(request.reference_image_transform_options, {
             "autoChangeClothes": True,

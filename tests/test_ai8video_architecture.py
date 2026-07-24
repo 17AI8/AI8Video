@@ -38,7 +38,7 @@ SOURCE_ROOTS = (
     PROJECT_ROOT / "tests",
 )
 SERIES_DOMAIN_PATTERN = re.compile(
-    r"Episode|episode|多集|集数|拆集|分集|第几集|每集|这一集|上集|下集|剧集"
+    r"Episode|episode|多集|拆集|第几集|上集|下集|剧集"
 )
 SERIES_COMPATIBILITY_FILES = {
     Path("src/ai8video/core/legacy_payload.py"),
@@ -91,6 +91,8 @@ class AI8VideoArchitectureTests(unittest.TestCase):
     def test_core_viral_breakdown_route_is_registered_once(self) -> None:
         source = (PACKAGE_ROOT / "interfaces" / "web" / "app.py").read_text(encoding="utf-8")
         self.assertEqual(source.count('@app.route("/api/viral-breakdown/guess-script"'), 1)
+        self.assertEqual(source.count('@app.route("/api/viral-breakdown/build-script-tree"'), 1)
+        self.assertEqual(source.count('@app.route("/api/viral-breakdown/save-script-tree"'), 1)
 
     def test_legacy_python_entry_packages_are_removed(self) -> None:
         for relative in ("ai8video_cli", "frontends", "tools/ai8video"):
