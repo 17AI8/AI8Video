@@ -439,3 +439,42 @@
       background: transparent;
       border-color: transparent;
     }
+
+    .multi-agent-settings { display: grid; gap: 12px; }
+    .multi-agent-hero { display: grid; gap: 12px; padding: 16px; border: 1px solid rgba(67, 97, 238, 0.18); border-radius: 14px; background: linear-gradient(135deg, rgba(238, 244, 255, 0.96), rgba(247, 243, 255, 0.94)); }
+    .multi-agent-hero-copy { display: grid; gap: 4px; }
+    .multi-agent-eyebrow { color: #4f63d7; font-size: 10px; font-weight: 900; letter-spacing: 0.12em; }
+    .multi-agent-title { margin: 0; color: var(--text); font-size: 19px; line-height: 1.3; }
+    .multi-agent-summary { max-width: 760px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+    .multi-agent-badges { display: flex; flex-wrap: wrap; gap: 7px; }
+    .multi-agent-badge, .multi-agent-role-status { display: inline-flex; align-items: center; min-height: 24px; padding: 0 9px; border: 1px solid rgba(79, 99, 215, 0.15); border-radius: 999px; background: rgba(255, 255, 255, 0.82); color: #536079; font-size: 10px; font-weight: 900; white-space: nowrap; }
+    .multi-agent-badge.is-live, .multi-agent-role-status.is-live { border-color: rgba(12, 145, 101, 0.18); background: rgba(12, 145, 101, 0.08); color: #087a57; }
+    .multi-agent-badge.is-shadow, .multi-agent-role-status.is-shadow { border-color: rgba(178, 114, 22, 0.18); background: rgba(245, 158, 11, 0.09); color: #9a5d08; }
+    .multi-agent-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: rgba(247, 249, 255, 0.86); scrollbar-width: none; }
+    .multi-agent-tabs::-webkit-scrollbar { display: none; }
+    .multi-agent-tab { flex: 0 0 auto; min-height: 32px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); box-shadow: none; font-size: 12px; font-weight: 900; }
+    .multi-agent-tab.active { background: #fff; color: #3854d7; box-shadow: 0 5px 14px rgba(55, 76, 174, 0.1); }
+    .multi-agent-tab:focus-visible, .multi-agent-role-card:focus-visible { outline: 3px solid rgba(56, 84, 215, 0.2); outline-offset: 2px; }
+    .multi-agent-panel { min-height: 188px; outline: none; }
+    .multi-agent-role-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+    .multi-agent-role-card { min-width: 0; display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255, 255, 255, 0.82); color: var(--text); box-shadow: none; text-align: left; }
+    .multi-agent-role-card:hover { border-color: rgba(56, 84, 215, 0.22); background: rgba(245, 248, 255, 0.96); transform: translateY(-1px); }
+    .multi-agent-role-mark { width: 36px; height: 36px; display: inline-grid; place-items: center; border-radius: 11px; background: linear-gradient(135deg, #4361ee, #7557e8); color: #fff; font-size: 14px; font-weight: 900; box-shadow: 0 8px 16px rgba(66, 79, 180, 0.16); }
+    .multi-agent-role-copy { min-width: 0; display: grid; gap: 5px; }
+    .multi-agent-role-head { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--text); font-size: 13px; }
+    .multi-agent-role-desc { color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .multi-agent-boundary { display: grid; gap: 4px; margin-top: 9px; padding: 11px 12px; border-left: 3px solid #6a65e8; border-radius: 0 10px 10px 0; background: rgba(99, 102, 241, 0.06); color: var(--muted); font-size: 11px; line-height: 1.55; }
+    .multi-agent-boundary strong { color: #4652ad; font-size: 12px; }
+    .multi-agent-detail { display: grid; gap: 12px; }
+    .multi-agent-detail-heading { display: flex; gap: 11px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255, 255, 255, 0.82); }
+    .multi-agent-detail-heading > div { min-width: 0; flex: 1; }
+    .multi-agent-detail-heading p, .multi-agent-shared-note p { margin: 4px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .multi-agent-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .multi-agent-detail-block { padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255, 255, 255, 0.72); color: var(--muted); font-size: 11px; line-height: 1.6; }
+    .multi-agent-detail-block strong { color: var(--text); font-size: 12px; }
+    .multi-agent-detail-block ul { margin: 7px 0 0; padding-left: 18px; }
+    .multi-agent-detail-block p { margin: 7px 0 0; }
+    .multi-agent-shared-note { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; padding: 12px; border: 1px solid rgba(56, 84, 215, 0.16); border-radius: 12px; background: rgba(243, 246, 255, 0.84); }
+    .multi-agent-shared-note > div { min-width: 0; }
+    @media (max-width: 720px) { .multi-agent-role-grid, .multi-agent-detail-grid { grid-template-columns: 1fr; } .multi-agent-hero { padding: 13px; } .multi-agent-shared-note { align-items: flex-start; flex-direction: column; } }
+    @media (prefers-reduced-motion: reduce) { .multi-agent-role-card { transition: none; } .multi-agent-role-card:hover { transform: none; } }
