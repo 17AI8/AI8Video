@@ -31,8 +31,10 @@ from ai8video.generation.generation_task_runner import GenerationTask, Generatio
 from ai8video.integrations.direct_video_model_client import AI8VideoModelClient
 from ai8video.application.runtime import (
     CHAT_BACKEND,
+    cancel_smart_split_confirmation as cancel_smart_split_confirmation_in_runtime,
     clear_chat_snapshot,
     get_chat_snapshot,
+    get_runtime,
     handle_chat_message,
 )
 from ai8video.assets.user_generated_results import build_generation_result_reconciliation
@@ -104,6 +106,58 @@ class _AI8VideoSession:
             if self.latest_error is not None:
                 raise self.latest_error
             raise RuntimeError("AI8video completed but did not return a AI8Video payload")
+
+    def cancel_smart_split_confirmation(self) -> bool:
+        with self.lock:
+            cancel_smart_split_confirmation_in_runtime(self.session_id)
+            cancel_reason = "用户取消智能分集确认"
+            current_batch_id = self.current_generation_batch_id
+            task_cancelled = self._ensure_task_runner().cancel(current_batch_id)
+            if current_batch_id and task_cancelled:
+                record_generation_execution(
+                    session_id=self.session_id,
+                    generation_batch_id=current_batch_id,
+                    execution_state="cancel_requested",
+                    cancel_requested=True,
+                )
+            cancel_generation_progress(self.session_id, cancel_reason)
+            clear_chat_snapshot(self.session_id)
+            self.latest_ai8video_payload = None
+            self.latest_error = None
+            self.background_delivery_pending = False
+            self.background_final_payload = None
+            self.background_completed_at = None
+            self.current_display_queue = None
+            self.current_generation_batch_id = None
+            self.current_message = None
+            self.current_started_at = None
+            return True
+
+    def retire(self, reason: str) -> None:
+        with self.lock:
+            runner = self._ensure_task_runner()
+            active_batch_ids = runner.cancel_active()
+            for batch_id in active_batch_ids:
+                record_generation_execution(
+                    session_id=self.session_id,
+                    generation_batch_id=batch_id,
+                    execution_state="cancel_requested",
+                    cancel_requested=True,
+                )
+            if active_batch_ids:
+                cancel_generation_progress(self.session_id, reason)
+            clear_chat_snapshot(self.session_id)
+            self.latest_ai8video_payload = None
+            self.latest_error = None
+            self.background_delivery_pending = False
+            self.background_final_payload = None
+            self.background_completed_at = None
+            self.current_display_queue = None
+            self.current_generation_batch_id = None
+            self.current_message = None
+            self.current_started_at = None
+        for batch_id in active_batch_ids:
+            runner.join(batch_id, timeout=0.25)
 
     def _default_timeout_seconds(self) -> int:
         poll_budget = int(self.config.max_poll_attempts * self.config.poll_interval_seconds)
@@ -582,8 +636,19 @@ _SESSIONS_LOCK = threading.Lock()
 
 
 def _get_session(session_id: str, refresh: bool = False) -> _AI8VideoSession:
+    if refresh:
+        with _SESSIONS_LOCK:
+            previous_session = _SESSIONS.pop(session_id, None)
+        if previous_session is not None:
+            previous_session.retire("新的基础需求已开始，上一轮后台任务已停止")
+        get_runtime().reset_conversation_session(session_id)
+        clear_chat_snapshot(session_id)
+        replacement = _AI8VideoSession(session_id=session_id)
+        with _SESSIONS_LOCK:
+            _SESSIONS[session_id] = replacement
+        return replacement
     with _SESSIONS_LOCK:
-        if refresh or session_id not in _SESSIONS:
+        if session_id not in _SESSIONS:
             _SESSIONS[session_id] = _AI8VideoSession(session_id=session_id)
         return _SESSIONS[session_id]
 
@@ -712,6 +777,23 @@ def cancel_chat_via_ai8video(session_id: str, reason: str | None = None) -> dict
             "generationProgress": progress,
         }
     return session.cancel_current(reason=reason)
+
+
+def cancel_smart_split_confirmation_via_ai8video(session_id: str) -> dict:
+    with _SESSIONS_LOCK:
+        session = _SESSIONS.get(session_id)
+    if session is None:
+        cancel_smart_split_confirmation_in_runtime(session_id)
+        cancel_generation_progress(session_id, "用户取消智能分集确认")
+        clear_chat_snapshot(session_id)
+        cancelled = True
+    else:
+        cancelled = session.cancel_smart_split_confirmation()
+    return {
+        "ok": True,
+        "cancelled": cancelled,
+        "sessionId": session_id,
+    }
 
 
 def _status_generation_batch_id(status: dict) -> str | None:

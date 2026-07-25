@@ -79,6 +79,8 @@
       margin: 0;
       width: 100%;
       text-align: center;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
 
     .bubble {
@@ -95,6 +97,11 @@
     .message:not(.user) .bubble {
       width: 70%;
       max-width: 700px;
+    }
+
+    .message:not(.user) .bubble.pending-only {
+      width: 100%;
+      max-width: 100%;
     }
 
     .message.pinned-progress .bubble {
@@ -398,6 +405,83 @@
       gap: 10px;
     }
 
+    .smart-split-feedback-field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .smart-split-feedback-drawer {
+      display: grid;
+      gap: 10px;
+      overflow: hidden;
+      border-top: 1px solid rgba(79, 109, 255, 0.14);
+      padding-top: 10px;
+      transform-origin: top;
+      animation: smart-split-feedback-drawer-open 180ms ease-out;
+    }
+
+    .smart-split-feedback-drawer[hidden] {
+      display: none;
+    }
+
+    .smart-split-feedback-field > span {
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .smart-split-feedback-field > textarea {
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 72px;
+      resize: vertical;
+      border: 1px solid rgba(79, 109, 255, 0.2);
+      border-radius: 10px;
+      padding: 10px 11px;
+      background: rgba(255, 255, 255, 0.92);
+      color: var(--text);
+      font: inherit;
+      line-height: 1.55;
+      outline: none;
+    }
+
+    .smart-split-feedback-field > textarea:focus {
+      border-color: rgba(79, 109, 255, 0.58);
+      box-shadow: 0 0 0 3px rgba(79, 109, 255, 0.1);
+    }
+
+    .smart-split-feedback-drawer .smart-split-feedback-submit {
+      justify-self: stretch;
+      width: 100%;
+      min-height: 40px;
+      border-color: transparent;
+      background: linear-gradient(135deg, #4f6dff 0%, #6d72ff 52%, #8b5cf6 100%);
+      color: #fff;
+      box-shadow: 0 8px 18px rgba(79, 109, 255, 0.2);
+    }
+
+    .smart-split-feedback-drawer .smart-split-feedback-submit:hover {
+      background: linear-gradient(135deg, #4564f5 0%, #6268f5 52%, #8052ec 100%);
+      box-shadow: 0 10px 22px rgba(79, 109, 255, 0.28);
+    }
+
+    @keyframes smart-split-feedback-drawer-open {
+      from {
+        opacity: 0;
+        transform: translateY(-6px) scaleY(0.96);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scaleY(1);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .smart-split-feedback-drawer {
+        animation: none;
+      }
+    }
+
     .guide-missing-list {
       display: grid;
       gap: 8px;
@@ -430,6 +514,23 @@
       gap: 8px;
     }
 
+    .smart-split-confirmation-card .guide-actions {
+      flex-wrap: nowrap;
+      align-items: center;
+    }
+
+    .smart-split-confirmation-card .guide-actions .guide-action-button {
+      flex: 0 0 108px;
+      width: 108px;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      transition:
+        opacity 180ms ease,
+        transform 180ms ease,
+        visibility 0s linear;
+    }
+
     .guide-action-button {
       min-height: 34px;
       padding: 0 12px;
@@ -448,6 +549,37 @@
 
     .guide-action-button:hover {
       background: rgba(15, 106, 78, 0.12);
+    }
+
+    .guide-action-button[data-smart-split-feedback-toggle][aria-expanded="true"] {
+      border-color: transparent;
+      background: linear-gradient(135deg, #4f6dff 0%, #6d72ff 52%, #8b5cf6 100%);
+      color: #fff;
+      box-shadow: 0 7px 16px rgba(79, 109, 255, 0.2);
+    }
+
+    .guide-action-button[data-smart-split-feedback-toggle][aria-expanded="true"]:hover {
+      background: linear-gradient(135deg, #4564f5 0%, #6268f5 52%, #8052ec 100%);
+    }
+
+    .smart-split-confirmation-card:has([data-smart-split-feedback-toggle][aria-expanded="true"])
+      [data-smart-split-confirm-action] {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translateX(-8px) scale(0.96);
+      transition:
+        opacity 180ms ease,
+        transform 180ms ease,
+        visibility 0s linear 180ms;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .smart-split-confirmation-card .guide-actions .guide-action-button,
+      .smart-split-confirmation-card:has([data-smart-split-feedback-toggle][aria-expanded="true"])
+        [data-smart-split-confirm-action] {
+        transition: none;
+      }
     }
 
     .job-meta, .reason-list {

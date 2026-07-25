@@ -7,18 +7,7 @@ from ai8video.generation.business_prompt import sanitize_internal_fidelity_notes
 
 
 def parse_json_array(raw: str) -> list[object]:
-    text = raw.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?", "", text).strip()
-        text = re.sub(r"```$", "", text).strip()
-    if not text.startswith("["):
-        match = re.search(r"\[[\s\S]*\]", text)
-        if match:
-            text = match.group(0)
-    data = json.loads(text)
-    if not isinstance(data, list):
-        raise ValueError("Expected a JSON array")
-    return data
+    return _parse_first_json_value(raw, list, "[")
 
 
 def build_json_array_repair_prompt(raw: str, video_count: int) -> str:
@@ -136,17 +125,20 @@ def format_task_constraint_block(task_constraints: str | None) -> str:
 
 
 def parse_json_object(raw: str) -> dict:
+    return _parse_first_json_value(raw, dict, "{")
+
+
+def _parse_first_json_value(raw: str, expected_type: type, opening_token: str):
     text = raw.strip()
     if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?", "", text).strip()
+        text = re.sub(r"^```(?:json)?", "", text, flags=re.I).strip()
         text = re.sub(r"```$", "", text).strip()
-    if not text.startswith("{"):
-        match = re.search(r"\{[\s\S]*\}", text)
-        if match:
-            text = match.group(0)
-    data = json.loads(text)
-    if not isinstance(data, dict):
-        raise ValueError("Expected a JSON object")
+    index = text.find(opening_token)
+    if index < 0:
+        raise ValueError(f"Expected a JSON {expected_type.__name__}")
+    data, _ = json.JSONDecoder().raw_decode(text[index:])
+    if not isinstance(data, expected_type):
+        raise ValueError(f"Expected a JSON {expected_type.__name__}")
     return data
 
 

@@ -97,6 +97,41 @@ class _FailSecondPollClient(_FakeClient):
         return job
 
 
+class _CreateTimeoutClient(_FakeClient):
+    def create_job(self, *, text, video_index, first_frame, duration_seconds, ratio, resolution, preset):
+        self.created.append({
+            "videoIndex": video_index,
+            "prompt": text,
+            "firstFrameSource": None if first_frame is None else first_frame.source,
+            "durationSeconds": duration_seconds,
+        })
+        raise RuntimeError(
+            "创建视频任务超时：上游可能已经接收请求并继续在后台生成，"
+            "但本地尚未拿到任务 ID。Read timed out. (read timeout=180)"
+        )
+
+
+class _WaitUntilTerminalClient(_FakeClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.wait_until_terminal_flags: list[bool] = []
+
+    def poll_job(
+        self,
+        job: QuickVideoJob,
+        progress_callback=None,
+        *,
+        wait_until_terminal=False,
+        stop_check=None,
+    ) -> QuickVideoJob:
+        self.wait_until_terminal_flags.append(wait_until_terminal)
+        if stop_check is not None:
+            stop_check()
+        if progress_callback is not None:
+            progress_callback(job)
+        return job
+
+
 class _FakeArchiver:
     def __init__(self) -> None:
         self.archived: list[Path] = []
@@ -939,6 +974,76 @@ class AI8VideoMergedPipelineTest(unittest.TestCase):
         self.assertEqual(result.asset_records, [])
         self.assertEqual(len(pipeline.asset_store.records), 0)
         save_failed.assert_called_once()
+
+    def test_tail_frame_chain_stops_after_lost_create_response_and_preserves_root_error(self) -> None:
+        client = _CreateTimeoutClient()
+        pipeline = _build_pipeline(client=client)
+        request = ParsedRequest(
+            raw_text="生成三条",
+            mode="batch_videos",
+            video_count=3,
+            duration_seconds=10,
+            tail_frame_chaining=True,
+        )
+        videos = [
+            VideoPrompt(index=index, title=f"第 {index} 条", prompt=f"视频提示词 {index}")
+            for index in range(1, 4)
+        ]
+        session_id = "merge-tail-create-response-lost"
+        start_generation_progress(session_id, videos, concurrent=False)
+
+        try:
+            with patch(
+                "ai8video.generation.merged_video_pipeline.finalize_video_prompts",
+                return_value=videos,
+            ), patch(
+                "ai8video.generation.merged_video_pipeline.build_next_tail_frame_request"
+            ) as build_next:
+                result = pipeline._run_final_videos(
+                    request,
+                    videos,
+                    segment_duration_seconds=10,
+                    progress_session_id=session_id,
+                )
+
+            progress = get_generation_progress(session_id)
+            self.assertEqual(len(client.created), 1)
+            self.assertEqual(len(result.jobs), 1)
+            self.assertIn("创建视频任务超时", result.jobs[0].error or "")
+            build_next.assert_not_called()
+            self.assertIsNotNone(progress)
+            self.assertEqual(progress["status"], "active")
+            self.assertEqual(progress["items"][0]["status"], "polling")
+            self.assertEqual(progress["items"][0]["providerStatus"], "video_create_response_lost")
+            self.assertIsNone(progress["items"][0]["jobId"])
+            self.assertEqual([item["status"] for item in progress["items"][1:]], ["skipped", "skipped"])
+            self.assertNotIn("上一条视频没有本地成片", str(progress))
+        finally:
+            clear_generation_progress(session_id)
+
+    def test_tail_frame_chain_waits_each_merge_segment_until_terminal(self) -> None:
+        client = _WaitUntilTerminalClient()
+        pipeline = _build_pipeline(client=client)
+        request = ParsedRequest(
+            raw_text="生成一条",
+            mode="single_video",
+            duration_seconds=10,
+            tail_frame_chaining=True,
+        )
+        videos = [VideoPrompt(index=1, title="第一条", prompt="视频提示词")]
+
+        with patch(
+            "ai8video.generation.merged_video_pipeline.finalize_video_prompts",
+            return_value=videos,
+        ), _patch_postprocess():
+            result = pipeline._run_final_videos(
+                request,
+                videos,
+                segment_duration_seconds=10,
+            )
+
+        self.assertEqual(len(result.jobs), 1)
+        self.assertEqual(client.wait_until_terminal_flags, [True, True])
 
     def test_concurrent_final_groups_keep_each_group_segments_sequential(self) -> None:
         barrier = threading.Barrier(2)

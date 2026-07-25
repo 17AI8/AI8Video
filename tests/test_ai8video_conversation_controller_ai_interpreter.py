@@ -86,6 +86,68 @@ class AI8VideoConversationControllerAiInterpreterTest(unittest.TestCase):
         self.assertEqual(state.draft.mode, "batch_videos")
         self.assertEqual(state.draft.video_count, 10)
 
+    def test_merge_message_does_not_lock_default_one_without_explicit_count(self) -> None:
+        pipeline = _PipelineWithInterpreter(
+            """
+            {
+              "intent": "generation",
+              "mode": "single_video",
+              "video_count": 1,
+              "confidence": 0.92
+            }
+            """
+        )
+        agent = AI8VideoConversationController(pipeline)  # type: ignore[arg-type]
+        state = ConversationState(session_id="ai-default-one")
+
+        agent._merge_message(
+            state,
+            "【第一模块】平台基础科普。\n【第二模块】开店准入规则。\n【第三模块】全托管流程。",
+        )
+
+        self.assertIsNone(state.draft.video_count)
+
+    def test_merge_message_does_not_treat_script_phrase_do_one_as_explicit_count(self) -> None:
+        pipeline = _PipelineWithInterpreter(
+            """
+            {
+              "intent": "generation",
+              "mode": "single_video",
+              "video_count": 1,
+              "confidence": 0.92
+            }
+            """
+        )
+        agent = AI8VideoConversationController(pipeline)  # type: ignore[arg-type]
+        state = ConversationState(session_id="ai-script-do-one")
+
+        agent._merge_message(
+            state,
+            "【开篇引入】本次内容体量过大，将拆为多期发布。\n"
+            "今天我们要做一个拼多多跨境全流程的解释。\n"
+            "【第二模块】开店规则。\n【第三模块】全托管运营流程。",
+        )
+
+        self.assertIsNone(state.draft.video_count)
+
+    def test_merge_message_keeps_explicit_single_video_count(self) -> None:
+        pipeline = _PipelineWithInterpreter(
+            """
+            {
+              "intent": "generation",
+              "mode": "single_video",
+              "video_count": 1,
+              "confidence": 0.92
+            }
+            """
+        )
+        agent = AI8VideoConversationController(pipeline)  # type: ignore[arg-type]
+        state = ConversationState(session_id="ai-explicit-one")
+
+        agent._merge_message(state, "生成 1 条短视频，讲清 Temu 店铺类型。")
+
+        self.assertEqual(state.draft.video_count, 1)
+
     def test_batch_request_uses_ai_intent_before_local_patterns(self) -> None:
         pipeline = _PipelineWithInterpreter(
             """

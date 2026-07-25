@@ -57,6 +57,18 @@ class AI8VideoMessageParserTest(unittest.TestCase):
 
         self.assertEqual(extract_video_count(text), 2)
 
+    def test_extract_video_count_ignores_do_one_inside_script_content(self) -> None:
+        text = (
+            "【开篇引入】本次内容会拆成多期发布。\n"
+            "今天我们要做一个拼多多跨境全流程的解释，平台不需要一个复杂打包。\n"
+            "【第二模块】开店规则。\n【第三模块】全托管运营流程。"
+        )
+
+        self.assertIsNone(extract_video_count(text))
+
+    def test_extract_video_count_keeps_leading_do_one_command(self) -> None:
+        self.assertEqual(extract_video_count("帮我做一个 Temu 开店口播视频"), 1)
+
     def test_extract_duration_seconds_supports_s_suffix(self) -> None:
         text = "根据这个剧本生成 2 个 15s 短视频。"
 

@@ -60,10 +60,15 @@ def cancel_chat(session_id: str, reason: str | None = None) -> dict:
     return ai8video_chat_service.cancel_chat_via_ai8video(session_id=session_id, reason=reason)
 
 
+def cancel_smart_split_confirmation(session_id: str) -> dict:
+    return ai8video_chat_service.cancel_smart_split_confirmation_via_ai8video(session_id=session_id)
+
+
 __all__ = [
     "CHAT_BACKEND",
     "build_batch_seed_file_payload",
     "cancel_chat",
+    "cancel_smart_split_confirmation",
     "get_assets_payload",
     "get_batch_alerts_payload",
     "get_batch_reports_payload",

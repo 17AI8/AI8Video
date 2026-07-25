@@ -193,6 +193,12 @@ class AI8VideoRuntime:
                 "chatBackend": CHAT_BACKEND,
             }
 
+    def cancel_smart_split_confirmation(self, session_id: str) -> bool:
+        return self.conversation_controller.cancel_smart_split_confirmation(session_id)
+
+    def reset_conversation_session(self, session_id: str) -> bool:
+        return self.conversation_controller.reset_session(session_id)
+
 
 def _friendly_chat_error(error: Exception) -> str:
     message = str(error).strip()
@@ -442,6 +448,12 @@ def handle_chat_message(session_id: str, message: str, refresh: bool = False) ->
     body = get_runtime(refresh=refresh).chat(session_id=session_id, message=message)
     _remember_chat_snapshot(session_id, body)
     return body
+
+
+def cancel_smart_split_confirmation(session_id: str, refresh: bool = False) -> bool:
+    cancelled = get_runtime(refresh=refresh).cancel_smart_split_confirmation(session_id)
+    clear_chat_snapshot(session_id)
+    return cancelled
 
 
 def clear_chat_snapshot(session_id: str) -> None:

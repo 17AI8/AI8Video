@@ -15,6 +15,7 @@ from ai8video.generation.video_prompt_planner import (
     single_prompt_to_video,
     plan_video_prompts_with_ai,
 )
+from ai8video.generation.video_prompt_support import parse_json_array, parse_json_object
 from ai8video.core.models import VideoPrompt
 
 
@@ -54,6 +55,20 @@ class AI8VideoVideoPromptPlannerTest(unittest.TestCase):
         self.assertEqual(count, 6)
         self.assertIn("单条成片时长为 15 秒", prompts[0])
         self.assertIn("不能把明显无法在 15 秒内完整表达的长内容压成一条", prompts[0])
+
+    def test_json_object_parser_ignores_trailing_duplicate_output(self) -> None:
+        data = parse_json_object(
+            '{"video_count":3,"reason":"按主题拆分"}\n'
+            '{"video_count":6,"reason":"重复输出"}'
+        )
+
+        self.assertEqual(data["video_count"], 3)
+
+    def test_json_array_parser_ignores_trailing_explanation(self) -> None:
+        data = parse_json_array('[{"index":1,"title":"第一条"}]\n以上是规划结果。')
+
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["title"], "第一条")
 
     def test_planning_prompt_requires_whole_source_coverage(self) -> None:
         prompt = build_video_planning_prompt("脚本1 开头\n脚本10 后段", 10, "商务真实感")

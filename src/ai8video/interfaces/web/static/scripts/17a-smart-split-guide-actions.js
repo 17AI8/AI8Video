@@ -1,0 +1,133 @@
+    function setSmartSplitFeedbackMode(card, shouldOpen) {
+      const drawer = card?.querySelector?.('[data-smart-split-feedback-drawer]');
+      const toggle = card?.querySelector?.('[data-smart-split-feedback-toggle]');
+      if (!drawer || !toggle) return;
+      drawer.hidden = !shouldOpen;
+      toggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+      card.querySelectorAll('[data-smart-split-hide-on-feedback]').forEach((action) => {
+        action.disabled = shouldOpen;
+        action.setAttribute('aria-hidden', shouldOpen ? 'true' : 'false');
+      });
+      if (!shouldOpen) return;
+      requestAnimationFrame(() => {
+        drawer.querySelector('[data-smart-split-feedback]')?.focus({ preventScroll: true });
+        drawer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    }
+
+    function smartSplitDismissDuration() {
+      return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 100 : 220;
+    }
+
+    function getSmartSplitDismissRange(session, targetMessage) {
+      const currentIndex = session?.messages?.indexOf?.(targetMessage) ?? -1;
+      if (currentIndex < 0) return null;
+      let startIndex = currentIndex;
+      while (startIndex > 0 && session.messages[startIndex - 1]?.role === 'user') {
+        startIndex -= 1;
+      }
+      return { startIndex, currentIndex };
+    }
+
+    function fadeSmartSplitMessages(session, targetMessage) {
+      const range = getSmartSplitDismissRange(session, targetMessage);
+      if (!range) return;
+      for (let index = range.startIndex; index <= range.currentIndex; index += 1) {
+        document.querySelector(`.message[data-message-index="${index}"]`)
+          ?.classList.add('is-smart-split-dismissing');
+      }
+    }
+
+    function removeSmartSplitMessages(session, targetMessage) {
+      const range = getSmartSplitDismissRange(session, targetMessage);
+      if (!range) return;
+      const rollbackBoundary = session.messages[range.startIndex - 1];
+      if (rollbackBoundary?.role === 'assistant' && rollbackBoundary.payload) {
+        rollbackBoundary.payload = {
+          ...rollbackBoundary.payload,
+          meta: {
+            ...(rollbackBoundary.payload.meta || {}),
+            continuationClosed: true,
+          },
+        };
+      }
+      clearPendingPoll(session.id);
+      clearCollectingSync(session.id);
+      collectingSyncSeen.delete(session.id);
+      session.messages.splice(range.startIndex, range.currentIndex - range.startIndex + 1);
+      persistSessions();
+      if (session.id === state.activeId) render();
+    }
+
+    function restoreSmartSplitDismissActions(messageNode, trigger, originalLabel, error) {
+      messageNode?.classList.remove('is-smart-split-dismiss-pending');
+      const card = trigger?.closest?.('.guide-card');
+      card?.removeAttribute('aria-busy');
+      card?.querySelectorAll?.('.guide-action-button').forEach((action) => {
+        action.disabled = false;
+      });
+      trigger.textContent = '取消失败，重试';
+      trigger.title = formatNetworkError(error);
+      trigger.focus({ preventScroll: true });
+      window.setTimeout(() => {
+        if (!trigger.isConnected) return;
+        trigger.textContent = originalLabel;
+        trigger.removeAttribute('title');
+      }, 1800);
+    }
+
+    async function dismissSmartSplitMessage(trigger) {
+      const messageNode = trigger?.closest?.('.message');
+      const session = getActiveSession();
+      const messageIndex = Number(messageNode?.dataset?.messageIndex);
+      const targetMessage = session?.messages?.[messageIndex];
+      if (!messageNode || !targetMessage || messageNode.classList.contains('is-smart-split-dismiss-pending')) return;
+      const originalLabel = trigger.textContent;
+      messageNode.classList.add('is-smart-split-dismiss-pending');
+      trigger.closest('.guide-card')?.setAttribute('aria-busy', 'true');
+      messageNode.querySelectorAll('.guide-action-button').forEach((action) => { action.disabled = true; });
+      try {
+        const res = await fetch('/api/chat-plan-cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: session.id }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        if (data.cancelled !== true) throw new Error('当前分集确认已失效，未执行取消');
+        const duration = smartSplitDismissDuration();
+        messageNode.classList.remove('is-smart-split-dismiss-pending');
+        fadeSmartSplitMessages(session, targetMessage);
+        await new Promise((resolve) => window.setTimeout(resolve, duration));
+        removeSmartSplitMessages(session, targetMessage);
+      } catch (error) {
+        restoreSmartSplitDismissActions(messageNode, trigger, originalLabel, error);
+      }
+    }
+
+    async function handleGuideAction(kind, value, trigger = null) {
+      const actionKind = String(kind || '').trim();
+      const text = String(value || '').trim();
+      if (state.busy || !text) return;
+      if (actionKind === 'dismiss-plan') {
+        await dismissSmartSplitMessage(trigger);
+        return;
+      }
+      if (isRealGenerationUnavailable()) return;
+      if (actionKind !== 'send') {
+        setComposerDraft(text, { submit: false });
+        return;
+      }
+      if (text !== '重新分集') {
+        setComposerDraft(text, { submit: true });
+        return;
+      }
+      const card = trigger?.closest?.('.guide-card');
+      const drawer = card?.querySelector?.('[data-smart-split-feedback-drawer]');
+      if (trigger?.hasAttribute?.('data-smart-split-feedback-toggle') && drawer) {
+        setSmartSplitFeedbackMode(card, drawer.hidden);
+        return;
+      }
+      const feedback = String(card?.querySelector?.('[data-smart-split-feedback]')?.value || '').trim();
+      setComposerDraft(feedback ? `重新分集：${feedback}` : text, { submit: true });
+    }

@@ -73,7 +73,8 @@ class AI8VideoGenerationModeTest(unittest.TestCase):
             "核心主题：私域资产。参考图：/tmp/612.png"
         )
         with patch("ai8video.application.conversation_controller.default_concurrent_generation_enabled", return_value=True), \
-                patch("ai8video.application.conversation_controller.default_smart_split_enabled", return_value=False):
+                patch("ai8video.application.conversation_controller.default_smart_split_enabled", return_value=False), \
+                patch("ai8video.application.conversation_controller.default_tail_frame_chaining_enabled", return_value=False):
             reply = agent.handle_message("generation-default-concurrent", message)
 
         self.assertEqual(reply.stage, "completed")
@@ -104,6 +105,112 @@ class AI8VideoGenerationModeTest(unittest.TestCase):
 
         self.assertEqual(reply.stage, "completed")
         self.assertFalse(captured["request"].concurrent_generation)
+
+    def test_explicit_video_count_plans_and_waits_for_confirmation(self) -> None:
+        planned_counts: list[int | None] = []
+        smart_split_flags: list[bool] = []
+        generated_videos: list[list[VideoPrompt]] = []
+
+        class FakePipeline:
+            def plan_request(self, request, **kwargs):
+                planned_counts.append(request.video_count)
+                smart_split_flags.append(bool(kwargs.get("smart_split")))
+                count = int(request.video_count or 0)
+                return [
+                    VideoPrompt(
+                        index=index,
+                        title=f"主题 {index}",
+                        prompt=f"提示词 {index}",
+                        source_summary=f"摘要 {index}",
+                    )
+                    for index in range(1, count + 1)
+                ]
+
+            def run_planned_request(self, request, videos, **kwargs):
+                generated_videos.append(list(videos))
+                return PipelineResult(
+                    request=request,
+                    videos=videos,
+                    first_frame=None,
+                    jobs=[QuickVideoJob(video_index=1, job_id="dry-1", status="succeeded")],
+                    dry_run=True,
+                )
+
+        agent = AI8VideoConversationController(FakePipeline(), merge_mode_loader=lambda: "normal")  # type: ignore[arg-type]
+        message = (
+            "根据这个剧本生成 2 个 10s 短视频，老板商务风。"
+            "核心主题：私域资产。参考图：/tmp/612.png"
+        )
+        with patch("ai8video.application.conversation_controller.default_smart_split_enabled", return_value=False), \
+                patch("ai8video.application.conversation_controller.default_smart_split_confirmation_enabled", return_value=False):
+            planned = agent.handle_message("explicit-count-confirmation", message)
+            self.assertEqual(planned.awaiting, "smart_split_confirmation")
+            self.assertEqual(generated_videos, [])
+            completed = agent.handle_message("explicit-count-confirmation", "确认并继续")
+
+        self.assertEqual(planned_counts, [2])
+        self.assertEqual(smart_split_flags, [False])
+        self.assertEqual(len(generated_videos[-1]), 2)
+        self.assertEqual(completed.stage, "completed")
+
+    def test_replan_can_change_explicit_video_count(self) -> None:
+        planned_counts: list[int | None] = []
+        smart_split_flags: list[bool] = []
+
+        class FakePipeline:
+            def plan_request(self, request, **kwargs):
+                planned_counts.append(request.video_count)
+                smart_split_flags.append(bool(kwargs.get("smart_split")))
+                count = int(request.video_count or 0)
+                return [
+                    VideoPrompt(index=index, title=f"主题 {index}", prompt=f"提示词 {index}")
+                    for index in range(1, count + 1)
+                ]
+
+            def run_planned_request(self, request, videos, **kwargs):
+                raise AssertionError("重新规划阶段不应进入视频生成")
+
+        agent = AI8VideoConversationController(FakePipeline(), merge_mode_loader=lambda: "normal")  # type: ignore[arg-type]
+        message = "根据这段完整文案生成 2 条短视频。核心主题：跨境运营。参考图：/tmp/ref.png"
+        with patch("ai8video.application.conversation_controller.default_smart_split_enabled", return_value=False):
+            first_plan = agent.handle_message("explicit-count-replan", message)
+            revised_plan = agent.handle_message("explicit-count-replan", "重新分集：3集")
+
+        self.assertEqual(first_plan.awaiting, "smart_split_confirmation")
+        self.assertEqual(revised_plan.awaiting, "smart_split_confirmation")
+        self.assertEqual(planned_counts, [2, 3])
+        self.assertEqual(smart_split_flags, [False, False])
+        self.assertEqual(len(agent.sessions["explicit-count-replan"].planned_videos), 3)
+
+    def test_cancel_smart_split_confirmation_resets_pending_plan(self) -> None:
+        class FakePipeline:
+            def plan_request(self, request, **kwargs):
+                return [
+                    VideoPrompt(index=index, title=f"主题 {index}", prompt=f"提示词 {index}")
+                    for index in range(1, int(request.video_count or 0) + 1)
+                ]
+
+            def run_planned_request(self, request, videos, **kwargs):
+                raise AssertionError("取消分集后不应进入视频生成")
+
+        session_id = "smart-split-cancel"
+        agent = AI8VideoConversationController(FakePipeline(), merge_mode_loader=lambda: "normal")  # type: ignore[arg-type]
+        message = "根据这段完整文案生成 2 条短视频。核心主题：跨境运营。参考图：/tmp/ref.png"
+        with patch("ai8video.application.conversation_controller.default_smart_split_enabled", return_value=False):
+            planned = agent.handle_message(session_id, message)
+
+        actions = planned.meta["guide"]["actions"]
+        self.assertIn(
+            {"kind": "dismiss-plan", "label": "取消", "value": "取消规划"},
+            actions,
+        )
+        original_state = agent.sessions[session_id]
+        self.assertTrue(agent.cancel_smart_split_confirmation(session_id))
+        self.assertIsNot(agent.sessions[session_id], original_state)
+        self.assertIsNone(agent.sessions[session_id].awaiting)
+        self.assertEqual(agent.sessions[session_id].planned_videos, [])
+        self.assertFalse(agent.sessions[session_id].planned_video_count_locked)
+        self.assertFalse(agent.cancel_smart_split_confirmation(session_id))
 
     def test_smart_split_waits_for_confirmation_then_runs_planned_videos(self) -> None:
         captured: dict[str, object] = {}
@@ -139,8 +246,85 @@ class AI8VideoGenerationModeTest(unittest.TestCase):
             completed = agent.handle_message("smart-split", "确认分集")
 
         self.assertEqual(completed.stage, "completed")
+        self.assertIsNone(agent.sessions["smart-split"].awaiting)
         self.assertTrue(captured["smart_split"])
         self.assertEqual(len(captured["videos"]), 2)
+
+    def test_smart_split_feedback_replans_before_confirmation(self) -> None:
+        planned_raw_texts: list[str] = []
+        smart_split_flags: list[bool] = []
+        generated_videos: list[list[VideoPrompt]] = []
+
+        class FakePipeline:
+            def plan_request(self, request, **kwargs):
+                planned_raw_texts.append(request.raw_text)
+                smart_split_flags.append(bool(kwargs.get("smart_split")))
+                count = 1 if len(planned_raw_texts) == 1 else 2
+                return [
+                    VideoPrompt(
+                        index=index,
+                        title=f"主题 {index}",
+                        prompt=f"提示词 {index}",
+                        source_summary=f"摘要 {index}",
+                    )
+                    for index in range(1, count + 1)
+                ]
+
+            def run_planned_request(self, request, videos, **kwargs):
+                generated_videos.append(list(videos))
+                return PipelineResult(
+                    request=request,
+                    videos=videos,
+                    first_frame=None,
+                    jobs=[QuickVideoJob(video_index=1, job_id="dry-1", status="succeeded")],
+                    dry_run=True,
+                )
+
+        agent = AI8VideoConversationController(FakePipeline(), merge_mode_loader=lambda: "normal")  # type: ignore[arg-type]
+        message = "根据这篇完整素材智能规划短视频。核心主题：跨境运营。参考图：/tmp/ref.png"
+        with patch("ai8video.application.conversation_controller.default_smart_split_enabled", return_value=True), \
+                patch("ai8video.application.conversation_controller.default_smart_split_confirmation_enabled", return_value=True):
+            first_plan = agent.handle_message("smart-split-feedback", message)
+            revised_plan = agent.handle_message("smart-split-feedback", "每集只讲一个模块")
+            self.assertEqual(agent.sessions["smart-split-feedback"].awaiting, "smart_split_confirmation")
+            completed = agent.handle_message("smart-split-feedback", "确认并继续")
+
+        self.assertEqual(first_plan.awaiting, "smart_split_confirmation")
+        self.assertEqual(revised_plan.awaiting, "smart_split_confirmation")
+        self.assertIn("分集调整要求：每集只讲一个模块", planned_raw_texts[-1])
+        self.assertEqual(len(planned_raw_texts), 2)
+        self.assertEqual(smart_split_flags, [True, True])
+        self.assertEqual(len(generated_videos[-1]), 2)
+        self.assertEqual(completed.stage, "completed")
+        self.assertIsNone(agent.sessions["smart-split-feedback"].awaiting)
+
+    def test_failed_smart_split_replan_consumes_previous_confirmation(self) -> None:
+        plan_count = 0
+
+        class FakePipeline:
+            def plan_request(self, request, **kwargs):
+                nonlocal plan_count
+                plan_count += 1
+                if plan_count > 1:
+                    raise RuntimeError("重新规划失败")
+                return [VideoPrompt(index=1, title="原方案", prompt="提示词", source_summary="原摘要")]
+
+            def run_planned_request(self, request, videos, **kwargs):
+                raise AssertionError("重新规划失败后不应进入生成")
+
+        session_id = "smart-split-replan-failure"
+        agent = AI8VideoConversationController(FakePipeline(), merge_mode_loader=lambda: "normal")  # type: ignore[arg-type]
+        message = "根据这篇完整素材智能规划短视频。核心主题：跨境运营。参考图：/tmp/ref.png"
+        with patch("ai8video.application.conversation_controller.default_smart_split_enabled", return_value=True), \
+                patch("ai8video.application.conversation_controller.default_smart_split_confirmation_enabled", return_value=True):
+            planned = agent.handle_message(session_id, message)
+            self.assertEqual(planned.awaiting, "smart_split_confirmation")
+            with self.assertRaisesRegex(RuntimeError, "重新规划失败"):
+                agent.handle_message(session_id, "重新分集：3集")
+
+        state = agent.sessions[session_id]
+        self.assertIsNone(state.awaiting)
+        self.assertEqual(state.planned_videos, [])
 
 
 if __name__ == "__main__":

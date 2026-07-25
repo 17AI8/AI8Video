@@ -8,19 +8,27 @@
       return status === 'pending' || String(pending.phase || '').trim() === 'planning';
     }
 
+    function isConversationContinuationClosed(payload) {
+      return payload?.meta?.continuationClosed === true;
+    }
+
     function isCollectingPayload(payload) {
-      return payload?.stage === 'collecting' && payload?.meta?.operation === 'collect';
+      return !isConversationContinuationClosed(payload)
+        && payload?.stage === 'collecting'
+        && payload?.meta?.operation === 'collect';
     }
 
     function isSessionPending(session) {
       const last = session?.messages?.at?.(-1);
       if (!(last && last.role === 'assistant' && isPendingPayload(last.payload))) return false;
+      if (isConversationContinuationClosed(last.payload)) return false;
       if (last.payload?.pendingStatus && !isPendingStatusActive(last.payload.pendingStatus)) return false;
       return true;
     }
 
     function isTerminalPendingPayloadAwaitingReply(payload) {
       if (!isPendingPayload(payload)) return false;
+      if (isConversationContinuationClosed(payload)) return false;
       const pending = payload.pendingStatus || {};
       if (!pending.generationProgress) return false;
       if (pending.statelessProgress) return false;
@@ -194,6 +202,10 @@
         const targetSession = state.sessions.find((item) => item.id === sessionId);
         const last = targetSession?.messages?.at?.(-1);
         if (!targetSession || !last || last.role !== 'assistant') {
+          clearPendingPoll(sessionId);
+          return;
+        }
+        if (!isSessionPending(targetSession) && !isSessionAwaitingTerminalReply(targetSession)) {
           clearPendingPoll(sessionId);
           return;
         }

@@ -47,6 +47,7 @@ from ai8video.generation.prompt_trace import append_prompt_trace
 from ai8video.generation.tail_frame_chaining import (
     append_tail_frame_chain_prompt,
     build_next_tail_frame_request,
+    tail_frame_chain_result_succeeded,
 )
 from ai8video.media.local_tts import extract_dialogue_text, prepare_narration_text
 from ai8video.media.narration_review import narration_review_status, review_narration_text
@@ -226,6 +227,8 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                     )
                     results.append(result)
                     if request.tail_frame_chaining and position < len(ordered_videos) - 1:
+                        if not tail_frame_chain_result_succeeded(result[0], result[1], result[2]):
+                            break
                         active_request = build_next_tail_frame_request(
                             active_request,
                             result[0],
@@ -604,7 +607,11 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         self._raise_if_cancelled(progress_session_id)
         mark_job_submitted(progress_session_id, video, job)
         mark_job_polling(progress_session_id, job)
-        completed = self._poll_job(job, progress_session_id)
+        completed = self._poll_job(
+            job,
+            progress_session_id,
+            wait_until_terminal=bool(request.tail_frame_chaining),
+        )
         self._raise_if_cancelled(progress_session_id)
         if str(completed.status or "").strip().lower() not in {"succeeded", "completed"}:
             raise RuntimeError(completed.error or f"{label}生成失败")
@@ -651,8 +658,12 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             error=error,
             meta={"reason": "合并模式失败，不创建普通视频资产", "segmentRecords": segment_records},
         )
-        mark_job_failed(progress_session_id, video.index, error, job_id=job.job_id)
-        fail_generation_progress(progress_session_id, error, skip_pending=False)
+        mark_job_failed(progress_session_id, video.index, error)
+        fail_generation_progress(
+            progress_session_id,
+            error,
+            skip_pending=bool(request.tail_frame_chaining),
+        )
         return job, outcome, archive, None
 
     def _merged_cancelled_result(

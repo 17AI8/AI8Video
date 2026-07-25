@@ -1,0 +1,52 @@
+    .smart-split-confirmation-card .guide-actions .guide-action-button[data-smart-split-cancel-action] {
+      flex: 0 0 54px;
+      width: 54px;
+      margin-left: auto;
+      padding-inline: 8px;
+      border-color: rgba(100, 116, 139, 0.2);
+      color: #64748b;
+    }
+
+    .smart-split-confirmation-card .guide-actions .guide-action-button[data-smart-split-cancel-action]:hover:not(:disabled) {
+      border-color: rgba(220, 38, 38, 0.2);
+      background: rgba(254, 226, 226, 0.66);
+      color: #b42318;
+    }
+
+    .smart-split-confirmation-card:has([data-smart-split-feedback-toggle][aria-expanded="true"])
+      [data-smart-split-hide-on-feedback] {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translateX(-8px) scale(0.96);
+      transition:
+        opacity 180ms ease,
+        transform 180ms ease,
+        visibility 0s linear 180ms;
+    }
+
+    .message.is-smart-split-dismiss-pending,
+    .message.is-smart-split-dismissing {
+      pointer-events: none;
+    }
+
+    .message.is-smart-split-dismissing {
+      animation: smart-split-message-fade 220ms ease-in forwards;
+    }
+
+    @keyframes smart-split-message-fade {
+      to {
+        opacity: 0;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .smart-split-confirmation-card:has([data-smart-split-feedback-toggle][aria-expanded="true"])
+        [data-smart-split-hide-on-feedback] {
+        transition: none;
+      }
+
+      .message.is-smart-split-dismissing {
+        animation-duration: 100ms;
+      }
+    }

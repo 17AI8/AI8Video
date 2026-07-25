@@ -21,6 +21,7 @@ from ai8video.integrations.direct_video_model_client import (
     _build_create_payload,
     _create_timeout_seconds,
     _format_create_timeout_error,
+    _poll_request_timeout,
     _raise_for_response,
 )
 from ai8video.integrations.llm_provider import build_openai_compat_llm
@@ -631,6 +632,78 @@ class AI8VideoVideoModelSettingsTest(unittest.TestCase):
         self.assertEqual(mock_get_job.call_count, 2)
         self.assertEqual(job.status, "succeeded")
         self.assertEqual(job.video_url, "https://example.invalid/task-1.mp4")
+
+    def test_tail_frame_poll_waits_past_normal_attempt_limit_until_terminal(self) -> None:
+        client = AI8VideoModelClient(
+            config=AI8VideoConfig(dry_run=False, poll_interval_seconds=0, max_poll_attempts=1),
+        )
+        submitted = QuickVideoJob(
+            video_index=1,
+            job_id="task-tail-frame",
+            status="pending",
+            prompt="测试视频",
+        )
+        pending = QuickVideoJob(
+            video_index=1,
+            job_id="task-tail-frame",
+            status="pending",
+            prompt="测试视频",
+        )
+        completed = QuickVideoJob(
+            video_index=1,
+            job_id="task-tail-frame",
+            status="succeeded",
+            prompt="测试视频",
+            video_url="https://example.invalid/task-tail-frame.mp4",
+        )
+
+        with patch.object(
+            client,
+            "get_job",
+            side_effect=[pending, pending, completed],
+        ) as mock_get_job, patch("ai8video.integrations.direct_video_model_client.time.sleep"):
+            job = client.poll_job(submitted, wait_until_terminal=True)
+
+        self.assertEqual(mock_get_job.call_count, 3)
+        self.assertEqual(job.status, "succeeded")
+
+    def test_tail_frame_poll_honors_cancel_check_between_status_requests(self) -> None:
+        client = AI8VideoModelClient(
+            config=AI8VideoConfig(dry_run=False, poll_interval_seconds=0, max_poll_attempts=1),
+        )
+        submitted = QuickVideoJob(
+            video_index=1,
+            job_id="task-tail-frame-cancel",
+            status="pending",
+            prompt="测试视频",
+        )
+        pending = QuickVideoJob(
+            video_index=1,
+            job_id="task-tail-frame-cancel",
+            status="pending",
+            prompt="测试视频",
+        )
+        checks = 0
+
+        def stop_check() -> None:
+            nonlocal checks
+            checks += 1
+            if checks >= 2:
+                raise RuntimeError("用户主动取消")
+
+        with patch.object(client, "get_job", return_value=pending) as mock_get_job:
+            with self.assertRaisesRegex(RuntimeError, "用户主动取消"):
+                client.poll_job(
+                    submitted,
+                    wait_until_terminal=True,
+                    stop_check=stop_check,
+                )
+
+        self.assertEqual(mock_get_job.call_count, 1)
+
+    def test_tail_frame_poll_uses_short_status_request_timeout(self) -> None:
+        self.assertEqual(_poll_request_timeout(180, wait_until_terminal=False), 180)
+        self.assertEqual(_poll_request_timeout(180, wait_until_terminal=True), (10.0, 30.0))
 
     def test_poll_job_preserves_segment_metadata_on_latest_status(self) -> None:
         client = AI8VideoModelClient(

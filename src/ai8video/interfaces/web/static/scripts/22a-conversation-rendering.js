@@ -90,6 +90,12 @@
 
     function renderAssistantPayload(payload, context = {}) {
       const blocks = [];
+      const isHistoricalMessage = Number(context.messageIndex) < Number(context.messageCount) - 1;
+      const guideAwaiting = String(payload.awaiting || '').trim();
+      const activeAwaiting = String(context.activeAwaiting || '').trim();
+      const isActiveGuide = !isHistoricalMessage
+        && !!guideAwaiting
+        && guideAwaiting === activeAwaiting;
       const isBatchRun = payload.meta?.operation === 'batch_run';
       const isGeneratedResult = !!(payload.result && !isBatchRun);
       const resultGroups = isGeneratedResult ? buildVideoGroups(payload.result, payload.meta, state.assets) : [];
@@ -119,7 +125,7 @@
       }
       if (payload.meta?.operation === 'pending' || hasAgentProgress) {
         const pending = normalizePendingStatusProgress(renderedPendingStatus || payload.pendingStatus || {});
-        const historicalPending = Number(context.messageIndex) < Number(context.messageCount) - 1;
+        const historicalPending = isHistoricalMessage;
         const displayedPending = historicalPending ? buildHistoricalPendingSnapshot(pending) : pending;
         const pendingProgress = buildPendingProgressFromRecentResults(displayedPending);
         const pendingOverview = buildProgressOverview({ videos: pendingProgress.videos, isActive: !historicalPending });
@@ -179,7 +185,7 @@
           </div>
         `);
       }
-      if (payload.meta?.guide) {
+      if (payload.meta?.guide && isActiveGuide) {
         blocks.push(renderCompletionGuide(payload.meta.guide));
       }
       if (isGeneratedResult && summary && !hasAgentProgress) {
@@ -470,14 +476,72 @@
       return '后台正在准备任务。';
     }
 
+    function renderSmartSplitFeedbackDrawer() {
+      return `
+        <div class="smart-split-feedback-drawer" data-smart-split-feedback-drawer hidden>
+          <label class="smart-split-feedback-field">
+            <span>重新分集意见（可选）</span>
+            <textarea
+              rows="2"
+              data-smart-split-feedback
+              placeholder="例如：合并前两集，每集只讲一个主题"
+            ></textarea>
+          </label>
+          <button
+            type="button"
+            class="guide-action-button smart-split-feedback-submit"
+            data-guide-action-kind="send"
+            data-guide-action-value="重新分集"
+            data-smart-split-feedback-submit
+          >提交重新分集</button>
+        </div>
+      `;
+    }
+
+    function renderGuideActionButton(action, index, isSmartSplitConfirmation) {
+      const value = String(action.value || '');
+      const isReplanToggle = isSmartSplitConfirmation && value.trim() === '重新分集';
+      const isSmartSplitConfirm = isSmartSplitConfirmation && value.trim() === '确认分集';
+      const isSmartSplitCancel = isSmartSplitConfirmation && action.kind === 'dismiss-plan';
+      return `
+        <button
+          type="button"
+          class="guide-action-button${index === 0 && !isSmartSplitConfirmation ? ' primary' : ''}"
+          data-guide-action-kind="${escapeHtml(action.kind || 'fill')}"
+          data-guide-action-value="${escapeHtml(value)}"
+          ${isSmartSplitConfirm ? 'data-smart-split-confirm-action data-smart-split-hide-on-feedback' : ''}
+          ${isSmartSplitCancel ? 'data-smart-split-cancel-action data-smart-split-hide-on-feedback' : ''}
+          ${isReplanToggle ? 'data-smart-split-feedback-toggle aria-expanded="false"' : ''}
+        >${escapeHtml(action.label || '继续')}</button>
+      `;
+    }
+
+    function smartSplitActionRank(action) {
+      const value = String(action?.value || '').trim();
+      if (value === '重新分集') return 0;
+      if (value === '确认分集') return 1;
+      if (String(action?.kind || '').trim() === 'dismiss-plan') return 2;
+      return 3;
+    }
+
     function renderCompletionGuide(guide) {
       if (!guide || typeof guide !== 'object') return '';
       const missingFields = Array.isArray(guide.missingFields) ? guide.missingFields : [];
       const actions = Array.isArray(guide.actions) ? guide.actions : [];
+      const isSmartSplitConfirmation = String(guide.kind || '') === 'smart_split_confirmation';
+      const summaryMarkup = isSmartSplitConfirmation
+        ? ''
+        : `<div>${escapeHtml(guide.summary || '生成前还需要补充一点信息。')}</div>`;
+      const feedbackDrawerMarkup = isSmartSplitConfirmation
+        ? renderSmartSplitFeedbackDrawer()
+        : '';
+      const displayActions = isSmartSplitConfirmation
+        ? [...actions].sort((left, right) => smartSplitActionRank(left) - smartSplitActionRank(right))
+        : actions;
       return `
-        <div class="mini-card guide-card">
+        <div class="mini-card guide-card${isSmartSplitConfirmation ? ' smart-split-confirmation-card' : ''}">
           <strong>${escapeHtml(guide.title || '补充信息')}</strong>
-          <div>${escapeHtml(guide.summary || '生成前还需要补充一点信息。')}</div>
+          ${summaryMarkup}
           ${missingFields.length ? `
             <div class="guide-missing-list">
               ${missingFields.map((item) => `
@@ -488,18 +552,14 @@
               `).join('')}
             </div>
           ` : ''}
-          ${actions.length ? `
+          ${displayActions.length ? `
             <div class="guide-actions">
-              ${actions.map((action, index) => `
-                <button
-                  type="button"
-                  class="guide-action-button${index === 0 ? ' primary' : ''}"
-                  data-guide-action-kind="${escapeHtml(action.kind || 'fill')}"
-                  data-guide-action-value="${escapeHtml(action.value || '')}"
-                >${escapeHtml(action.label || '继续')}</button>
-              `).join('')}
+              ${displayActions.map((action, index) => (
+                renderGuideActionButton(action, index, isSmartSplitConfirmation)
+              )).join('')}
             </div>
           ` : ''}
+          ${feedbackDrawerMarkup}
         </div>
       `;
     }

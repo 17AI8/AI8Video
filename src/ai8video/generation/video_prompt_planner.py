@@ -48,10 +48,27 @@ def infer_smart_video_count_with_ai(
 {model_script}
 """
     raw = llm(prompt)
-    data = parse_json_object(raw)
-    count = int(data.get("video_count") or 0)
-    if count < 1 or count > SMART_SPLIT_MAX_VIDEOS:
-        raise ValueError("智能分集数量超出允许范围")
+    append_prompt_trace(
+        "smart_split_count_model_output",
+        session_id=trace_session_id,
+        payload={"raw": raw},
+    )
+    try:
+        data = parse_json_object(raw)
+        count = int(data.get("video_count") or 0)
+        if count < 1 or count > SMART_SPLIT_MAX_VIDEOS:
+            raise ValueError("智能分集数量超出允许范围")
+    except Exception as exc:
+        append_prompt_trace(
+            "smart_split_count_model_error",
+            session_id=trace_session_id,
+            payload={
+                "errorType": exc.__class__.__name__,
+                "error": str(exc),
+                "raw": raw,
+            },
+        )
+        raise RuntimeError("视频数量分析结果格式异常，请重新规划。") from exc
     append_prompt_trace(
         "smart_split_count_output",
         session_id=trace_session_id,
@@ -301,7 +318,19 @@ def plan_video_prompts_with_ai(
             session_id=trace_session_id,
             payload={"raw": repaired_raw},
         )
-        data = parse_json_array(repaired_raw)
+        try:
+            data = parse_json_array(repaired_raw)
+        except Exception as repair_exc:
+            append_prompt_trace(
+                "video_planning_model_json_repair_error",
+                session_id=trace_session_id,
+                payload={
+                    "errorType": repair_exc.__class__.__name__,
+                    "error": str(repair_exc),
+                    "raw": repaired_raw,
+                },
+            )
+            raise RuntimeError("视频规划结果格式异常，请重新规划。") from repair_exc
     videos: list[VideoPrompt] = []
     for idx, item in enumerate(data, 1):
         title = str(item.get("title") or f"视频 {idx}")

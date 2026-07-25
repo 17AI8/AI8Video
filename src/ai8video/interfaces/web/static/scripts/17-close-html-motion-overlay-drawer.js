@@ -428,18 +428,6 @@
       }
     }
 
-    async function handleGuideAction(kind, value) {
-      if (state.busy || isRealGenerationUnavailable()) return;
-      const actionKind = String(kind || '').trim();
-      const text = String(value || '').trim();
-      if (!text) return;
-      if (actionKind === 'send') {
-        setComposerDraft(text, { submit: true });
-        return;
-      }
-      setComposerDraft(text, { submit: false });
-    }
-
     function renderUserMaterials() {
       const materials = state.userMaterials || {};
       renderMaterialLibrary(

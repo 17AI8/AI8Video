@@ -39,7 +39,7 @@ def _build_request_interpretation_prompt(text: str) -> str:
   - "core_keywords_followup": 员工正在补充或跳过核心主题/关键词。
   - "unknown": 无法判断。
 - mode: "batch_videos" 或 "single_video"。如果员工要求多条、多个或批量生成视频，或开头写了“10个，重大消息”这类数量 + 主题，填 "batch_videos"；如果明确只要一条，填 "single_video"。
-- video_count: 目标视频数量。员工说“10个，重大消息”“来十条”“生成6个选题”“生成两条视频”都要识别成数字。无法确定则填 null。
+- video_count: 员工明确要求的目标视频数量。员工说“10个，重大消息”“来十条”“生成6个选题”“生成两条视频”都要识别成数字。正文里的章节序号、步骤编号、“第一”“一次讲清”“一个主题”等内容数字都不是目标数量；没有明确数量要求必须填 null，禁止把 1 当默认值。
 - duration_seconds: 单条视频时长秒数。没有明确时填 null。
 - concurrent_generation: 员工是否明确要求并发/快速/同时提交。明确要求普通/逐条则填 false；未提则填 null。
 - html_motion_overlay: 员工是否明确要求开启 HTML 动效叠加。明确要求关闭/不用则填 false；明确要求开启/使用则填 true；未提填 null。

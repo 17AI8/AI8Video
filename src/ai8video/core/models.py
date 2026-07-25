@@ -188,6 +188,7 @@ class ConversationState:
     last_result: dict[str, Any] | None = None
     batch_request: dict[str, Any] | None = None
     planned_videos: list[VideoPrompt] = field(default_factory=list)
+    planned_video_count_locked: bool = False
 
 
 @dataclass

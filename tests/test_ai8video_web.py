@@ -108,6 +108,92 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         expected = "".join(path.read_text(encoding="utf-8") for path in paths)
         self.assertEqual(read_workbench_script(STATIC_ROOT), expected)
 
+    def test_smart_split_feedback_only_applies_to_replan_action(self) -> None:
+        source = read_static_source()
+        user_message_start = source.index(".message.user .bubble > p {")
+        user_message_end = source.index("}", user_message_start)
+        user_message_style = source[user_message_start:user_message_end]
+
+        self.assertIn("data-smart-split-feedback", source)
+        self.assertIn("重新分集意见（可选）", source)
+        self.assertIn("data-smart-split-feedback-drawer hidden", source)
+        self.assertIn("data-smart-split-feedback-toggle aria-expanded=\"false\"", source)
+        self.assertIn("data-smart-split-feedback-submit", source)
+        self.assertNotIn("填写后提交；“确认并继续”不会使用这里的内容。", source)
+        self.assertIn("smart-split-confirmation-card", source)
+        self.assertIn("index === 0 && !isSmartSplitConfirmation", source)
+        self.assertIn("data-smart-split-confirm-action", source)
+        self.assertIn("data-smart-split-cancel-action", source)
+        self.assertIn("data-smart-split-hide-on-feedback", source)
+        self.assertIn("action.kind === 'dismiss-plan'", source)
+        self.assertIn("function smartSplitActionRank(action)", source)
+        self.assertIn("if (value === '重新分集') return 0", source)
+        self.assertIn("if (value === '确认分集') return 1", source)
+        self.assertIn("if (String(action?.kind || '').trim() === 'dismiss-plan') return 2", source)
+        self.assertIn(".smart-split-confirmation-card .guide-actions .guide-action-button", source)
+        self.assertIn("flex: 0 0 108px;", source)
+        self.assertIn("[data-smart-split-cancel-action]", source)
+        self.assertIn("flex: 0 0 54px;", source)
+        self.assertIn("width: 54px;", source)
+        self.assertIn("margin-left: auto;", source)
+        self.assertIn("opacity 180ms ease", source)
+        self.assertIn("visibility 0s linear 180ms", source)
+        self.assertIn("data-smart-split-feedback-toggle][aria-expanded=\"true\"]", source)
+        self.assertIn(".smart-split-feedback-drawer .smart-split-feedback-submit", source)
+        self.assertIn("width: 100%;", source)
+        self.assertIn("if (actionKind !== 'send')", source)
+        self.assertIn("if (text !== '重新分集')", source)
+        self.assertIn("setSmartSplitFeedbackMode(card, drawer.hidden)", source)
+        self.assertIn("action.disabled = shouldOpen", source)
+        self.assertIn("action.setAttribute('aria-hidden'", source)
+        self.assertIn("block: 'center'", source)
+        self.assertIn("feedback ? `重新分集：${feedback}` : text", source)
+        self.assertIn("trigger?.closest?.('.guide-card')", source)
+        self.assertIn("if (actionKind === 'dismiss-plan')", source)
+        self.assertIn("fetch('/api/chat-plan-cancel'", source)
+        self.assertIn("function dismissSmartSplitMessage(trigger)", source)
+        self.assertIn("function getSmartSplitDismissRange(session, targetMessage)", source)
+        self.assertIn("session.messages[startIndex - 1]?.role === 'user'", source)
+        self.assertIn("function fadeSmartSplitMessages(session, targetMessage)", source)
+        self.assertIn("function removeSmartSplitMessages(session, targetMessage)", source)
+        self.assertIn("range.currentIndex - range.startIndex + 1", source)
+        self.assertIn("continuationClosed: true", source)
+        self.assertIn("if (data.cancelled !== true)", source)
+        self.assertIn("function isConversationContinuationClosed(payload)", source)
+        self.assertIn("!isSessionPending(targetSession)", source)
+        self.assertIn("is-smart-split-dismissing", source)
+        self.assertIn("animation: smart-split-message-fade 220ms ease-in forwards", source)
+        self.assertIn("@keyframes smart-split-message-fade", source)
+        self.assertNotIn("smart-split-dismiss-particle", source)
+        self.assertIn("prefers-reduced-motion: reduce", source)
+        self.assertIn("wrap.dataset.messageIndex = String(messageIndex)", source)
+        self.assertIn("@keyframes smart-split-feedback-drawer-open", source)
+        self.assertIn("white-space: pre-wrap;", user_message_style)
+        self.assertIn("overflow-wrap: anywhere;", user_message_style)
+
+    def test_pending_only_bubble_uses_available_message_width(self) -> None:
+        source = read_static_source()
+        rule_start = source.index(".message:not(.user) .bubble.pending-only {")
+        rule_end = source.index("}", rule_start)
+        rule = source[rule_start:rule_end]
+
+        self.assertIn("width: 100%;", rule)
+        self.assertIn("max-width: 100%;", rule)
+
+    def test_historical_completion_guide_is_not_rendered(self) -> None:
+        source = read_static_source()
+
+        self.assertIn(
+            "const isHistoricalMessage = Number(context.messageIndex) < Number(context.messageCount) - 1;",
+            source,
+        )
+        self.assertIn("function getActiveConversationAwaiting(session)", source)
+        self.assertIn("const activeAwaiting = getActiveConversationAwaiting(session);", source)
+        self.assertIn("const guideAwaiting = String(payload.awaiting || '').trim();", source)
+        self.assertIn("guideAwaiting === activeAwaiting", source)
+        self.assertIn("const historicalPending = isHistoricalMessage;", source)
+        self.assertIn("if (payload.meta?.guide && isActiveGuide)", source)
+
     def test_continuation_timeline_is_repaired_to_new_video_duration(self) -> None:
         llm = Mock(return_value="【0-5秒，近景】继续动作\n【5-10秒，远景】完成动作")
 
@@ -295,7 +381,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("function setVideoPreviewMainControlsDisabled(disabled)", source)
         self.assertIn("data-extension-disabled-before", source)
         self.assertIn("messageCount: session.messages.length", source)
-        self.assertIn("const historicalPending = Number(context.messageIndex) < Number(context.messageCount) - 1;", source)
+        self.assertIn("const historicalPending = isHistoricalMessage;", source)
         self.assertIn("这是较早消息的进度记录，不再显示为执行中。", source)
         self.assertIn("pending-card${historicalPending ? ' is-history' : ''}", source)
         self.assertIn("function buildHistoricalPendingSnapshot(pending = {})", source)
@@ -4340,6 +4426,35 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertEqual(body["status"], "cancelled")
         self.assertEqual(body["statusLabel"], "已强行终止")
         cancel_mock.assert_called_once_with(session_id="session-cancel", reason="用户强行终止")
+
+    def test_api_chat_plan_cancel_discards_pending_confirmation(self) -> None:
+        request_backup = ai8video_web.request
+        response_backup = ai8video_web.response
+        fake_response = SimpleNamespace(status=200)
+        ai8video_web.request = SimpleNamespace(
+            method="POST",
+            json={"sessionId": "session-plan-cancel"},
+        )
+        ai8video_web.response = fake_response
+        try:
+            with patch.object(
+                ai8video_web,
+                "cancel_smart_split_confirmation_via_ai8video",
+                return_value={
+                    "ok": True,
+                    "cancelled": True,
+                    "sessionId": "session-plan-cancel",
+                },
+            ) as cancel_mock:
+                body = ai8video_web.api_chat_plan_cancel()
+        finally:
+            ai8video_web.request = request_backup
+            ai8video_web.response = response_backup
+
+        self.assertEqual(fake_response.status, 200)
+        self.assertTrue(body["ok"])
+        self.assertTrue(body["cancelled"])
+        cancel_mock.assert_called_once_with(session_id="session-plan-cancel")
 
     def test_api_chat_timeout_without_generation_returns_planning_pending(self) -> None:
         request_backup = ai8video_web.request

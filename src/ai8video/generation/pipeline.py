@@ -47,6 +47,7 @@ from ai8video.generation.prompt_trace import append_prompt_trace
 from ai8video.generation.tail_frame_chaining import (
     append_tail_frame_chain_prompt,
     build_next_tail_frame_request,
+    tail_frame_chain_result_succeeded,
 )
 from ai8video.generation.output_review import review_final_outputs
 from ai8video.generation.reference_image_preprocessor import (
@@ -193,7 +194,11 @@ class AI8VideoPipeline:
             )
             mark_job_submitted(progress_session_id, video, job)
             mark_job_polling(progress_session_id, job)
-            completed_job = self._poll_job(job, progress_session_id)
+            completed_job = self._poll_job(
+                job,
+                progress_session_id,
+                wait_until_terminal=bool(request.tail_frame_chaining),
+            )
             outcome, archive, asset_record = self._record_completed_job(
                 request, video, completed_job, first_frame, progress_session_id,
             )
@@ -322,7 +327,11 @@ class AI8VideoPipeline:
                     )
                     mark_job_submitted(progress_session_id, final_video, job)
                     mark_job_polling(progress_session_id, job)
-                    completed_job = self._poll_job(job, progress_session_id)
+                    completed_job = self._poll_job(
+                        job,
+                        progress_session_id,
+                        wait_until_terminal=bool(request.tail_frame_chaining),
+                    )
                     outcome, archive, asset_record = self._record_completed_job(
                         active_request,
                         final_video,
@@ -339,6 +348,12 @@ class AI8VideoPipeline:
                 archives.append(archive)
                 asset_records.append(asset_record)
                 if request.tail_frame_chaining and position < len(finalized_video_queue) - 1:
+                    if not tail_frame_chain_result_succeeded(completed_job, outcome, archive):
+                        fail_generation_progress(
+                            progress_session_id,
+                            completed_job.error or archive.error or "前序视频生成未成功，传尾帧串联已停止",
+                        )
+                        break
                     active_request = build_next_tail_frame_request(
                         active_request,
                         completed_job,
@@ -838,27 +853,36 @@ class AI8VideoPipeline:
             },
         )
 
-    def _poll_job(self, job: QuickVideoJob, progress_session_id: str | None) -> QuickVideoJob:
-        def callback(latest: QuickVideoJob) -> None:
-            if is_generation_stopped(progress_session_id):
-                raise GenerationCancelled(generation_stop_reason(progress_session_id))
-            mark_job_polling(progress_session_id, latest)
+    def _poll_job(
+        self,
+        job: QuickVideoJob,
+        progress_session_id: str | None,
+        *,
+        wait_until_terminal: bool = False,
+    ) -> QuickVideoJob:
+        def check_stopped() -> None:
             if is_generation_stopped(progress_session_id):
                 raise GenerationCancelled(generation_stop_reason(progress_session_id))
 
-        if is_generation_stopped(progress_session_id):
-            raise GenerationCancelled(generation_stop_reason(progress_session_id))
+        def callback(latest: QuickVideoJob) -> None:
+            check_stopped()
+            mark_job_polling(progress_session_id, latest)
+            check_stopped()
+
+        check_stopped()
         try:
             parameters = inspect.signature(self.client.poll_job).parameters
         except (TypeError, ValueError):
             parameters = {}
+        kwargs = {}
         if "progress_callback" in parameters:
-            return self.client.poll_job(job, progress_callback=callback)
-        if is_generation_stopped(progress_session_id):
-            raise GenerationCancelled(generation_stop_reason(progress_session_id))
-        completed = self.client.poll_job(job)
-        if is_generation_stopped(progress_session_id):
-            raise GenerationCancelled(generation_stop_reason(progress_session_id))
+            kwargs["progress_callback"] = callback
+        if "wait_until_terminal" in parameters:
+            kwargs["wait_until_terminal"] = wait_until_terminal
+        if "stop_check" in parameters:
+            kwargs["stop_check"] = check_stopped
+        completed = self.client.poll_job(job, **kwargs)
+        check_stopped()
         mark_job_polling(progress_session_id, completed)
         return completed
 

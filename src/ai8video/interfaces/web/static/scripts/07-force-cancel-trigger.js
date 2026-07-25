@@ -158,7 +158,8 @@
         event.preventDefault();
         await handleGuideAction(
           guideActionTrigger.getAttribute('data-guide-action-kind') || '',
-          guideActionTrigger.getAttribute('data-guide-action-value') || ''
+          guideActionTrigger.getAttribute('data-guide-action-value') || '',
+          guideActionTrigger
         );
         return;
       }

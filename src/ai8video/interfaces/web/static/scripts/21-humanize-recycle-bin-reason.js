@@ -381,6 +381,12 @@
       `;
     }
 
+    function getActiveConversationAwaiting(session) {
+      const lastMessage = session?.messages?.at?.(-1);
+      if (lastMessage?.role !== 'assistant' || lastMessage.error) return '';
+      return String(lastMessage.payload?.awaiting || '').trim();
+    }
+
     function renderMessages() {
       const session = getActiveSession();
       if (stripStaleWelcomeMessages(session)) persistSessions();
@@ -393,8 +399,10 @@
         els.messages.innerHTML = '<div class="empty">输入数量和要求，比如：2 个，618 活动</div>';
         return;
       }
+      const activeAwaiting = getActiveConversationAwaiting(session);
       session.messages.forEach((message, messageIndex) => {
         const wrap = document.createElement('div');
+        wrap.dataset.messageIndex = String(messageIndex);
         wrap.className = 'message'
           + (message.role === 'user' ? ' user' : '')
           + (message.textCleared ? ' text-cleared' : '')
@@ -411,6 +419,7 @@
             sessionId: session.id,
             messageIndex,
             messageCount: session.messages.length,
+            activeAwaiting,
           });
           bubble.classList.toggle(
             'pending-only',

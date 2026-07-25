@@ -26,6 +26,7 @@ class DirectVideoModelError(RuntimeError):
 
 
 ProgressCallback = Callable[[QuickVideoJob], None]
+StopCheck = Callable[[], None]
 _DOUBAO_CREATE_LOCK = threading.Lock()
 DOUBAO_CREATE_TIMEOUT_SECONDS = 420
 
@@ -147,7 +148,14 @@ class AI8VideoModelClient:
             },
         )
 
-    def get_job(self, job_id: str, video_index: int = 1, prompt: str = "") -> QuickVideoJob:
+    def get_job(
+        self,
+        job_id: str,
+        video_index: int = 1,
+        prompt: str = "",
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> QuickVideoJob:
         settings = self._settings_for_job(job_id)
         if self.config.dry_run:
             return QuickVideoJob(
@@ -167,7 +175,12 @@ class AI8VideoModelClient:
             model=settings.model,
             task_id=job_id,
         )
-        response = api_request("GET", status_url, headers=self._headers(settings), timeout=self.config.timeout_seconds)
+        response = api_request(
+            "GET",
+            status_url,
+            headers=self._headers(settings),
+            timeout=self.config.timeout_seconds if timeout is None else timeout,
+        )
         _raise_for_response(response, "查询视频任务")
         data = response.json()
         provider_status = (_read_first_path(data, template["status_paths"]) or "").strip().lower()
@@ -203,18 +216,34 @@ class AI8VideoModelClient:
             stage_label=stage_label or None,
         )
 
-    def poll_job(self, job: QuickVideoJob, progress_callback: ProgressCallback | None = None) -> QuickVideoJob:
+    def poll_job(
+        self,
+        job: QuickVideoJob,
+        progress_callback: ProgressCallback | None = None,
+        *,
+        wait_until_terminal: bool = False,
+        stop_check: StopCheck | None = None,
+    ) -> QuickVideoJob:
         if self.config.dry_run or job.video_url:
+            _run_stop_check(stop_check)
             if progress_callback:
                 progress_callback(job)
             return job
         last_request_error: requests.RequestException | None = None
-        for _ in range(self.config.max_poll_attempts):
+        attempt = 0
+        while wait_until_terminal or attempt < self.config.max_poll_attempts:
+            attempt += 1
+            _run_stop_check(stop_check)
             try:
-                latest = self.get_job(job.job_id, job.video_index, job.prompt)
+                latest = self.get_job(
+                    job.job_id,
+                    job.video_index,
+                    job.prompt,
+                    timeout=_poll_request_timeout(self.config.timeout_seconds, wait_until_terminal),
+                )
             except requests.RequestException as exc:
                 last_request_error = exc
-                time.sleep(self.config.poll_interval_seconds)
+                _wait_for_next_poll(self.config.poll_interval_seconds, stop_check)
                 continue
             latest.segment_index = getattr(job, "segment_index", None)
             latest.segment_label = getattr(job, "segment_label", None)
@@ -222,7 +251,7 @@ class AI8VideoModelClient:
                 progress_callback(latest)
             if latest.status in {"succeeded", "failed"}:
                 return latest
-            time.sleep(self.config.poll_interval_seconds)
+            _wait_for_next_poll(self.config.poll_interval_seconds, stop_check)
         if last_request_error is not None:
             raise last_request_error
         raise TimeoutError(f"Polling timed out for direct video model job {job.job_id}")
@@ -342,6 +371,35 @@ def _create_timeout_seconds(template: str, default_timeout: int | float) -> int 
     if template == "doubao-seedance":
         return max(float(default_timeout or 0), DOUBAO_CREATE_TIMEOUT_SECONDS)
     return default_timeout
+
+
+def _poll_request_timeout(
+    default_timeout: int | float,
+    wait_until_terminal: bool,
+) -> int | float | tuple[float, float]:
+    if not wait_until_terminal:
+        return default_timeout
+    connect_timeout = min(10.0, max(1.0, float(default_timeout or 0)))
+    read_timeout = min(30.0, max(10.0, float(default_timeout or 0)))
+    return connect_timeout, read_timeout
+
+
+def _run_stop_check(stop_check: StopCheck | None) -> None:
+    if stop_check is not None:
+        stop_check()
+
+
+def _wait_for_next_poll(seconds: float, stop_check: StopCheck | None) -> None:
+    remaining = max(0.0, float(seconds or 0))
+    if stop_check is None:
+        time.sleep(remaining)
+        return
+    while remaining > 0:
+        _run_stop_check(stop_check)
+        delay = min(0.25, remaining)
+        time.sleep(delay)
+        remaining -= delay
+    _run_stop_check(stop_check)
 
 
 def _format_create_timeout_error(template: str, url: str, exc: requests.Timeout) -> str:

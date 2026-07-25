@@ -22,6 +22,7 @@ from ai8video.application.facade import (
     CHAT_BACKEND,
     build_batch_seed_file_payload,
     cancel_chat as cancel_chat_via_ai8video,
+    cancel_smart_split_confirmation as cancel_smart_split_confirmation_via_ai8video,
     get_assets_payload,
     get_batch_alerts_payload,
     get_batch_reports_payload,
@@ -5749,6 +5750,18 @@ def api_chat_cancel():
         return {"error": "sessionId is required"}
     reason = str(payload.get("reason") or "").strip() or None
     return cancel_chat_via_ai8video(session_id=session_id, reason=reason)
+
+
+@app.route("/api/chat-plan-cancel", method=["POST", "OPTIONS"])
+def api_chat_plan_cancel():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    session_id = str(payload.get("sessionId") or "").strip()
+    if not session_id:
+        response.status = 400
+        return {"error": "sessionId is required"}
+    return cancel_smart_split_confirmation_via_ai8video(session_id=session_id)
 
 
 def _parse_chat_status_jobs() -> list[dict]:

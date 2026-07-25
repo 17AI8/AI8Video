@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
-from ai8video.core.models import ArchivedAsset, ParsedRequest, QuickVideoJob, VideoPrompt
+from ai8video.core.models import ArchivedAsset, GenerationOutcome, ParsedRequest, QuickVideoJob, VideoPrompt
 from ai8video.media.video_segment_postprocess import extract_tail_frame
 
 
@@ -15,6 +15,25 @@ def append_tail_frame_chain_prompt(video: VideoPrompt) -> VideoPrompt:
     if TAIL_FRAME_CHAIN_PROMPT_SUFFIX in prompt:
         return video
     return replace(video, prompt=f"{prompt}\n{TAIL_FRAME_CHAIN_PROMPT_SUFFIX}".strip())
+
+
+def tail_frame_chain_result_succeeded(
+    job: QuickVideoJob,
+    outcome: GenerationOutcome,
+    archive: ArchivedAsset,
+) -> bool:
+    return (
+        str(job.status or "").strip().lower() in {"succeeded", "completed"}
+        and str(outcome.status or "").strip().lower() in {"succeeded", "completed"}
+        and str(archive.status or "").strip().lower() in {
+            "archived",
+            "stored",
+            "simulated",
+            "disabled",
+            "succeeded",
+            "completed",
+        }
+    )
 
 
 def build_next_tail_frame_request(
