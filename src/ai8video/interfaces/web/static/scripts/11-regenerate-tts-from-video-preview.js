@@ -69,11 +69,58 @@
       if (status) status.textContent = data?.deleted ? '台词已删除' : `已同步，${Number(data?.textChars || 0)} 字`;
     }
 
-    function showHtmlMotionPreview(video, previewUrl) {
-      if (!video || !previewUrl) return;
+    function showHtmlMotionPreview(video, previewUrl, overlay = {}) {
+      if (!video) return;
+      const livePreviewUrl = String(overlay?.livePreviewUrl || '').trim();
+      if (livePreviewUrl) {
+        mountLiveHtmlMotionPreview(video, livePreviewUrl, overlay.timelineChunks || []);
+        return;
+      }
+      if (!previewUrl) return;
       video.src = `${previewUrl}${previewUrl.includes('?') ? '&' : '?'}v=${Date.now()}`;
       video.load();
       video.play().catch(() => {});
+    }
+
+    function mountLiveHtmlMotionPreview(video, livePreviewUrl, chunks) {
+      const stage = video.closest('.video-preview-stage');
+      if (!stage) return;
+      const officialSrc = String(video.dataset.officialSrc || '').trim();
+      if (officialSrc && video.getAttribute('src') !== officialSrc) {
+        video.src = officialSrc;
+        video.load();
+      }
+      let frame = stage.querySelector('[data-video-preview-html-motion-live]');
+      if (!frame) {
+        frame = document.createElement('iframe');
+        frame.className = 'video-preview-html-motion-live';
+        frame.dataset.videoPreviewHtmlMotionLive = 'true';
+        frame.setAttribute('aria-hidden', 'true');
+        stage.appendChild(frame);
+      }
+      frame.src = `${livePreviewUrl}${livePreviewUrl.includes('?') ? '&' : '?'}v=${Date.now()}`;
+      const sync = () => frame.contentWindow?.postMessage({
+        type: 'ai8-motion-preview',
+        currentTime: Number(video.currentTime || 0),
+        chunks: state.videoPreviewModal?.htmlMotionTimelineChunks || chunks,
+      }, '*');
+      frame.addEventListener('load', sync, { once: true });
+      if (video.dataset.htmlMotionLiveBound !== 'true') {
+        video.dataset.htmlMotionLiveBound = 'true';
+        ['timeupdate', 'seeking', 'seeked', 'play', 'pause'].forEach((eventName) => {
+          video.addEventListener(eventName, sync);
+        });
+      }
+      video.play().catch(() => {});
+    }
+
+    function syncLiveHtmlMotionPreview(video) {
+      const frame = video?.closest('.video-preview-stage')?.querySelector('[data-video-preview-html-motion-live]');
+      frame?.contentWindow?.postMessage({
+        type: 'ai8-motion-preview',
+        currentTime: Number(video?.currentTime || 0),
+        chunks: state.videoPreviewModal?.htmlMotionTimelineChunks || [],
+      }, '*');
     }
 
     function invalidateHtmlMotionPreviewRequest() {
@@ -504,7 +551,8 @@
           if (jobKey) forgetHtmlMotionJob(jobKey);
           const overlay = data?.htmlMotionOverlay || data?.result?.htmlMotionOverlay || {};
           const video = els.videoPreviewBody?.querySelector('video');
-          showHtmlMotionPreview(video, overlay.previewUrl || data.previewUrl || data.videoUrl);
+          showHtmlMotionPreview(video, overlay.previewUrl || data.previewUrl || data.videoUrl, overlay);
+          configureHtmlMotionTimeline(overlay);
           if (confirmButton) confirmButton.disabled = false;
           setHtmlMotionPreviewStatus(buildHtmlMotionSuccessStatus(timing, overlay), 'success');
           return data;
@@ -561,8 +609,10 @@
         const data = await res.json().catch(() => ({}));
         const ready = res.ok && data?.reviewReady === true;
         confirmButton.disabled = !ready;
-        if (ready) showHtmlMotionPreview(video, data.previewUrl);
+        configureHtmlMotionTimeline(data);
+        if (ready) showHtmlMotionPreview(video, data.previewUrl, data);
       } catch (_) {
         confirmButton.disabled = true;
+        configureHtmlMotionTimeline({ timelineAdjustable: false });
       }
     }

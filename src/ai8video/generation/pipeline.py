@@ -103,7 +103,7 @@ class AI8VideoPipeline:
         target_duration = self._effective_video_duration_seconds(request.duration_seconds)
         video_count = request.video_count
         if smart_split:
-            video_count = infer_smart_video_count_with_ai(
+            video_count, request.smart_split_reason = infer_smart_video_count_with_ai(
                 request.raw_text,
                 llm=self.llm,
                 duration_seconds=target_duration,

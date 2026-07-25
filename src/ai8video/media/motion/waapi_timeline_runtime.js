@@ -73,7 +73,11 @@
     });
     animation.pause();
     animation.currentTime = 0;
-    return animation;
+    return {
+      animation,
+      baseDelay: Math.max(0, (number(item.at, 0) + staggerSeconds * index) * 1000),
+      sceneIndex: number(node.closest('.hf-scene')?.id?.replace('hf-scene-', ''), 0) - 1,
+    };
   }
 
   function mount(plan) {
@@ -90,9 +94,55 @@
       nodes.forEach((node, index) => animations.push(createAnimation(node, item, index)));
     }
     global.__ai8MotionPlan = plan;
-    global.__ai8MotionAnimations = animations;
-    return animations;
+    global.__ai8MotionAnimations = animations.map((entry) => entry.animation);
+    global.__ai8MotionRecords = animations;
+    fitPreviewViewport();
+    return global.__ai8MotionAnimations;
   }
 
-  global.AI8WaapiTimeline = Object.freeze({ mount });
+  function fitPreviewViewport() {
+    const root = document.getElementById('root');
+    if (!root) return;
+    const width = Math.max(1, number(root.dataset.width, root.offsetWidth));
+    const height = Math.max(1, number(root.dataset.height, root.offsetHeight));
+    const scale = Math.min(global.innerWidth / width, global.innerHeight / height);
+    root.style.position = 'absolute';
+    root.style.left = `${Math.max(0, (global.innerWidth - width * scale) / 2)}px`;
+    root.style.top = `${Math.max(0, (global.innerHeight - height * scale) / 2)}px`;
+    root.style.transformOrigin = 'top left';
+    root.style.transform = scale < 0.999 ? `scale(${scale})` : '';
+  }
+
+  function seek(seconds) {
+    const time = Math.max(0, number(seconds, 0)) * 1000;
+    for (const record of global.__ai8MotionRecords || []) record.animation.currentTime = time;
+  }
+
+  function updateChunks(chunks) {
+    if (!Array.isArray(chunks)) return;
+    const offsets = new Map();
+    chunks.forEach((chunk) => {
+      const index = number(chunk && chunk.index, -1);
+      const scene = document.querySelector(`#hf-scene-${index + 1}`);
+      if (!scene) return;
+      const original = number(scene.dataset.originalStart, number(scene.dataset.start, 0));
+      const start = Math.max(0, number(chunk.startSeconds, original));
+      scene.dataset.originalStart = String(original);
+      scene.dataset.start = String(start);
+      offsets.set(index, (start - original) * 1000);
+    });
+    for (const record of global.__ai8MotionRecords || []) {
+      const offset = offsets.get(record.sceneIndex) || 0;
+      record.animation.effect.updateTiming({ delay: record.baseDelay + offset });
+    }
+  }
+
+  global.addEventListener('message', (event) => {
+    if (event.data?.type !== 'ai8-motion-preview') return;
+    updateChunks(event.data.chunks);
+    seek(event.data.currentTime);
+  });
+  global.addEventListener('resize', fitPreviewViewport);
+
+  global.AI8WaapiTimeline = Object.freeze({ mount, seek, updateChunks, fitPreviewViewport });
 })(window);

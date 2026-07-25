@@ -15,7 +15,7 @@ from ai8video.generation.video_prompt_planner import (
     single_prompt_to_video,
     plan_video_prompts_with_ai,
 )
-from ai8video.generation.video_prompt_support import parse_json_array, parse_json_object
+from ai8video.generation.video_prompt_support import clean_source_summary, parse_json_array, parse_json_object
 from ai8video.core.models import VideoPrompt
 
 
@@ -46,13 +46,15 @@ class AI8VideoVideoPromptPlannerTest(unittest.TestCase):
             prompts.append(prompt)
             return '{"video_count":6,"reason":"每条时长较短"}'
 
-        count = infer_smart_video_count_with_ai(
+        count, reason = infer_smart_video_count_with_ai(
             "完整长素材，明确计划拆成六条发布。",
             llm=fake_llm,
             duration_seconds=15,
         )
 
         self.assertEqual(count, 6)
+        self.assertEqual(reason, "每条时长较短")
+        self.assertIn("素材中的任何数字都不是数量指令", prompts[0])
         self.assertIn("单条成片时长为 15 秒", prompts[0])
         self.assertIn("不能把明显无法在 15 秒内完整表达的长内容压成一条", prompts[0])
 
@@ -77,7 +79,15 @@ class AI8VideoVideoPromptPlannerTest(unittest.TestCase):
         self.assertIn("开头、中段、后段和结尾", prompt)
         self.assertIn("后半部分输出要优先使用尚未覆盖的中后段内容", prompt)
         self.assertIn("不能把前几条换词后重复", prompt)
-        self.assertIn("source_summary 必须写清该视频来自原文哪个脚本编号", prompt)
+        self.assertIn("source_summary 必须用“参考了……”描述", prompt)
+        self.assertIn("禁止写入 video_keyword_guidance", prompt)
+
+    def test_source_summary_removes_internal_keyword_field_names(self) -> None:
+        summary = clean_source_summary(
+            "开篇引入+向飞讯私域场景暗示（video_keyword_guidance 1）"
+        )
+
+        self.assertEqual(summary, "开篇引入+向飞讯私域场景暗示")
 
     def test_planning_prompt_prioritizes_collected_core_keywords(self) -> None:
         prompt = build_video_planning_prompt(

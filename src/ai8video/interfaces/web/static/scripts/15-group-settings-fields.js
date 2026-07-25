@@ -241,39 +241,39 @@
 
     function buildSettingsRowActionsMarkup(field) {
       const envName = String(field.envName || '');
-      const actions = [];
+      const primary = [];
+      const openFolder = [];
       const archiveArtifactKind = archiveArtifactKindForEnv(envName);
       if (envName === 'AI8VIDEO_VIDEO_MODEL') {
         const pulling = !!state.settingsModal.pullingVideoModels;
-        actions.push(`<button type="button" class="settings-action-button" data-pull-video-models="1" ${pulling ? 'disabled' : ''}>${pulling ? '拉取中' : '拉取模型'}</button>`);
+        primary.push(`<button type="button" class="settings-action-button" data-pull-video-models="1" ${pulling ? 'disabled' : ''}>${pulling ? '拉取中' : '拉取模型'}</button>`);
       } else if (isAuthModelField(envName)) {
         const pulling = state.settingsModal.pullingAuthModelEnvName === envName;
-        actions.push(`<button type="button" class="settings-action-button" data-pull-auth-models="${escapeHtml(envName)}" ${pulling ? 'disabled' : ''}>${pulling ? '拉取中' : '拉取模型'}</button>`);
+        primary.push(`<button type="button" class="settings-action-button" data-pull-auth-models="${escapeHtml(envName)}" ${pulling ? 'disabled' : ''}>${pulling ? '拉取中' : '拉取模型'}</button>`);
       }
       if (envName === 'AI8VIDEO_VIDEO_TEMPLATE') {
-        actions.push('<button type="button" class="settings-action-button" data-open-video-params="1">参数设置</button>');
+        primary.push('<button type="button" class="settings-action-button" data-open-video-params="1">参数设置</button>');
       }
-      if (archiveArtifactKind && !['covers', 'previews'].includes(archiveArtifactKind)) {
-        actions.push(`<button type="button" class="settings-action-button" data-open-archive-artifact="${escapeHtml(archiveArtifactKind)}">打开文件夹</button>`);
-      }
-      if (envName === 'AI8VIDEO_ARCHIVE_COVER_DIR') {
+      if (archiveArtifactKind === 'covers') {
         const cleaning = state.settingsModal.cleaningArchiveArtifactKind === 'covers';
-        actions.push(`<button type="button" class="settings-action-button" data-cleanup-archive-artifact="covers" ${cleaning ? 'disabled' : ''}>${cleaning ? '清理中' : '清理孤儿封面'}</button>`);
-        actions.push('<button type="button" class="settings-action-button" data-open-user-generated-cover-folder>打开文件夹</button>');
-      }
-      if (envName === 'AI8VIDEO_ARCHIVE_PREVIEW_DIR') {
+        primary.push(`<button type="button" class="settings-action-button" data-cleanup-archive-artifact="covers" ${cleaning ? 'disabled' : ''}>${cleaning ? '清理中' : '清理孤儿封面'}</button>`);
+        openFolder.push('<button type="button" class="settings-action-button" data-open-user-generated-cover-folder>打开文件夹</button>');
+      } else if (archiveArtifactKind === 'previews') {
         const regenerating = !!state.settingsModal.regeneratingPreviews;
-        actions.push(`<button type="button" class="settings-action-button" data-regenerate-user-generated-previews ${regenerating ? 'disabled' : ''}>${regenerating ? '生成中' : '重新生成预览图'}</button>`);
-        actions.push('<button type="button" class="settings-action-button" data-open-user-generated-preview-folder>打开文件夹</button>');
-      }
-      const cleanupLabel = archiveArtifactCleanupLabel(envName);
-      if (cleanupLabel && envName !== 'AI8VIDEO_ARCHIVE_COVER_DIR') {
-        const cleaning = state.settingsModal.cleaningArchiveArtifactKind === archiveArtifactKind;
-        actions.push(`<button type="button" class="settings-action-button" data-cleanup-archive-artifact="${escapeHtml(archiveArtifactKind)}" ${cleaning ? 'disabled' : ''}>${cleaning ? '清理中' : escapeHtml(cleanupLabel)}</button>`);
+        primary.push(`<button type="button" class="settings-action-button" data-regenerate-user-generated-previews ${regenerating ? 'disabled' : ''}>${regenerating ? '生成中' : '重新生成预览图'}</button>`);
+        openFolder.push('<button type="button" class="settings-action-button" data-open-user-generated-preview-folder>打开文件夹</button>');
+      } else if (archiveArtifactKind) {
+        const cleanupLabel = archiveArtifactCleanupLabel(envName);
+        if (cleanupLabel) {
+          const cleaning = state.settingsModal.cleaningArchiveArtifactKind === archiveArtifactKind;
+          primary.push(`<button type="button" class="settings-action-button" data-cleanup-archive-artifact="${escapeHtml(archiveArtifactKind)}" ${cleaning ? 'disabled' : ''}>${cleaning ? '清理中' : escapeHtml(cleanupLabel)}</button>`);
+        }
+        openFolder.push(`<button type="button" class="settings-action-button" data-open-archive-artifact="${escapeHtml(archiveArtifactKind)}">打开文件夹</button>`);
       }
       if (envName === 'AI8VIDEO_LOCAL_TTS_OUTPUT_DIR') {
-        actions.push('<button type="button" class="settings-action-button" data-open-local-tts-folder>打开文件夹</button>');
+        openFolder.push('<button type="button" class="settings-action-button" data-open-local-tts-folder>打开文件夹</button>');
       }
+      const actions = primary.concat(openFolder);
       return `<div class="settings-row-actions">${actions.join('')}</div>`;
     }
 

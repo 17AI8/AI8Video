@@ -18,6 +18,78 @@
       flex-wrap: nowrap;
     }
 
+    #resultModal .result-batch-merge-group {
+      display: inline-flex;
+      align-items: stretch;
+    }
+
+    #resultModal .result-batch-merge-group .button-secondary {
+      border-radius: 10px;
+    }
+
+    #resultModal .result-batch-merge-group.is-active .button-secondary:first-child {
+      border-radius: 10px 0 0 10px;
+      border-color: rgba(77, 116, 255, 0.72);
+      color: #4d74ff;
+    }
+
+    #resultModal .result-batch-merge-group .button-secondary + .button-secondary {
+      margin-left: -1px;
+      border-radius: 0 10px 10px 0;
+    }
+
+    #resultModal .result-notify-card.is-batch-selected {
+      outline: 2px solid #4d74ff;
+      outline-offset: 2px;
+    }
+
+    #resultModal .result-batch-merge-select {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      z-index: 4;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    #resultModal .result-batch-merge-checkbox {
+      display: grid;
+      width: 20px;
+      height: 20px;
+      place-items: center;
+      border: 2px solid rgba(255, 255, 255, 0.94);
+      border-radius: 6px;
+      background: rgba(21, 34, 56, 0.72);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 900;
+      box-shadow: 0 2px 8px rgba(15, 28, 55, 0.28);
+    }
+
+    #resultModal .result-batch-merge-select.is-selected .result-batch-merge-checkbox {
+      border-color: #4d74ff;
+      background: #4d74ff;
+    }
+
+    #resultModal .result-batch-merge-order {
+      min-width: 17px;
+      height: 17px;
+      padding: 0 4px;
+      border-radius: 9px;
+      background: #4d74ff;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 800;
+      line-height: 17px;
+      text-align: center;
+    }
+
     #progressModalBody,
     #resultModalBody {
       min-height: 0;
@@ -381,6 +453,51 @@
       height: 16px;
       accent-color: var(--accent-blue);
       flex: 0 0 auto;
+    }
+
+    .split-mode-switch {
+      display: inline-flex;
+      align-items: stretch;
+      gap: 0;
+    }
+
+    /* 与其它 composer 页签一致：只圆上角，底边贴平输入框上沿 */
+    .split-mode-switch .split-mode-option {
+      border-radius: 0;
+    }
+
+    .split-mode-switch .split-mode-option:first-child {
+      border-radius: 6px 0 0 0;
+      border-right-width: 0;
+    }
+
+    .split-mode-switch .split-mode-option:last-child {
+      border-radius: 0 6px 0 0;
+    }
+
+    .split-mode-option.is-ready::after {
+      content: "已选" !important;
+    }
+
+    .generation-mode-count-field {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px;
+      border: 1px solid rgba(37, 99, 235, 0.14);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .generation-mode-count-field input {
+      width: 76px;
+      padding: 6px 8px;
+      border: 1px solid rgba(37, 99, 235, 0.24);
+      border-radius: 7px;
+      text-align: center;
     }
 
     .watermark-segmented-control {

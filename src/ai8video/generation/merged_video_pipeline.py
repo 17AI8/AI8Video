@@ -101,11 +101,12 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         progress_session_id: str | None = None,
         smart_split: bool = False,
     ) -> list[VideoPrompt]:
-        _, videos, _ = self.plan_merged_request(
+        final_request, videos, _ = self.plan_merged_request(
             request,
             progress_session_id=progress_session_id,
             smart_split=smart_split,
         )
+        request.smart_split_reason = final_request.smart_split_reason
         return videos
 
     def plan_merged_request(
@@ -122,12 +123,13 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         task_constraints = self._merged_task_constraints(final_request, segment_duration)
         video_count = final_request.video_count
         if smart_split:
-            video_count = infer_smart_video_count_with_ai(
+            video_count, smart_split_reason = infer_smart_video_count_with_ai(
                 planning_text,
                 llm=self.llm,
                 duration_seconds=final_request.duration_seconds,
                 trace_session_id=progress_session_id,
             )
+            final_request = replace(final_request, smart_split_reason=smart_split_reason)
         if smart_split or final_request.mode == "batch_videos":
             if not video_count:
                 raise ValueError("video_count is required for video planning")

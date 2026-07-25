@@ -2,6 +2,9 @@
       const text = String(value || '').trim();
       const lowered = text.toLowerCase();
       if (!text) return '视频生成失败，请重新生成。';
+      if (lowered.includes('exceeded 30 redirects') || lowered.includes('too many redirects')) {
+        return '模型服务连接异常，接口发生循环跳转。请稍后重试，或检查 API Key 服务状态。';
+      }
       if (text.includes('_mix_video') || text.includes('preserve_original_audio_override') || lowered.includes('mix_background_music')) {
         return '视频后处理失败，背景音乐或原声音轨合成没有完成。请重新生成，或先关闭背景音乐后再试。';
       }
@@ -29,6 +32,9 @@
     function humanizeAssistantError(value) {
       const text = String(value || '').trim();
       const lowered = text.toLowerCase();
+      if (lowered.includes('exceeded 30 redirects') || lowered.includes('too many redirects')) {
+        return '模型服务连接异常，接口发生循环跳转。请稍后重试，或检查 API Key 服务状态。';
+      }
       if (lowered.includes('ssl module is not available') || lowered.includes("can't connect to https url")) {
         return '本机安全连接组件不可用，暂时无法连接视频服务。请修复本机 Python 的 HTTPS 支持后再试。';
       }
@@ -389,6 +395,7 @@
 
     function renderMessages() {
       const session = getActiveSession();
+      repairRecoveredSmartSplitFailure(session);
       if (stripStaleWelcomeMessages(session)) persistSessions();
       renderClearConversationButton(session);
       const scroller = els.messages.parentElement;
@@ -428,6 +435,7 @@
         }
         els.messages.appendChild(wrap);
       });
+      recoverLegacySmartSplitPlans(session);
       if (shouldStickToBottom) {
         window.requestAnimationFrame(() => {
           scroller.scrollTop = scroller.scrollHeight;

@@ -13,6 +13,7 @@ from ai8video.generation.source_material import prepare_script_for_model
 from ai8video.generation.video_prompt_mocks import mock_expand_seed_messages, mock_plan_video_prompts
 from ai8video.generation.video_prompt_support import (
     build_json_array_repair_prompt,
+    clean_source_summary,
     clean_video_title,
     coerce_seed_strings,
     coerce_text_list,
@@ -34,14 +35,14 @@ def infer_smart_video_count_with_ai(
     llm: LLMCallable,
     duration_seconds: int,
     trace_session_id: str | None = None,
-) -> int:
+) -> tuple[int, str]:
     duration = max(1, int(duration_seconds))
     model_script = prepare_script_for_model(script, SMART_SPLIT_MAX_VIDEOS)
     prompt = f"""你是AI8video 的智能分集规划器。
 请通读素材，判断拆成多少条彼此独立、可单独发布的短视频最合理。
 不要按段落或标点机械切割；每条都必须有足够信息形成完整的开场、主体和收束。
 当前视频模型设置的单条成片时长为 {duration} 秒。数量判断必须服从这个实时容量，不能把明显无法在 {duration} 秒内完整表达的长内容压成一条。
-素材中若明确提出期望条数，应优先尊重；只有与单条时长或内容完整性明显冲突时才调整。
+素材中的任何数字都不是数量指令；数量只根据内容容量和单条时长判断。
 数量范围为 1 到 {SMART_SPLIT_MAX_VIDEOS}。只返回严格 JSON：{{"video_count":整数,"reason":"一句话依据"}}。
 
 用户素材：
@@ -78,7 +79,8 @@ def infer_smart_video_count_with_ai(
             "reason": str(data.get("reason") or ""),
         },
     )
-    return count
+    reason = str(data.get("reason") or "根据全文信息密度与单条成片时长确定。")
+    return count, reason
 
 
 def build_video_planning_prompt(
@@ -125,7 +127,7 @@ def build_video_planning_prompt(
 2. 每条视频必须对应一个明确且不同的来源段、脚本编号、标题或信息点；后半部分输出要优先使用尚未覆盖的中后段内容，不能反复改写前面的同一组素材。
 3. 如果用户素材里已有脚本编号、标题、阶段说明或发布计划，优先用它们定位来源，但每条输出仍须是完整独立的视频。
 4. 如果目标数量大于可直接使用的信息点数量，要说明每条扩展自哪个原文信息点，并通过新场景、新冲突或新角色视角做区分，不能把前几条换词后重复。
-5. 每个 JSON 元素的 source_summary 必须写清该视频来自原文哪个脚本编号、标题、阶段或信息点，方便追踪素材覆盖情况。
+5. 每个 JSON 元素的 source_summary 必须用“参考了……”描述该视频参考的原文脚本编号、标题、阶段或信息点，方便追踪素材覆盖情况；不要使用“来自……”这种内容归属表述；禁止写入 video_keyword_guidance、global_keywords 等内部 JSON 字段名。
 
 要求：
 1. 不要按段落、标点或编号机械切分；先理解素材主题、事实和表达目标，再规划独立视频。
@@ -341,7 +343,7 @@ def plan_video_prompts_with_ai(
             index=int(item.get("index") or idx),
             title=title,
             prompt=prompt,
-            source_summary=str(item.get("source_summary") or "").strip(),
+            source_summary=clean_source_summary(item.get("source_summary")),
             keyword_guidance={
                 "global": keyword_guidance or {},
                 "preserved_keywords": coerce_text_list(item.get("preserved_keywords")),
@@ -531,7 +533,7 @@ def rewrite_video_with_ai(
         index=video.index,
         title=clean_video_title(str(data.get("title") or video.title).strip() or video.title, video.index),
         prompt=prompt,
-        source_summary=str(data.get("source_summary") or video.source_summary).strip(),
+        source_summary=clean_source_summary(data.get("source_summary") or video.source_summary),
         keyword_guidance={
             **(video.keyword_guidance or {}),
             "preserved_keywords": coerce_text_list(data.get("preserved_keywords")),

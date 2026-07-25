@@ -180,6 +180,18 @@
       color: #3f63b7;
     }
 
+    .result-notify-play.waiting-placeholder[aria-hidden="true"] span::before {
+      content: "…";
+      width: auto;
+      height: auto;
+      border: 0;
+      animation: none;
+      color: #7180a6;
+      font-size: 18px;
+      font-weight: 900;
+      line-height: 1;
+    }
+
     .result-notify-card.failed .result-notify-preview {
       background: linear-gradient(180deg, #fff4f2, #ffe4df);
       border-color: rgba(205, 82, 48, 0.28);

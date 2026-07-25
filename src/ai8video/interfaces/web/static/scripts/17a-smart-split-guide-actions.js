@@ -15,6 +15,61 @@
       });
     }
 
+    function setSmartSplitPromptEditing(node, editing) {
+      const prompt = node?.querySelector?.('[data-smart-split-plan-prompt]');
+      const editor = node?.querySelector?.('[data-smart-split-plan-editor]');
+      const editButton = node?.querySelector?.('[data-smart-split-plan-edit]');
+      const saveButton = node?.querySelector?.('[data-smart-split-plan-save]');
+      if (!prompt || !editor || !editButton || !saveButton) return;
+      prompt.hidden = editing;
+      editor.hidden = !editing;
+      editButton.disabled = editing;
+      saveButton.disabled = !editing;
+      if (editing) {
+        editor.value = prompt.textContent || '';
+        requestAnimationFrame(() => editor.focus({ preventScroll: true }));
+      }
+    }
+
+    async function saveSmartSplitPrompt(trigger) {
+      const node = trigger?.closest?.('.smart-split-plan-node');
+      const editor = node?.querySelector?.('[data-smart-split-plan-editor]');
+      const prompt = String(editor?.value || '').trim();
+      const videoIndex = Number(trigger?.dataset?.videoIndex || 0);
+      const session = getActiveSession();
+      if (!node || !session?.id || videoIndex < 1 || !prompt) return;
+      trigger.disabled = true;
+      trigger.textContent = '保存中';
+      try {
+        const res = await fetch('/api/smart-split-plan/prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: session.id, videoIndex, prompt }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        updateLocalSmartSplitPrompt(session, videoIndex, prompt);
+        node.querySelector('[data-smart-split-plan-prompt]').textContent = prompt;
+        persistSessions();
+        setSmartSplitPromptEditing(node, false);
+        trigger.textContent = '已保存';
+        window.setTimeout(() => { if (trigger.isConnected) trigger.textContent = '保存'; }, 1000);
+      } catch (error) {
+        trigger.disabled = false;
+        trigger.textContent = '重试保存';
+        trigger.title = formatNetworkError(error);
+      }
+    }
+
+    function updateLocalSmartSplitPrompt(session, videoIndex, prompt) {
+      for (const message of session.messages || []) {
+        const videos = message?.payload?.meta?.guide?.plannedVideos;
+        if (!Array.isArray(videos)) continue;
+        const video = videos.find((item) => Number(item?.index) === videoIndex);
+        if (video) video.prompt = prompt;
+      }
+    }
+
     function smartSplitDismissDuration() {
       return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 100 : 220;
     }

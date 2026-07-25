@@ -153,3 +153,11 @@ def clean_video_title(title: str, index: int) -> str:
     if len(cleaned) > 40:
         cleaned = re.split(r"[；;。]", cleaned, 1)[0].strip() or cleaned[:40].rstrip()
     return cleaned or f"视频 {index}"
+
+
+def clean_source_summary(value: object) -> str:
+    text = str(value or "").strip()
+    internal_name = r"(?:video_keyword_guidance|global_keywords|must_preserve_facts|usage_policy)"
+    text = re.sub(rf"[（(]\s*{internal_name}(?:\s+\d+)?\s*[）)]", "", text, flags=re.I)
+    text = re.sub(rf"\b{internal_name}(?:\s+\d+)?\b", "", text, flags=re.I)
+    return re.sub(r"\s{2,}", " ", text).strip(" ：:，,。+、")

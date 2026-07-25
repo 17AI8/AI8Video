@@ -196,6 +196,12 @@ class AI8VideoRuntime:
     def cancel_smart_split_confirmation(self, session_id: str) -> bool:
         return self.conversation_controller.cancel_smart_split_confirmation(session_id)
 
+    def update_smart_split_prompt(self, session_id: str, video_index: int, prompt: str) -> bool:
+        return self.conversation_controller.update_smart_split_prompt(session_id, video_index, prompt)
+
+    def restore_smart_split_plan(self, session_id: str, videos: list[dict]) -> bool:
+        return self.conversation_controller.restore_smart_split_plan(session_id, videos)
+
     def reset_conversation_session(self, session_id: str) -> bool:
         return self.conversation_controller.reset_session(session_id)
 
@@ -203,6 +209,8 @@ class AI8VideoRuntime:
 def _friendly_chat_error(error: Exception) -> str:
     message = str(error).strip()
     lowered = message.lower()
+    if "exceeded 30 redirects" in lowered or "too many redirects" in lowered:
+        return "模型服务连接异常，接口发生循环跳转。请稍后重试，或检查 API Key 服务状态。"
     if "ssl module is not available" in lowered or "can't connect to https url" in lowered:
         return "本机安全连接组件不可用，暂时无法连接视频服务。请修复本机 Python 的 HTTPS 支持后再试。"
     return message or "本次任务未完成，请稍后重试。"
@@ -454,6 +462,14 @@ def cancel_smart_split_confirmation(session_id: str, refresh: bool = False) -> b
     cancelled = get_runtime(refresh=refresh).cancel_smart_split_confirmation(session_id)
     clear_chat_snapshot(session_id)
     return cancelled
+
+
+def update_smart_split_prompt(session_id: str, video_index: int, prompt: str) -> bool:
+    return get_runtime().update_smart_split_prompt(session_id, video_index, prompt)
+
+
+def restore_smart_split_plan(session_id: str, videos: list[dict]) -> bool:
+    return get_runtime().restore_smart_split_plan(session_id, videos)
 
 
 def clear_chat_snapshot(session_id: str) -> None:

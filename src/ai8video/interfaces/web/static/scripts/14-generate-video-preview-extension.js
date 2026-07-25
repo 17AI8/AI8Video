@@ -13,12 +13,12 @@
         startGenerationProgress(generationSessionId, '延长视频', { count: 1, kind: 'extension' });
       }
       try {
-        const prompt = await postVideoPrompt(userGeneratedKey);
-        if (!String(prompt.text || '').trim()) throw new Error('当前没有视频提示词，请先编辑并保存');
+        const videoPrompt = String(loadVideoPreviewExtensionStates()[userGeneratedKey]?.videoPrompt || '').trim();
+        if (!videoPrompt) throw new Error('当前没有延续视频提示词，请先编辑并保存');
         const res = await fetch('/api/user-generated-results/extension-video/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userGeneratedKey, sessionId: generationSessionId }),
+          body: JSON.stringify({ userGeneratedKey, sessionId: generationSessionId, videoPrompt }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.ok) throw new Error(data.error || '生成延长视频失败');
@@ -147,6 +147,7 @@
           if (mergeTip) mergeTip.textContent = mergeTips[mode] || mergeTips.direct;
         };
         const saveState = () => persistVideoPreviewExtensionState(key, {
+          ...(loadVideoPreviewExtensionStates()[key] || {}),
           active: true,
           frameTime: video.currentTime,
           outputName: defaultOutputName,
@@ -290,6 +291,15 @@
             </div>
             <div id="videoPreviewHtmlMotionDrawer" class="video-preview-html-motion-detail" data-video-preview-html-motion-detail></div>
           </div>
+          <div class="video-preview-html-motion-timeline" data-video-preview-html-motion-timeline hidden>
+            <div class="video-preview-html-motion-timeline-head">
+              <strong>HTML 动效时间轴</strong>
+              <span data-video-preview-html-motion-duration>0.0 秒</span>
+            </div>
+            <div class="video-preview-html-motion-ruler"><span>0s</span><span>视频结束</span></div>
+            <div class="video-preview-html-motion-chunks" data-video-preview-html-motion-chunks></div>
+            <p>每个 chunk 可独立左右拖动；松手后更新预览，确认烧录前不会修改正式视频。</p>
+          </div>
           <div class="video-preview-controls-row">
             <div class="video-preview-control-group">
               <span class="video-preview-split-button" role="group" aria-label="播放控制">
@@ -327,6 +337,14 @@
                 <button
                   type="button"
                   class="video-preview-button"
+                  data-video-preview-action="adjust-html-motion-timeline"
+                  data-icon="edit"
+                  data-video-user-generated-key="${escapeHtml(userGeneratedKey)}"
+                  hidden
+                >${videoPreviewButtonInnerHtml('edit', '微调时间轴')}</button>
+                <button
+                  type="button"
+                  class="video-preview-button"
                   data-video-preview-action="confirm-html-motion"
                   data-icon="check"
                   data-video-user-generated-key="${escapeHtml(userGeneratedKey)}"
@@ -357,6 +375,7 @@
       const extendVideoButton = els.videoPreviewBody.querySelector('[data-video-preview-action="extend-video"]');
       const deleteExtensionButton = els.videoPreviewBody.querySelector('[data-video-preview-action="delete-extension"]');
       const regenerateHtmlMotionButton = els.videoPreviewBody.querySelector('[data-video-preview-action="regenerate-html-motion"]');
+      const adjustHtmlMotionTimelineButton = els.videoPreviewBody.querySelector('[data-video-preview-action="adjust-html-motion-timeline"]');
       const confirmHtmlMotionButton = els.videoPreviewBody.querySelector('[data-video-preview-action="confirm-html-motion"]');
       previousButton?.addEventListener('click', () => navigateVideoPreview(-1));
       nextButton?.addEventListener('click', () => navigateVideoPreview(1));
@@ -404,6 +423,9 @@
         }
         void regenerateHtmlMotionFromVideoPreview(userGeneratedKey, regenerateHtmlMotionButton, confirmHtmlMotionButton);
       });
+      adjustHtmlMotionTimelineButton?.addEventListener('click', () => {
+        toggleHtmlMotionTimelineEditor(userGeneratedKey, adjustHtmlMotionTimelineButton);
+      });
       els.videoPreviewBody.querySelectorAll('[data-video-preview-html-motion-toggle]').forEach((button) => {
         button.addEventListener('click', () => toggleHtmlMotionPreviewDrawer());
       });
@@ -431,6 +453,7 @@
         htmlMotionDetailsOpen: false,
         htmlMotionSubmitting: false,
         htmlMotionCancelRequested: false,
+        htmlMotionTimelineChunks: [],
       };
       els.videoPreviewModal.classList.remove('hidden');
       renderHtmlMotionPreviewDrawer();

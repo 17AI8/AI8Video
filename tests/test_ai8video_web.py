@@ -121,6 +121,10 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("data-smart-split-feedback-submit", source)
         self.assertNotIn("填写后提交；“确认并继续”不会使用这里的内容。", source)
         self.assertIn("smart-split-confirmation-card", source)
+        self.assertIn("renderSmartSplitPlanOverview", source)
+        self.assertIn('class="smart-split-plan-node"', source)
+        self.assertIn("data-smart-split-plan-toggle", source)
+        self.assertIn("smart-split-plan-prompt", source)
         self.assertIn("index === 0 && !isSmartSplitConfirmation", source)
         self.assertIn("data-smart-split-confirm-action", source)
         self.assertIn("data-smart-split-cancel-action", source)
@@ -383,11 +387,11 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("messageCount: session.messages.length", source)
         self.assertIn("const historicalPending = isHistoricalMessage;", source)
         self.assertIn("这是较早消息的进度记录，不再显示为执行中。", source)
-        self.assertIn("pending-card${historicalPending ? ' is-history' : ''}", source)
-        self.assertIn("function buildHistoricalPendingSnapshot(pending = {})", source)
-        self.assertIn("isActive: !historicalPending", source)
+        self.assertIn("pending-card${staticPending ? ' is-history' : ''}", source)
+        self.assertIn("function buildHistoricalPendingSnapshot(pending = {}, statusLabel = '历史进度快照')", source)
+        self.assertIn("isActive: !staticPending", source)
         self.assertIn("historicalSnapshot: true", source)
-        self.assertIn("if (item?.historicalSnapshot) return buildProgressStatusResultItem(item, index);", source)
+        self.assertIn("if (itemWithBatch.historicalSnapshot) return buildProgressStatusResultItem(itemWithBatch, index, progressItems);", source)
         self.assertIn('data-video-preview-action="edit-video-prompt"', source)
         self.assertIn("async function openVideoPromptEditor(userGeneratedKey)", source)
         self.assertIn("async function generateVideoPreviewExtension(userGeneratedKey, button)", source)
@@ -555,7 +559,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 [{"id": "weibo", "name": "重复微博", "url": "https://example.com/feed.xml"}],
             )
 
-    def test_retry_inputs_require_persisted_first_frame(self) -> None:
+    def test_retry_inputs_regenerate_missing_first_frame(self) -> None:
         record = {
             "videoIndex": 3,
             "videoTitle": "布局窗口期",
@@ -563,8 +567,10 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             "request": {"durationSeconds": 10, "ratio": "9:16", "resolution": "480p", "preset": "custom"},
             "firstFrame": None,
         }
-        with self.assertRaisesRegex(ValueError, "中间产物已丢失"):
-            ai8video_web._build_retry_inputs(record)
+        retry_request, video, first_frame = ai8video_web._build_retry_inputs(record)
+        self.assertEqual(retry_request.ratio, "9:16")
+        self.assertEqual(video.index, 3)
+        self.assertIsNone(first_frame)
 
         first_frame_path = self.root / "first-frame.png"
         first_frame_path.write_bytes(b"image")
@@ -4767,7 +4773,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("if (planning && !submitted) return '';", html)
         self.assertIn("if (!submitted) return '';", html)
         self.assertIn("${renderProgressResultStrip([], pendingCount)}", html)
-        self.assertIn("return buildProgressStatusResultItem(item, index);", html)
+        self.assertIn("return buildProgressStatusResultItem(itemWithBatch, index, progressItems);", html)
         self.assertIn("function humanizePublicExecutionStatus(value)", html)
         self.assertIn("后台真实执行事件", html)
         self.assertIn(".agent-video-results", html)
@@ -4799,6 +4805,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("/api/user-generated-results/regenerate-html-motion", html)
         self.assertIn("/api/user-generated-results/confirm-html-motion", html)
         self.assertIn("/api/user-generated-results/html-motion-review", html)
+        self.assertIn("/api/user-generated-results/adjust-html-motion-timeline", html)
         self.assertIn("/api/user-generated-results/html-motion-tasks/", html)
         self.assertIn("pollUrl", html)
         self.assertIn("waitForHtmlMotionTask", html)
@@ -4826,10 +4833,14 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("min-height: 32px;", html)
         self.assertIn("重新生成TTS配音", html)
         self.assertIn("修改台词", html)
+        self.assertIn('id="resultModalBatchMergeButton"', html)
+        self.assertIn('data-result-batch-merge-select', html)
+        self.assertIn("/api/user-generated-results/batch-merge", html)
         self.assertIn("重新生成 HTML 动效", html)
         self.assertIn("强行停止", html)
         self.assertIn("cancelHtmlMotionFromVideoPreview", html)
         self.assertIn("确认烧录", html)
+        self.assertIn("微调时间轴", html)
         self.assertIn('data-video-preview-action="regenerate-html-motion"', html)
         self.assertIn('data-video-preview-action="confirm-html-motion"', html)
         self.assertIn("function regenerateHtmlMotionFromVideoPreview(userGeneratedKey, button, confirmButton)", html)
@@ -4859,33 +4870,39 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("AI 润色", html)
         self.assertIn("AI 扩写", html)
         self.assertIn("video-preview-tts-ai-group", html)
+        self.assertIn('class="video-preview-tts-heading"', html)
 
     def test_polish_tts_narration_uses_text_model(self) -> None:
         prompts: list[str] = []
-        with patch.object(ai8video_web, "build_openai_compat_llm", return_value=lambda prompt: prompts.append(prompt) or "更顺口的新台词。") as build_llm:
-            body = ai8video_web._polish_tts_narration_text("旧台词。", 14)
+        progress: list[dict[str, str]] = []
+        responses = iter(("更顺口的新台词。", '{"passes":true,"issues":[],"approved_text":"更顺口的新台词。"}'))
+        with patch.object(ai8video_web, "build_openai_compat_llm", return_value=lambda prompt: prompts.append(prompt) or next(responses)) as build_llm:
+            body = ai8video_web._polish_tts_narration_text("旧台词。", 14, progress.append)
 
         self.assertTrue(body["ok"])
         self.assertEqual(body["text"], "更顺口的新台词")
         self.assertIn("当前视频时长：14.00 秒", prompts[0])
-        build_llm.assert_called_once()
+        self.assertEqual(build_llm.call_count, 2)
+        self.assertEqual([item["stage"] for item in progress], ["knowledge", "rewrite", "review"])
 
     def test_polish_tts_narration_accepts_json_model_output(self) -> None:
+        responses = iter(('{"text":"JSON 润色台词。"}', '{"passes":true,"issues":[],"approved_text":"JSON 润色台词。"}'))
         with patch.object(
             ai8video_web,
             "build_openai_compat_llm",
-            return_value=lambda prompt: '{"text":"JSON 润色台词。"}',
+            return_value=lambda prompt: next(responses),
         ):
-            body = ai8video_web._polish_tts_narration_text("旧台词。")
+            body = ai8video_web._polish_tts_narration_text("旧台词。", 10)
 
         self.assertEqual(body["text"], "JSON 润色台词")
 
     def test_polish_tts_narration_injects_top_k_script_knowledge(self) -> None:
         prompts: list[str] = []
+        responses = iter(("知识库增强后的台词。", '{"passes":true,"issues":[],"approved_text":"知识库增强后的台词。"}'))
 
         def fake_llm(prompt: str) -> str:
             prompts.append(prompt)
-            return "知识库增强后的台词。"
+            return next(responses)
 
         knowledge = {
             "contextText": "[知识段 1｜私域资产]\n客户资产才是真正的资产。",
@@ -4896,7 +4913,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             "build_openai_compat_llm",
             return_value=fake_llm,
         ):
-            body = ai8video_web._polish_tts_narration_text("客户不能流失。")
+            body = ai8video_web._polish_tts_narration_text("客户不能流失。", 10)
 
         self.assertIn("[知识段 1｜私域资产]", prompts[0])
         self.assertIn("用户系统提示词", prompts[0])
@@ -4908,20 +4925,33 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 ai8video_web._polish_tts_narration_text("旧台词。")
 
     def test_expand_tts_narration_uses_text_model(self) -> None:
-        with patch.object(ai8video_web, "build_openai_compat_llm", return_value=lambda prompt: "扩写后的新台词，节奏更完整。") as build_llm:
-            body = ai8video_web._expand_tts_narration_text("旧台词。")
+        responses = iter(("扩写后的新台词，节奏更完整。", '{"passes":true,"issues":[],"approved_text":"扩写后的新台词，节奏更完整。"}'))
+        with patch.object(ai8video_web, "build_openai_compat_llm", return_value=lambda prompt: next(responses)) as build_llm:
+            body = ai8video_web._expand_tts_narration_text("旧台词。", 10)
 
         self.assertTrue(body["ok"])
         self.assertEqual(body["text"], "扩写后的新台词，节奏更完整")
-        build_llm.assert_called_once()
+        self.assertEqual(build_llm.call_count, 2)
+
+    def test_tts_transform_reviewer_rejects_text_over_duration_limit(self) -> None:
+        long_text = "这是明显超过十秒自然口播容量的台词" * 8
+        review = json.dumps({"passes": True, "issues": [], "approved_text": long_text}, ensure_ascii=False)
+        responses = iter((long_text, review, review))
+        with patch.object(ai8video_web, "build_openai_compat_llm", return_value=lambda prompt: next(responses)):
+            with self.assertRaisesRegex(RuntimeError, "Reviewer 未通过"):
+                ai8video_web._polish_tts_narration_text("旧台词。", 10)
+
+    def test_tts_duration_limit_uses_slightly_fast_speaking_rate(self) -> None:
+        self.assertEqual(ai8video_web.narration_char_limit(10), 55)
 
     def test_expand_tts_narration_accepts_json_model_output(self) -> None:
+        responses = iter(('{"text":"JSON 扩写台词。"}', '{"passes":true,"issues":[],"approved_text":"JSON 扩写台词。"}'))
         with patch.object(
             ai8video_web,
             "build_openai_compat_llm",
-            return_value=lambda prompt: '{"text":"JSON 扩写台词。"}',
+            return_value=lambda prompt: next(responses),
         ):
-            body = ai8video_web._expand_tts_narration_text("旧台词。")
+            body = ai8video_web._expand_tts_narration_text("旧台词。", 10)
 
         self.assertEqual(body["text"], "JSON 扩写台词")
 
@@ -4945,6 +4975,152 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertTrue(body["ok"])
         self.assertEqual(body["text"], "第一句台词。第二句台词")
         self.assertFalse(body["manual"])
+
+    def test_batch_merge_keeps_selection_order_and_removes_selected_sources(self) -> None:
+        result_root = self.root / "用户生成结果"
+        video_dir = result_root / "video"
+        preview_dir = result_root / "preview"
+        extension_video_dir = result_root / "extensions" / "video"
+        extension_preview_dir = result_root / "extensions" / "preview"
+        extension_cover_dir = result_root / "extensions" / "cover"
+        video_dir.mkdir(parents=True)
+        preview_dir.mkdir(parents=True)
+        extension_video_dir.mkdir(parents=True)
+        extension_preview_dir.mkdir(parents=True)
+        extension_cover_dir.mkdir(parents=True)
+        first = video_dir / "first.mp4"
+        second = video_dir / "second.mp4"
+        first.write_bytes(b"first")
+        second.write_bytes(b"second")
+        (preview_dir / "first.jpg").write_bytes(b"first-preview")
+        (preview_dir / "second.jpg").write_bytes(b"second-preview")
+        frame_name = hashlib.sha256(b"video/second.mp4").hexdigest()[:24]
+        frame_path = result_root / "extension-frame" / f"{frame_name}.png"
+        frame_path.parent.mkdir(parents=True)
+        frame_path.write_bytes(b"frame")
+        (frame_path.parent / f"{frame_name}-batch-1.state.json").write_text("{}", encoding="utf-8")
+        review_root = self.root / "html-motion-reviews"
+        review_id = hashlib.sha256(b"video/second.mp4").hexdigest()[:32]
+        review_dir = review_root / review_id
+        review_dir.mkdir(parents=True)
+        (review_dir / "candidate.mp4").write_bytes(b"candidate")
+        derived_video = extension_video_dir / "derived.mp4"
+        derived_preview = extension_preview_dir / "derived.jpg"
+        derived_cover = extension_cover_dir / "derived.jpg"
+        derived_video.write_bytes(b"derived")
+        derived_preview.write_bytes(b"derived-preview")
+        derived_cover.write_bytes(b"derived-cover")
+        archive_root = self.root / "archive"
+        archive_root.mkdir()
+        manifest_path = archive_root / "derived-manifest.json"
+        manifest_path.write_text("{}", encoding="utf-8")
+        tts_dir = self.root / "tts"
+        tts_dir.mkdir()
+        audio_path = tts_dir / "derived.m4a"
+        audio_path.write_bytes(b"audio")
+        JsonlAssetStore(self.root / "assets.jsonl").rewrite_all([
+            {"archiveKey": "video/first.mp4", "archiveLocalPath": str(first)},
+            {"archiveKey": "video/second.mp4", "archiveLocalPath": str(second)},
+            {
+                "archiveKey": "extensions/video/derived.mp4",
+                "archiveLocalPath": str(derived_video),
+                "userGeneratedPreviewKey": "extensions/preview/derived.jpg",
+                "archiveCoverKey": "extensions/cover/derived.jpg",
+                "archiveManifestPath": str(manifest_path),
+                "archiveMeta": {"localTts": {"audioPath": str(audio_path)}},
+                "firstFrame": {"source": str(frame_path)},
+            },
+        ])
+        captured: list[str] = []
+
+        def fake_concat(paths, target):
+            captured.extend(path.name for path in paths)
+            target.write_bytes(b"merged")
+            return {"status": "merged", "method": "test"}
+
+        with patch.dict(os.environ, {"AI8VIDEO_ARCHIVE_LOCAL_DIR": str(archive_root)}), patch.object(
+            ai8video_web,
+            "HTML_MOTION_REVIEW_ROOT",
+            review_root,
+        ), patch.object(
+            ai8video_web,
+            "local_tts_output_dir",
+            return_value=tts_dir,
+        ), patch.object(ai8video_web, "ensure_user_generated_result_dir", return_value=result_root), patch.object(
+            ai8video_web,
+            "concat_videos",
+            side_effect=fake_concat,
+        ), patch.object(
+            ai8video_web,
+            "_tts_narration_text_for_user_generated_video",
+            side_effect=lambda key, path: (path.stem, {}),
+        ):
+            body = ai8video_web._batch_merge_user_generated_videos(["video/second.mp4", "video/first.mp4"])
+
+        self.assertEqual(captured, ["second.mp4", "first.mp4"])
+        self.assertFalse(first.exists())
+        self.assertFalse(second.exists())
+        self.assertFalse((preview_dir / "first.jpg").exists())
+        self.assertFalse((preview_dir / "second.jpg").exists())
+        self.assertFalse(frame_path.exists())
+        self.assertFalse(review_dir.exists())
+        self.assertFalse(derived_video.exists())
+        self.assertFalse(derived_preview.exists())
+        self.assertFalse(derived_cover.exists())
+        self.assertFalse(manifest_path.exists())
+        self.assertFalse(audio_path.exists())
+        self.assertEqual(JsonlAssetStore(self.root / "assets.jsonl").read_all(), [])
+        merged = result_root / body["userGeneratedKey"]
+        self.assertEqual(merged.read_bytes(), b"merged")
+        self.assertEqual((result_root / body["previewKey"]).read_bytes(), b"second-preview")
+
+    def test_batch_merge_restores_sources_when_install_fails(self) -> None:
+        result_root = self.root / "用户生成结果"
+        video_dir = result_root / "video"
+        video_dir.mkdir(parents=True)
+        first = video_dir / "first.mp4"
+        second = video_dir / "second.mp4"
+        first.write_bytes(b"first")
+        second.write_bytes(b"second")
+        frame_name = hashlib.sha256(b"video/first.mp4").hexdigest()[:24]
+        frame_path = result_root / "extension-frame" / f"{frame_name}.png"
+        frame_path.parent.mkdir(parents=True)
+        frame_path.write_bytes(b"frame")
+        review_root = self.root / "html-motion-reviews"
+        review_id = hashlib.sha256(b"video/first.mp4").hexdigest()[:32]
+        review_dir = review_root / review_id
+        review_dir.mkdir(parents=True)
+        (review_dir / "candidate.mp4").write_bytes(b"candidate")
+
+        def fake_concat(paths, target):
+            target.write_bytes(b"merged")
+            return {"status": "merged", "method": "test"}
+
+        with patch.object(ai8video_web, "HTML_MOTION_REVIEW_ROOT", review_root), patch.object(
+            ai8video_web,
+            "ensure_user_generated_result_dir",
+            return_value=result_root,
+        ), patch.object(
+            ai8video_web,
+            "concat_videos",
+            side_effect=fake_concat,
+        ), patch.object(
+            ai8video_web,
+            "_tts_narration_text_for_user_generated_video",
+            return_value=("", {}),
+        ), patch.object(
+            ai8video_web,
+            "generate_preview_for_video",
+            return_value={"ok": False},
+        ):
+            with self.assertRaisesRegex(RuntimeError, "预览图生成失败"):
+                ai8video_web._batch_merge_user_generated_videos(["video/first.mp4", "video/second.mp4"])
+
+        self.assertEqual(first.read_bytes(), b"first")
+        self.assertEqual(second.read_bytes(), b"second")
+        self.assertEqual(frame_path.read_bytes(), b"frame")
+        self.assertEqual((review_dir / "candidate.mp4").read_bytes(), b"candidate")
+        self.assertEqual(list(video_dir.glob("批量合并-*.mp4")), [])
 
     def test_saved_tts_narration_overrides_regenerate_text(self) -> None:
         result_root = self.root / "用户生成结果"
@@ -5544,9 +5720,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         html = read_static_source()
 
         self.assertIn("label: '知识库 Agent'", html)
-        self.assertIn("知识库 Agent · 已接入", html)
-        self.assertIn("status: '知识库已接入'", html)
-        self.assertIn("Reviewer · 知识库已接入", html)
+        self.assertIn("status: '已接入'", html)
+        self.assertIn("description: '知识入库语义审核已接入；媒体审核仍为影子模式。'", html)
         self.assertIn("正文由程序确定性提取", html)
         self.assertIn("本次知识入库未通过审核", html)
         self.assertIn("以下仍展示上一次成功索引", html)
@@ -5574,7 +5749,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn('class="result-notify-deleted-mark" aria-hidden="true">已删除</div>', html)
         self.assertIn(".result-notify-card.deleted .result-notify-preview", html)
         self.assertIn(".result-notify-deleted-mark", html)
-        self.assertIn("result-notify-play${isTerminal ? ' terminal-placeholder' : processingClass}", html)
+        self.assertIn("result-notify-play${isTerminal ? ' terminal-placeholder' : `${processingClass}${waitingClass}`}", html)
         self.assertIn("已生成，文件已删除", html)
         self.assertNotIn("已生成，文件已删除或未落盘", html)
         self.assertNotIn("deleted-placeholder", html)
@@ -5587,7 +5762,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         avatar_path = STATIC_ROOT / "images" / "ai8video-avatar.webp"
 
         self.assertIn("/static/images/ai8video-avatar.webp?v=20260723-0739", html)
-        self.assertIn("alt=\"AI8video 头像\"", html)
+        self.assertIn('background: transparent url("/static/images/ai8video-avatar.webp?v=20260723-0739")', html)
         self.assertTrue(avatar_path.is_file())
         avatar_bytes = avatar_path.read_bytes()
         self.assertEqual(avatar_bytes[:4], b"RIFF")
@@ -5726,6 +5901,22 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("if (channel === 's') current.s =", html)
         self.assertIn("linear-gradient(90deg, #ffffff, var(--flower-text-hue-color, #ffee43))", html)
         self.assertNotIn("current.s = current.s <= 2 ? 100 : current.s;", html)
+
+    def test_static_flower_text_and_watermark_active_states_are_independent(self) -> None:
+        html = read_static_source()
+
+        self.assertIn("const flowerTextReady = !!config.enabled && !!String(config.text || '').trim();", html)
+        self.assertIn("const active = flowerTextReady || watermarkReady;", html)
+        self.assertIn("const hasRenderableText = !!payload.enabled && !!payload.text.trim();", html)
+        self.assertIn("enabled ? '' : ' is-flower-text-disabled'", html)
+        self.assertIn(".flower-text-editor-wrap.is-flower-text-disabled .flower-text-rendered-preview", html)
+        self.assertIn("function syncFlowerTextActivationControls()", html)
+        watermark_save = html[html.index("async function saveFlowerWatermarkCheckbox"):html.index("async function uploadFlowerWatermarkFiles")]
+        self.assertIn("syncFlowerTextActivationControls();", watermark_save)
+        self.assertNotIn("renderFlowerTextDrawer();", watermark_save)
+        self.assertIn("await saveFlowerText({ enabled }, { rerender: false });", html)
+        self.assertNotIn("enabled: !!checked || !!state.flowerText?.enabled", html)
+        self.assertNotIn("127.0.0.1:7352", html)
 
     def test_static_flower_text_drag_handle_stays_on_top_border_inside_preview(self) -> None:
         html = read_static_source()

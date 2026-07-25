@@ -32,6 +32,7 @@ from ai8video.knowledge.default_script_reference import (
 )
 from ai8video.generation.generation_mode import (
     default_concurrent_generation_enabled,
+    default_manual_video_count,
     default_smart_split_confirmation_enabled,
     default_smart_split_enabled,
     default_tail_frame_chaining_enabled,
@@ -40,7 +41,7 @@ from ai8video.media.motion.html_motion_overlay import default_html_motion_overla
 from ai8video.batch.daily_batch_runner import DailyBatchRunner
 from ai8video.core.models import ChatReply, ConversationState, VideoPrompt, ParsedRequest
 from ai8video.generation.pipeline import AI8VideoPipeline
-from ai8video.application.request_interpreter import interpret_generation_request_with_ai
+from ai8video.application.intent_agent import IntentAgent, IntentContext, IntentDecision
 from ai8video.media.video_merge_mode import load_video_merge_mode, normalize_video_merge_mode
 
 logger = logging.getLogger(__name__)
@@ -55,18 +56,21 @@ class AI8VideoConversationController:
         *,
         merged_pipeline_factory=None,
         merge_mode_loader=None,
+        intent_agent: IntentAgent | None = None,
     ):
         self.pipeline = pipeline
         self._merged_pipeline = None
         self._merged_pipelines: dict[str, object] = {}
         self._merged_pipeline_factory = merged_pipeline_factory
         self._merge_mode_loader = merge_mode_loader or load_video_merge_mode
+        interpreter_llm = getattr(pipeline, "request_interpreter_llm", None) or getattr(pipeline, "llm", None)
+        self.intent_agent = intent_agent or IntentAgent(interpreter_llm)
         self.sessions: dict[str, ConversationState] = {}
 
     def get_welcome_reply(self) -> ChatReply:
         return ChatReply(
             text=(
-                "把提示词、脚本素材或批量视频需求直接发我；批量生成请写清目标视频数量。"
+                "把提示词、脚本素材或批量视频需求直接发我；视频数量由智能/手动分集开关决定。"
                 "参考图可以下一句再给。如果暂时不用参考图，直接回复“不用参考图”。\n"
                 "如果要批量跑量，也可以直接说“今天先跑两条商务风”，"
                 "再把候选内容逐行发我，或者一次性发“候选：A；B；C”。"
@@ -82,6 +86,58 @@ class AI8VideoConversationController:
         )
         self.reset_session(session_id)
         return had_pending_confirmation
+
+    def update_smart_split_prompt(self, session_id: str, video_index: int, prompt: str) -> bool:
+        state = self.sessions.get(session_id)
+        if state is None or state.awaiting != "smart_split_confirmation":
+            return False
+        normalized_prompt = str(prompt or "").strip()
+        if not normalized_prompt:
+            raise ValueError("视频提示词不能为空")
+        for video in state.planned_videos:
+            if video.index == video_index:
+                video.prompt = normalized_prompt
+                return True
+        return False
+
+    def restore_smart_split_plan(self, session_id: str, videos: list[dict]) -> bool:
+        planned = [self._restore_video_prompt(item, index) for index, item in enumerate(videos)]
+        planned = [video for video in planned if video is not None]
+        if not planned:
+            return False
+        state = ConversationState(session_id=session_id)
+        state.planned_videos = planned
+        state.draft.video_count = len(planned)
+        state.draft.mode = "batch_videos" if len(planned) > 1 else "single_video"
+        state.draft.raw_text = "已恢复的智能分集规划，按已确认的视频提示词继续生成。"
+        state.draft.tail_frame_chaining = default_tail_frame_chaining_enabled()
+        state.draft.concurrent_generation = default_concurrent_generation_enabled()
+        state.draft.html_motion_overlay_enabled = default_html_motion_overlay_enabled()
+        state.awaiting = "smart_split_confirmation"
+        self.sessions[session_id] = state
+        return True
+
+    @staticmethod
+    def _restore_video_prompt(item: object, index: int) -> VideoPrompt | None:
+        if not isinstance(item, dict):
+            return None
+        prompt = str(item.get("prompt") or "").strip()
+        if not prompt:
+            return None
+        return VideoPrompt(
+            index=int(item.get("index") or index + 1),
+            title=str(item.get("title") or f"第 {index + 1} 条视频").strip(),
+            source_summary=str(item.get("sourceSummary") or item.get("source_summary") or "").strip(),
+            prompt=prompt,
+        )
+
+    @staticmethod
+    def _is_recovered_plan_confirmation(text: str, state: ConversationState) -> bool:
+        compact = re.sub(r"\s+", "", text)
+        return bool(
+            state.planned_videos
+            and compact in {"确认分集", "确认并继续", "确认", "继续生成", "开始生成"}
+        )
 
     def reset_session(self, session_id: str) -> bool:
         existed = session_id in self.sessions
@@ -101,12 +157,18 @@ class AI8VideoConversationController:
         if state is None:
             state = ConversationState(session_id=session_id)
             self.sessions[session_id] = state
-        if state.awaiting == "smart_split_confirmation":
+        if self._is_recovered_plan_confirmation(text, state):
+            state.awaiting = "smart_split_confirmation"
+            if not state.draft.raw_text:
+                state.draft.raw_text = "已恢复的智能分集规划，按已确认的视频提示词继续生成。"
             return self._handle_smart_split_followup(state, text)
-        ai_interpretation = self._interpret_request_with_ai(text)
-        if state.completed_runs > 0 and self._is_rewrite_request(text, ai_interpretation):
-            return self._handle_rewrite(state, text)
-        elif state.completed_runs > 0 and self._looks_like_base_request(text, ai_interpretation):
+        intent_decision = self._decide_intent(text, state)
+        if intent_decision.route == "smart_split_followup":
+            return self._handle_smart_split_followup(state, text)
+        ai_interpretation = intent_decision.interpretation
+        if intent_decision.route == "rewrite":
+            return self._handle_rewrite(state, text, ai_interpretation)
+        if intent_decision.reset_session:
             state = ConversationState(session_id=session_id)
             self.sessions[session_id] = state
 
@@ -164,23 +226,6 @@ class AI8VideoConversationController:
                 meta={"operation": "collect"},
             )
 
-        if (
-            state.draft.mode == "batch_videos"
-            and not state.draft.video_count
-            and not default_smart_split_enabled()
-        ):
-            state.awaiting = "video_count"
-            return ChatReply(
-                text=self._prepend_material_receipt(
-                    "收到素材了。你希望生成几条独立视频？直接回复“6 条”或只回数字都可以。",
-                    material_context,
-                ),
-                stage="collecting",
-                awaiting=state.awaiting,
-                draft=state.draft,
-                meta={"operation": "collect"},
-            )
-
         missing_requirements = self._detect_missing_requirements(
             state,
             material_context,
@@ -216,21 +261,22 @@ class AI8VideoConversationController:
         state.awaiting = None
         self._apply_default_generation_mode(state)
         self._apply_default_html_motion_overlay(state)
+        smart_split = default_smart_split_enabled()
+        state.planned_video_count_locked = not smart_split
+        state.smart_split_reason = None
+        state.draft.video_count = None if smart_split else default_manual_video_count()
+        state.draft.mode = "batch_videos" if smart_split or state.draft.video_count > 1 else "single_video"
         request = state.draft.to_request()
-        has_explicit_video_count = bool(request.video_count)
-        should_infer_video_count = not has_explicit_video_count and default_smart_split_enabled()
-        if self._supports_planned_generation() and (has_explicit_video_count or should_infer_video_count):
-            state.planned_video_count_locked = has_explicit_video_count
-            if has_explicit_video_count:
-                request.mode = "batch_videos"
+        if self._supports_planned_generation():
             state.planned_videos = self._plan_generation_request(
                 request,
                 progress_session_id=state.session_id,
-                smart_split=should_infer_video_count,
+                smart_split=smart_split,
             )
+            state.smart_split_reason = request.smart_split_reason
             state.draft.video_count = len(state.planned_videos)
             state.draft.mode = "batch_videos" if len(state.planned_videos) > 1 else "single_video"
-            if has_explicit_video_count or default_smart_split_confirmation_enabled():
+            if smart_split and default_smart_split_confirmation_enabled():
                 state.awaiting = "smart_split_confirmation"
                 return self._build_smart_split_confirmation_reply(state)
             request = state.draft.to_request()
@@ -285,35 +331,41 @@ class AI8VideoConversationController:
         state.awaiting = None
         state.planned_videos = []
         requested_count = self._extract_replan_video_count(text)
-        if requested_count:
-            state.draft.video_count = requested_count
-            state.draft.mode = "batch_videos" if requested_count > 1 else "single_video"
-            state.planned_video_count_locked = True
         if compact not in {"重新分集", "重分", "重新规划"}:
             state.draft.raw_text = self._append_draft_text(
                 state.draft.raw_text,
                 f"分集调整要求：{text}",
             )
+        smart_split = default_smart_split_enabled() and requested_count is None
+        state.planned_video_count_locked = requested_count is not None or not smart_split
+        state.smart_split_reason = (
+            f"按重新分集指令固定规划为 {requested_count} 条视频。"
+            if requested_count is not None
+            else None
+        )
+        state.draft.video_count = requested_count if requested_count is not None else (
+            None if smart_split else default_manual_video_count()
+        )
+        state.draft.mode = "batch_videos" if smart_split or state.draft.video_count > 1 else "single_video"
         request = state.draft.to_request()
-        should_infer_video_count = not state.planned_video_count_locked
-        if request.video_count and not should_infer_video_count:
-            request.mode = "batch_videos"
         state.planned_videos = self._plan_generation_request(
             request,
             progress_session_id=state.session_id,
-            smart_split=should_infer_video_count,
+            smart_split=smart_split,
         )
+        state.smart_split_reason = request.smart_split_reason or state.smart_split_reason
         state.draft.video_count = len(state.planned_videos)
         state.draft.mode = "batch_videos" if len(state.planned_videos) > 1 else "single_video"
         state.awaiting = "smart_split_confirmation"
         return self._build_smart_split_confirmation_reply(state)
 
     def _build_smart_split_confirmation_reply(self, state: ConversationState) -> ChatReply:
-        lines = [f"已智能分为 {len(state.planned_videos)} 集："]
-        for video in state.planned_videos:
-            summary = video.source_summary or "已生成独立内容方案"
-            lines.append(f"{video.index}. {video.title}：{summary}")
-        lines.append("确认后进入视频生成；也可以直接回复调整要求，我会重新分集。")
+        mode_label = "智能分集" if default_smart_split_enabled() else "手动分集"
+        lines = [f"已按{mode_label}规划为 {len(state.planned_videos)} 条视频："]
+        if state.smart_split_reason:
+            lines.append(f"分集依据：{state.smart_split_reason}")
+        elif state.planned_video_count_locked:
+            lines.append(f"数量依据：手动设置为 {len(state.planned_videos)} 条视频。")
         return ChatReply(
             text="\n".join(lines),
             stage="collecting",
@@ -323,8 +375,17 @@ class AI8VideoConversationController:
                 "operation": "collect",
                 "guide": {
                     "kind": "smart_split_confirmation",
-                    "title": "确认智能分集",
-                    "summary": f"Planner 已完成 {len(state.planned_videos)} 集规划。",
+                    "title": "确认后进入视频生成，也可重新分集调整。",
+                    "summary": f"Planner 已完成 {len(state.planned_videos)} 条视频规划。",
+                    "plannedVideos": [
+                        {
+                            "index": video.index,
+                            "title": video.title,
+                            "sourceSummary": video.source_summary,
+                            "prompt": video.prompt,
+                        }
+                        for video in state.planned_videos
+                    ],
                     "actions": [
                         {"kind": "send", "label": "确认并继续", "value": "确认分集"},
                         {"kind": "send", "label": "重新分集", "value": "重新分集"},
@@ -394,14 +455,19 @@ class AI8VideoConversationController:
             state.draft.core_keywords = extract_core_keywords(text) or text.strip()
         state.awaiting = None
 
-    def _handle_rewrite(self, state: ConversationState, text: str) -> ChatReply:
+    def _handle_rewrite(
+        self,
+        state: ConversationState,
+        text: str,
+        ai_interpretation: dict | None = None,
+    ) -> ChatReply:
         if not state.last_result:
             return ChatReply(
                 text="我这里还没有上一轮结果，先生成一轮，再告诉我要重做第几条视频。",
                 stage="collecting",
                 meta={"operation": "collect"},
             )
-        ai_interpretation = self._interpret_request_with_ai(text)
+        ai_interpretation = ai_interpretation or self._interpret_request_with_ai(text)
         video_index = (ai_interpretation or {}).get("rewrite_video_index") or extract_video_index(text)
         rewrite_instruction = (ai_interpretation or {}).get("rewrite_instruction") or detect_rewrite_instruction(text) or text
         if not video_index:
@@ -751,16 +817,9 @@ class AI8VideoConversationController:
         value = str(text or "").strip()
         if self._is_saved_script_control_message(value):
             return True
-        count_match = re.fullmatch(r"\s*(\d{1,3})\s*(?:个|条|集|支)?\s*", value)
-        if count_match:
-            return int(count_match.group(1)) > 5
         if re.search(r"(全文|完整原文|完整剧本|逐字|按原顺序|全篇|全部内容|完整覆盖)", value):
             return True
-        video_count = extract_video_count(value) or self._extract_plain_number(value)
-        if not video_count:
-            match = re.search(r"(\d{1,3})\s*(?:个|条|支|段)", value)
-            video_count = int(match.group(1)) if match else None
-        video_count = video_count or state.draft.video_count
+        video_count = state.draft.video_count or default_manual_video_count()
         return bool(video_count and video_count > 5)
 
     def _merge_message(
@@ -777,24 +836,9 @@ class AI8VideoConversationController:
         if not state.draft.raw_text and self._looks_like_base_request(text, ai_interpretation):
             state.draft.raw_text = text
 
-        explicit_count = (
-            extract_video_count(controls)
-            or self._extract_plain_number(controls)
-            or extract_video_count(text)
-            or self._extract_plain_number(text)
-        )
-        interpreted_count = (ai_interpretation or {}).get("video_count")
-        if interpreted_count == 1 and explicit_count is None:
-            interpreted_count = None
-        count = explicit_count or interpreted_count
-        if count:
-            state.draft.video_count = count
-
         mode_hint = (ai_interpretation or {}).get("mode") or detect_mode_hint(controls)
         if mode_hint:
             state.draft.mode = mode_hint
-        elif not state.draft.mode and state.draft.video_count and state.draft.video_count > 1:
-            state.draft.mode = "batch_videos"
         elif not state.draft.mode and state.draft.raw_text:
             state.draft.mode = "single_video"
 
@@ -848,12 +892,9 @@ class AI8VideoConversationController:
             state.draft.duration_seconds = extract_duration_seconds(controls)
 
     def _interpret_request_with_ai(self, text: str) -> dict | None:
-        llm = getattr(self.pipeline, "request_interpreter_llm", None) or getattr(self.pipeline, "llm", None)
-        if llm is None:
-            return None
         try:
             logger.info("ai8video request interpretation start")
-            interpretation = interpret_generation_request_with_ai(text, llm=llm)
+            interpretation = self.intent_agent.decide(text, IntentContext()).interpretation
             logger.info(
                 "ai8video request interpretation done intent=%s video_count=%s confidence=%s",
                 (interpretation or {}).get("intent"),
@@ -867,6 +908,27 @@ class AI8VideoConversationController:
         if confidence < 0.35:
             return None
         return interpretation
+
+    def _decide_intent(self, text: str, state: ConversationState):
+        try:
+            decision = self.intent_agent.decide(
+                text,
+                IntentContext(awaiting=state.awaiting, completed_runs=state.completed_runs),
+            )
+            logger.info(
+                "ai8video intent agent route=%s reset_session=%s reason=%s",
+                decision.route,
+                decision.reset_session,
+                decision.reason,
+            )
+            return decision
+        except Exception as exc:
+            logger.warning("ai8video intent agent failed; using local fallback: %s", exc)
+            if state.awaiting == "smart_split_confirmation":
+                return IntentDecision("smart_split_followup", False, "本地确认卡跟进兜底")
+            route = "rewrite" if state.completed_runs > 0 and self._is_rewrite_request(text) else "continue_session"
+            reset = state.completed_runs > 0 and route != "rewrite" and self._looks_like_base_request(text)
+            return IntentDecision(route, reset, "本地意图判断兜底")
 
     def _needs_dialogue_completion(
         self,
@@ -1111,9 +1173,12 @@ class AI8VideoConversationController:
 
     @staticmethod
     def _apply_default_generation_mode(state: ConversationState) -> None:
+        smart_split = default_smart_split_enabled()
         if state.draft.concurrent_generation is None:
             state.draft.concurrent_generation = default_concurrent_generation_enabled()
-        if state.draft.tail_frame_chaining is None:
+        if not smart_split:
+            state.draft.tail_frame_chaining = False
+        elif state.draft.tail_frame_chaining is None:
             state.draft.tail_frame_chaining = default_tail_frame_chaining_enabled()
         if state.draft.tail_frame_chaining:
             state.draft.concurrent_generation = False
@@ -1142,24 +1207,12 @@ class AI8VideoConversationController:
         return "、".join(items)
 
     @staticmethod
-    def _extract_plain_number(text: str) -> int | None:
-        match = re.fullmatch(r"\s*(\d{1,3})\s*", text)
-        if not match:
-            return None
-        value = int(match.group(1))
-        return value if 1 <= value <= 100 else None
-
-    @staticmethod
     def _extract_replan_video_count(text: str) -> int | None:
         number = r"[一二三四五六七八九十两零百\d]+"
-        unit = r"(?:个|条|集|支)"
-        match = re.fullmatch(rf"\s*({number})\s*{unit}\s*", text)
-        if not match:
-            match = re.search(
-                rf"(?:改成|改为|调整为|拆成|分成|重新分集(?:为)?|重新规划为|生成)"
-                rf"\s*[：:]?\s*({number})\s*{unit}",
-                text,
-            )
+        match = re.match(
+            rf"\s*(?:重新分集|重分|重新规划)\s*[：:]?\s*({number})\s*(?:个|条|集|支)",
+            text,
+        )
         return extract_video_count(f"{match.group(1)}条") if match else None
 
     @staticmethod

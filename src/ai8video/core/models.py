@@ -21,6 +21,7 @@ class ParsedRequest:
     tail_frame_chaining: bool = False
     html_motion_overlay_enabled: bool = False
     reference_image_transform_options: dict[str, bool] | None = None
+    smart_split_reason: str | None = None
 
 
 @dataclass
@@ -189,6 +190,7 @@ class ConversationState:
     batch_request: dict[str, Any] | None = None
     planned_videos: list[VideoPrompt] = field(default_factory=list)
     planned_video_count_locked: bool = False
+    smart_split_reason: str | None = None
 
 
 @dataclass

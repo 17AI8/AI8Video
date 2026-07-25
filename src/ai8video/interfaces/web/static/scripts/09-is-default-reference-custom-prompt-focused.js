@@ -130,17 +130,22 @@
       const watermark1Ready = !!config.watermarkEnabled && !!normalizeFlowerTextWatermarkImage(config.watermarkImage, state.userMaterials?.flowerWatermarks);
       const watermark2Ready = !!config.watermark2Enabled && !!normalizeFlowerTextWatermarkImage(config.watermark2Image, state.userMaterials?.flowerWatermarks);
       const watermarkReady = watermark1Ready || watermark2Ready;
-      const enabled = !!config.enabled && (!!String(config.text || '').trim() || watermarkReady);
+      const flowerTextReady = !!config.enabled && !!String(config.text || '').trim();
+      const active = flowerTextReady || watermarkReady;
       const saving = !!config.saving;
-      button.classList.toggle('is-ready', enabled && !saving);
+      button.classList.toggle('is-ready', active && !saving);
       button.classList.toggle('is-open', !!state.flowerTextDrawer?.visible);
       button.disabled = saving;
       button.textContent = saving ? '保存中' : '花字';
       button.setAttribute('aria-expanded', state.flowerTextDrawer?.visible ? 'true' : 'false');
       if (saving) {
         button.title = '正在保存花字设置';
-      } else if (enabled) {
+      } else if (flowerTextReady && watermarkReady) {
+        button.title = '花字和水印已开启。生成归档后会烧录到视频画面。';
+      } else if (flowerTextReady) {
         button.title = '花字已开启。生成归档后会烧录到视频画面。';
+      } else if (watermarkReady) {
+        button.title = '水印已开启。生成归档后会烧录到视频画面。';
       } else if (config.error) {
         button.title = `花字设置失败：${config.error}`;
       } else {
@@ -249,7 +254,6 @@
       const textX = normalizeFlowerTextCoordinate(config.textX, 50);
       const textY = normalizeFlowerTextCoordinate(config.textY, flowerTextPositionY(position));
       const watermarkImages = Array.isArray(state.userMaterials?.flowerWatermarks) ? state.userMaterials.flowerWatermarks : [];
-      fetch('http://127.0.0.1:7352/ingest/a6129daf-2746-4e4a-84ac-54d0dd03e374',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cad45c'},body:JSON.stringify({sessionId:'cad45c',hypothesisId:'H3',location:'renderFlowerTextDrawer',message:'rendering',data:{watermarkEnabled:config.watermarkEnabled,watermarkImage:config.watermarkImage,watermark2Enabled:config.watermark2Enabled,watermark2Image:config.watermark2Image,watermarkImagesCount:watermarkImages.length},timestamp:Date.now()})}).catch(()=>{});
       const watermarkEnabled = !!config.watermarkEnabled;
       const watermarkImage = normalizeFlowerTextWatermarkImage(config.watermarkImage, watermarkImages);
       const watermarkItem = getFlowerTextWatermarkItem(watermarkImage, watermarkImages);
@@ -281,7 +285,9 @@
       const text = String(config.text || '');
       const error = String(config.error || '').trim();
       const notice = String(config.notice || '').trim();
-      const status = saving ? '保存中...' : error ? `提示：${error}` : notice || (enabled ? '已开启' : '已关闭');
+      const flowerTextActive = enabled && !!text.trim();
+      const watermarkActive = (watermarkEnabled && !!watermarkImage) || (watermark2Enabled && !!watermark2Image);
+      const status = saving ? '保存中...' : error ? `提示：${error}` : notice || (flowerTextActive || watermarkActive ? '已开启' : '已关闭');
       els.flowerTextDrawerBody.innerHTML = `
         <div class="flower-text-panel">
           <div class="flower-text-preview-workbench">
@@ -362,20 +368,20 @@
                   <input class="flower-text-background-file-input" type="file" data-flower-background-file-input accept=".jpg,.jpeg,.png,.webp,.gif,.bmp,image/*">
                 </label>
               </div>
-              <div id="flowerTextEditorWrap" class="flower-text-editor-wrap${previewUrl ? ' has-render-preview' : ''}${safeZoneEditing ? ' is-html-motion-safe-zone-editing' : ''}" style="${previewBackgroundStyle}">
+              <div id="flowerTextEditorWrap" class="flower-text-editor-wrap${previewUrl ? ' has-render-preview' : ''}${enabled ? '' : ' is-flower-text-disabled'}${safeZoneEditing ? ' is-html-motion-safe-zone-editing' : ''}" style="${previewBackgroundStyle}">
                 <img id="flowerTextRenderedPreview" class="flower-text-rendered-preview" alt="" src="${escapeHtml(previewUrl)}">
                 <div id="htmlMotionSafeZoneBox" class="html-motion-safe-zone-box" style="left:${safeZone.x}%;top:${safeZone.y}%;width:${safeZone.width}%;height:${safeZone.height}%;">
                   <span class="html-motion-safe-zone-resize" data-html-motion-safe-zone-resize aria-hidden="true"></span>
                 </div>
-                <textarea id="flowerTextEditor" class="flower-text-editor" spellcheck="false" rows="1" placeholder="在这里输入要一直显示在视频里的花字" style="left: ${textX}%; top: ${textY}%; color: ${escapeHtml(textColor)}; -webkit-text-stroke: ${Math.max(0, Math.round(previewFontSize * strokeWidth / 100))}px ${escapeHtml(strokeColor)}; font-family: ${escapeHtml(editorFontFamily)}; font-size: ${previewFontSize}px; font-weight: ${fontWeight};">${escapeHtml(text)}</textarea>
+                <textarea id="flowerTextEditor" class="flower-text-editor" spellcheck="false" rows="1" placeholder="在这里输入要一直显示在视频里的花字" ${enabled ? '' : 'disabled'} style="left: ${textX}%; top: ${textY}%; color: ${escapeHtml(textColor)}; -webkit-text-stroke: ${Math.max(0, Math.round(previewFontSize * strokeWidth / 100))}px ${escapeHtml(strokeColor)}; font-family: ${escapeHtml(editorFontFamily)}; font-size: ${previewFontSize}px; font-weight: ${fontWeight};">${escapeHtml(text)}</textarea>
                 <button id="flowerTextDragHandle" class="flower-text-drag-handle" type="button" aria-label="拖动花字" draggable="true" style="left: ${textX}%; top: ${textY}%;">
                   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                     <path d="M12 3v18M3 12h18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
                     <path d="m12 3-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
                   </svg>
                 </button>
-                ${watermarkEnabled && watermarkImage ? `<button id="flowerTextWatermarkDragHandle" class="flower-text-watermark-drag-handle" type="button" aria-label="拖动水印" style="left: ${watermarkX}%; top: ${watermarkY}%; --flower-watermark-size: ${watermarkSize}%; --flower-watermark-opacity: ${Math.min(1, Math.max(0.05, watermarkOpacity / 100))};"><img src="${escapeHtml(watermarkPreviewUrl || flowerTextWatermarkUrl(watermarkImage))}" alt="${escapeHtml(watermarkItem?.name || '水印图片')}"></button>` : ''}
-                ${watermark2Enabled && watermark2Image ? `<button id="flowerTextWatermark2DragHandle" class="flower-text-watermark-drag-handle" type="button" aria-label="拖动水印2" style="left: ${watermark2X}%; top: ${watermark2Y}%; --flower-watermark-size: ${watermark2Size}%; --flower-watermark-opacity: ${Math.min(1, Math.max(0.05, watermark2Opacity / 100))};"><img src="${escapeHtml(watermark2PreviewUrl || flowerTextWatermarkUrl(watermark2Image))}" alt="${escapeHtml(watermark2Item?.name || '水印图片')}"></button>` : ''}
+                ${watermarkImage ? `<button id="flowerTextWatermarkDragHandle" class="flower-text-watermark-drag-handle" type="button" aria-label="拖动水印" ${watermarkEnabled ? '' : 'hidden'} style="left: ${watermarkX}%; top: ${watermarkY}%; --flower-watermark-size: ${watermarkSize}%; --flower-watermark-opacity: ${Math.min(1, Math.max(0.05, watermarkOpacity / 100))};"><img src="${escapeHtml(watermarkPreviewUrl || flowerTextWatermarkUrl(watermarkImage))}" alt="${escapeHtml(watermarkItem?.name || '水印图片')}"></button>` : ''}
+                ${watermark2Image ? `<button id="flowerTextWatermark2DragHandle" class="flower-text-watermark-drag-handle" type="button" aria-label="拖动水印2" ${watermark2Enabled ? '' : 'hidden'} style="left: ${watermark2X}%; top: ${watermark2Y}%; --flower-watermark-size: ${watermark2Size}%; --flower-watermark-opacity: ${Math.min(1, Math.max(0.05, watermark2Opacity / 100))};"><img src="${escapeHtml(watermark2PreviewUrl || flowerTextWatermarkUrl(watermark2Image))}" alt="${escapeHtml(watermark2Item?.name || '水印图片')}"></button>` : ''}
               </div>
             </div>
           </div>

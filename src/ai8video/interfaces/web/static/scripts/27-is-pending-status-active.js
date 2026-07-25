@@ -214,13 +214,7 @@
           return;
         }
         if (data.status !== 'pending' && data.reply) {
-          last.payload.pendingStatus = normalizePendingStatusProgress({
-            ...(last.payload.pendingStatus || {}),
-            ...extractPendingStatus(data, sessionId),
-            status: data.status,
-            phase: data.phase || 'completed',
-            completedAt: data.completedAt || new Date().toISOString(),
-          });
+          last.payload = buildAssistantPayload(data, sessionId);
           if (state.generationProgress?.sessionId === sessionId) {
             clearGenerationProgress();
           }

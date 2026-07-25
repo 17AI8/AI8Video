@@ -23,12 +23,15 @@ def composite_transparent_layer(
     *,
     run: Callable[..., Any] = subprocess.run,
     before_replace: Callable[[], None] | None = None,
+    offset_seconds: float = 0.0,
 ) -> None:
     target = source.with_name(f"{source.stem}.html-motion.tmp{source.suffix or '.mp4'}")
     width, height = int(media["width"]), int(media["height"])
     duration = float(media["durationSeconds"])
+    offset = max(0.0, float(offset_seconds or 0.0))
     filter_graph = (
-        f"[1:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
+        f"[1:v]setpts=PTS+{offset:.3f}/TB,"
+        f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
         f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=0x00000000[overlay];"
         "[0:v][overlay]overlay=eof_action=pass:shortest=0:format=auto[v]"
     )

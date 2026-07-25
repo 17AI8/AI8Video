@@ -153,6 +153,27 @@
         closeVideoParamsModal();
         return;
       }
+      const smartSplitPlanToggle = event.target.closest('[data-smart-split-plan-toggle]');
+      if (smartSplitPlanToggle) {
+        event.preventDefault();
+        const node = smartSplitPlanToggle.closest('.smart-split-plan-node');
+        const open = !node?.classList.contains('is-open');
+        node?.classList.toggle('is-open', open);
+        node?.setAttribute('aria-expanded', open ? 'true' : 'false');
+        return;
+      }
+      const smartSplitPlanEdit = event.target.closest('[data-smart-split-plan-edit]');
+      if (smartSplitPlanEdit) {
+        event.preventDefault();
+        setSmartSplitPromptEditing(smartSplitPlanEdit.closest('.smart-split-plan-node'), true);
+        return;
+      }
+      const smartSplitPlanSave = event.target.closest('[data-smart-split-plan-save]');
+      if (smartSplitPlanSave) {
+        event.preventDefault();
+        await saveSmartSplitPrompt(smartSplitPlanSave);
+        return;
+      }
       const guideActionTrigger = event.target.closest('[data-guide-action-kind]');
       if (guideActionTrigger) {
         event.preventDefault();

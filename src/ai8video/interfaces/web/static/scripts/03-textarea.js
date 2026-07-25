@@ -28,15 +28,25 @@
     });
 
     els.smartSplitDrawer?.addEventListener('change', async (event) => {
-      const smartToggle = event.target.closest('[data-smart-split-toggle]');
       const confirmToggle = event.target.closest('[data-smart-split-confirm-toggle]');
       const tailFrameToggle = event.target.closest('[data-tail-frame-chaining-toggle]');
-      if (!smartToggle && !confirmToggle && !tailFrameToggle) return;
+      if (!confirmToggle && !tailFrameToggle) return;
       await saveGenerationMode({
-        smartSplit: smartToggle ? !!smartToggle.checked : !!state.generationMode.smartSplit,
         confirmSmartSplit: confirmToggle ? !!confirmToggle.checked : !!state.generationMode.confirmSmartSplit,
         tailFrameChaining: tailFrameToggle ? !!tailFrameToggle.checked : !!state.generationMode.tailFrameChaining,
       });
+    });
+
+    els.smartSplitDrawer?.addEventListener('input', (event) => {
+      const manualCount = event.target.closest('[data-manual-split-count]');
+      if (!manualCount) return;
+      state.generationMode.manualVideoCount = Math.max(1, Math.min(12, Number(manualCount.value || 1)));
+    });
+
+    els.smartSplitDrawer?.addEventListener('focusout', async (event) => {
+      const manualCount = event.target.closest('[data-manual-split-count]');
+      if (!manualCount) return;
+      await saveGenerationMode({ manualVideoCount: Number(manualCount.value) });
     });
 
     els.htmlMotionOverlayDrawer?.addEventListener('change', async (event) => {
@@ -95,14 +105,7 @@
       if (watermarkCheckbox) {
         const wmIdx = watermarkCheckbox.getAttribute('data-flower-watermark-checkbox') || '1';
         const checked = watermarkCheckbox.checked;
-        state.flowerText = {
-          ...(state.flowerText || {}),
-          _suppressEntryStatus: true,
-        };
         await saveFlowerWatermarkCheckbox(checked, wmIdx);
-        setTimeout(() => {
-          if (state.flowerText) state.flowerText._suppressEntryStatus = false;
-        }, 1200);
         return;
       }
       const fontSummary = event.target.closest('.flower-text-font-picker > summary');

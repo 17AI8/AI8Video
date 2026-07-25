@@ -95,7 +95,7 @@
       if (!items.length && !failedItems.length && !pendingCount) return '<div class="empty">当前没有可预览的视频或图片。</div>';
       const context = buildResultNotifyContext([...items, ...failedItems]);
       const cards = [
-        ...items.map((item, index) => buildResultNotifyCardMarkup(item, index, context)),
+        ...items.map((item, index) => buildResultNotifyCardMarkup(item, index, context, options)),
         ...failedItems.map((item, index) => buildFailedResultCardMarkup(item, items.length + index + 1)),
         ...Array.from({ length: pendingCount }, (_, index) => buildPendingResultCardMarkup(terminalCount + index + 1)),
       ].join('');
@@ -194,9 +194,20 @@
       const subtitle = isFailedResult(item)
         ? '生成失败'
         : (motionOverlay.label ? `已生成 · ${motionOverlay.label}` : (isGeneratedResult(item) ? '已生成 · 点击播放' : '点击播放'));
+      const mergeKey = userGeneratedKey || '';
+      const selectionOrder = Array.isArray(options.selectedKeys) ? options.selectedKeys.indexOf(mergeKey) + 1 : 0;
+      const batchSelection = options.batchMerge && mergeKey ? `
+        <button type="button" class="result-batch-merge-select${selectionOrder ? ' is-selected' : ''}"
+          data-result-batch-merge-select="${escapeHtml(mergeKey)}" aria-pressed="${selectionOrder ? 'true' : 'false'}"
+          aria-label="${selectionOrder ? `取消第 ${selectionOrder} 个合并视频` : '选择这个视频进行合并'}">
+          <span class="result-batch-merge-checkbox" aria-hidden="true">${selectionOrder ? '✓' : ''}</span>
+          ${selectionOrder ? `<span class="result-batch-merge-order">${selectionOrder}</span>` : ''}
+        </button>
+      ` : '';
       return `
-        <div class="result-notify-card ${resultNotifyRatioClass(item)}">
+        <div class="result-notify-card ${resultNotifyRatioClass(item)}${selectionOrder ? ' is-batch-selected' : ''}">
           <div class="result-notify-preview">
+            ${batchSelection}
             ${coverSrc
               ? `<img alt="${escapeHtml(title)}" src="${escapeHtml(coverSrc)}">`
               : (videoSrc ? `<video muted playsinline preload="none" src="${escapeHtml(videoSrc)}"></video>` : '')}
@@ -233,14 +244,15 @@
       return width >= height ? 'ratio-landscape' : 'ratio-portrait';
     }
 
-    function buildProgressStatusResultItem(item, index) {
+    function buildProgressStatusResultItem(item, index, progressItems = []) {
       const rawStatus = String(item?.status || '').trim();
       const postProcessing = isPostProcessingProgressItem(item);
       const status = postProcessing ? 'archiving' : rawStatus;
       const historicalSnapshot = Boolean(item?.historicalSnapshot);
       const videoIndex = Number(item?.videoIndex || 0) || index + 1;
       const title = cleanDisplayText(item?.title, `视频 ${videoIndex}`);
-      const stage = formatGenerationProgressStatus(item);
+      const waiting = !historicalSnapshot && isTailFrameWaitingProgressItem(progressItems, index);
+      const stage = waiting ? '等待中' : formatGenerationProgressStatus(item);
       return {
         __progressStatus: true,
         videoIndex,
@@ -253,12 +265,20 @@
         statusLabel: item?.statusLabel || '',
         jobStatus: item?.jobStatus || '',
         providerStatus: item?.providerStatus || '',
+        generationBatchId: item?.generationBatchId || '',
         segmentStatus: Array.isArray(item?.segmentStatus) ? item.segmentStatus : [],
         percent: generationProgressPercent(item),
         pending: !historicalSnapshot && (postProcessing || !isTerminalProgressStatus(status)),
+        waiting,
         historicalSnapshot,
         hasLocalAsset: item?.hasLocalAsset !== false,
       };
+    }
+
+    function isTailFrameWaitingProgressItem(items, index) {
+      if (!state.generationMode?.tailFrameChaining || !Array.isArray(items)) return false;
+      const activeIndex = items.findIndex((item) => !isTerminalProgressStatus(item?.status));
+      return activeIndex >= 0 && index > activeIndex && !isTerminalProgressStatus(items[index]?.status);
     }
 
     function buildProgressSegmentSummary(segments) {
@@ -357,11 +377,12 @@
       }
       const isTerminal = isTerminalProgressStatus(status) || Boolean(item?.historicalSnapshot);
       const processingClass = isPostProcessingProgressStatus(status) ? ' processing-placeholder' : '';
+      const waitingClass = item?.waiting ? ' waiting-placeholder' : '';
       return `
         <div class="result-notify-card ${resultNotifyRatioClass(item)}">
           <div class="result-notify-preview">
-            <div class="result-notify-play${isTerminal ? ' terminal-placeholder' : processingClass}" aria-hidden="true"><span></span></div>
-            <div class="result-notify-progress"><span${isTerminal ? '' : ' class="pending"'} style="--progress-width: ${isTerminal ? 100 : (percent || 46)}%"></span></div>
+            <div class="result-notify-play${isTerminal ? ' terminal-placeholder' : `${processingClass}${waitingClass}`}" aria-hidden="true"><span></span></div>
+            <div class="result-notify-progress"><span${isTerminal || item?.waiting ? '' : ' class="pending"'} style="--progress-width: ${isTerminal ? 100 : (item?.waiting ? 0 : (percent || 46))}%"></span></div>
           </div>
           <div class="result-notify-meta">
             <div class="result-notify-title">${renderHoverScrollText(title)}</div>
@@ -388,21 +409,23 @@
 
     function renderGenerationRetryButton(item) {
       const videoIndex = Number(item?.videoIndex || 0);
-      if (videoIndex < 1) return '';
-      return `<button type="button" class="result-notify-retry-button" data-retry-generation-video="${videoIndex}" title="复用现有方案和首帧重试">重试</button>`;
+      const generationBatchId = String(item?.generationBatchId || '').trim();
+      if (videoIndex < 1 || !generationBatchId) return '';
+      return `<button type="button" class="result-notify-retry-button" data-retry-generation-video="${videoIndex}" data-generation-batch-id="${escapeHtml(generationBatchId)}" title="复用现有方案，必要时重新生成首帧">重试</button>`;
     }
 
     async function retryFailedGenerationVideo(button) {
       const videoIndex = Number(button?.getAttribute('data-retry-generation-video') || 0);
+      const generationBatchId = String(button?.getAttribute('data-generation-batch-id') || '').trim();
       const sessionId = String(state.activeId || '').trim();
-      if (!sessionId || videoIndex < 1 || button.disabled) return;
+      if (!sessionId || !generationBatchId || videoIndex < 1 || button.disabled) return;
       button.disabled = true;
       button.textContent = '重试中';
       try {
         const res = await fetch('/api/generation/retry', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId, videoIndex }),
+          body: JSON.stringify({ sessionId, generationBatchId, videoIndex }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data?.ok === false) throw buildRequestError(data);

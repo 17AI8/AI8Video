@@ -13,6 +13,8 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from queue import Queue
+from threading import Thread
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
@@ -97,15 +99,21 @@ from ai8video.media.motion.html_motion_overlay import (
 )
 from ai8video.media.motion.html_motion_review import (
     HTML_MOTION_REVIEW_ROOT,
+    adjust_html_motion_review_timeline,
     confirm_html_motion_review,
+    html_motion_review_layer_path,
     html_motion_review_status,
     prepare_html_motion_review,
+    resolve_html_motion_review_live_asset,
     resolve_html_motion_review_video,
     sync_html_motion_review_audio,
 )
 from ai8video.media.motion.html_motion_tasks import html_motion_task_service
 from ai8video.media.narration_review import (
+    narration_char_limit,
     narration_review_status,
+    narration_spoken_char_count,
+    review_narration_text,
     update_narration_review_count,
 )
 from ai8video.core.models import VideoPrompt, FirstFrameAsset, ParsedRequest, QuickVideoJob
@@ -202,6 +210,8 @@ from ai8video.assets.user_recycle_bin import (
     save_restored_result_narration_text,
 )
 from ai8video.generation.prompt_trace import TRACE_PATH as PROMPT_TRACE_PATH
+from ai8video.generation.video_prompt_support import parse_json_array
+from ai8video.application.runtime import restore_smart_split_plan, update_smart_split_prompt
 from ai8video.generation.generation_progress import (
     clear_generation_progress,
     settle_stale_first_frame_progress,
@@ -1032,12 +1042,15 @@ def api_generation_mode():
     if not isinstance(payload, dict):
         response.status = 400
         return {"ok": False, "error": "payload must be an object"}
-    return update_generation_mode(
-        concurrent_generation=bool(payload.get("concurrentGeneration")),
-        smart_split=bool(payload.get("smartSplit")),
-        confirm_smart_split=bool(payload.get("confirmSmartSplit")),
-        tail_frame_chaining=bool(payload.get("tailFrameChaining")),
-    )
+    values = {
+        "concurrent_generation": bool(payload.get("concurrentGeneration")),
+        "smart_split": bool(payload.get("smartSplit")),
+        "confirm_smart_split": bool(payload.get("confirmSmartSplit")),
+        "tail_frame_chaining": bool(payload.get("tailFrameChaining")),
+    }
+    if "manualVideoCount" in payload:
+        values["manual_video_count"] = payload.get("manualVideoCount")
+    return update_generation_mode(**values)
 
 
 @app.route("/api/html-motion-overlay", method=["GET", "POST", "OPTIONS"])
@@ -1350,6 +1363,22 @@ def user_generated_html_motion_preview(review_id: str):
     except FileNotFoundError:
         response.status = 404
         return {"ok": False, "error": "HTML 动效预览不存在"}
+    response.set_header("Cache-Control", "no-store")
+    return static_file(target.name, root=str(target.parent))
+
+
+@app.route("/api/user-generated-results/html-motion-live/<review_id>/<asset_name>", method=["GET", "OPTIONS"])
+def user_generated_html_motion_live_asset(review_id: str, asset_name: str):
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    try:
+        target = resolve_html_motion_review_live_asset(review_id, asset_name)
+    except ValueError as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+    except FileNotFoundError:
+        response.status = 404
+        return {"ok": False, "error": "HTML 动效实时预览不存在"}
     response.set_header("Cache-Control", "no-store")
     return static_file(target.name, root=str(target.parent))
 
@@ -1881,7 +1910,12 @@ def _save_tts_narration_text_for_user_generated_video(raw_key: object, raw_text:
     }
 
 
-def _save_merged_narration_metadata(relative_key: str, source_key: str, text: str) -> None:
+def _save_merged_narration_metadata(
+    relative_key: str,
+    source_key: str,
+    text: str,
+    source_keys: list[str] | None = None,
+) -> None:
     if not text:
         return
     metadata_path = restored_result_metadata_path(ensure_user_generated_result_dir(), relative_key)
@@ -1890,12 +1924,207 @@ def _save_merged_narration_metadata(relative_key: str, source_key: str, text: st
         "createdAt": datetime.now(timezone.utc).isoformat(),
         "userGeneratedKey": relative_key,
         "sourceVideoKey": source_key,
-        "generationMeta": {"userTtsNarrationText": text},
+        "generationMeta": {
+            "userTtsNarrationText": text,
+            "batchMergedSourceKeys": list(source_keys or [source_key]),
+        },
     }
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = metadata_path.with_name(f".{metadata_path.name}.tmp")
     temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     temporary.replace(metadata_path)
+
+
+def _append_batch_merge_artifact(artifacts: list[Path], candidate: Path, allowed_root: Path) -> None:
+    resolved = candidate.resolve()
+    if _is_within(allowed_root.resolve(), resolved) and resolved.exists() and resolved not in artifacts:
+        artifacts.append(resolved)
+
+
+def _batch_merge_cached_artifacts(root: Path, relative_key: str) -> list[tuple[Path, Path]]:
+    frame_root = (root / "extension-frame").resolve()
+    frame_name = hashlib.sha256(relative_key.encode("utf-8")).hexdigest()[:24]
+    cached = [(path, frame_root) for path in frame_root.glob(f"{frame_name}*")]
+    review_root = HTML_MOTION_REVIEW_ROOT.resolve()
+    review_id = hashlib.sha256(relative_key.encode("utf-8")).hexdigest()[:32]
+    cached.append((review_root / review_id, review_root))
+    return cached
+
+
+def _batch_merge_record_matches_sources(record: dict[str, Any], source_keys: list[str]) -> bool:
+    normalized = {str(key).strip() for key in source_keys if str(key).strip()}
+    names = {Path(key).name for key in normalized}
+    for field in ("userGeneratedKey", "archiveKey", "archiveLocalPath", "userGeneratedLocalPath", "localVideoPath"):
+        value = str(record.get(field) or "").strip()
+        if value in normalized or (value and Path(value).name in names):
+            return True
+    first_frame = record.get("firstFrame") if isinstance(record.get("firstFrame"), dict) else {}
+    frame_source = Path(str(first_frame.get("source") or "")).name
+    frame_names = {hashlib.sha256(key.encode("utf-8")).hexdigest()[:24] for key in normalized}
+    return bool(frame_source and any(frame_source.startswith(name) for name in frame_names))
+
+
+def _batch_merge_related_records(source_keys: list[str]) -> list[dict[str, Any]]:
+    return [
+        record
+        for record in JsonlAssetStore(_asset_store_path()).read_all()
+        if _batch_merge_record_matches_sources(record, source_keys)
+    ]
+
+
+def _batch_merge_record_artifacts(root: Path, record: dict[str, Any]) -> list[tuple[Path, Path]]:
+    artifacts: list[tuple[Path, Path]] = []
+    for field in ("userGeneratedKey", "archiveKey", "userGeneratedPreviewKey", "archiveCoverKey"):
+        value = str(record.get(field) or "").strip().lstrip("/")
+        if value and "://" not in value:
+            artifacts.append((root / value, root))
+    for field in ("archiveLocalPath", "userGeneratedLocalPath", "localVideoPath", "archiveLocalCoverPath"):
+        value = str(record.get(field) or "").strip()
+        if value:
+            artifacts.append((Path(value), root))
+    archive_root = Path(AI8VideoConfig.from_env().archive_local_dir).resolve()
+    raw_manifest = str(record.get("archiveManifestPath") or "").strip()
+    manifest = Path(raw_manifest) if raw_manifest else archive_root / ".missing"
+    if raw_manifest and not manifest.is_absolute():
+        manifest = (PROJECT_ROOT / manifest).resolve()
+    local_tts = record.get("archiveMeta") if isinstance(record.get("archiveMeta"), dict) else {}
+    local_tts = local_tts.get("localTts") if isinstance(local_tts.get("localTts"), dict) else {}
+    raw_audio = str(local_tts.get("audioPath") or "").strip()
+    audio = Path(raw_audio) if raw_audio else local_tts_output_dir() / ".missing"
+    return [*artifacts, (manifest, archive_root), (audio, local_tts_output_dir().resolve())]
+
+
+def _batch_merge_source_artifacts(root: Path, resolved_items: list[tuple[Path, str]]) -> list[Path]:
+    artifacts: list[Path] = []
+    source_keys = [relative_key for _, relative_key in resolved_items]
+    for video_path, relative_key in resolved_items:
+        preview_key = find_preview_key(root, relative_key)
+        cover_key = _find_user_generated_cover_key(root, relative_key)
+        result_artifacts = [
+            video_path,
+            *(root / key for key in (preview_key, cover_key) if key),
+            restored_result_metadata_path(root, relative_key),
+        ]
+        for candidate in result_artifacts:
+            _append_batch_merge_artifact(artifacts, candidate, root)
+        for candidate, allowed_root in _batch_merge_cached_artifacts(root, relative_key):
+            _append_batch_merge_artifact(artifacts, candidate, allowed_root)
+    for record in _batch_merge_related_records(source_keys):
+        for candidate, allowed_root in _batch_merge_record_artifacts(root, record):
+            _append_batch_merge_artifact(artifacts, candidate, allowed_root)
+    return artifacts
+
+
+def _stage_batch_merge_sources(artifacts: list[Path], stash: Path) -> list[tuple[Path, Path]]:
+    staged: list[tuple[Path, Path]] = []
+    for index, source in enumerate(artifacts):
+        target = stash / f"{index:04d}-{source.name}"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(source), str(target))
+        staged.append((source, target))
+    return staged
+
+
+def _restore_batch_merge_sources(staged: list[tuple[Path, Path]]) -> None:
+    for original, staged_path in reversed(staged):
+        if not staged_path.exists():
+            continue
+        original.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(staged_path), str(original))
+
+
+def _remove_batch_merged_asset_records(source_keys: list[str]) -> tuple[int, int]:
+    return _asset_maintenance_service().remove_records(
+        lambda record: _batch_merge_record_matches_sources(record, source_keys)
+    )
+
+
+def _prepare_batch_merge_context(raw_keys: object) -> dict[str, Any]:
+    source_keys = [str(key or "").strip() for key in raw_keys] if isinstance(raw_keys, list) else []
+    source_keys = list(dict.fromkeys(key for key in source_keys if key))
+    if len(source_keys) < 2:
+        raise ValueError("请至少选择两个视频")
+    if len(source_keys) > 100:
+        raise ValueError("单次最多合并 100 个视频")
+    resolved_items = [_resolve_user_generated_video_key(key) for key in source_keys]
+    root = ensure_user_generated_result_dir().resolve()
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    target = (root / "video" / f"批量合并-{timestamp}.mp4").resolve()
+    first_key = resolved_items[0][1]
+    first_visual_key = find_preview_key(root, first_key) or _find_user_generated_cover_key(root, first_key)
+    narrations = [_tts_narration_text_for_user_generated_video(key, path)[0] for path, key in resolved_items]
+    return {
+        "root": root,
+        "target": target,
+        "items": resolved_items,
+        "sourceKeys": [item[1] for item in resolved_items],
+        "firstKey": first_key,
+        "firstVisualKey": first_visual_key,
+        "narration": "\n".join(text for text in narrations if text),
+    }
+
+
+def _install_batch_merge_result(context: dict[str, Any], work: Path, candidate: Path, visual_copy: Path) -> int:
+    root, target = context["root"], context["target"]
+    staged: list[tuple[Path, Path]] = []
+    created: list[Path] = []
+    try:
+        artifacts = _batch_merge_source_artifacts(root, context["items"])
+        staged = _stage_batch_merge_sources(artifacts, work / "sources")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(candidate), str(target))
+        created.append(target)
+        relative_key = target.relative_to(root).as_posix()
+        preview_target = root / "preview" / f"{target.stem}.jpg"
+        if visual_copy.is_file():
+            preview_target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(visual_copy, preview_target)
+        else:
+            preview = generate_preview_for_video(target, root, relative_key)
+            if not preview.get("ok"):
+                raise RuntimeError("合并视频预览图生成失败")
+        created.append(preview_target)
+        _save_merged_narration_metadata(
+            relative_key,
+            context["firstKey"],
+            context["narration"],
+            context["sourceKeys"],
+        )
+        created.append(restored_result_metadata_path(root, relative_key))
+        removed_records, _ = _remove_batch_merged_asset_records(context["sourceKeys"])
+        return removed_records
+    except Exception:
+        for path in reversed(created):
+            if path.is_file():
+                path.unlink()
+        _restore_batch_merge_sources(staged)
+        raise
+
+
+def _batch_merge_user_generated_videos(raw_keys: object) -> dict[str, Any]:
+    context = _prepare_batch_merge_context(raw_keys)
+    root, target, items = context["root"], context["target"], context["items"]
+    temp_root = PROJECT_ROOT / "temp" / "ai8video"
+    temp_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="batch-merge-", dir=temp_root) as tempdir:
+        work = Path(tempdir)
+        candidate = work / "merged.mp4"
+        merge_result = concat_videos([item[0] for item in items], candidate)
+        visual_copy = work / "first-preview.jpg"
+        first_visual = root / context["firstVisualKey"] if context["firstVisualKey"] else None
+        if first_visual and first_visual.suffix.lower() in {".jpg", ".jpeg"}:
+            shutil.copy2(first_visual, visual_copy)
+        removed_records = _install_batch_merge_result(context, work, candidate, visual_copy)
+    relative_key = target.relative_to(root).as_posix()
+    return {
+        "ok": True,
+        "userGeneratedKey": relative_key,
+        "videoUrl": f"/user-generated-results/{relative_key}",
+        "previewKey": f"preview/{target.stem}.jpg",
+        "sourceKeys": context["sourceKeys"],
+        "removedAssetRecords": removed_records,
+        "merge": merge_result,
+    }
 
 
 def _clean_polished_tts_narration(raw: str) -> str:
@@ -1917,11 +2146,21 @@ def _clean_polished_tts_narration(raw: str) -> str:
     return prepare_narration_text(text.strip("“”\"'` \n\r\t"))
 
 
-def _polish_tts_narration_text(raw_text: object, duration_seconds: object = None) -> dict:
+def _emit_tts_transform_progress(progress: object, stage: str, message: str) -> None:
+    if callable(progress):
+        progress({"type": "progress", "stage": stage, "message": message})
+
+
+def _polish_tts_narration_text(
+    raw_text: object,
+    duration_seconds: object = None,
+    progress: object = None,
+) -> dict:
     text = prepare_narration_text(str(raw_text or ""))
     if not text:
         raise LookupError("台词已删除")
     config = AI8VideoConfig.from_env()
+    _emit_tts_transform_progress(progress, "knowledge", "正在检索剧本知识库")
     knowledge = _tts_script_knowledge(text, config)
     llm = build_openai_compat_llm(
         config,
@@ -1930,7 +2169,9 @@ def _polish_tts_narration_text(raw_text: object, duration_seconds: object = None
     )
     if llm is None:
         raise RuntimeError("文本/视频规划模型没有配置完整，不能 AI 润色")
-    duration = max(0.0, float(duration_seconds or 0))
+    duration = _required_tts_transform_duration(duration_seconds)
+    char_limit = narration_char_limit(duration)
+    _emit_tts_transform_progress(progress, "rewrite", "正在调用模型润色台词")
     prompt = f"""请润色下面这段短视频 TTS 口播台词。
 
 当前视频时长：{duration:.2f} 秒。润色后的台词必须适合在该时长内自然说完。
@@ -1940,7 +2181,7 @@ def _polish_tts_narration_text(raw_text: object, duration_seconds: object = None
 2. 保留原意、核心卖点和信息顺序。
 3. 更适合中文口播，短句、顺口、有节奏。
 4. 不要新增品牌、日期、事实或承诺。
-5. 字数尽量接近原文，不能明显变长。
+5. 最多 {char_limit} 个有效字符；如原文已经超限，必须压缩到上限以内。
 
 原台词：
 {text}
@@ -1954,6 +2195,8 @@ def _polish_tts_narration_text(raw_text: object, duration_seconds: object = None
     polished = _clean_polished_tts_narration(llm(prompt))
     if not polished:
         raise RuntimeError("AI 润色返回为空")
+    _emit_tts_transform_progress(progress, "review", "Reviewer 正在审核时长与字数")
+    polished = _review_tts_transform(polished, duration, config, operation="polish")
     result = {
         "ok": True,
         "text": polished,
@@ -1964,11 +2207,16 @@ def _polish_tts_narration_text(raw_text: object, duration_seconds: object = None
     return result
 
 
-def _expand_tts_narration_text(raw_text: object, duration_seconds: object = None) -> dict:
+def _expand_tts_narration_text(
+    raw_text: object,
+    duration_seconds: object = None,
+    progress: object = None,
+) -> dict:
     text = prepare_narration_text(str(raw_text or ""))
     if not text:
         raise LookupError("台词已删除")
     config = AI8VideoConfig.from_env()
+    _emit_tts_transform_progress(progress, "knowledge", "正在检索剧本知识库")
     knowledge = _tts_script_knowledge(text, config)
     llm = build_openai_compat_llm(
         config,
@@ -1977,7 +2225,9 @@ def _expand_tts_narration_text(raw_text: object, duration_seconds: object = None
     )
     if llm is None:
         raise RuntimeError("文本/视频规划模型没有配置完整，不能 AI 扩写")
-    duration = max(0.0, float(duration_seconds or 0))
+    duration = _required_tts_transform_duration(duration_seconds)
+    char_limit = narration_char_limit(duration)
+    _emit_tts_transform_progress(progress, "rewrite", "正在调用模型扩写台词")
     prompt = f"""请扩写下面这段短视频 TTS 口播台词。
 
 当前视频时长：{duration:.2f} 秒。扩写后的台词必须适合在该时长内自然说完，不得为了达到倍数而超过可用口播时长。
@@ -1987,7 +2237,7 @@ def _expand_tts_narration_text(raw_text: object, duration_seconds: object = None
 2. 保留原意、核心卖点和信息顺序。
 3. 更适合中文口播，短句、顺口、有节奏。
 4. 可以补充承接句、情绪递进和口播节奏，但不要新增品牌、日期、事实或承诺。
-5. 字数扩写到原文的 1.5 到 2 倍左右，不要无限拉长。
+5. 只在时长容量允许时扩写，最多 {char_limit} 个有效字符；原文已接近或超过上限时，改为压缩和优化表达。
 
 原台词：
 {text}
@@ -2001,6 +2251,8 @@ def _expand_tts_narration_text(raw_text: object, duration_seconds: object = None
     expanded = _clean_polished_tts_narration(llm(prompt))
     if not expanded:
         raise RuntimeError("AI 扩写返回为空")
+    _emit_tts_transform_progress(progress, "review", "Reviewer 正在审核时长与字数")
+    expanded = _review_tts_transform(expanded, duration, config, operation="expand")
     result = {
         "ok": True,
         "text": expanded,
@@ -2009,6 +2261,40 @@ def _expand_tts_narration_text(raw_text: object, duration_seconds: object = None
     }
     append_prompt_trace("tts_narration_expand_complete", payload={"textChars": len(expanded), "knowledge": knowledge["meta"]})
     return result
+
+
+def _required_tts_transform_duration(raw_duration: object) -> float:
+    try:
+        duration = float(raw_duration or 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("当前视频时长无效，请等待视频加载完成") from exc
+    if duration <= 0:
+        raise ValueError("当前视频时长尚未加载，请稍后重试")
+    return duration
+
+
+def _review_tts_transform(text: str, duration: float, config: AI8VideoConfig, *, operation: str) -> str:
+    reviewer = build_openai_compat_llm(
+        config,
+        timeout_seconds=45,
+        system_prompt="你是 AI8video 的独立 Reviewer，严格审核 TTS 台词时长和内容，只输出合法 JSON。",
+    )
+    if reviewer is None:
+        raise RuntimeError("Reviewer 模型没有配置完整")
+    result = review_narration_text(
+        reviewer,
+        video_prompt="播放页用户手动修改当前视频台词",
+        candidate_text=text,
+        business_prompt=read_business_prompt(),
+        review_count=max(2, int(narration_review_status()["reviewCount"])),
+        target_duration_seconds=duration,
+        operation=operation,
+    )
+    approved = str(result.get("text") or "").strip()
+    char_limit = narration_char_limit(duration)
+    if not result.get("passes") or narration_spoken_char_count(approved) > char_limit:
+        raise RuntimeError(f"Reviewer 未通过：{duration:.1f} 秒视频台词最多 {char_limit} 个有效字符")
+    return approved
 
 
 def _tts_script_knowledge(text: str, config: AI8VideoConfig) -> dict[str, Any]:
@@ -2151,6 +2437,7 @@ def _regenerate_user_generated_html_motion(
             cancel_event=cancel_event,
             trigger="video_playback",
             text_style=motion_text_style,
+            preserve_layer_path=html_motion_review_layer_path(relative_key),
         ),
         result_metadata,
     )
@@ -2176,8 +2463,10 @@ def _regenerate_user_generated_html_motion(
     }
 
 
-def _confirm_user_generated_html_motion(raw_key: object) -> dict:
+def _confirm_user_generated_html_motion(raw_key: object, chunks: object = None) -> dict:
     video_path, relative_key = _resolve_user_generated_video_key(raw_key)
+    if isinstance(chunks, list) and chunks:
+        adjust_html_motion_review_timeline(video_path, relative_key, chunks)
     result = confirm_html_motion_review(video_path, relative_key)
     record = save_restored_result_html_motion_overlay(
         ensure_user_generated_result_dir(),
@@ -2395,11 +2684,12 @@ def _generate_extension_video(
     raw_key: object,
     session_id: object = None,
     frame_key: object = None,
+    video_prompt: object = None,
 ) -> dict:
     video_path, relative_key = _resolve_user_generated_video_key(raw_key)
-    prompt, _ = _extension_video_prompt_for_user_generated_video(relative_key)
+    prompt = str(video_prompt or "").strip()
     if not prompt:
-        raise LookupError("视频提示词已删除")
+        raise LookupError("延续视频提示词为空，请先编辑并保存")
     record = _asset_record_for_user_generated_key(relative_key, video_path)
     root = ensure_user_generated_result_dir().resolve()
     frame_name = hashlib.sha256(relative_key.encode("utf-8")).hexdigest()[:24]
@@ -4221,6 +4511,24 @@ def api_merge_user_generated_results():
         return {"ok": False, "error": str(exc)}
 
 
+@app.route("/api/user-generated-results/batch-merge", method=["POST", "OPTIONS"])
+def api_batch_merge_user_generated_results():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    if not isinstance(payload, dict):
+        response.status = 400
+        return {"ok": False, "error": "payload must be an object"}
+    try:
+        return _batch_merge_user_generated_videos(payload.get("userGeneratedKeys"))
+    except FileNotFoundError as exc:
+        response.status = 404
+        return {"ok": False, "error": str(exc)}
+    except (ValueError, RuntimeError, OSError) as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+
+
 @app.route("/api/user-generated-results/extension-frame", method=["POST", "OPTIONS"])
 def api_save_user_generated_extension_frame():
     if request.method == "OPTIONS":
@@ -4395,6 +4703,7 @@ def api_generate_user_generated_extension_video():
             payload.get("userGeneratedKey"),
             payload.get("sessionId"),
             payload.get("frameKey"),
+            payload.get("videoPrompt"),
         )
     except FileNotFoundError as exc:
         response.status = 404
@@ -4506,6 +4815,35 @@ def api_user_generated_tts_narration():
         return {"ok": False, "error": str(exc)}
 
 
+def _stream_tts_narration_transform(payload: dict[str, Any], operation: str):
+    events: Queue[dict[str, Any] | None] = Queue()
+    transform = _polish_tts_narration_text if operation == "polish" else _expand_tts_narration_text
+
+    def run_transform() -> None:
+        try:
+            result = transform(payload.get("text"), payload.get("durationSeconds"), events.put)
+            events.put({"type": "result", **result})
+        except LookupError as exc:
+            events.put({"type": "error", "error": str(exc) or "台词已删除"})
+        except ValueError as exc:
+            events.put({"type": "error", "error": str(exc)})
+        except RuntimeError as exc:
+            events.put({"type": "error", "error": str(exc)})
+        finally:
+            events.put(None)
+
+    Thread(target=run_transform, daemon=True).start()
+    while True:
+        event = events.get()
+        if event is None:
+            return
+        yield json.dumps(event, ensure_ascii=False) + "\n"
+
+
+def _wants_tts_progress_stream() -> bool:
+    return "application/x-ndjson" in str(request.headers.get("Accept") or "").lower()
+
+
 @app.route("/api/user-generated-results/tts-narration/polish", method=["POST", "OPTIONS"])
 def api_polish_user_generated_tts_narration():
     if request.method == "OPTIONS":
@@ -4514,6 +4852,9 @@ def api_polish_user_generated_tts_narration():
     if not isinstance(payload, dict):
         response.status = 400
         return {"ok": False, "error": "payload must be an object"}
+    if _wants_tts_progress_stream():
+        response.content_type = "application/x-ndjson; charset=utf-8"
+        return _stream_tts_narration_transform(payload, "polish")
     try:
         return _polish_tts_narration_text(payload.get("text"), payload.get("durationSeconds"))
     except LookupError as exc:
@@ -4535,6 +4876,9 @@ def api_expand_user_generated_tts_narration():
     if not isinstance(payload, dict):
         response.status = 400
         return {"ok": False, "error": "payload must be an object"}
+    if _wants_tts_progress_stream():
+        response.content_type = "application/x-ndjson; charset=utf-8"
+        return _stream_tts_narration_transform(payload, "expand")
     try:
         return _expand_tts_narration_text(payload.get("text"), payload.get("durationSeconds"))
     except LookupError as exc:
@@ -4715,7 +5059,10 @@ def api_confirm_user_generated_html_motion():
         response.status = 400
         return {"ok": False, "error": "payload must be an object"}
     try:
-        return _confirm_user_generated_html_motion(payload.get("userGeneratedKey"))
+        return _confirm_user_generated_html_motion(
+            payload.get("userGeneratedKey"),
+            payload.get("chunks"),
+        )
     except FileNotFoundError:
         response.status = 404
         return {"ok": False, "error": "视频已删除"}
@@ -4727,6 +5074,32 @@ def api_confirm_user_generated_html_motion():
         return {"ok": False, "error": str(exc)}
     except RuntimeError as exc:
         response.status = 500
+        return {"ok": False, "error": str(exc)}
+
+
+@app.route("/api/user-generated-results/adjust-html-motion-timeline", method=["POST", "OPTIONS"])
+def api_adjust_user_generated_html_motion_timeline():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    if not isinstance(payload, dict):
+        response.status = 400
+        return {"ok": False, "error": "payload must be an object"}
+    try:
+        video_path, relative_key = _resolve_user_generated_video_key(payload.get("userGeneratedKey"))
+        return adjust_html_motion_review_timeline(
+            video_path,
+            relative_key,
+            payload.get("chunks"),
+        )
+    except FileNotFoundError:
+        response.status = 404
+        return {"ok": False, "error": "视频已删除"}
+    except LookupError as exc:
+        response.status = 409
+        return {"ok": False, "error": str(exc)}
+    except (RuntimeError, ValueError) as exc:
+        response.status = 400
         return {"ok": False, "error": str(exc)}
 
 
@@ -5336,6 +5709,58 @@ def api_chat_status():
     return body
 
 
+@app.route("/api/smart-split-plan", method=["GET", "OPTIONS"])
+def api_smart_split_plan():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    session_id = str(request.query.get("sessionId") or "").strip()
+    if not session_id:
+        response.status = 400
+        return {"error": "sessionId is required"}
+    planned_videos = _recover_smart_split_planned_videos(session_id)
+    if not planned_videos:
+        response.status = 404
+        return {"error": "smart split plan not found", "sessionId": session_id}
+    return {"sessionId": session_id, "plannedVideos": planned_videos}
+
+
+@app.route("/api/smart-split-plan/prompt", method=["POST", "OPTIONS"])
+def api_update_smart_split_prompt():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    session_id = str(payload.get("sessionId") or "").strip()
+    video_index = int(payload.get("videoIndex") or 0)
+    prompt = str(payload.get("prompt") or "").strip()
+    if not session_id or video_index < 1 or not prompt:
+        response.status = 400
+        return {"error": "sessionId, videoIndex and prompt are required"}
+    updated = update_smart_split_prompt(session_id, video_index, prompt)
+    if not updated:
+        restored = restore_smart_split_plan(session_id, _recover_smart_split_planned_videos(session_id))
+        updated = restored and update_smart_split_prompt(session_id, video_index, prompt)
+    if not updated:
+        response.status = 409
+        return {"error": "当前分集方案已失效，请重新分集"}
+    return {"ok": True, "sessionId": session_id, "videoIndex": video_index, "prompt": prompt}
+
+
+@app.route("/api/smart-split-plan/restore", method=["POST", "OPTIONS"])
+def api_restore_smart_split_plan():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    session_id = str(payload.get("sessionId") or "").strip()
+    planned_videos = payload.get("plannedVideos")
+    if not session_id or not isinstance(planned_videos, list):
+        response.status = 400
+        return {"error": "sessionId and plannedVideos are required"}
+    if not restore_smart_split_plan(session_id, planned_videos):
+        response.status = 400
+        return {"error": "智能分集方案恢复失败"}
+    return {"ok": True, "sessionId": session_id, "videoCount": len(planned_videos)}
+
+
 def _guard_chat_status_pending_freshness(body: dict | None, *, pending_since: datetime | None) -> dict | None:
     if not body:
         return body
@@ -5349,40 +5774,53 @@ def api_retry_failed_generation():
         return HTTPResponse(status=204)
     payload = request.json or {}
     session_id = str(payload.get("sessionId") or "").strip()
+    generation_batch_id = str(payload.get("generationBatchId") or "").strip()
     video_index = int(payload.get("videoIndex") or 0)
-    if not session_id or video_index < 1:
+    if not session_id or not generation_batch_id or video_index < 1:
         response.status = 400
-        return {"ok": False, "error": "缺少重试会话或视频序号"}
+        return {"ok": False, "error": "缺少重试会话、生成批次或视频序号"}
     try:
         config = AI8VideoConfig.from_env()
-        record = _find_retryable_asset_record(config, session_id, video_index)
+        record = _find_retryable_asset_record(config, session_id, generation_batch_id, video_index)
         retry_request, video, first_frame = _build_retry_inputs(record)
-        result = AI8VideoPipeline(config=config).retry_video(
-            retry_request,
-            video,
-            first_frame,
-            progress_session_id=session_id,
-        )
-        return {"ok": True, "result": result.to_dict()}
+        pipeline = AI8VideoPipeline(config=config)
+        if first_frame is None:
+            result = pipeline.run_planned_request(retry_request, [video], progress_session_id=session_id)
+            retry_mode = "regenerated_first_frame"
+        else:
+            result = pipeline.retry_video(
+                retry_request,
+                video,
+                first_frame,
+                progress_session_id=session_id,
+            )
+            retry_mode = "reused_first_frame"
+        return {"ok": True, "retryMode": retry_mode, "result": result.to_dict()}
     except (ValueError, RuntimeError) as exc:
         response.status = 400
         return {"ok": False, "error": str(exc)}
 
 
-def _find_retryable_asset_record(config: AI8VideoConfig, session_id: str, video_index: int) -> dict[str, Any]:
+def _find_retryable_asset_record(
+    config: AI8VideoConfig,
+    session_id: str,
+    generation_batch_id: str,
+    video_index: int,
+) -> dict[str, Any]:
     records = JsonlAssetStore(config.asset_store_path).read_all()
     matches = [
         item for item in records
         if str(item.get("sessionId") or "") == session_id
+        and str(item.get("generationBatchId") or "") == generation_batch_id
         and int(item.get("videoIndex") or 0) == video_index
         and str(item.get("generationStatus") or "") == "failed"
     ]
     if not matches:
-        raise ValueError("未找到该视频的失败记录，无法重试")
+        raise ValueError("未找到当前批次的视频失败记录，无法重试")
     return matches[-1]
 
 
-def _build_retry_inputs(record: dict[str, Any]) -> tuple[ParsedRequest, VideoPrompt, FirstFrameAsset]:
+def _build_retry_inputs(record: dict[str, Any]) -> tuple[ParsedRequest, VideoPrompt, FirstFrameAsset | None]:
     prompt = str(record.get("prompt") or "").strip()
     first_frame_data = record.get("firstFrame") if isinstance(record.get("firstFrame"), dict) else {}
     first_frame = FirstFrameAsset(**{key: first_frame_data.get(key) for key in FirstFrameAsset.__dataclass_fields__})
@@ -5390,8 +5828,10 @@ def _build_retry_inputs(record: dict[str, Any]) -> tuple[ParsedRequest, VideoPro
     reusable = bool(first_frame.first_frame_storage_key or first_frame.first_frame_image_url or first_frame.first_frame_token)
     if source:
         reusable = urlsplit(source).scheme in {"http", "https", "data"} or Path(source).is_file()
-    if not prompt or not reusable:
-        raise ValueError("重试所需的方案或首帧中间产物已丢失，无法原样重试")
+    if not prompt:
+        raise ValueError("当前批次没有保存可复用的视频方案，请重新规划后生成")
+    if not reusable:
+        first_frame = None
     settings = record.get("request") if isinstance(record.get("request"), dict) else {}
     video_index = int(record.get("videoIndex") or 0)
     retry_request = ParsedRequest(
@@ -7039,6 +7479,42 @@ def _iter_prompt_trace_records(session_id: str, *, pending_since: datetime | Non
                 yield record
     except OSError:
         return
+
+
+def _recover_smart_split_planned_videos(session_id: str) -> list[dict]:
+    latest: list[dict] = []
+    for record in _iter_prompt_trace_records(session_id):
+        if record.get("event") not in {
+            "video_planning_model_output",
+            "video_planning_model_json_repair_output",
+        }:
+            continue
+        raw = str((record.get("payload") or {}).get("raw") or "").strip()
+        if not raw:
+            continue
+        try:
+            candidates = parse_json_array(raw)
+        except (TypeError, ValueError):
+            continue
+        recovered = [_smart_split_plan_item(item, index) for index, item in enumerate(candidates)]
+        recovered = [item for item in recovered if item]
+        if recovered:
+            latest = recovered
+    return latest
+
+
+def _smart_split_plan_item(item: object, index: int) -> dict | None:
+    if not isinstance(item, dict):
+        return None
+    prompt = str(item.get("prompt") or "").strip()
+    if not prompt:
+        return None
+    return {
+        "index": int(item.get("index") or index + 1),
+        "title": str(item.get("title") or f"第 {index + 1} 条视频").strip(),
+        "sourceSummary": str(item.get("source_summary") or item.get("sourceSummary") or "").strip(),
+        "prompt": prompt,
+    }
 
 
 def _prompt_trace_attempt_records_for_pending(

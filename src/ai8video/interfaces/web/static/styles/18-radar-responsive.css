@@ -348,6 +348,7 @@
       display: contents !important;
     }
 
+    body > .shell > aside.sidebar #progressPanel > div.material-card,
     body > .shell > aside.sidebar #imageMaterialList > div.material-card,
     body > .shell > aside.sidebar #scriptMaterialList > div.material-card,
     body > .shell > aside.sidebar #recycleBinList > div.material-card,
@@ -366,6 +367,7 @@
       box-shadow: none !important;
     }
 
+    body > .shell > aside.sidebar #progressPanel > div.material-card,
     body > .shell > aside.sidebar #imageMaterialList > div.material-card,
     body > .shell > aside.sidebar #scriptMaterialList > div.material-card,
     body > .shell > aside.sidebar #recycleBinList > div.material-card,
@@ -381,6 +383,7 @@
       padding: 6px 10px !important;
     }
 
+    body > .shell > aside.sidebar #progressPanel .material-heading,
     body > .shell > aside.sidebar #imageMaterialList .material-heading,
     body > .shell > aside.sidebar #scriptMaterialList .material-heading,
     body > .shell > aside.sidebar #recycleBinList .material-heading,
@@ -389,6 +392,7 @@
       overflow: hidden !important;
     }
 
+    body > .shell > aside.sidebar #progressPanel .material-heading.stacked,
     body > .shell > aside.sidebar #imageMaterialList .material-heading.stacked,
     body > .shell > aside.sidebar #scriptMaterialList .material-heading.stacked,
     body > .shell > aside.sidebar #recycleBinList .material-heading.stacked,
@@ -400,6 +404,7 @@
       gap: 8px !important;
     }
 
+    body > .shell > aside.sidebar #progressPanel .material-heading,
     body > .shell > aside.sidebar #imageMaterialList .material-heading,
     body > .shell > aside.sidebar #scriptMaterialList .material-heading,
     body > .shell > aside.sidebar #recycleBinList .material-heading,
@@ -412,6 +417,7 @@
       gap: 2px !important;
     }
 
+    body > .shell > aside.sidebar #progressPanel .material-heading .material-meta,
     body > .shell > aside.sidebar #imageMaterialList .material-heading .material-meta,
     body > .shell > aside.sidebar #scriptMaterialList .material-heading .material-meta,
     body > .shell > aside.sidebar #recycleBinList .material-heading .material-meta,
@@ -421,6 +427,7 @@
       white-space: nowrap !important;
     }
 
+    body > .shell > aside.sidebar #progressPanel .material-meta,
     body > .shell > aside.sidebar #imageMaterialList .material-meta,
     body > .shell > aside.sidebar #scriptMaterialList .material-meta,
     body > .shell > aside.sidebar #recycleBinList .material-meta,
@@ -431,6 +438,7 @@
       white-space: nowrap !important;
     }
 
+    body > .shell > aside.sidebar #progressPanel .material-actions,
     body > .shell > aside.sidebar #imageMaterialList .material-actions,
     body > .shell > aside.sidebar #scriptMaterialList .material-actions,
     body > .shell > aside.sidebar #recycleBinList .material-actions,
@@ -443,6 +451,7 @@
       gap: 8px !important;
     }
 
+    body > .shell > aside.sidebar #progressPanel .material-actions > button,
     body > .shell > aside.sidebar #imageMaterialList .material-actions > button,
     body > .shell > aside.sidebar #scriptMaterialList .material-actions > button,
     body > .shell > aside.sidebar #recycleBinList .material-actions > button,
@@ -452,6 +461,7 @@
       white-space: nowrap !important;
     }
 
+    body > .shell > aside.sidebar #progressPanel .material-actions > button.material-library-button,
     body > .shell > aside.sidebar #imageMaterialList .material-actions > button.material-library-button,
     body > .shell > aside.sidebar #scriptMaterialList .material-actions > button.material-library-button,
     body > .shell > aside.sidebar #recycleBinList .material-actions > button.material-library-button,
@@ -467,6 +477,7 @@
       white-space: nowrap !important;
     }
 
+    body > .shell > aside.sidebar #progressPanel > div.material-card,
     body > .shell > aside.sidebar #imageMaterialList > div.material-card,
     body > .shell > aside.sidebar #scriptMaterialList > div.material-card,
     body > .shell > aside.sidebar #recycleBinList > div.material-card,

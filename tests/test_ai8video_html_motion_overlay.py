@@ -322,6 +322,72 @@ class AI8VideoHtmlMotionOverlayTest(unittest.TestCase):
         self.assertEqual(command[first_map + 1], "0:v:0")
         self.assertEqual(command[second_map + 1], "1:a:0")
 
+    def test_review_timeline_adjustment_rebuilds_preview_without_touching_official_video(self) -> None:
+        source = self.root / "result.mp4"
+        source.write_bytes(b"official")
+        review_root = self.root / "reviews"
+
+        def render(candidate: Path) -> dict:
+            candidate.write_bytes(b"preview")
+            return {
+                "status": "applied",
+                "durationSeconds": 10.0,
+                "motionArtifact": {
+                    "design": {"palette": {"accent": "#fff", "support": "#fff", "text": "#fff"}},
+                    "scenes": [
+                        {
+                            "start": 1.0,
+                            "end": 3.0,
+                            "html": "<p>第一段</p>",
+                            "css": "",
+                            "zone": "top-left",
+                            "ids": [],
+                            "animations": [],
+                        }
+                    ],
+                },
+                "motionMedia": {"width": 720, "height": 1280, "durationSeconds": 10.0},
+                "motionFontFamily": "",
+            }
+
+        def rerender_layer(_artifact, _media, target, **_kwargs):  # noqa: ANN001
+            target.write_bytes(b"rerendered-overlay")
+            return "<html></html>", {}
+
+        with patch.object(html_motion_review, "HTML_MOTION_REVIEW_ROOT", review_root):
+            prepared = html_motion_review.prepare_html_motion_review(source, "video/result.mp4", render)
+            layer = html_motion_review.html_motion_review_layer_path("video/result.mp4")
+            layer.write_bytes(b"overlay")
+            with patch.object(
+                html_motion_review,
+                "probe_media_video_info",
+                return_value={"width": 720, "height": 1280, "durationSeconds": 10.0},
+            ), patch.object(
+                html_motion_review,
+                "resolve_ffmpeg_bin",
+                return_value="ffmpeg",
+            ), patch.object(
+                html_motion_review,
+                "composite_transparent_layer",
+                side_effect=lambda candidate, *_args, **_kwargs: candidate.write_bytes(b"shifted-preview"),
+            ), patch.object(
+                html_motion_review,
+                "render_html_motion_artifact_layer",
+                side_effect=rerender_layer,
+            ) as rerender:
+                adjusted = html_motion_review.adjust_html_motion_review_timeline(
+                    source,
+                    "video/result.mp4",
+                    [{"index": 0, "startSeconds": 4.2}],
+                )
+            preview = html_motion_review.resolve_html_motion_review_video(prepared["reviewId"])
+
+        self.assertEqual(source.read_bytes(), b"official")
+        self.assertEqual(preview.read_bytes(), b"shifted-preview")
+        self.assertEqual(adjusted["timelineChunks"][0]["startSeconds"], 4.2)
+        self.assertEqual(adjusted["timelineChunks"][0]["endSeconds"], 6.2)
+        self.assertEqual(rerender.call_args.args[0]["scenes"][0]["start"], 4.2)
+
     def test_alpha_validation_rejects_nontransparent_layer(self) -> None:
         with patch.object(html_motion_overlay, "probe_media_video_info", return_value={"pixelFormat": "yuv420p"}):
             with self.assertRaisesRegex(RuntimeError, "透明"):
@@ -472,6 +538,7 @@ class AI8VideoHtmlMotionOverlayTest(unittest.TestCase):
 
         command = runner.call_args.args[0]
         self.assertEqual(command[0], "ffmpeg-test")
+        self.assertIn("setpts=PTS+0.000/TB", command[command.index("-filter_complex") + 1])
         layer_input_index = command.index(str(layer))
         self.assertEqual(command[layer_input_index - 3:layer_input_index - 1], ["-c:v", "libvpx-vp9"])
         self.assertIn("overlay=eof_action=pass:shortest=0", command[command.index("-filter_complex") + 1])

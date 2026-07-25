@@ -405,8 +405,9 @@
       saveButton?.addEventListener('click', async () => {
         saveButton.disabled = true;
         try {
-          const data = await postVideoPrompt(key, textarea.value);
-          status.textContent = data.text ? `已保存，${data.textChars} 字` : '视频提示词已删除';
+          const text = String(textarea.value || '').trim();
+          updateVideoPreviewExtensionState(key, { videoPrompt: text });
+          status.textContent = text ? `已保存，${text.length} 字` : '视频提示词已删除';
           await syncVideoPreviewExtensionGenerateButton(key);
         } catch (error) {
           status.textContent = error?.message || '保存视频提示词失败';
@@ -414,13 +415,9 @@
           saveButton.disabled = false;
         }
       });
-      try {
-        const data = await postVideoPrompt(key);
-        textarea.value = data.text || '';
-        status.textContent = data.text ? `当前视频提示词，${data.textChars} 字` : '当前没有视频提示词';
-      } catch (error) {
-        status.textContent = error?.message || '读取视频提示词失败';
-      }
+      const text = String(loadVideoPreviewExtensionStates()[key]?.videoPrompt || '').trim();
+      textarea.value = text;
+      status.textContent = text ? `当前延续视频提示词，${text.length} 字` : '当前没有延续视频提示词';
     }
 
     async function postVideoPrompt(userGeneratedKey, text) {
@@ -445,12 +442,7 @@
         void reconcileVideoPreviewExtensionGeneration(userGeneratedKey);
         return;
       }
-      try {
-        const data = await postVideoPrompt(userGeneratedKey);
-        button.disabled = !String(data.text || '').trim();
-      } catch (_error) {
-        button.disabled = true;
-      }
+      button.disabled = !String(savedState.videoPrompt || '').trim();
     }
 
     async function reconcileVideoPreviewExtensionGeneration(userGeneratedKey) {

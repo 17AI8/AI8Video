@@ -7,18 +7,11 @@
   <link rel="icon" type="image/webp" href="/static/images/ai8video-avatar.webp?v=20260723-0739">
   <link rel="stylesheet" href="/static/script-knowledge.css?v=20260724-18">
   <!-- Updated: 2026-06-23 15:17 CST - 花字调色预览连体按钮圆角修正 -->
-  <link rel="stylesheet" href="/static/workbench.css?v=20260724-41">
+  <link rel="stylesheet" href="/static/workbench.css?v=20260725-14">
 </head>
 <body>
   <div class="shell">
     <aside class="sidebar">
-      <div class="brand">
-        <img class="mark" src="/static/images/ai8video-avatar.webp?v=20260723-0739" alt="AI8video 头像" width="40" height="40">
-        <div class="brand-copy" hidden>
-          <h1 id="brandName">AI8video</h1>
-          <p id="brandSlug">批量创作助手</p>
-        </div>
-      </div>
       <div id="progressPanel"></div>
       <div id="sidebarResourceList">
         <div id="imageMaterialList" class="material-list"></div>
@@ -53,7 +46,10 @@
           <button id="scriptReferenceButton" type="button" class="system-prompt-entry-button script-reference-entry-button" aria-expanded="false" aria-controls="scriptReferenceDrawer">知识库参考</button>
           <button id="flowerTextButton" type="button" class="system-prompt-entry-button flower-text-entry-button" aria-expanded="false" aria-controls="flowerTextDrawer">花字</button>
           <button id="generationModeButton" type="button" class="system-prompt-entry-button generation-mode-entry-button" aria-expanded="false" aria-controls="generationModeDrawer">并发模式</button>
-          <button id="smartSplitButton" type="button" class="system-prompt-entry-button generation-mode-entry-button" aria-expanded="false" aria-controls="smartSplitDrawer">智能分集</button>
+          <div class="split-mode-switch" role="group" aria-label="分集模式">
+            <button id="smartSplitButton" type="button" class="system-prompt-entry-button generation-mode-entry-button split-mode-option" aria-expanded="false" aria-controls="smartSplitDrawer">智能分集</button>
+            <button id="manualSplitButton" type="button" class="system-prompt-entry-button generation-mode-entry-button split-mode-option" aria-expanded="false" aria-controls="smartSplitDrawer">手动批量</button>
+          </div>
           <button id="htmlMotionOverlayButton" type="button" class="system-prompt-entry-button generation-mode-entry-button" aria-expanded="false" aria-controls="htmlMotionOverlayDrawer" hidden>HTML 动效</button>
         </div>
         <div id="systemPromptDrawer" class="system-prompt-drawer" aria-hidden="true">
@@ -431,6 +427,10 @@
           <div id="resultModalSub" class="modal-sub"></div>
         </div>
         <div class="material-actions">
+          <div id="resultModalBatchMergeGroup" class="result-batch-merge-group">
+            <button id="resultModalBatchMergeButton" type="button" class="button-secondary" aria-pressed="false">批量合并</button>
+            <button id="resultModalBatchMergeConfirmButton" type="button" class="button-secondary hidden">确认</button>
+          </div>
           <button id="resultModalRefreshButton" type="button" class="button-secondary">刷新</button>
           <button id="resultModalOpenFolderButton" type="button" class="button-secondary">打开文件夹</button>
           <button id="resultModalCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
@@ -556,6 +556,6 @@
       </div>
     </div>
   </div>
-    <script src="/static/workbench.js?v=20260724-61"></script>
+    <script src="/static/workbench.js?v=20260725-13"></script>
 </body>
 </html>

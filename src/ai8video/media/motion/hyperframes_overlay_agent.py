@@ -54,11 +54,15 @@ class HtmlMotionSemanticHarness:
     def run(self) -> AgentRunResult:
         self._trace = []
         self._last_error = ""
+        candidates: list[dict[str, Any]] = []
         for turn in range(1, self._max_turns + 1):
             raw = str(self._llm(self._build_turn_prompt()) or "").strip()
             audit, semantic = _parse_reviewed_semantic(raw)
             error = self._submission_error(audit, semantic)
-            self._trace.append({"turn": turn, "audit": audit, "error": error})
+            score = _candidate_score(audit, semantic, error)
+            self._trace.append({"turn": turn, "audit": audit, "error": error, "score": score})
+            if semantic:
+                candidates.append({"turn": turn, "audit": audit, "semantic": semantic, "score": score})
             if not error:
                 return AgentRunResult(
                     semantic=normalize_semantic_spec(semantic, self._media, self._dialogue),
@@ -68,7 +72,32 @@ class HtmlMotionSemanticHarness:
                 )
             self._last_error = error
             self._notify_retry(turn, audit, error, raw)
-        raise ValueError(self._last_error or "AI 未返回可用的 HTML 动效方案")
+        return self._best_effort_result(candidates)
+
+    def _best_effort_result(self, candidates: list[dict[str, Any]]) -> AgentRunResult:
+        all_explicitly_rejected = all(
+            trace.get("audit", {}).get("passed") is False
+            for trace in self._trace
+        )
+        if not candidates or not all_explicitly_rejected:
+            raise ValueError(self._last_error or "AI 未返回可用的 HTML 动效方案")
+        chosen = max(candidates, key=lambda item: (item["score"], item["turn"]))
+        semantic = _repair_final_semantic(chosen["semantic"], self._media, self._dialogue)
+        normalized = normalize_semantic_spec(semantic, self._media, self._dialogue)
+        score = int(chosen["score"])
+        message = f"未完全通过，已采用最高分方案（{score}分）"
+        if self._retry_callback:
+            self._retry_callback({
+                "message": message,
+                "warnings": [message],
+                "streamDelta": f"\n\n{message}\n",
+            })
+        return AgentRunResult(
+            semantic=normalized,
+            turns=int(chosen["turn"]),
+            audit={**chosen["audit"], "passed": False, "fallback": True, "score": score, "summary": message},
+            tool_trace=list(self._trace),
+        )
 
     def _submission_error(self, audit: dict[str, Any], semantic: dict[str, Any]) -> str:
         if not semantic:
@@ -88,15 +117,18 @@ class HtmlMotionSemanticHarness:
         if self._retry_callback is None:
             return
         result = _audit_summary(audit.get("summary") if audit else error)
+        _, semantic = _parse_reviewed_semantic(raw)
+        score = _candidate_score(audit, semantic, error)
         self._retry_callback({
             "retryCount": self._retry_count,
             "retryLimit": max(0, self._max_turns - 1),
-            "auditResult": result,
+            "auditResult": f"{result}（{score}分）",
             "retryReason": result,
             "attemptTrace": {
                 "attempt": turn,
                 "responseJson": _safe_json_value(raw),
                 "aiAudit": audit,
+                "score": score,
                 "localValidationError": error,
             },
         })
@@ -175,9 +207,9 @@ class HtmlMotionSemanticHarness:
 11. 提交前必须自审：所有 chunkIndex 均已覆盖、顺序正确、长块已概括而非省略、primary/secondary 未填反。
 
 严格输出格式：
-{{"audit":{{"passed":true,"summary":"审核通过"}},"semantic":{{{interval_field}"designDirection":"signal","layoutRecipe":"signal-frame","componentRecipes":[],"motionRecipe":"kinetic-snap","density":"balanced","anchor":"top-left","palette":{{}},"beats":[{beat_template}]}}}}
+{{"audit":{{"passed":true,"score":95,"summary":"审核通过"}},"semantic":{{{interval_field}"designDirection":"signal","layoutRecipe":"signal-frame","componentRecipes":[],"motionRecipe":"kinetic-snap","density":"balanced","anchor":"top-left","palette":{{}},"beats":[{beat_template}]}}}}
 
-audit.summary 最多 12 个中文字；最终方案通过你的自审时必须返回 passed=true。{feedback}
+audit.score 必须为 0–100 的整数，每次都要评分；audit.summary 最多 12 个中文字；最终方案通过你的自审时必须返回 passed=true。{feedback}
 """.strip()
 
 
@@ -258,6 +290,63 @@ def _safe_json_value(raw: str) -> Any:
         return _parse_json_object(raw)
     except Exception:
         return {"raw": str(raw or "")[:8000]}
+
+
+def _candidate_score(audit: dict[str, Any], semantic: dict[str, Any], error: str) -> int:
+    try:
+        score = int(audit.get("score"))
+    except (TypeError, ValueError):
+        score = 80 if audit.get("passed") is not False else 55
+    if not semantic:
+        return 0
+    penalties = (
+        (("beats", "拍数"), 18),
+        (("过长", ">6字"), 10),
+        (("缺少", "不完整", "为空"), 20),
+        (("重复", "顺序"), 12),
+    )
+    for markers, penalty in penalties:
+        if any(marker in error for marker in markers):
+            score -= penalty
+    return max(0, min(100, score))
+
+
+def _repair_final_semantic(
+    semantic: dict[str, Any],
+    media: dict[str, Any],
+    dialogue: str,
+) -> dict[str, Any]:
+    repaired = dict(semantic)
+    interval = (
+        repaired.get("beatIntervalSeconds")
+        if media.get("smartBeatInterval")
+        else media.get("beatIntervalSeconds", 5)
+    )
+    beat_count = target_beat_count(float(media["durationSeconds"]), dialogue, beat_interval_seconds=interval)
+    beats = repaired.get("beats") if isinstance(repaired.get("beats"), list) else []
+    chunks = _dialogue_chunks(dialogue) or [{"index": 1, "text": "视频重点"}]
+    repaired["beats"] = [
+        _repair_final_beat(beats[index] if index < len(beats) else {}, chunks, index)
+        for index in range(beat_count)
+    ]
+    return repaired
+
+
+def _repair_final_beat(raw: Any, chunks: list[dict[str, Any]], index: int) -> dict[str, Any]:
+    item = raw if isinstance(raw, dict) else {}
+    try:
+        chunk_index = max(1, int(item.get("chunkIndex") or (index % len(chunks)) + 1))
+    except (TypeError, ValueError):
+        chunk_index = (index % len(chunks)) + 1
+    source = str(chunks[(chunk_index - 1) % len(chunks)].get("text") or "视频重点")
+    primary = _short_beat_text(item.get("primary"), source[:6] or "视频")
+    secondary = _short_beat_text(item.get("secondary"), source[6:12] or "重点")
+    return {"chunkIndex": chunk_index, "primary": primary, "secondary": secondary}
+
+
+def _short_beat_text(value: Any, fallback: str) -> str:
+    text = re.sub(r"\s+", "", str(value or "")).strip("，。！？!?；;：:")
+    return (text or fallback or "重点")[:6]
 
 
 def _dialogue_chunks(value: str) -> list[dict[str, Any]]:

@@ -39,6 +39,7 @@
     }
 
     /* 让普通栏目保留独立卡片边界，回收站使用更紧凑的高度。 */
+    body > .shell > aside.sidebar #progressPanel > div.material-card,
     body > .shell > aside.sidebar #imageMaterialList > div.material-card,
     body > .shell > aside.sidebar #scriptMaterialList > div.material-card,
     body > .shell > aside.sidebar #recycleBinList > div.material-card,

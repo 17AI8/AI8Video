@@ -64,7 +64,7 @@ class AI8VideoConversationControllerAiInterpreterTest(unittest.TestCase):
             dry_run=True,
         )
 
-    def test_merge_message_prefers_ai_interpretation_for_freeform_count_and_topic(self) -> None:
+    def test_merge_message_uses_ai_topic_but_not_text_count(self) -> None:
         pipeline = _PipelineWithInterpreter()
         agent = AI8VideoConversationController(pipeline)  # type: ignore[arg-type]
         state = ConversationState(session_id="ai-interpret")
@@ -72,19 +72,18 @@ class AI8VideoConversationControllerAiInterpreterTest(unittest.TestCase):
         agent._merge_message(state, "来一组重大消息，做成矩阵")
 
         self.assertEqual(state.draft.mode, "batch_videos")
-        self.assertEqual(state.draft.video_count, 10)
+        self.assertIsNone(state.draft.video_count)
         self.assertEqual(state.draft.core_keywords, "重大消息")
         self.assertIn("发布会悬念感", state.draft.style_hint)
         self.assertEqual(len(pipeline.llm_prompts), 1)
 
-    def test_merge_message_falls_back_to_local_count_when_ai_interpreter_times_out(self) -> None:
+    def test_merge_message_does_not_use_local_text_count_when_ai_interpreter_times_out(self) -> None:
         agent = AI8VideoConversationController(_PipelineWithFailingInterpreter())  # type: ignore[arg-type]
         state = ConversationState(session_id="ai-timeout-fallback")
 
         agent._merge_message(state, "10 个，重大消息")
 
-        self.assertEqual(state.draft.mode, "batch_videos")
-        self.assertEqual(state.draft.video_count, 10)
+        self.assertIsNone(state.draft.video_count)
 
     def test_merge_message_does_not_lock_default_one_without_explicit_count(self) -> None:
         pipeline = _PipelineWithInterpreter(
@@ -130,7 +129,7 @@ class AI8VideoConversationControllerAiInterpreterTest(unittest.TestCase):
 
         self.assertIsNone(state.draft.video_count)
 
-    def test_merge_message_keeps_explicit_single_video_count(self) -> None:
+    def test_merge_message_does_not_use_explicit_single_video_text_count(self) -> None:
         pipeline = _PipelineWithInterpreter(
             """
             {
@@ -146,7 +145,7 @@ class AI8VideoConversationControllerAiInterpreterTest(unittest.TestCase):
 
         agent._merge_message(state, "生成 1 条短视频，讲清 Temu 店铺类型。")
 
-        self.assertEqual(state.draft.video_count, 1)
+        self.assertIsNone(state.draft.video_count)
 
     def test_batch_request_uses_ai_intent_before_local_patterns(self) -> None:
         pipeline = _PipelineWithInterpreter(

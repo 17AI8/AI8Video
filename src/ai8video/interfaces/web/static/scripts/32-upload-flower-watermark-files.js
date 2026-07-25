@@ -3,7 +3,6 @@
       if (!imageFiles.length) return;
       const isWm2 = wmIdx === '2';
       const wmLabel = isWm2 ? '水印 2' : '水印 1';
-      fetch('http://127.0.0.1:7352/ingest/a6129daf-2746-4e4a-84ac-54d0dd03e374',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cad45c'},body:JSON.stringify({sessionId:'cad45c',hypothesisId:'H1-H4',location:'uploadFlowerWatermarkFiles:start',message:'upload start',data:{wmIdx,wmLabel,watermarkEnabled:state.flowerText?.watermarkEnabled,watermarkImage:state.flowerText?.watermarkImage,watermark2Enabled:state.flowerText?.watermark2Enabled,watermark2Image:state.flowerText?.watermark2Image},timestamp:Date.now()})}).catch(()=>{});
       state.flowerText = {
         ...(state.flowerText || {}),
         saving: true,
@@ -11,9 +10,6 @@
         notice: `${wmLabel}上传中...`,
       };
       renderFlowerTextButton();
-      // #region debug-cad45c flower-text flicker tracing
-      logFlowerTextFlicker('uploadFlowerWatermarkFiles:firstRender', 'upload set saving, SKIPPED drawer render (setFlowerTextSaveStatus instead)', { wmIdx, notice: state.flowerText?.notice, saving: state.flowerText?.saving });
-      // #endregion
       setFlowerTextSaveStatus(state.flowerText.notice);
       try {
         await ensureFlowerWatermarkLibraryReady();
@@ -36,21 +32,15 @@
           : { watermarkEnabled: true, watermarkImage: nextWatermarkImage, watermarkOpacity: 100 };
         state.flowerText = {
           ...(state.flowerText || {}),
-          enabled: true,
           ...enabledPatch,
           saving: false,
           error: '',
           notice: `${wmLabel}已上传，保存中...`,
         };
-        fetch('http://127.0.0.1:7352/ingest/a6129daf-2746-4e4a-84ac-54d0dd03e374',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cad45c'},body:JSON.stringify({sessionId:'cad45c',hypothesisId:'H1-H4',location:'uploadFlowerWatermarkFiles:beforeSave',message:'state before saveFlowerText',data:{watermarkEnabled:state.flowerText?.watermarkEnabled,watermarkImage:state.flowerText?.watermarkImage,watermark2Enabled:state.flowerText?.watermark2Enabled,watermark2Image:state.flowerText?.watermark2Image,enabledPatch},timestamp:Date.now()})}).catch(()=>{});
         renderFlowerTextButton();
-        // #region debug-cad45c flower-text flicker tracing
-        logFlowerTextFlicker('uploadFlowerWatermarkFiles:secondRender', 'upload success then render drawer again', { wmIdx, notice: state.flowerText?.notice, saving: state.flowerText?.saving, watermarkImage: state.flowerText?.watermarkImage, watermark2Image: state.flowerText?.watermark2Image });
-        // #endregion
         renderFlowerTextDrawer();
         scheduleFlowerTextPreviewRefresh(0);
         await saveFlowerText({
-          enabled: true,
           ...enabledPatch,
         });
         renderUserMaterials();
@@ -157,12 +147,8 @@
 
     async function saveFlowerText(patch = {}, options = {}) {
       syncFlowerTextEditorDraft();
-      fetch('http://127.0.0.1:7352/ingest/a6129daf-2746-4e4a-84ac-54d0dd03e374',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cad45c'},body:JSON.stringify({sessionId:'cad45c',hypothesisId:'H4',location:'saveFlowerText:start',message:'saveFlowerText called',data:{patchKeys:Object.keys(patch||{})},timestamp:Date.now()})}).catch(()=>{});
       const editorHadFocus = document.activeElement?.id === 'flowerTextEditor';
       const shouldRerender = options.rerender !== false && !editorHadFocus;
-      // #region debug-cad45c flower-text flicker tracing
-      logFlowerTextFlicker('saveFlowerText:rerenderDecision', 'saveFlowerText rerender decision', { shouldRerender, editorHadFocus, patchKeys: Object.keys(patch || {}) });
-      // #endregion
       clearFlowerTextAutoSaveTimer();
       const previous = {
         enabled: !!state.flowerText?.enabled,
@@ -195,7 +181,6 @@
         previewBackgroundColor: normalizeFlowerTextColor(state.flowerText?.previewBackgroundColor, '#303844'),
         previewBackgroundImage: normalizeUserMaterialImageRelativePath(state.flowerText?.previewBackgroundImage),
       };
-      fetch('http://127.0.0.1:7352/ingest/a6129daf-2746-4e4a-84ac-54d0dd03e374',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cad45c'},body:JSON.stringify({sessionId:'cad45c',hypothesisId:'H4',location:'saveFlowerText:previous',message:'previous from state',data:{watermarkEnabled:previous.watermarkEnabled,watermarkImage:previous.watermarkImage,watermark2Enabled:previous.watermark2Enabled,watermark2Image:previous.watermark2Image,patchWatermarkEnabled:patch?.watermarkEnabled,patchWatermarkImage:patch?.watermarkImage,patchWatermark2Enabled:patch?.watermark2Enabled,patchWatermark2Image:patch?.watermark2Image},timestamp:Date.now()})}).catch(()=>{});
       const next = {
         ...previous,
         ...(patch || {}),
@@ -240,9 +225,6 @@
       };
       renderFlowerTextButton();
       if (shouldRerender) {
-        // #region debug-cad45c flower-text flicker tracing
-        logFlowerTextFlicker('saveFlowerText:beforeRenderDrawer', 'saveFlowerText triggers drawer render SKIPPED (setFlowerTextSaveStatus instead)', { patchKeys: Object.keys(patch || {}), saving: state.flowerText?.saving, notice: state.flowerText?.notice });
-        // #endregion
         setFlowerTextSaveStatus(state.flowerText.notice);
       } else {
         setFlowerTextSaveStatus(state.flowerText.notice);
@@ -250,7 +232,6 @@
       const requestPayload = { ...next };
       return enqueueFlowerTextSave(async () => {
         try {
-          fetch('http://127.0.0.1:7352/ingest/a6129daf-2746-4e4a-84ac-54d0dd03e374',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cad45c'},body:JSON.stringify({sessionId:'cad45c',hypothesisId:'H1-H4',location:'saveFlowerText:send',message:'sending to /api/video-text-overlay',data:{nextWatermarkEnabled:requestPayload.watermarkEnabled,nextWatermarkImage:requestPayload.watermarkImage,nextWatermark2Enabled:requestPayload.watermark2Enabled,nextWatermark2Image:requestPayload.watermark2Image},timestamp:Date.now()})}).catch(()=>{});
           const res = await fetch('/api/video-text-overlay', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -261,7 +242,6 @@
             throw new Error(data.error || `花字设置保存失败（HTTP ${res.status}）`);
           }
           if (saveSeq !== state.flowerText.autoSaveSeq) return;
-          fetch('http://127.0.0.1:7352/ingest/a6129daf-2746-4e4a-84ac-54d0dd03e374',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cad45c'},body:JSON.stringify({sessionId:'cad45c',hypothesisId:'H1',location:'saveFlowerText:response',message:'server response data',data:{dataWatermarkEnabled:data.watermarkEnabled,dataWatermarkImage:data.watermarkImage,dataWatermark2Enabled:data.watermark2Enabled,dataWatermark2Image:data.watermark2Image,allKeys:Object.keys(data)},timestamp:Date.now()})}).catch(()=>{});
           const liveEditorText = document.getElementById('flowerTextEditor') ? readFlowerTextEditorText() : null;
           state.flowerText = {
             ...(state.flowerText || {}),
@@ -318,9 +298,6 @@
           if (saveSeq === state.flowerText.autoSaveSeq) {
             renderFlowerTextButton();
             if (shouldRerender) {
-              // #region debug-cad45c flower-text flicker tracing
-              logFlowerTextFlicker('saveFlowerText:finallyRender', 'post-API finally render drawer', { notice: state.flowerText?.notice, saving: state.flowerText?.saving });
-              // #endregion
               if (!state.flowerText?._suppressRender) renderFlowerTextDrawer();
             }
             scheduleFlowerTextPreviewRefresh(0);
@@ -334,14 +311,12 @@
       const changes = typeof patch === 'boolean' ? { concurrentGeneration: patch } : (patch || {});
       const nextMode = {
         concurrentGeneration: !!(changes.concurrentGeneration ?? previous.concurrentGeneration),
-        smartSplit: !!(changes.smartSplit ?? previous.smartSplit),
+        splitMode: (changes.splitMode ?? previous.splitMode) === 'manual' ? 'manual' : 'smart',
+        manualVideoCount: Math.max(1, Math.min(12, Number(changes.manualVideoCount ?? previous.manualVideoCount ?? 2))),
         confirmSmartSplit: !!(changes.confirmSmartSplit ?? previous.confirmSmartSplit),
         tailFrameChaining: !!(changes.tailFrameChaining ?? previous.tailFrameChaining),
       };
-      if (!nextMode.smartSplit) {
-        nextMode.confirmSmartSplit = false;
-        nextMode.tailFrameChaining = false;
-      }
+      nextMode.smartSplit = nextMode.splitMode === 'smart';
       if (nextMode.tailFrameChaining) nextMode.concurrentGeneration = false;
       state.generationMode = {
         ...(state.generationMode || {}),
@@ -367,6 +342,8 @@
           ...(state.generationMode || {}),
           concurrentGeneration: !!data.concurrentGeneration,
           smartSplit: !!data.smartSplit,
+          splitMode: data.splitMode === 'manual' ? 'manual' : 'smart',
+          manualVideoCount: Math.max(1, Math.min(12, Number(data.manualVideoCount || 2))),
           confirmSmartSplit: !!data.confirmSmartSplit,
           tailFrameChaining: !!data.tailFrameChaining,
           saving: false,

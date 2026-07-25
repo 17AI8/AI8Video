@@ -113,10 +113,10 @@
       flex: 0 0 auto;
       padding: 3px 8px;
       border-radius: 999px;
-      background: rgba(10, 118, 78, 0.1);
-      color: #0a764e;
+      background: var(--brand-soft);
+      color: var(--brand);
       font-size: 12px;
-      font-weight: 800;
+      font-weight: 700;
       line-height: 1.4;
       opacity: 0;
       transform: translateY(-2px);
@@ -292,49 +292,65 @@
 
     .settings-tabs {
       display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      padding: 4px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: rgba(255, 255, 255, 0.74);
-      margin-bottom: 12px;
+      flex-wrap: nowrap;
+      gap: 2px;
+      padding: 0;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      border-radius: 0;
+      background: transparent;
+      margin-bottom: 14px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .settings-tabs::-webkit-scrollbar {
+      display: none;
     }
 
     .settings-tab {
-      min-height: 32px;
+      flex: 0 0 auto;
+      min-height: 34px;
       border: 0;
-      border-radius: 8px;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
       background: transparent;
       color: var(--muted);
       padding: 0 12px;
       font-size: 13px;
-      font-weight: 900;
+      font-weight: 600;
       box-shadow: none;
+      transition: color 140ms ease, border-color 140ms ease;
+    }
+
+    .settings-tab:hover {
+      color: var(--text);
     }
 
     .settings-tab.active {
-      background: var(--brand);
-      color: #fff;
+      background: transparent;
+      color: var(--brand);
+      border-bottom-color: var(--brand);
+      font-weight: 700;
     }
 
     .settings-section-refresh,
     .settings-section-cleanup {
       min-height: 32px;
-      border: 1px solid rgba(15, 106, 78, 0.18);
+      border: 1px solid color-mix(in srgb, var(--brand) 22%, transparent);
       border-radius: 8px;
       background: rgba(255, 255, 255, 0.88);
       color: var(--brand);
       padding: 0 10px;
       font-size: 12px;
-      font-weight: 900;
+      font-weight: 700;
       box-shadow: none;
       white-space: nowrap;
     }
 
     .settings-section-refresh:hover {
-      background: rgba(15, 106, 78, 0.08);
-      border-color: rgba(15, 106, 78, 0.28);
+      background: var(--brand-soft);
+      border-color: color-mix(in srgb, var(--brand) 36%, transparent);
     }
 
     .settings-section-refresh:disabled,
@@ -365,7 +381,7 @@
     .settings-archive-total {
       color: var(--muted);
       font-size: 12px;
-      font-weight: 800;
+      font-weight: 600;
       white-space: nowrap;
     }
 
@@ -382,9 +398,10 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      margin: 0;
       color: var(--text);
       font-size: 14px;
-      font-weight: 900;
+      font-weight: 700;
       line-height: 1.35;
     }
 
@@ -421,7 +438,7 @@
     .settings-row-title {
       display: block;
       font-size: 13px;
-      font-weight: 900;
+      font-weight: 700;
       color: var(--text);
       line-height: 1.35;
     }
@@ -471,6 +488,6 @@
       color: var(--muted);
       box-shadow: none;
       font-size: 12px;
-      font-weight: 900;
+      font-weight: 700;
       white-space: nowrap;
     }

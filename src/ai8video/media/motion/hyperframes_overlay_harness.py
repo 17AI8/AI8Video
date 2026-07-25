@@ -64,7 +64,7 @@ def build_hyperframes_overlay(
             video,
             media,
             dialogue_text,
-            max_turns=max(1, int(quality_retry_count) + 1),
+            max_turns=max(1, int(quality_retry_count)),
             retry_callback=progress_callback,
         )
     except _LegacyArtifactPath as legacy:

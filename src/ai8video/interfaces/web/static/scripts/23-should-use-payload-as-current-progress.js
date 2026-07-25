@@ -12,7 +12,7 @@
         sessionId,
         text,
         startedAt: Date.now(),
-        count: Number(options.count || 0) || inferVideoCountFromText(text),
+        count: Number(options.count || 0),
         kind: String(options.kind || ''),
         backendProgress: null,
         statusPollInflight: false,
@@ -260,7 +260,7 @@
             const jobId = String(item.jobId || '').trim();
             const asset = (jobId && recentByJobId.get(jobId)) || recentByVideo.get(Number(item.videoIndex || 0));
             if (asset) return asset;
-            return buildProgressStatusResultItem(item, index);
+            return buildProgressStatusResultItem(item, index, backendItems);
           })
         : recentItems;
       const doneCount = videos.filter((item) => item.stage === '已生成').length;

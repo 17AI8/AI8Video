@@ -115,7 +115,7 @@
       }
       if (payload.meta?.operation === 'error') {
         blocks.push(`
-          <div class="mini-card">
+          <div class="assistant-error-message">
             <strong>本轮真实任务未完成</strong>
             <div>${escapeHtml(humanizeAssistantError(payload.text))}</div>
           </div>
@@ -126,9 +126,13 @@
       if (payload.meta?.operation === 'pending' || hasAgentProgress) {
         const pending = normalizePendingStatusProgress(renderedPendingStatus || payload.pendingStatus || {});
         const historicalPending = isHistoricalMessage;
-        const displayedPending = historicalPending ? buildHistoricalPendingSnapshot(pending) : pending;
+        const readOnlyRecovery = pending.readOnlyRecovery || pending.generationProgress?.readOnlyRecovery;
+        const staticPending = historicalPending || readOnlyRecovery;
+        const displayedPending = staticPending
+          ? buildHistoricalPendingSnapshot(pending, readOnlyRecovery ? '已中断，待重试' : '历史进度快照')
+          : pending;
         const pendingProgress = buildPendingProgressFromRecentResults(displayedPending);
-        const pendingOverview = buildProgressOverview({ videos: pendingProgress.videos, isActive: !historicalPending });
+        const pendingOverview = buildProgressOverview({ videos: pendingProgress.videos, isActive: !staticPending });
         const pendingActive = !historicalPending && isPendingStatusActive(pending);
         const pendingTitle = historicalPending
           ? '历史任务进度快照'
@@ -145,7 +149,7 @@
             })
           : '';
         blocks.push(`
-          <div class="mini-card pending-card${historicalPending ? ' is-history' : ''}">
+          <div class="mini-card pending-card${staticPending ? ' is-history' : ''}">
             <div class="pending-card-head">
               <div class="pending-card-title">
                 <strong>${escapeHtml(pendingTitle)}</strong>
@@ -185,6 +189,9 @@
           </div>
         `);
       }
+      if (payload.meta?.guide && isActiveGuide && String(payload.meta.guide.kind || '') === 'smart_split_confirmation') {
+        blocks.push(renderSmartSplitPlanOverview(payload.meta.guide));
+      }
       if (payload.meta?.guide && isActiveGuide) {
         blocks.push(renderCompletionGuide(payload.meta.guide));
       }
@@ -194,7 +201,7 @@
       return blocks.join('');
     }
 
-    function buildHistoricalPendingSnapshot(pending = {}) {
+    function buildHistoricalPendingSnapshot(pending = {}, statusLabel = '历史进度快照') {
       const progress = pending.generationProgress || {};
       const items = Array.isArray(progress.items) ? progress.items.map((item) => {
         const status = String(item?.status || '').trim();
@@ -202,7 +209,7 @@
           ...item,
           status: 'snapshot',
           historicalSnapshot: true,
-          statusLabel: '历史进度快照',
+          statusLabel,
         };
       }) : [];
       return { ...pending, generationProgress: { ...progress, items } };
@@ -443,10 +450,14 @@
         : [];
       const items = progressItems
         .map((item, index) => {
-          if (item?.historicalSnapshot) return buildProgressStatusResultItem(item, index);
+          const itemWithBatch = {
+            ...item,
+            generationBatchId: item?.generationBatchId || progress.generationBatchId || pending.generationBatchId || '',
+          };
+          if (itemWithBatch.historicalSnapshot) return buildProgressStatusResultItem(itemWithBatch, index, progressItems);
           const mirror = findUserGeneratedMirror(item);
           if (mirror?.userGeneratedKey) return mirror;
-          return buildProgressStatusResultItem(item, index);
+          return buildProgressStatusResultItem(itemWithBatch, index, progressItems);
         })
         .filter(Boolean);
       if (!items.length) {
@@ -498,6 +509,104 @@
       `;
     }
 
+    function renderSmartSplitPlanOverview(guide) {
+      const videos = Array.isArray(guide?.plannedVideos) ? guide.plannedVideos : [];
+      if (!videos.length) {
+        return '<div class="smart-split-plan-recovering">正在恢复每集完整规划…</div>';
+      }
+      return `
+        <div class="smart-split-plan-tree" role="tree">
+          ${videos.map((video, index) => `
+            <article class="smart-split-plan-node" role="treeitem" aria-expanded="false">
+              <button type="button" class="smart-split-plan-summary" data-smart-split-plan-toggle>
+                <i class="smart-split-plan-chevron" aria-hidden="true"></i>
+                <span class="smart-split-plan-title">${escapeHtml(video.index || index + 1)}. ${escapeHtml(video.title || '未命名视频')}</span>
+                <span class="smart-split-plan-meta">详情</span>
+              </button>
+              <div class="smart-split-plan-drawer">
+                <div class="smart-split-plan-drawer-slot">
+                  <div class="smart-split-plan-source">${escapeHtml(formatSmartSplitSourceSummary(video.sourceSummary))}</div>
+                  <div class="smart-split-plan-prompt" data-smart-split-plan-prompt>${escapeHtml(video.prompt || '暂无完整提示词')}</div>
+                  <textarea class="smart-split-plan-editor" data-smart-split-plan-editor hidden>${escapeHtml(video.prompt || '')}</textarea>
+                  <div class="smart-split-plan-edit-actions" role="group" aria-label="提示词编辑操作">
+                    <button type="button" data-smart-split-plan-edit>编辑</button>
+                    <button type="button" data-smart-split-plan-save data-video-index="${escapeHtml(video.index || index + 1)}" disabled>保存</button>
+                  </div>
+                </div>
+              </div>
+            </article>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    function formatSmartSplitSourceSummary(sourceSummary) {
+      const value = String(sourceSummary || '').trim();
+      if (!value) return '已生成独立内容方案';
+      if (value.startsWith('来自')) return `参考了${value.slice(2)}`;
+      if (value.startsWith('基于')) return `参考了${value.slice(2)}`;
+      return value.startsWith('参考') ? value : `参考了${value}`;
+    }
+
+    const smartSplitPlanRecoveryInflight = new Set();
+    const smartSplitPlanRecoveryReady = new Set();
+
+    async function recoverLegacySmartSplitPlans(session) {
+      if (!session?.id || smartSplitPlanRecoveryInflight.has(session.id) || smartSplitPlanRecoveryReady.has(session.id)) return;
+      const targets = (session.messages || []).filter((message) => {
+        const guide = message?.payload?.meta?.guide;
+        return guide?.kind === 'smart_split_confirmation';
+      });
+      if (!targets.length) return;
+      smartSplitPlanRecoveryInflight.add(session.id);
+      try {
+        const target = targets.at(-1);
+        let plannedVideos = target.payload.meta.guide.plannedVideos;
+        let fetched = false;
+        if (!Array.isArray(plannedVideos) || !plannedVideos.length) {
+          const res = await fetch(`/api/smart-split-plan?sessionId=${encodeURIComponent(session.id)}`);
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !Array.isArray(data.plannedVideos) || !data.plannedVideos.length) return;
+          plannedVideos = data.plannedVideos;
+          target.payload.meta.guide.plannedVideos = plannedVideos;
+          target.payload.text = compactLegacySmartSplitText(target.payload.text);
+          fetched = true;
+        }
+        const restoreRes = await fetch('/api/smart-split-plan/restore', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: session.id, plannedVideos }),
+        });
+        if (!restoreRes.ok) return;
+        smartSplitPlanRecoveryReady.add(session.id);
+        if (fetched) {
+          persistSessions();
+          if (session.id === state.activeId) renderMessages();
+        }
+      } finally {
+        smartSplitPlanRecoveryInflight.delete(session.id);
+      }
+    }
+
+    function repairRecoveredSmartSplitFailure(session) {
+      const messages = session?.messages;
+      const latest = messages?.at?.(-1);
+      const errorText = String(latest?.payload?.text || latest?.text || '');
+      if (latest?.role !== 'assistant' || !errorText.includes('draft.raw_text is required')) return false;
+      messages.pop();
+      if (messages.at(-1)?.role === 'user' && /确认分集|确认并继续/.test(messages.at(-1).text || '')) {
+        messages.pop();
+      }
+      persistSessions();
+      return true;
+    }
+
+    function compactLegacySmartSplitText(text) {
+      const value = String(text || '');
+      const firstItem = value.search(/\n\s*1[.、]/);
+      return firstItem > 0 ? value.slice(0, firstItem).trim() : value;
+    }
+
     function renderGuideActionButton(action, index, isSmartSplitConfirmation) {
       const value = String(action.value || '');
       const isReplanToggle = isSmartSplitConfirmation && value.trim() === '重新分集';
@@ -540,7 +649,9 @@
         : actions;
       return `
         <div class="mini-card guide-card${isSmartSplitConfirmation ? ' smart-split-confirmation-card' : ''}">
-          <strong>${escapeHtml(guide.title || '补充信息')}</strong>
+          <strong>${escapeHtml(isSmartSplitConfirmation
+            ? '确认后进入视频生成，也可重新分集调整。'
+            : (guide.title || '补充信息'))}</strong>
           ${summaryMarkup}
           ${missingFields.length ? `
             <div class="guide-missing-list">

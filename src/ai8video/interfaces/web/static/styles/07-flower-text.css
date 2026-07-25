@@ -115,6 +115,13 @@
       opacity: 1;
     }
 
+    .flower-text-editor-wrap.is-flower-text-disabled .flower-text-rendered-preview,
+    .flower-text-editor-wrap.is-flower-text-disabled .flower-text-editor,
+    .flower-text-editor-wrap.is-flower-text-disabled .flower-text-drag-handle {
+      opacity: 0 !important;
+      pointer-events: none;
+    }
+
     .flower-text-editor {
       position: absolute;
       left: 50%;
@@ -268,6 +275,10 @@
       opacity: var(--flower-watermark-opacity, 1);
       box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
       overflow: hidden;
+    }
+
+    .flower-text-watermark-drag-handle[hidden] {
+      display: none;
     }
 
     .flower-text-watermark-drag-handle img {

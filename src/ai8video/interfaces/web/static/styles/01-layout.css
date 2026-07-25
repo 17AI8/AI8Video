@@ -55,7 +55,6 @@
       gap: 16px;
     }
 
-    body > .shell > aside.sidebar > .brand,
     body > .shell > aside.sidebar > #progressPanel,
     body > .shell > aside.sidebar > .sidebar-footer {
       grid-column: 1 / -1;
@@ -95,7 +94,6 @@
       grid-column: 1;
     }
 
-    body > .shell > aside.sidebar > .brand,
     body > .shell > aside.sidebar > #progressPanel {
       order: 0;
     }
@@ -206,10 +204,7 @@
       background: transparent;
     }
 
-    body > .shell > aside.sidebar > #progressPanel > div {
-      background: rgba(255, 255, 255, 0.82);
-    }
-
+    body > .shell > aside.sidebar #progressPanel > div.material-card,
     body > .shell > aside.sidebar #imageMaterialList > div.material-card,
     body > .shell > aside.sidebar #scriptMaterialList > div.material-card,
     body > .shell > aside.sidebar #recycleBinList > div.material-card,

@@ -306,19 +306,7 @@
     async function refreshFlowerTextRenderedPreview() {
       if (!state.flowerTextDrawer?.visible) return;
       const payload = flowerTextPayloadFromState();
-      const hasWatermark = (!!payload.watermarkEnabled && !!payload.watermarkImage) || (!!payload.watermark2Enabled && !!payload.watermark2Image);
-      const hasRenderableText = !!payload.text.trim();
-      if (!hasRenderableText && !hasWatermark) {
-        if (state.flowerText?.previewUrl?.startsWith?.('blob:')) {
-          URL.revokeObjectURL(state.flowerText.previewUrl);
-        }
-        state.flowerText = {
-          ...(state.flowerText || {}),
-          previewUrl: '',
-        };
-        setFlowerTextRenderedPreview('');
-        return;
-      }
+      const hasRenderableText = !!payload.enabled && !!payload.text.trim();
       if (!hasRenderableText) {
         if (state.flowerText?.previewUrl?.startsWith?.('blob:')) {
           URL.revokeObjectURL(state.flowerText.previewUrl);
@@ -433,11 +421,25 @@
       wrap.style.setProperty('--flower-text-preview-background-image', imageUrl ? `url('${imageUrl.replace(/'/g, "\\'")}')` : 'none');
     }
 
-    // #region debug-cad45c flower-text flicker tracing
-    function logFlowerTextFlicker(location, message, data = {}) {
-      fetch('http://127.0.0.1:7352/ingest/a6129daf-2746-4e4a-84ac-54d0dd03e374',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cad45c'},body:JSON.stringify({sessionId:'cad45c',hypothesisId:'Hflicker',location,message,data,timestamp:Date.now()})}).catch(()=>{});
+    function syncFlowerTextActivationControls() {
+      const config = state.flowerText || {};
+      const enabled = !!config.enabled;
+      const wrap = document.getElementById('flowerTextEditorWrap');
+      wrap?.classList.toggle('is-flower-text-disabled', !enabled);
+      const editor = document.getElementById('flowerTextEditor');
+      if (editor) editor.disabled = !enabled;
+      document.querySelectorAll('[data-flower-watermark-checkbox]').forEach((checkbox) => {
+        const isWm2 = checkbox.getAttribute('data-flower-watermark-checkbox') === '2';
+        const checked = isWm2 ? !!config.watermark2Enabled : !!config.watermarkEnabled;
+        checkbox.checked = checked;
+        checkbox.closest('.watermark-segment-btn')?.classList.toggle('active', checked);
+      });
+      const watermarkHandle = document.getElementById('flowerTextWatermarkDragHandle');
+      if (watermarkHandle) watermarkHandle.hidden = !config.watermarkEnabled;
+      const watermark2Handle = document.getElementById('flowerTextWatermark2DragHandle');
+      if (watermark2Handle) watermark2Handle.hidden = !config.watermark2Enabled;
+      renderFlowerTextButton();
     }
-    // #endregion
 
     async function saveFlowerWatermarkCheckbox(checked, wmIdx = '1') {
       const isWm2 = wmIdx === '2';
@@ -446,41 +448,14 @@
         : { watermarkEnabled: !!checked };
       state.flowerText = {
         ...(state.flowerText || {}),
-        enabled: !!checked || !!state.flowerText?.enabled,
         ...patch,
         error: '',
         notice: '保存中...',
       };
-      renderFlowerTextButton();
+      syncFlowerTextActivationControls();
       setFlowerTextSaveStatus(state.flowerText.notice);
-      renderFlowerTextDrawer();
       scheduleFlowerTextPreviewRefresh(0);
       await saveFlowerText({
-        enabled: !!checked || !!state.flowerText?.enabled,
         ...patch,
       }, { rerender: false });
     }
-
-    async function saveFlowerWatermarkToggle(checked, wmIdx = '1') {
-      const isWm2 = wmIdx === '2';
-      const patch = isWm2
-        ? { watermark2Enabled: !!checked }
-        : { watermarkEnabled: !!checked };
-      state.flowerText = {
-        ...(state.flowerText || {}),
-        enabled: !!checked || !!state.flowerText?.enabled,
-        ...patch,
-        error: '',
-        notice: '保存中...',
-      };
-      renderFlowerTextButton();
-      // #region debug-cad45c flower-text flicker tracing
-      logFlowerTextFlicker('saveFlowerWatermarkToggle:beforeRenderDrawer', 'toggle triggers drawer render SKIPPED (setFlowerTextSaveStatus instead)', { wmIdx, checked, saving: state.flowerText?.saving, notice: state.flowerText?.notice });
-      // #endregion
-      setFlowerTextSaveStatus(state.flowerText.notice);
-      await saveFlowerText({
-        enabled: !!checked || !!state.flowerText?.enabled,
-        ...patch,
-      });
-    }
-

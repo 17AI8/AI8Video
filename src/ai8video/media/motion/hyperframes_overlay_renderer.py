@@ -117,7 +117,7 @@ def _scene_markup(scene: dict[str, Any], index: int, *, fixed: bool = False) -> 
         zone_class += " hf-fixed-zone"
     return (
         f'<section id="hf-scene-{index + 1}" class="hf-scene clip" '
-        f'data-start="{scene["start"]:.3f}" data-duration="{scene_duration:.3f}" data-track-index="1">'
+        f'data-start="{scene["start"]:.3f}" data-duration="{scene_duration:.3f}" data-track-index="{index + 1}">'
         f'<div class="{zone_class}">{scene["html"]}</div></section>'
     )
 

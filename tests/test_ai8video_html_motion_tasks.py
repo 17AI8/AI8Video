@@ -107,7 +107,11 @@ class HtmlMotionTaskServiceTest(unittest.TestCase):
                 "retryLimit": 5,
                 "auditResult": "问句缺少真实痛点",
                 "retryReason": "不应展示的详细规则",
-                "attemptTrace": {"attempt": 1, "responseJson": {"audit": {"passed": True}}},
+                "attemptTrace": {
+                    "attempt": 1,
+                    "responseJson": {"audit": {"passed": False}},
+                    "score": 77,
+                },
             })
             release.wait(1)
             return {"htmlMotionOverlay": {"status": "preview_ready"}}
@@ -122,6 +126,8 @@ class HtmlMotionTaskServiceTest(unittest.TestCase):
         self.assertEqual(snapshot["auditResult"], "问句缺少真实痛点")
         self.assertIn("审核结果：问句缺少真实痛点", snapshot["message"])
         self.assertEqual(snapshot["attemptTraces"][0]["attempt"], 1)
+        self.assertIn("第 1 次方案审核评分：77 分", snapshot["streamText"])
+        self.assertIn("—— 第 2 次方案 ——", snapshot["streamText"])
 
     def test_snapshot_exposes_bounded_llm_stream_text(self) -> None:
         service = HtmlMotionTaskService()

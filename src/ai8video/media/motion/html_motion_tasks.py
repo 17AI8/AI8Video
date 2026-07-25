@@ -211,7 +211,12 @@ class HtmlMotionTaskService:
                 task.audit_result = audit_result
                 if isinstance(attempt_trace, dict):
                     task.attempt_traces.append(dict(attempt_trace))
-                    _append_stream_text(task, f"\n\n—— 第 {retry_count + 1} 次方案 ——\n")
+                    score = attempt_trace.get("score")
+                    score_text = (
+                        f"\n第 {retry_count} 次方案审核评分：{score} 分"
+                        if isinstance(score, int) else ""
+                    )
+                    _append_stream_text(task, f"{score_text}\n\n—— 第 {retry_count + 1} 次方案 ——\n")
         retry_message = (
             f"审核结果：{audit_result}・正在第 {retry_count}/{retry_limit} 次重试"
             if retry_count > 0 else ""

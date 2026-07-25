@@ -774,9 +774,40 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
             {**self.media, "durationSeconds": 5.0},
             dialogue_text="沟通总卡顿。信息自然流动。",
             critique_enabled=False,
-            quality_retry_count=1,
+            quality_retry_count=2,
         )
         self.assertEqual(result.summary["agentTurns"], 2)
+
+    def test_uses_highest_scoring_repaired_plan_when_all_attempts_fail(self) -> None:
+        responses = iter([
+            json.dumps({
+                "audit": {"passed": False, "score": 90, "summary": "拍数待修正"},
+                "semantic": {
+                    "beats": [
+                        {"primary": "客户沟通", "secondary": "总是卡壳"},
+                        {"primary": "信息自然", "secondary": "流动起来"},
+                        {"primary": "多余一拍", "secondary": "需要删除"},
+                    ],
+                },
+            }, ensure_ascii=False),
+            json.dumps({
+                "audit": {"passed": False, "score": 70, "summary": "文案待压缩"},
+                "semantic": {"beats": [{"primary": "明显超过六个字", "secondary": "仍然过长文案"}]},
+            }, ensure_ascii=False),
+        ])
+        result = build_hyperframes_overlay(
+            lambda _prompt: next(responses),
+            self.video,
+            {**self.media, "durationSeconds": 10.0, "beatIntervalSeconds": 5},
+            dialogue_text="客户沟通总是卡壳。信息自然流动起来。",
+            critique_enabled=False,
+            quality_retry_count=2,
+        )
+
+        self.assertEqual(result.summary["agentTurns"], 1)
+        self.assertTrue(result.summary["aiAudit"]["fallback"])
+        self.assertEqual(result.summary["aiAudit"]["score"], 72)
+        self.assertEqual(result.summary["sceneCount"], 2)
 
     def test_dual_level_beats_require_dialogue_source_and_global_uniqueness(self) -> None:
         dialogue = "独立跨境快一年半，客户沟通总是卡壳。AI同声传译，全球聊天、支付、办公全整合。"

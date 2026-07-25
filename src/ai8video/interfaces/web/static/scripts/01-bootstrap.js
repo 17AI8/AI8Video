@@ -45,7 +45,7 @@
     }));
     migrateLegacyBrowserStorage();
     const WELCOME_PAYLOAD = {
-      text: `我是${BRAND_NAME}。把提示词、脚本素材或批量视频需求直接发我；批量生成请写清目标视频数量。参考图标签页未选择时默认不用；需要时可在标签页选择，也可以直接发送图片路径。\n如果要批量跑量，也可以直接说“今天先跑两条商务风”，再把候选内容逐行发我，或者一次性发“候选：A；B；C”。`,
+      text: `我是${BRAND_NAME}。把提示词、脚本素材或批量视频需求直接发我；视频数量由下方“智能分集 / 手动批量”开关决定，正文里的数字不会改变数量。参考图标签页未选择时默认不用；需要时可在标签页选择，也可以直接发送图片路径。`,
       stage: 'collecting',
       awaiting: null,
       draft: null,
@@ -223,7 +223,9 @@
       },
       generationMode: {
         concurrentGeneration: false,
-        smartSplit: false,
+        smartSplit: true,
+        splitMode: 'smart',
+        manualVideoCount: 2,
         confirmSmartSplit: false,
         tailFrameChaining: false,
         saving: false,
@@ -274,6 +276,9 @@
       },
       resultModal: {
         visible: false,
+        batchMerge: false,
+        batchMergeSubmitting: false,
+        selectedKeys: [],
       },
       videoPreviewModal: {
         visible: false,
@@ -409,6 +414,7 @@
       flowerTextButton: document.getElementById('flowerTextButton'),
       generationModeButton: document.getElementById('generationModeButton'),
       smartSplitButton: document.getElementById('smartSplitButton'),
+      manualSplitButton: document.getElementById('manualSplitButton'),
       htmlMotionOverlayButton: document.getElementById('htmlMotionOverlayButton'),
       imageMaterialList: document.getElementById('imageMaterialList'),
       scriptMaterialList: document.getElementById('scriptMaterialList'),
@@ -443,6 +449,9 @@
       resultModalTitle: document.getElementById('resultModalTitle'),
       resultModalSub: document.getElementById('resultModalSub'),
       resultModalBody: document.getElementById('resultModalBody'),
+      resultModalBatchMergeGroup: document.getElementById('resultModalBatchMergeGroup'),
+      resultModalBatchMergeButton: document.getElementById('resultModalBatchMergeButton'),
+      resultModalBatchMergeConfirmButton: document.getElementById('resultModalBatchMergeConfirmButton'),
       resultModalRefreshButton: document.getElementById('resultModalRefreshButton'),
       resultModalOpenFolderButton: document.getElementById('resultModalOpenFolderButton'),
       resultModalCloseButton: document.getElementById('resultModalCloseButton'),

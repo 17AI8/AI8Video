@@ -117,6 +117,14 @@
       closeResultModal();
     });
 
+    els.resultModalBatchMergeButton.addEventListener('click', () => {
+      toggleResultBatchMergeMode();
+    });
+
+    els.resultModalBatchMergeConfirmButton.addEventListener('click', async () => {
+      await confirmResultBatchMerge();
+    });
+
     els.resultModalOpenFolderButton.addEventListener('click', async () => {
       try {
         await openUserGeneratedResultsFolder(els.resultModalOpenFolderButton);
@@ -139,6 +147,13 @@
 
 
     els.resultModal.addEventListener('click', (event) => {
+      const selection = event.target?.closest?.('[data-result-batch-merge-select]');
+      if (selection) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleResultBatchMergeSelection(selection.dataset.resultBatchMergeSelect);
+        return;
+      }
       if (event.target === els.resultModal) {
         closeResultModal();
       }
@@ -186,7 +201,11 @@
     });
 
     els.smartSplitButton?.addEventListener('click', async () => {
-      await openSmartSplitDrawer();
+      await openSmartSplitDrawer('smart');
+    });
+
+    els.manualSplitButton?.addEventListener('click', async () => {
+      await openSmartSplitDrawer('manual');
     });
 
     els.htmlMotionOverlayButton?.addEventListener('click', async () => {

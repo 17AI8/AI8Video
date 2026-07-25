@@ -122,34 +122,29 @@
         els.progressPanel.innerHTML = '';
         return;
       }
+      const resultCount = Array.isArray(model.cards) ? model.cards.length : 0;
+      const videoCount = Array.isArray(model.videos) ? model.videos.length : 0;
       const overview = buildProgressOverview(model);
-      const resultCount = getPlayableResultItems(buildResultFolderGalleryModel(session)).length;
+      let meta = '暂无结果';
+      if (model.isActive) {
+        meta = overview?.label ? `进行中 · ${overview.label}` : '进行中';
+      } else if (resultCount > 0) {
+        meta = `${resultCount} 个结果`;
+      } else if (videoCount > 0) {
+        meta = `${videoCount} 条任务`;
+      } else if (String(model.summary || '').trim()) {
+        meta = String(model.summary).trim().slice(0, 28);
+      }
       els.progressPanel.innerHTML = `
         <div class="progress-card material-card">
           <div class="material-heading">
-            <div class="material-title">${escapeHtml(model.title)}</div>
-            <div class="material-meta">${escapeHtml(`${resultCount} 个结果`)}</div>
+            <div class="material-title">${escapeHtml(model.title || '当前进度')}</div>
+            <div class="material-meta">${escapeHtml(meta)}</div>
           </div>
           <div class="material-actions">
-            ${renderProgressActionButton(overview)}
-            <button type="button" class="material-add-button" data-show-result-modal="1">查看结果</button>
+            <button type="button" class="material-library-button" data-show-result-modal="1">查看结果</button>
           </div>
         </div>
-      `;
-    }
-
-    function renderProgressActionButton(overview) {
-      const percent = Math.max(0, Math.min(100, Number(overview?.percent || 0)));
-      const pending = overview?.pending ? ' pending' : '';
-      const label = overview?.label ? `查看进度 · ${overview.label}` : '查看进度';
-      return `
-        <button
-          type="button"
-          class="material-library-button progress-action-button${pending}"
-          style="--progress: ${percent}%"
-          title="${escapeHtml(label)}"
-          data-show-progress-modal="1"
-        >查看进度</button>
       `;
     }
 
@@ -328,8 +323,9 @@
 
     function ensureResultModalState() {
       if (!state.resultModal || typeof state.resultModal !== 'object') {
-        state.resultModal = { visible: false };
+        state.resultModal = { visible: false, batchMerge: false, batchMergeSubmitting: false, selectedKeys: [] };
       }
+      if (!Array.isArray(state.resultModal.selectedKeys)) state.resultModal.selectedKeys = [];
       return state.resultModal;
     }
 
@@ -373,9 +369,22 @@
       els.resultModalOpenFolderButton.disabled = false;
       els.resultModalOpenFolderButton.dataset.archiveKey = '';
       els.resultModalOpenFolderButton.dataset.localPath = '';
+      const playableKeys = new Set(getPlayableResultItems(gallery).map(resolveResultBatchMergeKey).filter(Boolean));
+      modalState.selectedKeys = modalState.selectedKeys.filter((key) => playableKeys.has(key));
+      els.resultModalBatchMergeGroup.classList.toggle('is-active', !!modalState.batchMerge);
+      els.resultModalBatchMergeButton.setAttribute('aria-pressed', modalState.batchMerge ? 'true' : 'false');
+      els.resultModalBatchMergeConfirmButton.classList.toggle('hidden', !modalState.batchMerge);
+      els.resultModalBatchMergeConfirmButton.disabled = modalState.batchMergeSubmitting || modalState.selectedKeys.length < 2;
+      els.resultModalBatchMergeConfirmButton.textContent = modalState.batchMergeSubmitting ? '合并中' : '确认';
+      els.resultModalRefreshButton.disabled = modalState.batchMergeSubmitting;
+      els.resultModalOpenFolderButton.disabled = modalState.batchMergeSubmitting;
       if (!visible) return;
       const previousScrollTop = preserveScroll ? els.resultModalBody.scrollTop : 0;
-      els.resultModalBody.innerHTML = renderResultMediaWall(gallery, { wall: true });
+      els.resultModalBody.innerHTML = renderResultMediaWall(gallery, {
+        wall: true,
+        batchMerge: !!modalState.batchMerge,
+        selectedKeys: modalState.selectedKeys,
+      });
       if (preserveScroll) {
         els.resultModalBody.scrollTop = previousScrollTop;
       }
@@ -388,6 +397,8 @@
 
     function closeResultModal() {
       state.resultModal.visible = false;
+      state.resultModal.batchMerge = false;
+      state.resultModal.selectedKeys = [];
       renderResultModal();
     }
 

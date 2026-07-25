@@ -87,7 +87,17 @@
       }
       const toggle = event.target.closest('[data-flower-text-toggle]');
       if (toggle) {
-        await saveFlowerText({ enabled: !!toggle.checked });
+        const enabled = !!toggle.checked;
+        state.flowerText = {
+          ...(state.flowerText || {}),
+          enabled,
+          error: '',
+          notice: '保存中...',
+        };
+        syncFlowerTextActivationControls();
+        setFlowerTextSaveStatus(state.flowerText.notice);
+        scheduleFlowerTextPreviewRefresh(0);
+        await saveFlowerText({ enabled }, { rerender: false });
         return;
       }
       const watermarkStyleControl = event.target.closest('[data-flower-watermark-style]');
@@ -301,7 +311,6 @@
           if (nextWatermarkImage) {
             state.flowerText = {
               ...(state.flowerText || {}),
-              enabled: true,
               watermarkEnabled: true,
               watermarkImage: nextWatermarkImage,
               error: '',
@@ -310,7 +319,6 @@
             renderFlowerTextButton();
             renderFlowerTextDrawer();
             await saveFlowerText({
-              enabled: true,
               watermarkEnabled: true,
               watermarkImage: nextWatermarkImage,
             }, { rerender: false });

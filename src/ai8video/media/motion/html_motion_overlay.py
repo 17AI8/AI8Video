@@ -16,6 +16,7 @@ from ai8video.core.paths import PROJECT_ROOT
 from ai8video.media.ffmpeg_utils import probe_media_video_info, resolve_ffmpeg_bin
 from ai8video.media.motion.hyperframes_overlay_harness import HarnessResult, build_hyperframes_overlay, revise_hyperframes_overlay
 from ai8video.media.motion.hyperframes_overlay_prompts import HTML_MOTION_SYSTEM_PROMPT
+from ai8video.media.motion.hyperframes_overlay_renderer import build_composition_html, build_motion_manifest
 from ai8video.media.motion.hyperframes_runtime import WAAPI_RUNTIME_SOURCE, render_prepared_hyperframes, write_hyperframes_files
 from ai8video.media.motion.hyperframes_worker import HyperFramesWorkerCancelled, HyperFramesWorkerError
 from ai8video.media.overlay_video_io import assert_transparent_layer, composite_transparent_layer, validate_composited_video
@@ -179,6 +180,7 @@ def apply_html_motion_overlay(
     cancel_event=None,
     trigger: str = "automatic",
     text_style: dict[str, Any] | None = None,
+    preserve_layer_path: Path | None = None,
 ) -> dict[str, Any]:
     del job
     if trigger != HTML_MOTION_PLAYBACK_TRIGGER:
@@ -195,6 +197,7 @@ def apply_html_motion_overlay(
         return _result("degraded", "未配置可用文本模型，HTML 动效未叠加", runtime=runtime)
     return _render_and_composite(
         source, video, llm, ffmpeg_bin, stage_callback, runtime, cancel_event, text_style,
+        preserve_layer_path,
     )
 
 
@@ -213,6 +216,7 @@ def _render_and_composite(
     runtime: dict[str, Any],
     cancel_event=None,
     text_style: dict[str, Any] | None = None,
+    preserve_layer_path: Path | None = None,
 ) -> dict[str, Any]:
     work_id = uuid.uuid4().hex[:12]
     work_dir = _create_work_dir(work_id)
@@ -259,6 +263,9 @@ def _render_and_composite(
         )
         _notify_stage(stage_callback, "validating")
         _validate_transparent_layer(output)
+        if preserve_layer_path is not None:
+            preserve_layer_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(output, preserve_layer_path)
         _raise_if_cancelled(cancel_event)
         _notify_stage(stage_callback, "compositing")
         if cancel_event is None:
@@ -279,6 +286,9 @@ def _render_and_composite(
             work_cleaned=True,
         )
         result["compositionHtml"] = harness.composition_html
+        result["motionArtifact"] = harness.artifact
+        result["motionMedia"] = media
+        result["motionFontFamily"] = font_family
         _cleanup_work_dir(work_dir)
         return result
     except HyperFramesWorkerCancelled:
@@ -295,6 +305,31 @@ def _render_and_composite(
         )
         result["detail"] = str(exc).strip()[:800]
         return result
+
+
+def render_html_motion_artifact_layer(
+    artifact: dict[str, Any],
+    media: dict[str, Any],
+    target: Path,
+    *,
+    font_family: str = "",
+) -> tuple[str, dict[str, Any]]:
+    work_dir = _create_work_dir(uuid.uuid4().hex[:12])
+    try:
+        composition_html = build_composition_html(artifact, media, font_family=font_family)
+        motion_manifest = build_motion_manifest(artifact, media)
+        output = _render_transparent_layer(
+            work_dir,
+            composition_html,
+            motion_manifest,
+            font_family=font_family,
+        )
+        _validate_transparent_layer(output)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(output, target)
+        return composition_html, motion_manifest
+    finally:
+        _cleanup_work_dir(work_dir)
 
 
 def _render_transparent_layer(

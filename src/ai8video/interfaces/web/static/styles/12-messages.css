@@ -288,6 +288,11 @@
       background: rgba(255,255,255,0.74);
     }
 
+    .assistant-error-message strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
     .mini-card.pending-card {
       background: #eef4ff;
       border-color: rgba(47, 109, 183, 0.18);
@@ -517,6 +522,165 @@
     .smart-split-confirmation-card .guide-actions {
       flex-wrap: nowrap;
       align-items: center;
+    }
+
+    .smart-split-plan-tree {
+      display: grid;
+      gap: 1px;
+      padding: 4px 0;
+    }
+
+    .smart-split-plan-node {
+      border-bottom: 1px solid rgba(79, 109, 255, 0.08);
+    }
+
+    .smart-split-plan-summary {
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      min-height: 36px;
+      padding: 0 8px 0 2px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text);
+      font-size: 14px;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .smart-split-plan-summary:hover,
+    .smart-split-plan-node.is-open > .smart-split-plan-summary {
+      background: rgba(55, 72, 120, 0.06);
+    }
+
+    .smart-split-plan-chevron {
+      position: relative;
+      width: 18px;
+      height: 18px;
+      transition: transform 0.16s ease;
+    }
+
+    .smart-split-plan-chevron::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      width: 6px;
+      height: 6px;
+      margin: auto;
+      border-right: 1.5px solid #6a7696;
+      border-bottom: 1.5px solid #6a7696;
+      transform: rotate(-45deg);
+    }
+
+    .smart-split-plan-node.is-open .smart-split-plan-chevron {
+      transform: rotate(90deg);
+    }
+
+    .smart-split-plan-title {
+      overflow: hidden;
+      font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .smart-split-plan-meta {
+      color: #8a93a8;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .smart-split-plan-drawer {
+      display: grid;
+      grid-template-rows: 0fr;
+      opacity: 0;
+      transition: grid-template-rows 180ms ease, opacity 160ms ease;
+    }
+
+    .smart-split-plan-node.is-open > .smart-split-plan-drawer {
+      grid-template-rows: 1fr;
+      opacity: 1;
+    }
+
+    .smart-split-plan-drawer-slot {
+      min-height: 0;
+      margin-left: 24px;
+      overflow: hidden;
+    }
+
+    .smart-split-plan-source {
+      margin: 3px 8px 0;
+      color: #6f7890;
+      font-size: 12px;
+    }
+
+    .smart-split-plan-prompt {
+      margin: 7px 8px 10px;
+      padding: 9px 10px;
+      border-left: 2px solid rgba(79, 109, 255, 0.28);
+      border-radius: 0 8px 8px 0;
+      background: rgba(246, 248, 255, 0.78);
+      color: var(--text);
+      font-size: 12px;
+      line-height: 1.65;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .smart-split-plan-editor {
+      box-sizing: border-box;
+      width: calc(100% - 16px);
+      min-height: 150px;
+      margin: 7px 8px 0;
+      padding: 9px 10px;
+      resize: vertical;
+      border: 1px solid rgba(79, 109, 255, 0.35);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.86);
+      color: var(--text);
+      font: inherit;
+      font-size: 12px;
+      line-height: 1.65;
+    }
+
+    .smart-split-plan-edit-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin: 0 8px 10px;
+    }
+
+    .smart-split-plan-edit-actions button {
+      min-width: 58px;
+      min-height: 28px;
+      padding: 4px 10px;
+      border: 1px solid rgba(79, 109, 255, 0.28);
+      background: rgba(255, 255, 255, 0.82);
+      color: #4f6dff;
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .smart-split-plan-edit-actions button:first-child {
+      border-radius: 7px 0 0 7px;
+    }
+
+    .smart-split-plan-edit-actions button:last-child {
+      margin-left: -1px;
+      border-radius: 0 7px 7px 0;
+    }
+
+    .smart-split-plan-edit-actions button:disabled {
+      cursor: default;
+      opacity: 0.45;
+    }
+
+    .smart-split-plan-recovering {
+      padding: 8px 2px;
+      color: #6f7890;
+      font-size: 12px;
     }
 
     .smart-split-confirmation-card .guide-actions .guide-action-button {

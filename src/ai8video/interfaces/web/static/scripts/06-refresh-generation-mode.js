@@ -5,6 +5,8 @@
         ...(state.generationMode || {}),
         concurrentGeneration: !!data?.concurrentGeneration,
         smartSplit: !!data?.smartSplit,
+        splitMode: data?.splitMode === 'manual' ? 'manual' : 'smart',
+        manualVideoCount: Math.max(1, Math.min(12, Number(data?.manualVideoCount || 2))),
         confirmSmartSplit: !!data?.confirmSmartSplit,
         tailFrameChaining: !!data?.tailFrameChaining,
         saving: false,
@@ -78,14 +80,12 @@
       render();
 
       try {
-        const refresh = shouldRefreshChatSession(session, value);
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             sessionId: session.id,
             message: value,
-            refresh,
             temporaryKnowledge,
             useDefaultKnowledgeReference,
           }),
@@ -154,7 +154,9 @@
           sessionId,
           pendingSince: new Date().toISOString(),
           elapsedSeconds: 0,
-          videoCount: inferVideoCountFromText(text),
+          videoCount: state.generationMode?.splitMode === 'manual'
+            ? Number(state.generationMode.manualVideoCount || 2)
+            : 0,
         },
       };
     }
@@ -381,39 +383,6 @@
 
     function wait(ms) {
       return new Promise((resolve) => window.setTimeout(resolve, ms));
-    }
-
-    function isSimpleFollowupMessage(text) {
-      const value = String(text || '').trim();
-      if (!value) return false;
-      if (/^\d{1,3}$/.test(value)) return true;
-      if (/^(并发模式|普通模式|不用参考图|需要参考图|有参考图|跳过关键词|不用关键词|无关键词|确认分集|确认并继续|重新分集)$/u.test(value)) {
-        return true;
-      }
-      return false;
-    }
-
-    function looksLikeFreshBaseRequest(text) {
-      const value = String(text || '').trim();
-      if (!value || isSimpleFollowupMessage(value)) return false;
-      if (/@/.test(value)) return true;
-      if (/\.(docx|doc|pdf|txt|jpg|jpeg|png|webp|mp4)\b/i.test(value)) return true;
-      if (/(剧本|提示词|生成|短视频|视频|文案|产品|教程|探店|脚本)/u.test(value)) return true;
-      return value.length >= 18;
-    }
-
-    function shouldRefreshChatSession(session, text) {
-      if (!session || !looksLikeFreshBaseRequest(text)) {
-        return false;
-      }
-      const last = session.messages?.at?.(-1);
-      if (!last) return false;
-      if (last.error) return true;
-      if (last.role !== 'assistant') return false;
-      if (isPendingPayload(last.payload) || isCollectingPayload(last.payload)) return true;
-      if (last.payload?.stage === 'completed') return true;
-      if (last.payload?.meta?.operation === 'generate') return true;
-      return false;
     }
 
     async function tryRecoverTimedOutChat(session, requestText, failureData) {
