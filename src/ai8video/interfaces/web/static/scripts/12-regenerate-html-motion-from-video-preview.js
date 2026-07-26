@@ -50,10 +50,15 @@
           return;
         }
         const video = els.videoPreviewBody?.querySelector('video');
-        showHtmlMotionPreview(video, overlay.previewUrl || data.videoUrl, overlay);
+        if (data?.burnReview?.tts?.pending === true) {
+          applyBurnReviewToVideoPreview(data.burnReview, video);
+        } else {
+          showHtmlMotionPreview(video, overlay.previewUrl || data.videoUrl, overlay);
+          syncBurnConfirmButton(data?.burnReview || { reviewReady: true, pendingKinds: ['htmlMotion'] });
+        }
         configureHtmlMotionTimeline(overlay);
         if (confirmButton) confirmButton.disabled = false;
-        setHtmlMotionPreviewStatus('预览已生成，确认后才会替换正式视频', 'success');
+        setHtmlMotionPreviewStatus('动效预览已生成，统一确认烧录后才会替换正式视频', 'success');
         if (button) setVideoPreviewButtonLabel(button, '预览已生成');
       } catch (error) {
         if (!htmlMotionRequestIsCurrent(requestSeq)) return;
@@ -77,165 +82,11 @@
       }
     }
 
-    async function confirmHtmlMotionFromVideoPreview(userGeneratedKey, button) {
-      const key = String(userGeneratedKey || '').trim();
-      if (!key || !button) return;
-      const previous = getVideoPreviewButtonLabel(button) || '确认烧录';
-      button.disabled = true;
-      setVideoPreviewButtonLabel(button, '烧录中');
-      try {
-        const res = await fetch('/api/user-generated-results/confirm-html-motion', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userGeneratedKey: key,
-            chunks: state.videoPreviewModal?.htmlMotionTimelineChunks || [],
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || data?.ok === false) throw buildRequestError(data);
-        const video = els.videoPreviewBody?.querySelector('video');
-        if (video) {
-          video.closest('.video-preview-stage')
-            ?.querySelector('[data-video-preview-html-motion-live]')
-            ?.remove();
-          const officialSrc = video.dataset.officialSrc || data.videoUrl || '';
-          video.src = `${String(officialSrc).split('?')[0]}?htmlMotion=${Date.now()}`;
-          video.load();
-          video.play().catch(() => {});
-        }
-        await refreshUserGeneratedResults();
-        renderResultModal();
-        renderStatus();
-        setVideoPreviewButtonLabel(button, '已烧录');
-        configureHtmlMotionTimeline({ timelineAdjustable: false });
-      } catch (error) {
-        window.alert(error?.message || '确认烧录 HTML 动效失败');
-        button.disabled = false;
-        setVideoPreviewButtonLabel(button, previous);
-      }
-    }
-
-    function configureHtmlMotionTimeline(data = {}) {
-      const button = els.videoPreviewBody?.querySelector('[data-video-preview-action="adjust-html-motion-timeline"]');
-      const panel = els.videoPreviewBody?.querySelector('[data-video-preview-html-motion-timeline]');
-      const track = panel?.querySelector('[data-video-preview-html-motion-chunks]');
-      const durationLabel = panel?.querySelector('[data-video-preview-html-motion-duration]');
-      const chunks = Array.isArray(data?.timelineChunks) ? data.timelineChunks : [];
-      const adjustable = data?.timelineAdjustable === true && chunks.length > 0;
-      if (button) button.hidden = !adjustable;
-      if (!adjustable) {
-        if (panel) panel.hidden = true;
-        return;
-      }
-      const video = els.videoPreviewBody?.querySelector('video');
-      const duration = Math.max(0, Number(data?.durationSeconds || video?.duration || 0));
-      if (durationLabel) durationLabel.textContent = `${duration.toFixed(1)} 秒`;
-      state.videoPreviewModal.htmlMotionTimelineChunks = chunks.map((chunk) => ({ ...chunk }));
-      renderHtmlMotionTimelineChunks(track, chunks, duration);
-    }
-
-    function toggleHtmlMotionTimelineEditor(userGeneratedKey, button) {
-      const panel = els.videoPreviewBody?.querySelector('[data-video-preview-html-motion-timeline]');
-      if (!panel) return;
-      panel.hidden = !panel.hidden;
-    }
-
-    function renderHtmlMotionTimelineChunks(track, chunks, duration) {
-      if (!track || duration <= 0) return;
-      const chunkMarkup = chunks.map((chunk) => {
-        const left = Math.max(0, Number(chunk.startSeconds || 0)) / duration * 100;
-        const width = Math.max(2, Number(chunk.durationSeconds || 0.1) / duration * 100);
-        const rowTop = 3 + (Number(chunk.index) % 2) * 34;
-        return `<button type="button" class="video-preview-html-motion-chunk" data-video-preview-html-motion-chunk data-chunk-index="${Number(chunk.index)}" style="left:${left}%;width:${Math.min(width, 100 - left)}%;top:${rowTop}px"><span>${escapeHtml(chunk.label || `Chunk ${Number(chunk.index) + 1}`)}</span><small>${Number(chunk.startSeconds || 0).toFixed(1)}s</small></button>`;
-      }).join('');
-      track.innerHTML = `<div class="video-preview-html-motion-chunk-lane">${chunkMarkup}</div>`;
-      track.querySelectorAll('[data-video-preview-html-motion-chunk]').forEach((chunk) => {
-        chunk.addEventListener('pointerdown', (event) => beginHtmlMotionChunkDrag(event, chunk, duration));
-      });
-    }
-
-    function beginHtmlMotionChunkDrag(event, element, duration) {
-      if (element.disabled) return;
-      const index = Number(element.dataset.chunkIndex);
-      const chunks = state.videoPreviewModal?.htmlMotionTimelineChunks || [];
-      const item = chunks.find((chunk) => Number(chunk.index) === index);
-      const lane = element.closest('.video-preview-html-motion-chunk-lane');
-      if (!item || !lane) return;
-      event.preventDefault();
-      element.setPointerCapture(event.pointerId);
-      const originX = event.clientX;
-      const originStart = Number(item.startSeconds || 0);
-      const maxStart = Math.max(0, duration - Number(item.durationSeconds || 0.1));
-      const move = (moveEvent) => {
-        const delta = (moveEvent.clientX - originX) / Math.max(1, lane.clientWidth) * duration;
-        item.startSeconds = Math.round(Math.min(Math.max(originStart + delta, 0), maxStart) * 10) / 10;
-        element.style.left = `${item.startSeconds / duration * 100}%`;
-        element.querySelector('small').textContent = `${item.startSeconds.toFixed(1)}s`;
-        const video = els.videoPreviewBody?.querySelector('video');
-        if (video) {
-          video.currentTime = item.startSeconds;
-          syncLiveHtmlMotionPreview(video);
-        }
-      };
-      const end = () => {
-        element.removeEventListener('pointermove', move);
-        element.removeEventListener('pointerup', end);
-        element.removeEventListener('pointercancel', end);
-        setHtmlMotionPreviewStatus(
-          `Chunk ${index + 1} 时间已调整，确认烧录时统一渲染`,
-          'success',
-        );
-      };
-      element.addEventListener('pointermove', move);
-      element.addEventListener('pointerup', end);
-      element.addEventListener('pointercancel', end);
-    }
-
-    async function adjustHtmlMotionTimelinePreview(userGeneratedKey, chunks, originalChunks, activeIndex, duration) {
-      const key = String(userGeneratedKey || '').trim();
-      if (!key) return;
-      const button = els.videoPreviewBody?.querySelector('[data-video-preview-action="adjust-html-motion-timeline"]');
-      const previous = getVideoPreviewButtonLabel(button) || '微调时间轴';
-      const elements = els.videoPreviewBody?.querySelectorAll('[data-video-preview-html-motion-chunk]') || [];
-      if (button) button.disabled = true;
-      elements.forEach((element) => { element.disabled = true; });
-      setVideoPreviewButtonLabel(button, '更新预览中');
-      setHtmlMotionPreviewStatus(`正在重渲染 Chunk ${Number(activeIndex) + 1} 的时间位置`);
-      try {
-        const res = await fetch('/api/user-generated-results/adjust-html-motion-timeline', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userGeneratedKey: key, chunks }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || data?.ok === false) throw buildRequestError(data);
-        const video = els.videoPreviewBody?.querySelector('video');
-        showHtmlMotionPreview(video, data.previewUrl);
-        configureHtmlMotionTimeline(data);
-        setHtmlMotionPreviewStatus(`Chunk ${Number(activeIndex) + 1} 的时间位置已更新`, 'success');
-      } catch (error) {
-        window.alert(error?.message || '时间轴预览更新失败');
-        configureHtmlMotionTimeline({
-          timelineAdjustable: true,
-          durationSeconds: duration,
-          timelineChunks: originalChunks,
-        });
-      } finally {
-        if (button) {
-          button.disabled = false;
-          setVideoPreviewButtonLabel(button, previous);
-        }
-        elements.forEach((element) => { element.disabled = false; });
-      }
-    }
-
     function placeVideoPreviewPopover(popover) {
       const body = els.videoPreviewBody;
       const controls = body?.querySelector('.video-preview-controls');
       if (!popover || !body || !controls) return;
-      const gap = 6;
-      const offset = Math.max(0, body.getBoundingClientRect().bottom - controls.getBoundingClientRect().top) + gap;
+      const offset = Math.max(0, body.getBoundingClientRect().bottom - controls.getBoundingClientRect().top);
       popover.style.bottom = `${Math.round(offset)}px`;
     }
 
@@ -255,6 +106,9 @@
     function closeVideoPreviewTtsEditor() {
       const popover = els.videoPreviewBody?.querySelector('[data-video-preview-tts-editor]');
       popover?.classList.remove('is-open');
+      const button = els.videoPreviewBody?.querySelector('[data-video-preview-action="edit-tts-text"]');
+      button?.setAttribute('aria-expanded', 'false');
+      if (button) button.title = '展开台词编辑器';
     }
 
     async function readTtsTransformStream(res, onProgress) {
@@ -286,7 +140,7 @@
       return result;
     }
 
-    async function openTtsNarrationEditorFromVideoPreview(userGeneratedKey) {
+    async function openTtsNarrationEditorFromVideoPreview(userGeneratedKey, triggerButton = null) {
       const key = String(userGeneratedKey || '').trim();
       if (!key || !els.videoPreviewBody) return;
       let popover = els.videoPreviewBody.querySelector('[data-video-preview-tts-editor]');
@@ -325,6 +179,8 @@
         if (tone) status.classList.add(`is-${tone}`);
       };
       showVideoPreviewPopover(popover);
+      triggerButton?.setAttribute('aria-expanded', 'true');
+      if (triggerButton) triggerButton.title = '收起台词编辑器';
       setTtsStatus('正在读取台词');
       if (textarea) {
         textarea.value = '';

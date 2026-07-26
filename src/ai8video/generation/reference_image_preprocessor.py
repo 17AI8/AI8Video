@@ -168,6 +168,7 @@ class ReferenceImagePreprocessor:
         request_id: str | None = None,
         trace_session_id: str | None = None,
         video_index: int | None = None,
+        max_concurrency: int | None = None,
     ) -> tuple[str, dict[str, Any]]:
         return self._generate_images_to_image(
             [source],
@@ -175,7 +176,53 @@ class ReferenceImagePreprocessor:
             request_id=request_id,
             trace_session_id=trace_session_id,
             video_index=video_index,
+            max_concurrency=max_concurrency,
         )
+
+    def edit_image(
+        self,
+        source: str,
+        *,
+        custom_prompt: str = "",
+        max_concurrency: int | None = None,
+    ) -> str:
+        if self.config.dry_run:
+            raise ReferenceImagePreprocessError("当前为演练模式，无法调用图片模型修图。")
+        if not self.config.has_image_model():
+            raise ReferenceImagePreprocessError("请先在设置中补齐图片模型后再修图。")
+        prompt = build_smart_image_edit_prompt(custom_prompt)
+        output_source, _ = self._generate_image_to_image(
+            str(source or "").strip(),
+            prompt,
+            request_id=_image_generation_request_id(),
+            max_concurrency=max_concurrency,
+        )
+        return output_source
+
+    def edit_image_with_mask(
+        self,
+        source: str,
+        mask: str,
+        *,
+        custom_prompt: str = "",
+        max_concurrency: int | None = None,
+    ) -> str:
+        if self.config.dry_run:
+            raise ReferenceImagePreprocessError("当前为演练模式，无法调用图片模型修图。")
+        if not self.config.has_image_model():
+            raise ReferenceImagePreprocessError("请先在设置中补齐图片模型后再修图。")
+        prompt = (
+            "第一张输入图是唯一的主修图对象，第二张输入图是黑白局部蒙版。"
+            "只修改蒙版中的白色区域，黑色区域必须保持不变；输出中不得出现蒙版本身或紫红色标记。"
+            + build_smart_image_edit_prompt(custom_prompt)
+        )
+        output_source, _ = self._generate_images_to_image(
+            [str(source or "").strip(), str(mask or "").strip()],
+            prompt,
+            request_id=_image_generation_request_id(),
+            max_concurrency=max_concurrency,
+        )
+        return output_source
 
     def repair_frame_with_references(
         self,
@@ -372,6 +419,33 @@ def build_reference_image_transform_prompt(
         trace_session_id=trace_session_id,
         video_index=video_index,
         prompt_kind="image",
+    )
+
+
+_SMART_IMAGE_RIGHTS_MARK_PATTERN = r"(?:水印|署名|版权(?:标识)?|logo|品牌标识)"
+_SMART_IMAGE_MARK_REMOVAL_PATTERN = (
+    r"(?:去(?:除|掉)?|删除|删掉|移除|抹(?:除|掉)|消除|清除|擦除|隐藏|遮(?:住|挡)|覆盖|弱化|"
+    r"模糊(?:掉)?|裁(?:掉|除)|p掉)"
+)
+_PROHIBITED_SMART_IMAGE_EDIT_PATTERN = re.compile(
+    rf"(?:{_SMART_IMAGE_MARK_REMOVAL_PATTERN}).{{0,16}}(?:{_SMART_IMAGE_RIGHTS_MARK_PATTERN})"
+    rf"|(?:{_SMART_IMAGE_RIGHTS_MARK_PATTERN}).{{0,16}}(?:{_SMART_IMAGE_MARK_REMOVAL_PATTERN})",
+    re.IGNORECASE,
+)
+
+
+def build_smart_image_edit_prompt(custom_prompt: str | None = None) -> str:
+    requirement = re.sub(r"\s+", " ", str(custom_prompt or "")).strip()[:2000]
+    if _PROHIBITED_SMART_IMAGE_EDIT_PATTERN.search(requirement):
+        raise ReferenceImagePreprocessError("智能修图不支持移除水印、署名、版权或品牌标识。")
+    if not requirement:
+        requirement = "自然提升曝光、白平衡、色彩层次、清晰度和画面质感，避免过度锐化或失真。"
+    return (
+        "以输入图片为唯一画面基底完成高质量图片精修。"
+        "保留主体身份、脸部特征、商品结构、原始构图和画面含义，除非用户明确要求，否则不要改变人物、场景或物体。"
+        "必须完整保留原图已有的署名、水印、版权标识、Logo 和品牌标识，不得移除、遮挡、弱化或仿冒。"
+        "不要额外添加文字、边框、界面元素或新的标识。只输出一张完整图片，不要生成拼图、分屏或前后对比图。"
+        f"用户修图要求：{requirement}"
     )
 
 

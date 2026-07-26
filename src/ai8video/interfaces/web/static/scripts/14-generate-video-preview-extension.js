@@ -283,110 +283,57 @@
         </div>
         <button type="button" class="video-preview-nav-button next" data-video-preview-action="next" ${hasPlaylistNav ? '' : 'disabled'}>下一个</button>
         <div class="video-preview-controls">
-          <div class="video-preview-html-motion-drawer" data-video-preview-html-motion-drawer>
-            <div class="video-preview-html-motion-drawer-slot">
-              <button type="button" class="video-preview-html-motion-status" data-video-preview-html-motion-toggle data-video-preview-html-motion-status aria-label="展开任务详情" aria-expanded="false" aria-controls="videoPreviewHtmlMotionDrawer">
-                ${videoPreviewIconSvg('chevron')}<span class="video-preview-button-label video-preview-html-motion-summary" data-video-preview-html-motion-summary aria-live="polite" hidden></span>
-              </button>
-            </div>
-            <div id="videoPreviewHtmlMotionDrawer" class="video-preview-html-motion-detail" data-video-preview-html-motion-detail></div>
-          </div>
-          <div class="video-preview-html-motion-timeline" data-video-preview-html-motion-timeline hidden>
-            <div class="video-preview-html-motion-timeline-head">
-              <strong>HTML 动效时间轴</strong>
-              <span data-video-preview-html-motion-duration>0.0 秒</span>
-            </div>
-            <div class="video-preview-html-motion-ruler"><span>0s</span><span>视频结束</span></div>
-            <div class="video-preview-html-motion-chunks" data-video-preview-html-motion-chunks></div>
-            <p>每个 chunk 可独立左右拖动；松手后更新预览，确认烧录前不会修改正式视频。</p>
-          </div>
-          <div class="video-preview-controls-row">
-            <div class="video-preview-control-group">
-              <span class="video-preview-split-button" role="group" aria-label="播放控制">
-                <button type="button" class="video-preview-button" data-video-preview-action="toggle-play" data-icon="pause">${videoPreviewButtonInnerHtml('pause', '暂停')}</button>
-                <button type="button" class="video-preview-button" data-video-preview-action="restart" data-icon="replay">${videoPreviewButtonInnerHtml('replay', '重播')}</button>
-                <button type="button" class="video-preview-button" data-video-preview-action="toggle-mute" data-icon="volume">${videoPreviewButtonInnerHtml('volume', '静音')}</button>
-              </span>
-              <span class="video-preview-split-button" role="group" aria-label="TTS 配音">
-                <button
-                  type="button"
-                  class="video-preview-button"
-                  data-video-preview-action="regenerate-tts"
-                  data-icon="mic"
-                  data-video-user-generated-key="${escapeHtml(userGeneratedKey)}"
-                  ${userGeneratedKey ? '' : 'disabled'}
-                >${videoPreviewButtonInnerHtml('mic', '重新生成TTS配音')}</button>
-                <button
-                  type="button"
-                  class="video-preview-button"
-                  data-video-preview-action="edit-tts-text"
-                  data-icon="edit"
-                  data-video-user-generated-key="${escapeHtml(userGeneratedKey)}"
-                  ${userGeneratedKey ? '' : 'disabled'}
-                >${videoPreviewButtonInnerHtml('edit', '修改台词')}</button>
-              </span>
-              <span class="video-preview-split-button" role="group" aria-label="HTML 动效预览与烧录">
-                <button
-                  type="button"
-                  class="video-preview-button"
-                  data-video-preview-action="regenerate-html-motion"
-                  data-icon="sparkles"
-                  data-video-user-generated-key="${escapeHtml(userGeneratedKey)}"
-                  ${userGeneratedKey ? '' : 'disabled'}
-                >${videoPreviewButtonInnerHtml('sparkles', '重新生成 HTML 动效')}</button>
-                <button
-                  type="button"
-                  class="video-preview-button"
-                  data-video-preview-action="adjust-html-motion-timeline"
-                  data-icon="edit"
-                  data-video-user-generated-key="${escapeHtml(userGeneratedKey)}"
-                  hidden
-                >${videoPreviewButtonInnerHtml('edit', '微调时间轴')}</button>
-                <button
-                  type="button"
-                  class="video-preview-button"
-                  data-video-preview-action="confirm-html-motion"
-                  data-icon="check"
-                  data-video-user-generated-key="${escapeHtml(userGeneratedKey)}"
-                  disabled
-                >${videoPreviewButtonInnerHtml('check', '确认烧录')}</button>
-              </span>
-            </div>
-            <div class="video-preview-side-actions">
-              ${userGeneratedKey ? `
-                <button
-                  type="button"
-                  class="video-preview-button danger"
-                  data-video-preview-action="delete-video"
-                  data-icon="trash"
-                  data-video-user-generated-key="${escapeHtml(userGeneratedKey)}"
-                >${videoPreviewButtonInnerHtml('trash', '删除视频')}</button>
-              ` : ''}
-            </div>
-          </div>
+          ${videoPreviewEditingControlsMarkup(userGeneratedKey)}
         </div>
       `;
       const video = els.videoPreviewBody.querySelector('video');
       const previousButton = els.videoPreviewBody.querySelector('[data-video-preview-action="previous"]');
       const nextButton = els.videoPreviewBody.querySelector('[data-video-preview-action="next"]');
       const deleteButton = els.videoPreviewBody.querySelector('[data-video-preview-action="delete-video"]');
+      const editVideoTimelineButton = els.videoPreviewBody.querySelector('[data-video-preview-action="edit-video-timeline"]');
       const regenerateTtsButton = els.videoPreviewBody.querySelector('[data-video-preview-action="regenerate-tts"]');
       const editTtsTextButton = els.videoPreviewBody.querySelector('[data-video-preview-action="edit-tts-text"]');
       const extendVideoButton = els.videoPreviewBody.querySelector('[data-video-preview-action="extend-video"]');
       const deleteExtensionButton = els.videoPreviewBody.querySelector('[data-video-preview-action="delete-extension"]');
       const regenerateHtmlMotionButton = els.videoPreviewBody.querySelector('[data-video-preview-action="regenerate-html-motion"]');
-      const adjustHtmlMotionTimelineButton = els.videoPreviewBody.querySelector('[data-video-preview-action="adjust-html-motion-timeline"]');
-      const confirmHtmlMotionButton = els.videoPreviewBody.querySelector('[data-video-preview-action="confirm-html-motion"]');
+      const confirmBurnButton = els.videoPreviewBody.querySelector('[data-video-preview-action="confirm-burn"]');
       previousButton?.addEventListener('click', () => navigateVideoPreview(-1));
       nextButton?.addEventListener('click', () => navigateVideoPreview(1));
       deleteButton?.addEventListener('click', () => {
         deleteUserGeneratedVideoFromPreview(userGeneratedKey, deleteButton);
       });
+      editVideoTimelineButton?.addEventListener('click', () => {
+        void toggleAllTimelineEditors(userGeneratedKey, editVideoTimelineButton);
+      });
+      els.videoPreviewBody.querySelector('[data-video-preview-action="toggle-video-scissors"]')?.addEventListener('click', () => {
+        toggleVideoScissorMode();
+      });
+      els.videoPreviewBody.querySelector('[data-video-preview-action="delete-selected-video-chunk"]')?.addEventListener('click', () => {
+        deleteSelectedVideoChunk(userGeneratedKey);
+      });
+      els.videoPreviewBody.querySelector('[data-video-preview-action="reset-video-timeline"]')?.addEventListener('click', () => {
+        void resetVideoTimeline(userGeneratedKey);
+      });
       regenerateTtsButton?.addEventListener('click', () => {
         regenerateTtsFromVideoPreview(userGeneratedKey, regenerateTtsButton);
       });
+      const ttsScissorsButton = els.videoPreviewBody.querySelector('[data-video-preview-action="toggle-tts-scissors"]');
+      ttsScissorsButton?.addEventListener('click', () => {
+        toggleTtsScissorMode();
+      });
+      els.videoPreviewBody.querySelector('[data-video-preview-action="delete-selected-tts-chunk"]')?.addEventListener('click', () => {
+        deleteSelectedTtsChunk(userGeneratedKey);
+      });
+      els.videoPreviewBody.querySelector('[data-video-preview-action="reset-tts-timeline"]')?.addEventListener('click', () => {
+        resetTtsTimeline(userGeneratedKey);
+      });
       editTtsTextButton?.addEventListener('click', () => {
-        openTtsNarrationEditorFromVideoPreview(userGeneratedKey);
+        const popover = els.videoPreviewBody.querySelector('[data-video-preview-tts-editor]');
+        if (popover?.classList.contains('is-open')) {
+          closeVideoPreviewTtsEditor();
+          return;
+        }
+        openTtsNarrationEditorFromVideoPreview(userGeneratedKey, editTtsTextButton);
       });
       extendVideoButton?.addEventListener('click', () => {
         prepareVideoExtensionPreview(userGeneratedKey, extendVideoButton);
@@ -421,16 +368,22 @@
           void cancelHtmlMotionFromVideoPreview(regenerateHtmlMotionButton);
           return;
         }
-        void regenerateHtmlMotionFromVideoPreview(userGeneratedKey, regenerateHtmlMotionButton, confirmHtmlMotionButton);
+        void regenerateHtmlMotionFromVideoPreview(userGeneratedKey, regenerateHtmlMotionButton, confirmBurnButton);
       });
-      adjustHtmlMotionTimelineButton?.addEventListener('click', () => {
-        toggleHtmlMotionTimelineEditor(userGeneratedKey, adjustHtmlMotionTimelineButton);
+      els.videoPreviewBody.querySelector('[data-video-preview-action="toggle-html-motion-scissors"]')?.addEventListener('click', () => {
+        toggleHtmlMotionScissorMode();
+      });
+      els.videoPreviewBody.querySelector('[data-video-preview-action="delete-selected-html-motion-chunk"]')?.addEventListener('click', () => {
+        deleteSelectedHtmlMotionChunk();
+      });
+      els.videoPreviewBody.querySelector('[data-video-preview-action="reset-html-motion-timeline"]')?.addEventListener('click', () => {
+        resetHtmlMotionTimeline();
       });
       els.videoPreviewBody.querySelectorAll('[data-video-preview-html-motion-toggle]').forEach((button) => {
         button.addEventListener('click', () => toggleHtmlMotionPreviewDrawer());
       });
-      confirmHtmlMotionButton?.addEventListener('click', () => {
-        confirmHtmlMotionFromVideoPreview(userGeneratedKey, confirmHtmlMotionButton);
+      confirmBurnButton?.addEventListener('click', () => {
+        confirmBurnFromVideoPreview(userGeneratedKey, confirmBurnButton);
       });
       video?.addEventListener('loadedmetadata', () => {
         if (video.videoWidth && video.videoHeight) {
@@ -440,7 +393,12 @@
           video.style.setProperty('--preview-video-aspect', ratioValue);
         }
       }, { once: true });
-      bindVideoPreviewControls(video);
+      const syncEditingPlayheads = () => {
+        syncTtsTimelinePlayhead();
+        syncVideoTimelinePlayhead();
+      };
+      video?.addEventListener('timeupdate', syncEditingPlayheads);
+      video?.addEventListener('seeking', syncEditingPlayheads);
       if (video) video.dataset.officialSrc = src;
       state.videoPreviewModal = {
         ...(state.videoPreviewModal || {}),
@@ -454,6 +412,28 @@
         htmlMotionSubmitting: false,
         htmlMotionCancelRequested: false,
         htmlMotionTimelineChunks: [],
+        htmlMotionTimelineDuration: 0,
+        htmlMotionOriginalTimelineChunks: [],
+        htmlMotionTimelineReviewIdentity: '',
+        htmlMotionTimelineDirty: false,
+        htmlMotionScissorMode: false,
+        htmlMotionSelectedChunkIndex: null,
+        videoTimelineChunks: [],
+        videoTimelineSourceDuration: 0,
+        videoTimelineOutputDuration: 0,
+        videoTimelineFilmstripUrl: '',
+        videoTimelineFilmstripFrameCount: 0,
+        videoTimelineScissorMode: false,
+        videoTimelineSelectedChunkIndex: null,
+        videoTimelineBusy: false,
+        ttsTimelineChunks: [],
+        ttsTimelineDuration: 0,
+        ttsAudioDuration: 0,
+        ttsWaveformPeaks: [],
+        ttsScissorMode: false,
+        ttsSelectedChunkIndex: null,
+        ttsTimelineBusy: false,
+        burnReview: null,
       };
       els.videoPreviewModal.classList.remove('hidden');
       renderHtmlMotionPreviewDrawer();
@@ -463,9 +443,10 @@
       void resumeHtmlMotionFromVideoPreview(
         userGeneratedKey,
         regenerateHtmlMotionButton,
-        confirmHtmlMotionButton,
+        confirmBurnButton,
         video,
       );
+      void syncBurnReviewFromVideoPreview(userGeneratedKey, video, { silent: true });
     }
 
     function closeVideoPreviewModal() {

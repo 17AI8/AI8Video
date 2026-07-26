@@ -1096,7 +1096,12 @@ def _font_file_url(path: Path, relative: str) -> str:
 
 
 def _ensure_font_preview(path: Path, relative: str) -> str:
-    digest = sha1(relative.encode("utf-8")).hexdigest()[:12]
+    try:
+        stat = path.stat()
+        version = f"{relative}|{stat.st_size}|{stat.st_mtime_ns}"
+    except OSError:
+        version = relative
+    digest = sha1(version.encode("utf-8")).hexdigest()[:12]
     target_name = f"{Path(relative).stem}-{digest}-tight.png"
     target = USER_FONT_PREVIEW_DIR / target_name
     if target.is_file() and target.stat().st_size > 0:

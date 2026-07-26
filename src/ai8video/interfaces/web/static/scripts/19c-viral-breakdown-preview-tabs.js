@@ -42,6 +42,46 @@
       return parts.join(' · ') || (item?.sizeLabel || '');
     }
 
+    function buildViralBreakdownShotLanguageMarkup(analysis) {
+      if (!analysis || typeof analysis !== 'object') {
+        return '<div class="viral-breakdown-empty">先完成“拆解画面”和“分析台词”，再分析镜头语言。</div>';
+      }
+      const rows = [
+        ['整体策略', analysis.overall],
+        ['开场钩子', analysis.hook],
+        ['节奏', analysis.rhythm],
+        ['视觉风格', analysis.visualStyle],
+        ['镜头与构图', analysis.camera],
+        ['光线与色彩', analysis.lighting],
+        ['可复用方法', analysis.reusable],
+        ['避免照搬', analysis.avoid],
+      ].filter(([, value]) => String(value || '').trim());
+      const beats = Array.isArray(analysis.beats) ? analysis.beats : [];
+      const stale = analysis.stale === true
+        ? '<div class="viral-breakdown-empty">截图或台词已变化，请重新分析后再用于猜剧本和生成。</div>'
+        : '';
+      return `
+        ${stale}
+        <dl class="viral-breakdown-info-list">
+          ${rows.map(([label, value]) => `
+            <div class="viral-breakdown-info-row">
+              <dt>${escapeHtml(label)}</dt>
+              <dd>${escapeHtml(String(value || '—'))}</dd>
+            </div>
+          `).join('')}
+          ${beats.map((beat) => {
+            const detail = [beat?.visual, beat?.technique, beat?.purpose].filter(Boolean).join(' · ');
+            return `
+              <div class="viral-breakdown-info-row">
+                <dt>${escapeHtml(String(beat?.time || '关键节拍'))}</dt>
+                <dd>${escapeHtml(detail || '—')}</dd>
+              </div>
+            `;
+          }).join('')}
+        </dl>
+      `;
+    }
+
     function getViralBreakdownPreviewTab() {
       const tab = String(state.viralBreakdown.previewTab || 'preview').trim();
       return ['preview', 'info'].includes(tab) ? tab : 'preview';
@@ -69,11 +109,11 @@
 
     function getViralBreakdownActiveTab() {
       const tab = String(state.viralBreakdown.activeTab || 'grid').trim();
-      return ['grid', 'transcript', 'script', 'generated'].includes(tab) ? tab : 'grid';
+      return ['grid', 'shot-language', 'transcript', 'script', 'generated'].includes(tab) ? tab : 'grid';
     }
 
     function activateViralBreakdownTab(tabName) {
-      const tab = ['grid', 'transcript', 'script', 'generated'].includes(String(tabName || ''))
+      const tab = ['grid', 'shot-language', 'transcript', 'script', 'generated'].includes(String(tabName || ''))
         ? String(tabName)
         : 'grid';
       state.viralBreakdown.activeTab = tab;

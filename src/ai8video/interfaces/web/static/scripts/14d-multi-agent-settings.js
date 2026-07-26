@@ -70,6 +70,32 @@
         ],
         boundary: '不审核自己的结果、不生成知识正文；只读单份文档，不改业务提示词、生成参数或媒体结果。',
       },
+      {
+        key: 'viral-shot-language',
+        label: '镜头语言 Agent',
+        mark: 'V',
+        status: '已接入',
+        tone: 'live',
+        description: '基于代表帧与识别台词提取可复用的镜头语言证据。',
+        responsibilities: [
+          '分析代表帧中的构图、主体动作、镜头节奏与视觉钩子',
+          '把观察结果组织为猜剧本可直接复用的结构化证据',
+        ],
+        boundary: '只分析已有代表帧与台词证据；不重复识别台词、不猜剧本、不触发视频生成。',
+      },
+      {
+        key: 'viral-script-reconstruction',
+        label: '猜剧本 Agent',
+        mark: 'G',
+        status: '已接入',
+        tone: 'live',
+        description: '使用镜头语言与识别台词重建爆款视频的剧本框架。',
+        responsibilities: [
+          '融合镜头语言证据与识别台词，恢复叙事结构和内容节奏',
+          '输出可复用的剧本框架，供后续生成准备使用',
+        ],
+        boundary: '只消费已有分析结果；不再调用旧画面分析流程、不改原视频或素材。',
+      },
     ];
     const multiAgentConfigDefinitions = [
       {
@@ -223,8 +249,37 @@
               </li>
             `).join('')}
           </ol>
-          <p class="multi-agent-footnote">模型与鉴权在对应设置页配置；此处只看职责与接入状态。</p>
+          <p class="multi-agent-footnote">模型与鉴权在对应设置页配置；已接入 Skill 显示在所属 Agent 详情中。</p>
         </div>
+      `;
+    }
+
+    function enabledAgentSkills(agentId) {
+      const agents = state.authSettings?.agentSkills?.agents;
+      if (!Array.isArray(agents)) return [];
+      const agent = agents.find((item) => item?.agentId === agentId);
+      if (!Array.isArray(agent?.skills)) return [];
+      return agent.skills.filter((skill) => !!skill?.enabled);
+    }
+
+    function buildAgentSkillSectionMarkup(role) {
+      const skills = enabledAgentSkills(role.key);
+      if (!skills.length) return '';
+      return `
+        <section class="multi-agent-detail-block multi-agent-role-skills" aria-label="已接入 Skills">
+          <h4>Skills</h4>
+          <ul class="multi-agent-role-skill-list">
+            ${skills.map((skill) => `
+              <li class="multi-agent-role-skill-item">
+                <div>
+                  <code>${escapeHtml(skill.name || '')}</code>
+                  <p>${escapeHtml(skill.description || '暂无说明')}</p>
+                </div>
+                ${skill.builtIn ? '<span title="内置 Skill 不可删除">内置</span>' : ''}
+              </li>
+            `).join('')}
+          </ul>
+        </section>
       `;
     }
 
@@ -250,6 +305,7 @@
               <p>${escapeHtml(role.boundary)}</p>
             </section>
           </div>
+          ${buildAgentSkillSectionMarkup(role)}
         </div>
       `;
     }

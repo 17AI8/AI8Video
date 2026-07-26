@@ -259,12 +259,23 @@ class AI8VideoConversationController:
             return self._build_core_keywords_reply(state, material_context)
 
         state.awaiting = None
+        script_reference_video_count = extract_video_count(control_text) if default_script_reference_applied else None
+        if (
+            default_script_reference_applied
+            and script_reference_video_count is None
+            and self._is_saved_script_control_message(control_text)
+        ):
+            script_reference_video_count = state.draft.video_count
         self._apply_default_generation_mode(state)
         self._apply_default_html_motion_overlay(state)
-        smart_split = default_smart_split_enabled()
-        state.planned_video_count_locked = not smart_split
+        smart_split = default_smart_split_enabled() and script_reference_video_count is None
+        state.planned_video_count_locked = script_reference_video_count is not None or not smart_split
         state.smart_split_reason = None
-        state.draft.video_count = None if smart_split else default_manual_video_count()
+        state.draft.video_count = (
+            script_reference_video_count
+            if script_reference_video_count is not None
+            else (None if smart_split else default_manual_video_count())
+        )
         state.draft.mode = "batch_videos" if smart_split or state.draft.video_count > 1 else "single_video"
         request = state.draft.to_request()
         if self._supports_planned_generation():
@@ -819,7 +830,7 @@ class AI8VideoConversationController:
             return True
         if re.search(r"(全文|完整原文|完整剧本|逐字|按原顺序|全篇|全部内容|完整覆盖)", value):
             return True
-        video_count = state.draft.video_count or default_manual_video_count()
+        video_count = extract_video_count(value) or state.draft.video_count or default_manual_video_count()
         return bool(video_count and video_count > 5)
 
     def _merge_message(
@@ -910,6 +921,8 @@ class AI8VideoConversationController:
         return interpretation
 
     def _decide_intent(self, text: str, state: ConversationState):
+        if state.awaiting is None and state.completed_runs > 0 and self._is_rewrite_request(text):
+            return IntentDecision("rewrite", False, "本地明确重做指令")
         try:
             decision = self.intent_agent.decide(
                 text,

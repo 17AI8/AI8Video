@@ -279,6 +279,12 @@
       text-decoration: none;
     }
 
+    .viral-breakdown-upload-trigger.is-disabled {
+      pointer-events: none;
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
     .viral-breakdown-status {
       display: flex;
       align-items: center;
@@ -641,6 +647,7 @@
 
     .viral-breakdown-script-guess-card,
     .viral-breakdown-pane.area-grid,
+    .viral-breakdown-pane.area-shot-language,
     .viral-breakdown-pane.area-transcript,
     .viral-breakdown-pane.area-generated {
       min-height: 0;
@@ -653,12 +660,20 @@
 
     .viral-breakdown-script-guess-card .viral-breakdown-pane-body,
     .viral-breakdown-pane.area-grid .viral-breakdown-pane-body,
+    .viral-breakdown-pane.area-shot-language .viral-breakdown-pane-body,
     .viral-breakdown-pane.area-transcript .viral-breakdown-pane-body,
     .viral-breakdown-pane.area-generated .viral-breakdown-pane-body {
       flex: 1 1 auto;
       min-height: 0;
       display: flex;
       flex-direction: column;
+    }
+
+    .viral-breakdown-pane.area-shot-language .viral-breakdown-pane-body {
+      overflow: auto;
+      align-items: stretch;
+      justify-content: flex-start;
+      padding: 0 4px;
     }
 
     .viral-breakdown-script-guess-card .viral-breakdown-pane-body {

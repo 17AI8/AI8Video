@@ -33,6 +33,7 @@ namespaces = false
 
 [tool.setuptools.package-data]
 ai8video = [
+    "agent_skills/catalog/*/*/SKILL.md",
     "interfaces/web/static/**/*",
     "media/*.json",
     "media/motion/*.cjs",

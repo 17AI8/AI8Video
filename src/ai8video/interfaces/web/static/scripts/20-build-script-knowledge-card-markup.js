@@ -265,8 +265,15 @@
       const meta = item.relativePath || item.name || '';
       const preview = normalizeMaterialPreview(item.preview || '');
       const relativePath = String(item.relativePath || item.name || name);
-      const deleteButton = `
+      const selectedForSmartImage = item.kind === 'image'
+        && typeof AI8SmartImage !== 'undefined'
+        && AI8SmartImage.state.nodes.some((node) => node.sourceRelativePath === relativePath);
+      const smartImageButton = item.kind === 'image'
+        ? `<button type="button" class="material-wall-smart-image-button${selectedForSmartImage ? ' is-selected' : ''}" data-edit-smart-image-material="${escapeHtml(relativePath)}" aria-pressed="${selectedForSmartImage}">${selectedForSmartImage ? '已选择' : '选择'}</button>`
+        : '';
+      const entryActions = `
         <div class="material-wall-entry-actions">
+          ${smartImageButton}
           <button
             type="button"
             class="material-wall-delete-button"
@@ -284,7 +291,7 @@
               <span class="material-title">@${escapeHtml(name)}</span>
               <span class="material-meta">${escapeHtml(meta)}</span>
             </button>
-            ${deleteButton}
+            ${entryActions}
           </article>
         `;
       }
@@ -294,7 +301,7 @@
             <span class="material-wall-doc-preview">${escapeHtml(preview || '暂无可预览文本')}</span>
             <span class="material-title">${escapeHtml(name)}</span>
           </button>
-          ${deleteButton}
+          ${entryActions}
         </article>
       `;
     }
@@ -312,6 +319,10 @@
     function closeMaterialLibraryModal() {
       state.materialModal.visible = false;
       renderMaterialLibraryModal();
+      if (typeof AI8SmartImage !== 'undefined' && AI8SmartImage.state.managingLibrary) {
+        AI8SmartImage.state.managingLibrary = false;
+        openSmartImageEditor();
+      }
     }
 
     function openRecycleBinModal() {

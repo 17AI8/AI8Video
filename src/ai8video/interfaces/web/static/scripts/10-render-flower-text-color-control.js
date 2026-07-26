@@ -403,13 +403,10 @@
     }
 
     const VIDEO_PREVIEW_ICONS = {
-      play: '<path d="M8 5.2v13.6L19 12 8 5.2Z"/>',
-      pause: '<path d="M7 5h3.5v14H7zm6.5 0H17v14h-3.5z"/>',
-      replay: '<path d="M3.5 12a8.5 8.5 0 1 0 2.4-6"/><path d="M3.5 4.5v4.2H7.7"/><path d="M12 8v4.2l2.8 1.7"/>',
-      volume: '<path d="M11 5 6.2 9H3v6h3.2L11 19V5z"/><path d="M15.4 8.6a4.8 4.8 0 0 1 0 6.8"/><path d="M17.8 6a8 8 0 0 1 0 12"/>',
-      muted: '<path d="M11 5 6.2 9H3v6h3.2L11 19V5z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/>',
       mic: '<path d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 18v3"/><path d="M8.5 21h7"/>',
       edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>',
+      crop: '<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M2 6h14a2 2 0 0 1 2 2v14"/>',
+      scissors: '<circle cx="6" cy="7" r="3"/><path d="M8.7 8.3 19 14"/><path d="m8.7 15.7 10.8-6.2"/><circle cx="6" cy="17" r="3"/>',
       chevron: '<path d="m6 9 6 6 6-6"/>',
       extend: '<g transform="rotate(-45 12 12)"><path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z"/></g>',
       sparkles: '<path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/><path d="m5.6 5.6 2.1 2.1"/><path d="m16.3 16.3 2.1 2.1"/><path d="m16.3 5.6-2.1 2.1"/><path d="m5.6 16.3 2.1-2.1"/><circle cx="12" cy="12" r="2.2"/>',
@@ -418,9 +415,8 @@
     };
 
     function videoPreviewIconSvg(iconKey) {
-      const solid = iconKey === 'play' || iconKey === 'pause';
       const paths = VIDEO_PREVIEW_ICONS[iconKey] || '';
-      return `<svg class="video-preview-button-icon${solid ? ' is-solid' : ''}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths}</svg>`;
+      return `<svg class="video-preview-button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths}</svg>`;
     }
 
     function videoPreviewButtonInnerHtml(iconKey, label) {
@@ -440,51 +436,4 @@
         return;
       }
       button.textContent = text;
-    }
-
-    function setVideoPreviewButtonState(button, iconKey, label) {
-      if (!button) return;
-      if (button.dataset.icon === iconKey) {
-        const labelEl = button.querySelector('.video-preview-button-label');
-        if (labelEl && labelEl.textContent !== label) labelEl.textContent = label;
-        return;
-      }
-      button.dataset.icon = iconKey;
-      button.innerHTML = videoPreviewButtonInnerHtml(iconKey, label);
-    }
-
-    function bindVideoPreviewControls(video) {
-      if (!video || !els.videoPreviewBody) return;
-      const playPauseButton = els.videoPreviewBody.querySelector('[data-video-preview-action="toggle-play"]');
-      const restartButton = els.videoPreviewBody.querySelector('[data-video-preview-action="restart"]');
-      const muteButton = els.videoPreviewBody.querySelector('[data-video-preview-action="toggle-mute"]');
-      const syncControls = () => {
-        if (playPauseButton) {
-          const paused = video.paused;
-          setVideoPreviewButtonState(playPauseButton, paused ? 'play' : 'pause', paused ? '播放' : '暂停');
-        }
-        if (muteButton) {
-          const muted = video.muted || video.volume === 0;
-          setVideoPreviewButtonState(muteButton, muted ? 'muted' : 'volume', muted ? '取消静音' : '静音');
-        }
-      };
-      playPauseButton?.addEventListener('click', () => {
-        if (video.paused) {
-          video.play().catch(() => {});
-        } else {
-          video.pause();
-        }
-      });
-      restartButton?.addEventListener('click', () => {
-        video.currentTime = 0;
-        video.play().catch(() => {});
-      });
-      muteButton?.addEventListener('click', () => {
-        video.muted = !video.muted;
-        syncControls();
-      });
-      ['loadedmetadata', 'play', 'pause', 'volumechange', 'ended'].forEach((eventName) => {
-        video.addEventListener(eventName, syncControls);
-      });
-      syncControls();
     }

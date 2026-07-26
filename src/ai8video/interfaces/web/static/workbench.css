@@ -16,8 +16,11 @@
 @import url("./styles/13a-video-extension-batch.css");
 @import url("./styles/14-video-preview.css");
 @import url("./styles/14a-video-preview-extension-controls.css");
+@import url("./styles/14b-video-timeline.css");
 @import url("./styles/15-theme-shell.css");
 @import url("./styles/16-radar-layout.css");
 @import url("./styles/17-radar-theme.css");
 @import url("./styles/18-radar-responsive.css");
 @import url("./styles/19-breakdown-theme.css");
+@import url("./styles/20-smart-image-editor.css?v=20260726-4");
+@import url("./styles/20a-smart-image-canvas.css?v=20260726-3");

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ai8video.agent_skills import apply_agent_skills
 from ai8video.generation.video_prompt_planner import LLMCallable
 from ai8video.generation.video_prompt_support import parse_json_object
 
@@ -22,7 +23,7 @@ def interpret_generation_request_with_ai(
 
 
 def _build_request_interpretation_prompt(text: str) -> str:
-    return f"""你是AI8video 的员工自然语言请求理解器。
+    return apply_agent_skills("intent-agent", f"""你是AI8video 的员工自然语言请求理解器。
 
 你的任务不是生成视频提示词，而是先理解员工这句话到底要AI8video 做什么。
 必须优先理解上下文含义，不要按固定关键词或正则机械匹配。
@@ -56,7 +57,7 @@ def _build_request_interpretation_prompt(text: str) -> str:
 
 员工消息：
 {text}
-"""
+""")
 
 
 def _normalize_interpretation(data: dict[str, Any]) -> dict[str, Any]:

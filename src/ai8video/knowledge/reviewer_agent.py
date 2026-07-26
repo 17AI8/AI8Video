@@ -8,6 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from ai8video.agent_skills import apply_agent_skills
 from ai8video.knowledge.knowledge_base_agent import (
     KnowledgeBaseAgentRequest,
     KnowledgeBaseAgentResult,
@@ -83,7 +84,7 @@ def build_knowledge_review_prompt(
             for leaf in proposal.leaves
         ],
     }
-    return f"""你是 AI8video 的 Reviewer，当前负责知识入库的独立语义审核。
+    return apply_agent_skills("reviewer", f"""你是 AI8video 的 Reviewer，当前负责知识入库的独立语义审核。
 
 只做审核，不重写知识树、不写数据库、不调用生成工具。请检查：
 1. atomicity：每个叶子是否只回答一个问题，是否混入过多规则或多个流程阶段。
@@ -109,7 +110,7 @@ decision 规则：质量合格返回 accept；一次返工可修复返回 revise
 
 候选知识树：
 {json.dumps(candidate, ensure_ascii=False)}
-"""
+""")
 
 
 def parse_knowledge_review(value: str) -> KnowledgeReviewDecision:

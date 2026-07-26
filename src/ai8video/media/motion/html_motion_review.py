@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import copy
+import math
 import os
 import re
 import shutil
@@ -68,9 +70,11 @@ def prepare_html_motion_review(
         (review_dir / "composition.html").unlink(missing_ok=True)
     if isinstance(artifact, dict) and isinstance(motion_media, dict):
         _write_json(review_dir / "artifact.json", artifact)
+        _write_json(review_dir / "artifact.original.json", artifact)
         _write_json(review_dir / "media.json", motion_media)
     else:
         (review_dir / "artifact.json").unlink(missing_ok=True)
+        (review_dir / "artifact.original.json").unlink(missing_ok=True)
         (review_dir / "media.json").unlink(missing_ok=True)
     chunks = _timeline_chunks(artifact)
     review_id = review_dir.name
@@ -111,14 +115,32 @@ def _copy_live_preview_font(review_dir: Path, font_family: str) -> None:
 
 def confirm_html_motion_review(video_path: Path, relative_key: str) -> dict[str, Any]:
     source = video_path.resolve()
-    review_dir = _review_dir(relative_key)
-    payload = _load_json(review_dir / "review.json")
-    candidate = review_dir / f"candidate{source.suffix or '.mp4'}"
-    if payload.get("relativeKey") != relative_key or not candidate.is_file():
-        raise LookupError("请先重新生成 HTML 动效预览")
+    candidate = html_motion_review_candidate_path(source, relative_key)
     temporary = source.with_name(f".{source.name}.html-motion-confirming")
     shutil.copy2(candidate, temporary)
     temporary.replace(source)
+    return finalize_html_motion_review(relative_key)
+
+
+def html_motion_review_candidate_path(video_path: Path, relative_key: str) -> Path:
+    source = video_path.resolve()
+    review_dir = _review_dir(relative_key)
+    payload = _load_json(review_dir / "review.json")
+    candidate = review_dir / f"candidate{source.suffix or '.mp4'}"
+    if (
+        payload.get("relativeKey") != relative_key
+        or payload.get("confirmedAt")
+        or not candidate.is_file()
+    ):
+        raise LookupError("请先重新生成 HTML 动效预览")
+    return candidate
+
+
+def finalize_html_motion_review(relative_key: str) -> dict[str, Any]:
+    review_dir = _review_dir(relative_key)
+    payload = _load_json(review_dir / "review.json")
+    if payload.get("relativeKey") != relative_key or payload.get("confirmedAt"):
+        raise LookupError("请先重新生成 HTML 动效预览")
     render_result = payload.get("renderResult")
     result = dict(render_result) if isinstance(render_result, dict) else {}
     result.update(
@@ -190,10 +212,13 @@ def adjust_html_motion_review_timeline(
     candidate = review_dir / f"candidate{source.suffix or '.mp4'}"
     layer = review_dir / "overlay.webm"
     artifact_path = review_dir / "artifact.json"
+    original_artifact_path = review_dir / "artifact.original.json"
     media_path = review_dir / "media.json"
     if payload.get("relativeKey") != relative_key or not base.is_file() or not artifact_path.is_file():
         raise LookupError("请先重新生成 HTML 动效预览")
-    artifact = _load_json(artifact_path)
+    if not original_artifact_path.is_file():
+        shutil.copy2(artifact_path, original_artifact_path)
+    artifact = _load_json(original_artifact_path)
     media = _load_json(media_path) or _review_media(payload, base)
     duration = float(media.get("durationSeconds") or 0.0)
     normalized = _apply_timeline_chunks(artifact, chunks, duration)
@@ -365,6 +390,7 @@ def _timeline_chunks(artifact: Any) -> list[dict[str, Any]]:
         label = re.sub(r"\s+", " ", text).strip()[:32] or f"Chunk {index + 1}"
         chunks.append({
             "index": index,
+            "sourceIndex": int(scene.get("_timelineSourceIndex", index)),
             "startSeconds": round(start, 3),
             "endSeconds": round(end, 3),
             "durationSeconds": round(max(0.1, end - start), 3),
@@ -375,24 +401,64 @@ def _timeline_chunks(artifact: Any) -> list[dict[str, Any]]:
 
 def _apply_timeline_chunks(artifact: dict[str, Any], value: Any, duration: float) -> list[dict[str, Any]]:
     scenes = artifact.get("scenes")
-    if not isinstance(scenes, list) or not isinstance(value, list) or len(value) != len(scenes):
+    if not isinstance(scenes, list) or not scenes or not isinstance(value, list) or not value:
         raise ValueError("chunk 时间轴数据不完整")
-    by_index = {int(item.get("index")): item for item in value if isinstance(item, dict)}
-    if len(by_index) != len(scenes):
-        raise ValueError("chunk 时间轴数据不完整")
-    for index, scene in enumerate(scenes):
-        item = by_index.get(index)
-        if item is None or not isinstance(scene, dict):
+    rebuilt = []
+    for target_index, item in enumerate(value):
+        if not isinstance(item, dict):
             raise ValueError("chunk 时间轴数据不合法")
-        chunk_duration = max(0.1, float(scene.get("end") or 0) - float(scene.get("start") or 0))
         try:
+            source_index = int(item.get("sourceIndex", item.get("index", target_index)))
             start = float(item.get("startSeconds"))
         except (TypeError, ValueError) as exc:
-            raise ValueError("chunk 起始时间不合法") from exc
+            raise ValueError("chunk 时间轴数据不合法") from exc
+        if source_index < 0 or source_index >= len(scenes):
+            raise ValueError("chunk 来源片段不存在")
+        raw_duration = item.get("durationSeconds")
+        if raw_duration is None:
+            raw_end = item.get("endSeconds")
+            source_scene = scenes[source_index]
+            if raw_end is not None:
+                raw_duration = float(raw_end) - start
+            elif isinstance(source_scene, dict):
+                raw_duration = float(source_scene.get("end")) - float(source_scene.get("start"))
+        try:
+            chunk_duration = float(raw_duration)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("chunk 时间轴数据不合法") from exc
+        if not math.isfinite(start) or not math.isfinite(chunk_duration) or chunk_duration <= 0:
+            raise ValueError("chunk 时间范围不合法")
+        chunk_duration = min(max(0.1, chunk_duration), duration)
         start = min(max(0.0, start), max(0.0, duration - chunk_duration))
+        scene = copy.deepcopy(scenes[source_index])
+        if not isinstance(scene, dict):
+            raise ValueError("chunk 来源片段不合法")
+        _reindex_scene_references(scene, source_index + 1, target_index + 1)
         scene["start"] = round(start, 3)
         scene["end"] = round(start + chunk_duration, 3)
+        scene["_timelineSourceIndex"] = source_index
+        rebuilt.append(scene)
+    artifact["scenes"] = rebuilt
     return _timeline_chunks(artifact)
+
+
+def _reindex_scene_references(scene: dict[str, Any], source_number: int, target_number: int) -> None:
+    if source_number == target_number:
+        return
+    source_id = f"scene-{source_number}-"
+    target_id = f"scene-{target_number}-"
+    source_wrapper = f"#hf-scene-{source_number}"
+    target_wrapper = f"#hf-scene-{target_number}"
+
+    def replace(value: Any) -> Any:
+        return value.replace(source_wrapper, target_wrapper).replace(source_id, target_id) if isinstance(value, str) else value
+
+    scene["html"] = replace(scene.get("html"))
+    scene["css"] = replace(scene.get("css"))
+    scene["ids"] = [replace(value) for value in scene.get("ids", [])]
+    for animation in scene.get("animations", []):
+        if isinstance(animation, dict):
+            animation["target"] = replace(animation.get("target"))
 
 
 def _assert_within_review_root(path: Path) -> None:

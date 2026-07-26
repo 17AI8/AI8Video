@@ -114,27 +114,51 @@
   }
 
   function seek(seconds) {
-    const time = Math.max(0, number(seconds, 0)) * 1000;
-    for (const record of global.__ai8MotionRecords || []) record.animation.currentTime = time;
+    const current = Math.max(0, number(seconds, 0));
+    const time = current * 1000;
+    const windowsBySource = global.__ai8MotionChunkWindows;
+    global.__ai8MotionCurrentTime = current;
+    for (const scene of document.querySelectorAll('.hf-scene')) {
+      const sourceIndex = number(scene.dataset.timelineSourceIndex, number(scene.id.replace('hf-scene-', ''), 0) - 1);
+      const windows = windowsBySource instanceof Map ? windowsBySource.get(sourceIndex) || [] : null;
+      scene.hidden = Array.isArray(windows) && !windows.some((window) => current >= window.start && current < window.end);
+    }
+    for (const record of global.__ai8MotionRecords || []) {
+      const windows = windowsBySource instanceof Map ? windowsBySource.get(record.sceneIndex) || [] : null;
+      const active = Array.isArray(windows)
+        ? windows.find((window) => current >= window.start && current < window.end)
+        : null;
+      if (active) {
+        const original = number(active.originalStart, active.start);
+        record.animation.effect.updateTiming({ delay: record.baseDelay + (active.start - original) * 1000 });
+      }
+      record.animation.currentTime = time;
+    }
   }
 
   function updateChunks(chunks) {
     if (!Array.isArray(chunks)) return;
-    const offsets = new Map();
-    chunks.forEach((chunk) => {
-      const index = number(chunk && chunk.index, -1);
-      const scene = document.querySelector(`#hf-scene-${index + 1}`);
-      if (!scene) return;
-      const original = number(scene.dataset.originalStart, number(scene.dataset.start, 0));
+    const windowsBySource = new Map();
+    chunks.forEach((chunk, index) => {
+      const sourceIndex = number(chunk && chunk.sourceIndex, number(chunk && chunk.index, index));
+      const scene = document.querySelector(`#hf-scene-${sourceIndex + 1}`);
+      const original = number(scene?.dataset.originalStart, number(scene?.dataset.start, 0));
       const start = Math.max(0, number(chunk.startSeconds, original));
-      scene.dataset.originalStart = String(original);
-      scene.dataset.start = String(start);
-      offsets.set(index, (start - original) * 1000);
+      const duration = Math.max(0.1, number(chunk.durationSeconds, number(chunk.endSeconds, start) - start));
+      const windows = windowsBySource.get(sourceIndex) || [];
+      windows.push({ start, end: start + duration, originalStart: original });
+      windowsBySource.set(sourceIndex, windows);
     });
-    for (const record of global.__ai8MotionRecords || []) {
-      const offset = offsets.get(record.sceneIndex) || 0;
-      record.animation.effect.updateTiming({ delay: record.baseDelay + offset });
+    for (const [sourceIndex, windows] of windowsBySource) {
+      windows.sort((left, right) => left.start - right.start);
+      const scene = document.querySelector(`#hf-scene-${sourceIndex + 1}`);
+      if (scene) {
+        scene.dataset.timelineSourceIndex = String(sourceIndex);
+        scene.dataset.originalStart = String(windows[0]?.originalStart || 0);
+      }
     }
+    global.__ai8MotionChunkWindows = windowsBySource;
+    seek(global.__ai8MotionCurrentTime || 0);
   }
 
   global.addEventListener('message', (event) => {

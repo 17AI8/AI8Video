@@ -32,7 +32,7 @@
               <span>视频数量</span>
               <input type="number" min="1" max="12" step="1" data-manual-split-count value="${Number(mode.manualVideoCount || 2)}" ${saving ? 'disabled' : ''}>
             </label>
-            <div class="generation-mode-note">手动模式固定按这里的数量规划，范围 1—12 条。</div>
+            <div class="generation-mode-note">同一份完整提示词按这里的数量重复提交，由视频模型自然生成相近但不同的版本；不进入分集流程。范围 1—12 条。</div>
           ` : `
             <div class="generation-mode-note">Planner 根据全文容量决定数量，并在确认方案中展示分集依据；正文中的数字不参与数量决策。</div>
             <label class="generation-mode-toggle">
@@ -56,6 +56,7 @@
       if (requestedMode !== currentMode) {
         await saveGenerationMode({ splitMode: requestedMode, smartSplit: requestedMode === 'smart' });
       }
+      if (requestedMode === 'manual') await cancelActiveSmartSplitPlan();
       if (state.smartSplitDrawer.visible) {
         renderSmartSplitButton();
         renderSmartSplitDrawer();
@@ -75,6 +76,28 @@
         renderSmartSplitButton();
         renderSmartSplitDrawer();
       }
+    }
+
+    async function cancelActiveSmartSplitPlan() {
+      const session = getActiveSession();
+      if (!session?.id) return;
+      const last = session.messages?.at?.(-1);
+      const guide = last?.payload?.meta?.guide;
+      const pendingPlan = last?.payload?.awaiting === 'smart_split_confirmation'
+        || guide?.kind === 'smart_split_confirmation';
+      if (!pendingPlan) return;
+      const res = await fetch('/api/chat-plan-cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: session.id }),
+      });
+      if (!res.ok) return;
+      last.payload.awaiting = null;
+      last.payload.stage = 'collecting';
+      last.payload.text = '已切换为手动批量。后续将按选定数量提交同一份完整提示词，不再进入分集流程。';
+      if (last.payload.meta) delete last.payload.meta.guide;
+      persistSessions();
+      render();
     }
 
     function closeSmartSplitDrawer() {

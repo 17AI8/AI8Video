@@ -13,6 +13,8 @@ from ai8video.generation.video_prompt_planner import (
     LLMCallable,
     expand_batch_seed_messages_with_ai,
     infer_smart_video_count_with_ai,
+    repeat_single_prompt_to_videos,
+    repeat_video_prompt,
     rewrite_video_with_ai,
     single_prompt_to_video,
     plan_video_prompts_with_ai,
@@ -109,7 +111,7 @@ class AI8VideoPipeline:
                 duration_seconds=target_duration,
                 trace_session_id=progress_session_id,
             )
-        if smart_split or request.mode == "batch_videos":
+        if smart_split:
             if not video_count:
                 raise ValueError("video_count is required for video planning")
             videos = plan_video_prompts_with_ai(
@@ -122,6 +124,15 @@ class AI8VideoPipeline:
                 llm=self.llm,
                 allow_mock=allow_mock_planning,
                 trace_session_id=progress_session_id,
+            )
+        elif request.mode == "batch_videos":
+            if not video_count:
+                raise ValueError("video_count is required for manual batch generation")
+            videos = repeat_single_prompt_to_videos(
+                request.raw_text,
+                video_count,
+                request.style_hint,
+                request.core_keywords,
             )
         else:
             videos = single_prompt_to_video(request.raw_text, request.style_hint, request.core_keywords)
@@ -235,6 +246,32 @@ class AI8VideoPipeline:
             allow_mock=self.config.dry_run,
         )
 
+    def _finalize_video_queue(
+        self,
+        request: ParsedRequest,
+        videos: list[VideoPrompt],
+        task_constraints: str,
+        progress_session_id: str | None,
+    ) -> list[VideoPrompt]:
+        repeated_batch = (
+            request.mode == "batch_videos"
+            and not request.smart_split_reason
+            and len(videos) > 1
+            and len({video.prompt for video in videos}) == 1
+        )
+        finalized = finalize_video_prompts(
+            videos[:1] if repeated_batch else videos,
+            llm=getattr(self, "llm", None),
+            trace_session_id=progress_session_id,
+            task_constraints=task_constraints,
+        )
+        reviewed = review_final_outputs(
+            finalized,
+            llm=getattr(self, "llm", None),
+            trace_session_id=progress_session_id,
+        )
+        return repeat_video_prompt(reviewed[0], len(videos)) if repeated_batch else reviewed
+
     def _run_videos(
         self,
         request: ParsedRequest,
@@ -274,16 +311,8 @@ class AI8VideoPipeline:
         task_constraints = self._reference_task_constraints(request)
         tail_dir = None
         try:
-            finalized_video_queue = finalize_video_prompts(
-                videos,
-                llm=getattr(self, "llm", None),
-                trace_session_id=progress_session_id,
-                task_constraints=task_constraints,
-            )
-            finalized_video_queue = review_final_outputs(
-                finalized_video_queue,
-                llm=getattr(self, "llm", None),
-                trace_session_id=progress_session_id,
+            finalized_video_queue = self._finalize_video_queue(
+                request, videos, task_constraints, progress_session_id
             )
             if request.tail_frame_chaining:
                 finalized_video_queue = [append_tail_frame_chain_prompt(video) for video in finalized_video_queue]
@@ -387,17 +416,7 @@ class AI8VideoPipeline:
         first_frame_by_index = {}
         task_constraints = self._reference_task_constraints(request)
         try:
-            final_videos = finalize_video_prompts(
-                videos,
-                llm=getattr(self, "llm", None),
-                trace_session_id=progress_session_id,
-                task_constraints=task_constraints,
-            )
-            final_videos = review_final_outputs(
-                final_videos,
-                llm=getattr(self, "llm", None),
-                trace_session_id=progress_session_id,
-            )
+            final_videos = self._finalize_video_queue(request, videos, task_constraints, progress_session_id)
             for video in final_videos:
                 self._trace_final_video_prompt(request, video, progress_session_id)
             ordered_final_videos = sorted(final_videos, key=lambda item: item.index)

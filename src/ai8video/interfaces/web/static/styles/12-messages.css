@@ -42,7 +42,7 @@
       border-radius: 50%;
       display: grid;
       place-items: center;
-      background: transparent url("/static/images/ai8video-avatar.webp?v=20260723-0739") center / contain no-repeat;
+      background: transparent url("/static/images/ai8video-avatar.png?v=20260727-1") center / contain no-repeat;
       color: transparent;
       font-weight: 900;
       font-size: 0;

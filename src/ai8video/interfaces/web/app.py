@@ -20,6 +20,7 @@ from urllib.parse import unquote, urlsplit
 
 from bottle import Bottle, HTTPResponse, request, response, run, static_file
 
+from ai8video.agent_skills import discover_agent_skills, list_agent_skill_slots
 from ai8video.application.facade import (
     CHAT_BACKEND,
     build_batch_seed_file_payload,
@@ -100,7 +101,8 @@ from ai8video.media.motion.html_motion_overlay import (
 from ai8video.media.motion.html_motion_review import (
     HTML_MOTION_REVIEW_ROOT,
     adjust_html_motion_review_timeline,
-    confirm_html_motion_review,
+    finalize_html_motion_review,
+    html_motion_review_candidate_path,
     html_motion_review_layer_path,
     html_motion_review_status,
     prepare_html_motion_review,
@@ -131,6 +133,33 @@ from ai8video.media.local_tts import (
     save_local_tts_voice_clone_upload,
     synthesize_local_tts,
     update_local_tts_settings,
+)
+from ai8video.media.tts_timeline_review import (
+    mark_tts_timeline_review_confirmed,
+    pending_tts_timeline_review,
+    render_tts_timeline_candidate,
+    render_tts_timeline_video,
+    resolve_tts_timeline_review_video,
+    save_tts_timeline_review,
+    tts_timeline_candidate_needs_render,
+    tts_timeline_review_status,
+)
+from ai8video.media.timeline_boundary import (
+    ensure_timeline_chunks_within_video,
+    timeline_boundary_status,
+)
+from ai8video.media.video_timeline_review import (
+    mark_video_timeline_review_confirmed,
+    pending_video_timeline_review,
+    remap_timeline_chunks_through_video_cuts,
+    render_video_timeline_candidate,
+    render_video_timeline_video,
+    reset_video_timeline_review,
+    resolve_video_timeline_filmstrip,
+    resolve_video_timeline_review_video,
+    save_video_timeline_review,
+    video_timeline_candidate_needs_render,
+    video_timeline_review_status,
 )
 from ai8video.media.video_merge_mode import (
     load_video_merge_mode,
@@ -245,6 +274,9 @@ from ai8video.breakdown.viral_breakdown_script_knowledge import (
     build_viral_breakdown_script_tree,
     persist_viral_breakdown_script_tree,
 )
+from ai8video.breakdown.viral_breakdown_shot_language import (
+    analyze_viral_breakdown_shot_language,
+)
 from ai8video.interfaces.web.routes.hot_topics import (
     api_hot_topic_sources,
     api_hot_topic_summary,
@@ -252,6 +284,7 @@ from ai8video.interfaces.web.routes.hot_topics import (
     api_hot_topics,
     register_hot_topic_routes,
 )
+from ai8video.interfaces.web.routes.smart_image_editor import register_smart_image_editor_routes
 from ai8video.integrations.video_model_settings import (
     load_video_model_settings,
     pull_model_catalog,
@@ -469,7 +502,10 @@ def api_upload_viral_breakdown_video():
         if not source_name or suffix not in SUPPORTED_VIRAL_BREAKDOWN_VIDEO_EXTENSIONS:
             skipped.append({"name": source_name, "reason": "unsupported extension"})
             continue
-        target = _next_available_path(VIRAL_BREAKDOWN_SOURCE_VIDEO_DIR, source_name)
+        target = _next_available_viral_breakdown_video_path(
+            VIRAL_BREAKDOWN_SOURCE_VIDEO_DIR,
+            source_name,
+        )
         upload.save(str(target), overwrite=False)
         saved.append(
             {
@@ -496,6 +532,7 @@ def api_viral_breakdown_status():
 
 
 register_hot_topic_routes(app)
+register_smart_image_editor_routes(app)
 
 
 @app.route("/api/viral-breakdown/file", method=["GET", "OPTIONS"])
@@ -550,6 +587,27 @@ def api_viral_breakdown_transcribe():
         return transcribe_viral_breakdown_video(
             payload.get("videoKey"),
             model_name=str(payload.get("model") or "base"),
+        )
+    except FileNotFoundError as exc:
+        response.status = 404
+        return {"ok": False, "error": str(exc)}
+    except (ValueError, RuntimeError) as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+
+
+@app.route("/api/viral-breakdown/analyze-shot-language", method=["POST", "OPTIONS"])
+def api_viral_breakdown_analyze_shot_language():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    if not isinstance(payload, dict):
+        response.status = 400
+        return {"ok": False, "error": "payload must be an object"}
+    try:
+        return analyze_viral_breakdown_shot_language(
+            payload.get("videoKey"),
+            config=AI8VideoConfig.from_env(),
         )
     except FileNotFoundError as exc:
         response.status = 404
@@ -1363,6 +1421,54 @@ def user_generated_html_motion_preview(review_id: str):
     except FileNotFoundError:
         response.status = 404
         return {"ok": False, "error": "HTML 动效预览不存在"}
+    response.set_header("Cache-Control", "no-store")
+    return static_file(target.name, root=str(target.parent))
+
+
+@app.route("/api/user-generated-results/tts-timeline-preview/<review_id>", method=["GET", "OPTIONS"])
+def user_generated_tts_timeline_preview(review_id: str):
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    try:
+        target = resolve_tts_timeline_review_video(review_id)
+    except ValueError as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+    except FileNotFoundError:
+        response.status = 404
+        return {"ok": False, "error": "配音时间轴预览不存在"}
+    response.set_header("Cache-Control", "no-store")
+    return static_file(target.name, root=str(target.parent))
+
+
+@app.route("/api/user-generated-results/video-timeline-preview/<review_id>", method=["GET", "OPTIONS"])
+def user_generated_video_timeline_preview(review_id: str):
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    try:
+        target = resolve_video_timeline_review_video(review_id)
+    except ValueError as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+    except FileNotFoundError:
+        response.status = 404
+        return {"ok": False, "error": "视频裁剪预览不存在"}
+    response.set_header("Cache-Control", "no-store")
+    return static_file(target.name, root=str(target.parent))
+
+
+@app.route("/api/user-generated-results/video-timeline-filmstrip/<review_id>", method=["GET", "OPTIONS"])
+def user_generated_video_timeline_filmstrip(review_id: str):
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    try:
+        target = resolve_video_timeline_filmstrip(review_id)
+    except ValueError as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+    except FileNotFoundError:
+        response.status = 404
+        return {"ok": False, "error": "视频缩略图条不存在"}
     response.set_header("Cache-Control", "no-store")
     return static_file(target.name, root=str(target.parent))
 
@@ -2330,6 +2436,226 @@ def _tts_script_knowledge(text: str, config: AI8VideoConfig) -> dict[str, Any]:
     return result
 
 
+def _user_generated_tts_audio_context(relative_key: str, video_path: Path) -> dict[str, Any]:
+    restored_record = load_restored_result_metadata(ensure_user_generated_result_dir(), relative_key)
+    asset_record = _asset_record_for_user_generated_key(relative_key, video_path)
+    record = _merge_user_generated_records(restored_record, asset_record)
+    manifest = _load_json_file(record.get("archiveManifestPath") if record else None)
+    candidates = []
+    archive_meta = record.get("archiveMeta") if isinstance(record.get("archiveMeta"), dict) else {}
+    for value in (archive_meta.get("localTts"), manifest.get("localTts")):
+        if isinstance(value, dict):
+            candidates.append(value)
+    local_tts = next((item for item in candidates if _safe_local_tts_audio_path(item.get("audioPath"))), {})
+    audio_path = _safe_local_tts_audio_path(local_tts.get("audioPath"))
+    status = local_tts_status()
+    return {
+        "record": record,
+        "localTts": local_tts,
+        "audioPath": audio_path,
+        "timelineChunks": local_tts.get("timelineChunks"),
+        "timelineMuted": local_tts.get("timelineMuted") is True,
+        "ttsVolume": local_tts.get("ttsVolume", status.get("volume", 1.0)),
+    }
+
+
+def _safe_local_tts_audio_path(raw_path: object) -> Path | None:
+    value = str(raw_path or "").strip()
+    if not value:
+        return None
+    candidate = Path(value)
+    if not candidate.is_absolute():
+        candidate = (PROJECT_ROOT / candidate).resolve()
+    else:
+        candidate = candidate.resolve()
+    root = local_tts_output_dir().resolve()
+    return candidate if _is_within(root, candidate) and candidate.is_file() else None
+
+
+def _current_tts_timeline_status(video_path: Path, relative_key: str) -> dict[str, Any]:
+    context = _user_generated_tts_audio_context(relative_key, video_path)
+    if context.get("timelineMuted") is True and not pending_tts_timeline_review(relative_key):
+        return {
+            "ok": True,
+            "available": False,
+            "pending": False,
+            "reviewReady": False,
+            "relativeKey": relative_key,
+            "audioDurationSeconds": 0.0,
+            "durationSeconds": 0.0,
+            "timelineChunks": [],
+            "previewUrl": "",
+            "waveformStatus": "unavailable",
+            "waveformPeaks": [],
+            "reason": "视频裁剪后未保留可编辑的 TTS 片段",
+        }
+    return tts_timeline_review_status(
+        video_path,
+        relative_key,
+        audio_path=context["audioPath"],
+        persisted_chunks=context["timelineChunks"],
+        tts_volume=context["ttsVolume"],
+    )
+
+
+def _current_video_timeline_status(
+    video_path: Path,
+    relative_key: str,
+    *,
+    include_filmstrip: bool = False,
+) -> dict[str, Any]:
+    return video_timeline_review_status(
+        video_path,
+        relative_key,
+        include_filmstrip=include_filmstrip,
+    )
+
+
+def _pending_burn_visual_source(video_path: Path, relative_key: str) -> tuple[Path, dict[str, Any]]:
+    html_status = html_motion_review_status(relative_key)
+    if html_status.get("reviewReady") is True:
+        return html_motion_review_candidate_path(video_path, relative_key), html_status
+    return video_path, html_status
+
+
+def _render_pending_tts_burn_preview(
+    video_path: Path,
+    relative_key: str,
+    *,
+    visual_source: Path | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    state = pending_tts_timeline_review(relative_key)
+    if not state:
+        return _current_tts_timeline_status(video_path, relative_key)
+    source = visual_source or _pending_burn_visual_source(video_path, relative_key)[0]
+    if force or tts_timeline_candidate_needs_render(source, relative_key):
+        review = render_tts_timeline_candidate(source, relative_key)
+        candidate = resolve_tts_timeline_review_video(review["reviewId"])
+        background_music = mix_background_music(
+            candidate,
+            preserve_original_audio_override=True,
+            preserved_audio_volume_override=1.0,
+        )
+        if background_music.get("enabled") is True and background_music.get("status") == "failed":
+            candidate.unlink(missing_ok=True)
+            raise RuntimeError(str(background_music.get("reason") or "配音预览背景音乐混音失败"))
+        return {**review, "backgroundMusic": background_music}
+    return tts_timeline_review_status(video_path, relative_key)
+
+
+def _render_pending_video_burn_preview(
+    video_path: Path,
+    relative_key: str,
+    composite_source: Path,
+) -> dict[str, Any]:
+    state = pending_video_timeline_review(relative_key, video_path)
+    if not state:
+        return {
+            "ok": True,
+            "available": True,
+            "pending": False,
+            "reviewReady": False,
+            "relativeKey": relative_key,
+            "timelineChunks": [],
+            "previewUrl": "",
+            "needsLoad": True,
+        }
+    if video_timeline_candidate_needs_render(composite_source, relative_key):
+        return render_video_timeline_candidate(composite_source, relative_key)
+    return _current_video_timeline_status(video_path, relative_key)
+
+
+def _burn_review_payload(video_path: Path, relative_key: str, *, refresh_tts: bool = True) -> dict[str, Any]:
+    visual_source, html_motion = _pending_burn_visual_source(video_path, relative_key)
+    tts = (
+        _render_pending_tts_burn_preview(video_path, relative_key, visual_source=visual_source)
+        if refresh_tts
+        else _current_tts_timeline_status(video_path, relative_key)
+    )
+    tts_pending = tts.get("pending") is True
+    composite_source = (
+        resolve_tts_timeline_review_video(str(tts.get("reviewId") or ""))
+        if tts_pending and tts.get("previewUrl")
+        else visual_source
+    )
+    video_timeline = _render_pending_video_burn_preview(video_path, relative_key, composite_source)
+    video_pending = video_timeline.get("pending") is True
+    html_pending = html_motion.get("reviewReady") is True
+    boundary = timeline_boundary_status(
+        video_timeline.get("outputDurationSeconds") if video_pending else 0,
+        tts_chunks=tts.get("timelineChunks") if video_pending and tts.get("available") is True else [],
+        html_motion_chunks=html_motion.get("timelineChunks") if video_pending and html_pending else [],
+    )
+    review_ready = video_pending or tts_pending or html_pending
+    preview_url = str(
+        video_timeline.get("previewUrl")
+        or tts.get("previewUrl")
+        or html_motion.get("previewUrl")
+        or ""
+    )
+    return {
+        "ok": True,
+        "userGeneratedKey": relative_key,
+        "reviewReady": review_ready,
+        "burnAllowed": review_ready and boundary["valid"] is True,
+        "pendingKinds": [
+            kind
+            for kind, ready in (
+                ("videoTimeline", video_pending),
+                ("tts", tts_pending),
+                ("htmlMotion", html_pending),
+            )
+            if ready
+        ],
+        "previewUrl": preview_url,
+        "livePreviewUrl": "" if video_pending or tts_pending else str(html_motion.get("livePreviewUrl") or ""),
+        "videoTimeline": video_timeline,
+        "tts": tts,
+        "htmlMotion": html_motion,
+        "timelineBoundary": boundary,
+    }
+
+
+def _prepare_tts_timeline_preview(raw_key: object, chunks: object) -> dict[str, Any]:
+    video_path, relative_key = _resolve_user_generated_video_key(raw_key)
+    current = _current_tts_timeline_status(video_path, relative_key)
+    if current.get("available") is not True:
+        raise LookupError(str(current.get("reason") or "当前视频没有可编辑的独立 TTS 音频"))
+    review = save_tts_timeline_review(
+        video_path,
+        relative_key,
+        Path(str(current["audioPath"])),
+        chunks,
+        tts_volume=float(current.get("ttsVolume") or 1.0),
+    )
+    burn_review = _burn_review_payload(video_path, relative_key)
+    return {"ok": True, "ttsTimeline": review, "burnReview": burn_review, "videoUrl": burn_review["previewUrl"]}
+
+
+def _prepare_video_timeline_preview(
+    raw_key: object,
+    chunks: object,
+    *,
+    reset: bool = False,
+) -> dict[str, Any]:
+    video_path, relative_key = _resolve_user_generated_video_key(raw_key)
+    review = (
+        reset_video_timeline_review(video_path, relative_key, include_filmstrip=True)
+        if reset
+        else save_video_timeline_review(video_path, relative_key, chunks)
+    )
+    burn_review = _burn_review_payload(video_path, relative_key)
+    if reset:
+        burn_review["videoTimeline"] = review
+    return {
+        "ok": True,
+        "videoTimeline": review,
+        "burnReview": burn_review,
+        "videoUrl": burn_review.get("previewUrl") or f"/user-generated-results/{relative_key}",
+    }
+
+
 def _regenerate_user_generated_tts(raw_key: object) -> dict:
     video_path, relative_key = _resolve_user_generated_video_key(raw_key)
     narration_text, record = _tts_narration_text_for_user_generated_video(relative_key, video_path)
@@ -2340,35 +2666,41 @@ def _regenerate_user_generated_tts(raw_key: object) -> dict:
             "userGeneratedKey": relative_key,
             "videoUrl": f"/user-generated-results/{relative_key}",
             "textChars": 0,
-        }
+    }
     video_index = _coerce_positive_int(record.get("videoIndex") if record else None)
     job_id = str((record or {}).get("jobId") or Path(relative_key).stem).strip()
-    result = attach_local_tts_to_video(
-        video_path,
-        narration_text=narration_text,
-        video_index=video_index,
-        job_id=job_id,
-        preserve_original_audio=False,
-    )
+    temp_root = PROJECT_ROOT / "temp" / "ai8video"
+    temp_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="tts-preview-", dir=temp_root) as tempdir:
+        preview_source = Path(tempdir) / video_path.name
+        shutil.copy2(video_path, preview_source)
+        result = attach_local_tts_to_video(
+            preview_source,
+            narration_text=narration_text,
+            video_index=video_index,
+            job_id=job_id,
+            preserve_original_audio=False,
+        )
     if result.get("status") != "mixed":
         raise RuntimeError(str(result.get("reason") or "重新生成 TTS 配音失败"))
-    background_music_result = mix_background_music(
+    audio_path = _safe_local_tts_audio_path(result.get("audioPath"))
+    if audio_path is None:
+        raise RuntimeError("重新生成 TTS 后未获得可用音频")
+    save_tts_timeline_review(
         video_path,
-        preserve_original_audio_override=True,
-        preserved_audio_volume_override=1.0,
+        relative_key,
+        audio_path,
+        [],
+        tts_volume=float(result.get("ttsVolume") or local_tts_status().get("volume") or 1.0),
+        tts_result=result,
     )
-    if background_music_result.get("enabled") is True and background_music_result.get("status") == "failed":
-        raise RuntimeError(str(background_music_result.get("reason") or "重新混入背景音乐失败"))
-    review_audio_result = sync_html_motion_review_audio(video_path, relative_key)
-    if review_audio_result.get("status") == "failed":
-        raise RuntimeError(str(review_audio_result.get("reason") or "HTML 动效候选音轨同步失败"))
+    burn_review = _burn_review_payload(video_path, relative_key)
     return {
         "ok": True,
         "userGeneratedKey": relative_key,
-        "videoUrl": f"/user-generated-results/{relative_key}",
+        "videoUrl": burn_review.get("previewUrl"),
         "localTts": result,
-        "backgroundMusic": background_music_result,
-        "htmlMotionReviewAudio": review_audio_result,
+        "burnReview": burn_review,
         "textChars": result.get("textChars") or len(narration_text),
     }
 
@@ -2453,42 +2785,259 @@ def _regenerate_user_generated_html_motion(
             result,
         )
     manifest_update = _update_html_motion_manifest(updated_record, result)
+    burn_review = _burn_review_payload(video_path, relative_key)
     return {
         "ok": True,
         "userGeneratedKey": relative_key,
-        "videoUrl": result.get("previewUrl") or f"/user-generated-results/{relative_key}",
+        "videoUrl": burn_review.get("previewUrl") or result.get("previewUrl") or f"/user-generated-results/{relative_key}",
         "htmlMotionOverlay": result,
+        "burnReview": burn_review,
         "manifestUpdate": manifest_update,
         "previewGeneration": {"ok": False, "status": "pending_confirmation"},
     }
 
 
-def _confirm_user_generated_html_motion(raw_key: object, chunks: object = None) -> dict:
-    video_path, relative_key = _resolve_user_generated_video_key(raw_key)
-    if isinstance(chunks, list) and chunks:
-        adjust_html_motion_review_timeline(video_path, relative_key, chunks)
-    result = confirm_html_motion_review(video_path, relative_key)
-    record = save_restored_result_html_motion_overlay(
-        ensure_user_generated_result_dir(),
-        relative_key,
-        result,
-    )
-    if not record:
-        record = _asset_maintenance_service().save_html_motion_overlay_result(
-            relative_key,
-            video_path,
-            result,
+def _save_tts_burn_result(relative_key: str, video_path: Path, result: dict[str, Any]) -> dict:
+    try:
+        return _asset_maintenance_service().save_local_tts_result(relative_key, video_path, result)
+    except LookupError:
+        metadata_path = restored_result_metadata_path(ensure_user_generated_result_dir(), relative_key)
+        payload = _load_json_file(metadata_path)
+        if not payload:
+            raise
+        archive_meta = payload.get("archiveMeta") if isinstance(payload.get("archiveMeta"), dict) else {}
+        payload["archiveMeta"] = {**archive_meta, "localTts": result}
+        temporary = metadata_path.with_name(f".{metadata_path.name}.tmp")
+        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(metadata_path)
+        return payload
+
+
+def _update_tts_manifest(record: dict, result: dict) -> dict:
+    raw_path = str(record.get("archiveManifestPath") or "").strip()
+    if not raw_path:
+        return {"status": "skipped", "reason": "manifest 不存在"}
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = (PROJECT_ROOT / path).resolve()
+    payload = _load_json_file(path)
+    if not payload:
+        return {"status": "skipped", "reason": "manifest 不存在或不可读"}
+    payload["localTts"] = result
+    temporary = path.with_name(f".{path.name}.tmp")
+    try:
+        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(path)
+    except Exception as exc:
+        temporary.unlink(missing_ok=True)
+        return {"status": "failed", "reason": str(exc)[:300]}
+    return {"status": "updated", "path": str(path)}
+
+
+def _confirmed_tts_result(video_path: Path, relative_key: str, state: dict[str, Any]) -> tuple[dict, dict]:
+    context = _user_generated_tts_audio_context(relative_key, video_path)
+    result = {
+        **dict(context.get("localTts") or {}),
+        **dict(state.get("ttsResult") or {}),
+        "status": "mixed",
+        "video": str(video_path),
+        "originalAudio": "replaced",
+        "audioPath": str(state.get("audioPath") or ""),
+        "ttsVolume": float(state.get("ttsVolume") or 1.0),
+        "timelineChunks": list(state.get("timelineChunks") or []),
+        "timelineMuted": state.get("timelineMuted") is True,
+        "timelineEditedAt": datetime.now(timezone.utc).isoformat(),
+    }
+    record = _save_tts_burn_result(relative_key, video_path, result)
+    return result, _update_tts_manifest(record, result)
+
+
+def _pending_burn_context(
+    video_path: Path,
+    relative_key: str,
+    html_chunks: object,
+) -> tuple[dict[str, Any], dict[str, Any], bool, Path]:
+    html_status = html_motion_review_status(relative_key)
+    video_state = pending_video_timeline_review(relative_key, video_path)
+    video_duration = float(video_state.get("outputDurationSeconds") or 0)
+    if video_state and html_status.get("reviewReady") is True and isinstance(html_chunks, list) and html_chunks:
+        ensure_timeline_chunks_within_video(video_duration, html_motion_chunks=html_chunks)
+    if html_status.get("reviewReady") is True and isinstance(html_chunks, list) and html_chunks:
+        adjust_html_motion_review_timeline(video_path, relative_key, html_chunks)
+        html_status = html_motion_review_status(relative_key)
+    tts_state = pending_tts_timeline_review(relative_key)
+    html_pending = html_status.get("reviewReady") is True
+    if video_state:
+        tts_for_boundary = tts_state or _current_tts_timeline_status(video_path, relative_key)
+        ensure_timeline_chunks_within_video(
+            video_duration,
+            tts_chunks=(
+                tts_for_boundary.get("timelineChunks")
+                if tts_for_boundary.get("available") is True or tts_state
+                else []
+            ),
+            html_motion_chunks=html_status.get("timelineChunks") if html_pending else [],
         )
-    manifest_update = _update_html_motion_manifest(record, result)
-    preview = _refresh_html_motion_preview(video_path, relative_key, result)
+    if not tts_state and not video_state and not html_pending:
+        raise LookupError("当前没有待烧录的视频裁剪、配音或 HTML 动效预览")
+    visual_source = html_motion_review_candidate_path(video_path, relative_key) if html_pending else video_path
+    return tts_state, video_state, html_pending, visual_source
+
+
+def _render_confirmed_burn(
+    video_path: Path,
+    visual_source: Path,
+    tts_state: dict[str, Any],
+    video_state: dict[str, Any],
+) -> dict:
+    suffix = video_path.suffix or ".mp4"
+    composite = video_path.with_name(f".{video_path.stem}.burn-composite{suffix}")
+    final = video_path.with_name(f".{video_path.stem}.burn-confirming{suffix}")
+    composite.unlink(missing_ok=True)
+    final.unlink(missing_ok=True)
+    background_music_result = {"enabled": False, "status": "unchanged"}
+    try:
+        if tts_state:
+            render_tts_timeline_video(
+                visual_source,
+                Path(str(tts_state["audioPath"])),
+                composite,
+                tts_state["timelineChunks"],
+                duration_seconds=float(tts_state["durationSeconds"]),
+                tts_volume=float(tts_state.get("ttsVolume") or 1.0),
+            )
+            background_music_result = mix_background_music(
+                composite,
+                preserve_original_audio_override=True,
+                preserved_audio_volume_override=1.0,
+            )
+            if background_music_result.get("enabled") is True and background_music_result.get("status") == "failed":
+                raise RuntimeError(str(background_music_result.get("reason") or "烧录背景音乐失败"))
+        else:
+            shutil.copy2(visual_source, composite)
+        if video_state:
+            render_video_timeline_video(
+                composite,
+                final,
+                video_state["timelineChunks"],
+                source_duration_seconds=float(video_state["sourceDurationSeconds"]),
+            )
+        else:
+            os.replace(composite, final)
+        os.replace(final, video_path)
+    except Exception:
+        composite.unlink(missing_ok=True)
+        final.unlink(missing_ok=True)
+        raise
+    composite.unlink(missing_ok=True)
+    return background_music_result
+
+
+def _tts_state_after_video_crop(
+    video_path: Path,
+    relative_key: str,
+    tts_state: dict[str, Any],
+    video_state: dict[str, Any],
+) -> dict[str, Any]:
+    state = dict(tts_state)
+    if not state and video_state:
+        current = _current_tts_timeline_status(video_path, relative_key)
+        if current.get("available") is True:
+            context = _user_generated_tts_audio_context(relative_key, video_path)
+            state = {
+                "audioPath": str(current.get("audioPath") or ""),
+                "ttsVolume": float(current.get("ttsVolume") or 1.0),
+                "timelineChunks": list(current.get("timelineChunks") or []),
+                "durationSeconds": float(current.get("durationSeconds") or 0),
+                "ttsResult": dict(context.get("localTts") or {}),
+            }
+    if not state or not video_state:
+        return state
+    chunks = remap_timeline_chunks_through_video_cuts(
+        state.get("timelineChunks"),
+        video_state.get("timelineChunks"),
+    )
+    return {
+        **state,
+        "timelineChunks": chunks,
+        "durationSeconds": float(video_state.get("outputDurationSeconds") or 0),
+        "timelineMuted": not chunks,
+    }
+
+
+def _persist_confirmed_burn(
+    video_path: Path,
+    relative_key: str,
+    tts_state: dict[str, Any],
+    video_state: dict[str, Any],
+    html_pending: bool,
+    *,
+    tts_review_pending: bool,
+) -> dict[str, Any]:
+    html_result = finalize_html_motion_review(relative_key) if html_pending else {}
+    tts_review = mark_tts_timeline_review_confirmed(relative_key) if tts_review_pending else {}
+    video_review = mark_video_timeline_review_confirmed(relative_key) if video_state else {}
+    html_manifest = {"status": "skipped", "reason": "没有待烧录 HTML 动效"}
+    if html_result:
+        record = save_restored_result_html_motion_overlay(
+            ensure_user_generated_result_dir(),
+            relative_key,
+            html_result,
+        )
+        if not record:
+            record = _asset_maintenance_service().save_html_motion_overlay_result(
+                relative_key,
+                video_path,
+                html_result,
+            )
+        html_manifest = _update_html_motion_manifest(record, html_result)
+    tts_result: dict[str, Any] = {}
+    tts_manifest = {"status": "skipped", "reason": "没有待烧录 TTS 配音"}
+    if tts_state:
+        tts_result, tts_manifest = _confirmed_tts_result(video_path, relative_key, tts_state)
+    return {
+        "htmlMotionOverlay": html_result,
+        "localTts": tts_result,
+        "ttsReview": tts_review,
+        "videoTimeline": video_review,
+        "manifestUpdate": {"htmlMotion": html_manifest, "tts": tts_manifest},
+    }
+
+
+def _confirm_user_generated_burn(raw_key: object, html_chunks: object = None) -> dict:
+    video_path, relative_key = _resolve_user_generated_video_key(raw_key)
+    tts_state, video_state, html_pending, visual_source = _pending_burn_context(
+        video_path,
+        relative_key,
+        html_chunks,
+    )
+    persisted_tts_state = _tts_state_after_video_crop(video_path, relative_key, tts_state, video_state)
+    background_music_result = _render_confirmed_burn(video_path, visual_source, tts_state, video_state)
+    persisted = _persist_confirmed_burn(
+        video_path,
+        relative_key,
+        persisted_tts_state,
+        video_state,
+        html_pending,
+        tts_review_pending=bool(tts_state),
+    )
+    preview = generate_preview_for_video(video_path, ensure_user_generated_result_dir(), relative_key)
+    review_audio = sync_html_motion_review_audio(video_path, relative_key)
     return {
         "ok": True,
         "userGeneratedKey": relative_key,
         "videoUrl": f"/user-generated-results/{relative_key}",
-        "htmlMotionOverlay": result,
-        "manifestUpdate": manifest_update,
+        **persisted,
+        "backgroundMusic": background_music_result,
+        "htmlMotionReviewAudio": review_audio,
         "previewGeneration": preview,
+        "burnReview": _burn_review_payload(video_path, relative_key, refresh_tts=False),
     }
+
+
+def _confirm_user_generated_html_motion(raw_key: object, chunks: object = None) -> dict:
+    """保留旧调用入口，并统一走配音与动效烧录流程。"""
+    return _confirm_user_generated_burn(raw_key, chunks)
 
 
 def _video_prompt_for_user_generated_video(
@@ -2994,6 +3543,23 @@ def _next_available_path(directory: Path, filename: str) -> Path:
         if not numbered.exists():
             return numbered
     raise RuntimeError("too many duplicate material filenames")
+
+
+def _next_available_viral_breakdown_video_path(directory: Path, filename: str) -> Path:
+    safe_name = Path(filename).name
+    suffix = Path(safe_name).suffix.lower()
+    base_stem = Path(safe_name).stem
+    used_stems = {
+        path.stem.casefold()
+        for path in directory.iterdir()
+        if path.is_file() and path.suffix.lower() in SUPPORTED_VIRAL_BREAKDOWN_VIDEO_EXTENSIONS
+    }
+    for index in range(1000):
+        stem = base_stem if index == 0 else f"{base_stem}-{index}"
+        candidate = directory / f"{stem}{suffix}"
+        if stem.casefold() not in used_stems and not candidate.exists():
+            return candidate
+    raise RuntimeError("too many duplicate viral breakdown video filenames")
 
 
 def _index_uploaded_script(target: Path, root: Path) -> dict[str, Any]:
@@ -3844,6 +4410,42 @@ def api_system_prompt():
     }
 
 
+def _agent_skill_settings_payload() -> dict[str, object]:
+    metadata_by_agent: dict[str, list[Any]] = {}
+    for metadata in discover_agent_skills():
+        metadata_by_agent.setdefault(metadata.agent_id, []).append(metadata)
+
+    agents: list[dict[str, object]] = []
+    total_skills = 0
+    enabled_skills = 0
+    for slot in list_agent_skill_slots():
+        defaults = set(slot.default_skills)
+        skills = []
+        for metadata in metadata_by_agent.get(slot.agent_id, []):
+            enabled = metadata.name in defaults
+            enabled_skills += int(enabled)
+            skills.append({
+                "name": metadata.name,
+                "description": metadata.description,
+                "enabled": enabled,
+                "status": "enabled" if enabled else "placeholder",
+                "builtIn": True,
+                "removable": False,
+            })
+        total_skills += len(skills)
+        agents.append({
+            "agentId": slot.agent_id,
+            "label": slot.label,
+            "skills": skills,
+        })
+    return {
+        "agents": agents,
+        "totalAgents": len(agents),
+        "totalSkills": total_skills,
+        "enabledSkills": enabled_skills,
+    }
+
+
 @app.route("/api/auth-settings", method=["GET", "OPTIONS"])
 def api_auth_settings():
     if request.method == "OPTIONS":
@@ -4058,6 +4660,7 @@ def api_auth_settings():
         "fields": fields,
         "localTts": tts,
         "archiveArtifacts": archive_artifacts,
+        "agentSkills": _agent_skill_settings_payload(),
         "modelCatalogs": load_model_catalogs(),
     }
 
@@ -5050,6 +5653,137 @@ def api_user_generated_html_motion_review():
         return {"ok": False, "error": str(exc)}
 
 
+@app.route("/api/user-generated-results/burn-review", method=["POST", "OPTIONS"])
+def api_user_generated_burn_review():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    if not isinstance(payload, dict):
+        response.status = 400
+        return {"ok": False, "error": "payload must be an object"}
+    try:
+        video_path, relative_key = _resolve_user_generated_video_key(payload.get("userGeneratedKey"))
+        return _burn_review_payload(video_path, relative_key)
+    except FileNotFoundError:
+        response.status = 404
+        return {"ok": False, "error": "视频已删除"}
+    except (LookupError, ValueError) as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+    except RuntimeError as exc:
+        response.status = 500
+        return {"ok": False, "error": str(exc)}
+
+
+@app.route("/api/user-generated-results/video-timeline-review", method=["POST", "OPTIONS"])
+def api_user_generated_video_timeline_review():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    if not isinstance(payload, dict):
+        response.status = 400
+        return {"ok": False, "error": "payload must be an object"}
+    try:
+        video_path, relative_key = _resolve_user_generated_video_key(payload.get("userGeneratedKey"))
+        return {
+            "ok": True,
+            "userGeneratedKey": relative_key,
+            "videoTimeline": _current_video_timeline_status(
+                video_path,
+                relative_key,
+                include_filmstrip=True,
+            ),
+        }
+    except FileNotFoundError:
+        response.status = 404
+        return {"ok": False, "error": "视频已删除"}
+    except ValueError as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+    except RuntimeError as exc:
+        response.status = 500
+        return {"ok": False, "error": str(exc)}
+
+
+@app.route("/api/user-generated-results/video-timeline-preview", method=["POST", "OPTIONS"])
+def api_user_generated_video_timeline_preview():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    if not isinstance(payload, dict):
+        response.status = 400
+        return {"ok": False, "error": "payload must be an object"}
+    try:
+        return _prepare_video_timeline_preview(
+            payload.get("userGeneratedKey"),
+            payload.get("chunks"),
+            reset=payload.get("reset") is True,
+        )
+    except FileNotFoundError:
+        response.status = 404
+        return {"ok": False, "error": "视频已删除"}
+    except LookupError as exc:
+        response.status = 409
+        return {"ok": False, "error": str(exc)}
+    except ValueError as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+    except RuntimeError as exc:
+        response.status = 500
+        return {"ok": False, "error": str(exc)}
+
+
+@app.route("/api/user-generated-results/tts-timeline-preview", method=["POST", "OPTIONS"])
+def api_user_generated_tts_timeline_preview():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    if not isinstance(payload, dict):
+        response.status = 400
+        return {"ok": False, "error": "payload must be an object"}
+    try:
+        return _prepare_tts_timeline_preview(payload.get("userGeneratedKey"), payload.get("chunks"))
+    except FileNotFoundError:
+        response.status = 404
+        return {"ok": False, "error": "视频或配音已删除"}
+    except LookupError as exc:
+        response.status = 409
+        return {"ok": False, "error": str(exc)}
+    except ValueError as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+    except RuntimeError as exc:
+        response.status = 500
+        return {"ok": False, "error": str(exc)}
+
+
+@app.route("/api/user-generated-results/confirm-burn", method=["POST", "OPTIONS"])
+def api_confirm_user_generated_burn():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    if not isinstance(payload, dict):
+        response.status = 400
+        return {"ok": False, "error": "payload must be an object"}
+    try:
+        return _confirm_user_generated_burn(
+            payload.get("userGeneratedKey"),
+            payload.get("htmlMotionChunks"),
+        )
+    except FileNotFoundError:
+        response.status = 404
+        return {"ok": False, "error": "视频或配音已删除"}
+    except LookupError as exc:
+        response.status = 409
+        return {"ok": False, "error": str(exc)}
+    except ValueError as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+    except RuntimeError as exc:
+        response.status = 500
+        return {"ok": False, "error": str(exc)}
+
+
 @app.route("/api/user-generated-results/confirm-html-motion", method=["POST", "OPTIONS"])
 def api_confirm_user_generated_html_motion():
     if request.method == "OPTIONS":
@@ -5059,7 +5793,7 @@ def api_confirm_user_generated_html_motion():
         response.status = 400
         return {"ok": False, "error": "payload must be an object"}
     try:
-        return _confirm_user_generated_html_motion(
+        return _confirm_user_generated_burn(
             payload.get("userGeneratedKey"),
             payload.get("chunks"),
         )
@@ -5087,11 +5821,13 @@ def api_adjust_user_generated_html_motion_timeline():
         return {"ok": False, "error": "payload must be an object"}
     try:
         video_path, relative_key = _resolve_user_generated_video_key(payload.get("userGeneratedKey"))
-        return adjust_html_motion_review_timeline(
+        result = adjust_html_motion_review_timeline(
             video_path,
             relative_key,
             payload.get("chunks"),
         )
+        burn_review = _burn_review_payload(video_path, relative_key)
+        return {**result, "burnReview": burn_review, "videoUrl": burn_review.get("previewUrl") or result.get("previewUrl")}
     except FileNotFoundError:
         response.status = 404
         return {"ok": False, "error": "视频已删除"}

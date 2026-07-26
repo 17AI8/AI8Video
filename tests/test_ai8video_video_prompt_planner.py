@@ -11,6 +11,7 @@ from ai8video.generation.video_prompt_planner import (
     build_video_planning_prompt,
     extract_script_keywords_with_ai,
     infer_smart_video_count_with_ai,
+    repeat_single_prompt_to_videos,
     rewrite_video_with_ai,
     single_prompt_to_video,
     plan_video_prompts_with_ai,
@@ -311,6 +312,13 @@ class AI8VideoVideoPromptPlannerTest(unittest.TestCase):
         self.assertEqual(video.keyword_guidance["explicit_core_keywords"], ["小动物"])
         self.assertIn("当前用户原文、风格要求、核心主题与用户可编辑业务模型系统提示词都是用户输入", video.prompt)
         self.assertIn("不要用本地固定词表替用户判断内容", video.prompt)
+
+    def test_manual_batch_reuses_the_same_model_prompt(self) -> None:
+        videos = repeat_single_prompt_to_videos("完整口播视频", 3, "商务", "跨境运营")
+
+        self.assertEqual([video.index for video in videos], [1, 2, 3])
+        self.assertEqual(len({video.prompt for video in videos}), 1)
+        self.assertEqual(len({video.title for video in videos}), 1)
 
     def test_visual_text_rule_is_intent_based_not_keyword_only(self) -> None:
         prompt = build_video_planning_prompt("老板在会议室讲封号风险", 2, "屏幕大标题冲屏，关键词要加粗高亮")

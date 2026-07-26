@@ -1,0 +1,319 @@
+    body > .shell > aside.sidebar #assistantToolsList > .assistant-tool-card--smart-image { order: 3; }
+    body > .shell > aside.sidebar #assistantToolsList > .assistant-tool-card--hot-radar { order: 4; margin-bottom: 4px !important; }
+    body > .shell > aside.sidebar #assistantToolsList > .assistant-tool-card--viral-breakdown { order: 5; position: relative !important; margin-bottom: 20px !important; }
+    body > .shell > aside.sidebar #assistantToolsList > .assistant-tool-card--hot-radar::after { content: none !important; }
+    body > .shell > aside.sidebar #assistantToolsList > .assistant-tool-card--viral-breakdown::after {
+      content: ""; position: absolute; left: 0; right: 0; bottom: -12px; height: 1px;
+      border-radius: 999px; background: var(--brand-soft); pointer-events: none;
+    }
+    body > .shell > aside.sidebar #assistantToolsList > .assistant-tool-card--hot-radar .material-meta { display: block !important; }
+    body > .shell > aside.sidebar [data-open-smart-image-editor-entry].is-active {
+      color: #fff !important; border-color: rgba(104, 90, 246, .76) !important;
+      background: linear-gradient(135deg, #4f6dff, #8b5cf6) !important;
+      box-shadow: 0 8px 20px rgba(79, 109, 255, .22) !important;
+    }
+
+    #smartImageEditorModal {
+      z-index: 1300; padding: 14px; background: rgba(14, 18, 36, .54);
+      backdrop-filter: blur(18px) saturate(1.08); -webkit-backdrop-filter: blur(18px) saturate(1.08);
+    }
+    #smartImageEditorModal .smart-image-editor-panel {
+      width: min(1540px, calc(100vw - 28px)); height: min(920px, calc(100dvh - 28px));
+      max-height: none; padding: 0; display: grid; grid-template-rows: 58px minmax(0, 1fr) 32px;
+      overflow: hidden; border: 1px solid rgba(154, 166, 218, .28); border-radius: 20px;
+      color: #e9edff; background: #151a2c; box-shadow: 0 34px 100px rgba(3, 7, 22, .46);
+    }
+    #smartImageEditorModal button, #smartImageEditorModal input, #smartImageEditorModal textarea { font: inherit; }
+    #smartImageEditorModal button { color: inherit; }
+    #smartImageEditorModal svg {
+      width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8;
+      stroke-linecap: round; stroke-linejoin: round; pointer-events: none;
+    }
+    #smartImageEditorModal button:focus-visible, #smartImageEditorModal input:focus-visible,
+    #smartImageEditorModal textarea:focus-visible, #smartImageEditorModal [tabindex]:focus-visible {
+      outline: 2px solid #9b87ff; outline-offset: 2px;
+    }
+
+    #smartImageEditorModal .smart-image-editor-head {
+      position: relative; min-width: 0; padding: 0 12px 0 16px; display: grid;
+      grid-template-columns: minmax(170px, 240px) minmax(0, 1fr) auto;
+      align-items: center; gap: 16px; border-bottom: 1px solid rgba(149, 161, 208, .17);
+      background: rgba(20, 25, 43, .96);
+    }
+    #smartImageEditorModal .smart-image-brand { min-width: 0; display: flex; align-items: center; gap: 10px; }
+    #smartImageEditorModal .smart-image-brand-mark {
+      width: 30px; height: 30px; display: grid; place-items: center; flex: 0 0 auto;
+      border-radius: 9px; color: #fff; font-size: 11px; font-weight: 900;
+      background: linear-gradient(135deg, #5878ff, #9b5cf6); box-shadow: 0 7px 18px rgba(105, 80, 246, .28);
+    }
+    #smartImageEditorModal .smart-image-brand div { min-width: 0; display: grid; gap: 1px; }
+    #smartImageEditorModal .smart-image-brand strong { font-size: 14px; letter-spacing: .02em; }
+    #smartImageEditorModal .smart-image-brand span:last-child { max-width: 190px; overflow: hidden; color: #4b587f; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    #smartImageEditorModal .smart-image-head-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
+    #smartImageEditorModal .smart-image-head-center-actions {
+      position: absolute; left: 50%; top: 50%; min-width: 0; display: flex; justify-content: center; align-items: center; gap: 0;
+      transform: translate(-50%, -50%);
+    }
+    #smartImageEditorModal .smart-image-head-center-actions button {
+      min-height: 31px; padding: 0 12px; border: 1px solid rgba(91, 109, 174, .28); border-radius: 0;
+      color: #52608c; font-size: 9px; background: rgba(248, 250, 255, .8);
+      box-shadow: none; white-space: nowrap;
+    }
+    #smartImageEditorModal .smart-image-head-center-actions button:first-child { border-radius: 9px 0 0 9px; }
+    #smartImageEditorModal .smart-image-head-center-actions button + button { margin-left: -1px; }
+    #smartImageEditorModal .smart-image-head-center-actions button:last-child { border-radius: 0 9px 9px 0; }
+    #smartImageEditorModal .smart-image-head-center-actions button:hover { position: relative; z-index: 1; color: #4f6dff; border-color: rgba(79, 109, 255, .42); background: rgba(241, 245, 255, .96); }
+    #smartImageEditorModal .smart-image-head-center-actions button:only-child {
+      min-height: 32px; padding: 0 17px; border: 1px solid rgba(91, 109, 174, .28); border-radius: 10px;
+      color: #52608c; font-weight: 700; letter-spacing: .02em;
+      background: rgba(248, 250, 255, .82);
+      box-shadow: 0 2px 7px rgba(68, 82, 141, .08);
+    }
+    #smartImageEditorModal .smart-image-head-center-actions button:only-child:hover {
+      color: #6654db; border-color: rgba(104, 84, 231, .4);
+      background: #fff;
+      box-shadow: 0 5px 13px rgba(91, 77, 177, .14);
+    }
+    #smartImageEditorModal .smart-image-head-center-actions button:only-child:active {
+      transform: translateY(1px); background: rgba(239, 236, 255, .92); box-shadow: none;
+    }
+    #smartImageEditorModal .smart-image-head-actions button, #smartImageEditorModal .smart-image-footer-actions button {
+      min-height: 32px; padding: 0 11px; border: 1px solid rgba(145, 157, 203, .22); border-radius: 9px;
+      color: #bfc7e3; background: rgba(255, 255, 255, .045); box-shadow: none;
+    }
+    #smartImageEditorModal .smart-image-head-actions button:hover,
+    #smartImageEditorModal .smart-image-footer-actions button:hover { color: #fff; border-color: rgba(139, 113, 255, .58); background: rgba(127, 98, 255, .15); }
+    #smartImageEditorModal .smart-image-head-actions .smart-image-icon-button { width: 34px; padding: 0; display: grid; place-items: center; }
+
+    #smartImageEditorModal .smart-image-editor-workspace {
+      min-width: 0; min-height: 0; display: grid; grid-template-columns: 214px minmax(360px, 1fr) 306px;
+      background: #0e1220;
+    }
+    #smartImageEditorModal .smart-image-side {
+      min-width: 0; min-height: 0; padding: 12px; display: flex; flex-direction: column; gap: 14px;
+      overflow: auto; background: #171c2e; scrollbar-width: thin; scrollbar-color: #3b4262 transparent;
+    }
+    #smartImageEditorModal .smart-image-assets { border-right: 1px solid rgba(149, 161, 208, .14); }
+    #smartImageEditorModal .smart-image-inspector { border-left: 1px solid rgba(149, 161, 208, .14); }
+    #smartImageEditorModal .smart-image-side section { display: grid; gap: 8px; }
+    #smartImageEditorModal .smart-image-asset-section { min-height: 0; flex: 1 1 auto; align-content: start; }
+    #smartImageEditorModal .smart-image-panel-title {
+      min-height: 24px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      color: #f1f3ff; font-size: 11px;
+    }
+    #smartImageEditorModal .smart-image-panel-title span { color: #77809e; font-size: 9px; }
+    #smartImageEditorModal .smart-image-panel-title button { padding: 0; border: 0; color: #8791b0; font-size: 10px; background: none; }
+    #smartImageEditorModal .smart-image-panel-actions { display: flex; align-items: center; gap: 6px; }
+    #smartImageEditorModal .smart-image-panel-actions button:hover { color: #cfc6ff; }
+    #smartImageEditorModal .smart-image-library-entry .smart-image-panel-title button {
+      min-height: 28px; padding: 0 12px; border: 1px solid rgba(79, 109, 255, .22); border-radius: 9px;
+      color: #4f6dff; background: rgba(79, 109, 255, .08); cursor: pointer;
+    }
+    #smartImageEditorModal .smart-image-upload-button {
+      min-height: 58px; padding: 10px; display: flex; align-items: center; gap: 10px;
+      border: 1px dashed rgba(139, 120, 255, .48); border-radius: 12px; text-align: left;
+      background: linear-gradient(135deg, rgba(82, 107, 255, .14), rgba(152, 84, 246, .12)); box-shadow: none;
+    }
+    #smartImageEditorModal .smart-image-upload-button svg { width: 22px; height: 22px; color: #a894ff; }
+    #smartImageEditorModal .smart-image-upload-button span { display: grid; gap: 2px; }
+    #smartImageEditorModal .smart-image-upload-button strong { color: #fff; font-size: 12px; }
+    #smartImageEditorModal .smart-image-upload-button small { color: #848fac; font-size: 9px; }
+    #smartImageEditorModal .smart-image-upload-button:hover { border-color: #9b87ff; transform: translateY(-1px); }
+    #smartImageEditorModal .smart-image-library-section { flex: 0 0 auto; }
+    #smartImageEditorModal .smart-image-library-search {
+      width: 100%; height: 30px; padding: 0 9px; border: 1px solid rgba(145, 157, 203, .16);
+      border-radius: 8px; color: #d5dbf1; font-size: 9px; background: rgba(8, 11, 21, .38);
+    }
+    #smartImageEditorModal .smart-image-library-search::placeholder { color: #626c88; }
+    #smartImageEditorModal .smart-image-library-list {
+      max-height: 174px; min-height: 58px; padding-right: 2px; display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; overflow: auto;
+      scrollbar-width: thin; scrollbar-color: #3b4262 transparent;
+    }
+    #smartImageEditorModal .smart-image-library-card {
+      min-width: 0; padding: 4px; display: grid; gap: 4px; border: 1px solid rgba(145, 157, 203, .12);
+      border-radius: 9px; background: rgba(255, 255, 255, .026); box-shadow: none;
+    }
+    #smartImageEditorModal .smart-image-library-card:hover { border-color: rgba(139, 113, 255, .5); background: rgba(128, 98, 255, .1); }
+    #smartImageEditorModal .smart-image-library-card img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; background: #0b0e18; }
+    #smartImageEditorModal .smart-image-library-card span { overflow: hidden; color: #8e98b6; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+    #smartImageEditorModal .smart-image-library-list > .smart-image-empty-list { grid-column: 1 / -1; }
+    #smartImageEditorModal .smart-image-create-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
+    #smartImageEditorModal .smart-image-create-grid button {
+      min-height: 54px; padding: 7px 4px; display: grid; place-items: center; gap: 4px;
+      border: 1px solid rgba(146, 158, 204, .16); border-radius: 10px; color: #9ba5c3;
+      font-size: 9px; background: rgba(255, 255, 255, .035); box-shadow: none;
+    }
+    #smartImageEditorModal .smart-image-create-grid button:hover { color: #cfc6ff; border-color: rgba(139, 113, 255, .5); background: rgba(128, 98, 255, .1); }
+    #smartImageEditorModal .smart-image-asset-list { min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+    #smartImageEditorModal .smart-image-asset-card {
+      min-width: 0; padding: 4px; display: grid; gap: 4px; border: 1px solid rgba(145, 157, 203, .12);
+      border-radius: 9px; background: rgba(255, 255, 255, .026); box-shadow: none;
+    }
+    #smartImageEditorModal .smart-image-asset-card img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; background: #0b0e18; }
+    #smartImageEditorModal .smart-image-asset-card span { overflow: hidden; color: #8e98b6; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+    #smartImageEditorModal .smart-image-empty-list { padding: 12px 6px; color: #656f8d; font-size: 9px; text-align: center; }
+
+    #smartImageEditorModal .smart-image-inspector section {
+      padding-bottom: 12px; border-bottom: 1px solid rgba(145, 157, 203, .12);
+    }
+    #smartImageEditorModal .smart-image-inspector section:last-child { border-bottom: 0; }
+    #smartImageEditorModal #smartImageAppearanceSection {
+      margin-inline: 4px; padding: 10px 9px 11px;
+      border: 1px solid rgba(118, 132, 194, .2); border-radius: 12px;
+      background: rgba(255, 255, 255, .38);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5);
+    }
+    #smartImageEditorModal .smart-image-inline-actions { display: flex; gap: 4px; }
+    #smartImageEditorModal .smart-image-inline-actions button {
+      width: 26px; height: 26px; display: grid; place-items: center; border: 1px solid rgba(145, 157, 203, .16);
+      border-radius: 7px; background: rgba(255, 255, 255, .035); box-shadow: none;
+    }
+    #smartImageEditorModal .smart-image-inline-actions svg { width: 13px; height: 13px; }
+    #smartImageEditorModal .smart-image-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+    #smartImageEditorModal .smart-image-field-grid label { display: grid; grid-template-columns: 24px 1fr; align-items: center; color: #6f7997; font-size: 9px; }
+    #smartImageEditorModal .smart-image-field-grid input {
+      width: 100%; height: 28px; padding: 0 7px; border: 1px solid rgba(145, 157, 203, .14); border-radius: 7px;
+      color: #cbd2eb; background: rgba(255, 255, 255, .035);
+    }
+    #smartImageEditorModal .smart-image-row-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+    #smartImageEditorModal .smart-image-row-actions button {
+      min-height: 28px; padding: 0 5px; border: 1px solid rgba(145, 157, 203, .14); border-radius: 7px;
+      color: #8c96b4; font-size: 9px; background: rgba(255, 255, 255, .028); box-shadow: none;
+    }
+    #smartImageEditorModal .smart-image-row-actions button:hover { color: #e4deff; border-color: rgba(139, 113, 255, .5); background: rgba(128, 98, 255, .13); }
+    #smartImageEditorModal .smart-image-slider-row { display: grid; gap: 4px; color: #7e88a6; font-size: 9px; }
+    #smartImageEditorModal .smart-image-content-input {
+      width: 100%; min-height: 58px; resize: vertical; padding: 8px; border: 1px solid rgba(145, 157, 203, .16);
+      border-radius: 8px; color: #d8def4; font-size: 10px; line-height: 1.4; background: rgba(8, 11, 21, .4);
+    }
+    #smartImageEditorModal .smart-image-style-fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+    #smartImageEditorModal .smart-image-style-fields label { display: grid; gap: 3px; color: #737d9b; font-size: 8px; }
+    #smartImageEditorModal .smart-image-style-fields input {
+      width: 100%; height: 28px; padding: 2px 5px; border: 1px solid rgba(145, 157, 203, .14);
+      border-radius: 7px; color: #cbd2eb; background: rgba(255, 255, 255, .035);
+    }
+    #smartImageEditorModal .smart-image-slider-row span { display: flex; justify-content: space-between; }
+    #smartImageEditorModal .smart-image-slider-row b { color: #b9a8ff; }
+    #smartImageEditorModal .smart-image-slider-row input {
+      width: 100%; height: 18px; margin: 0; appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer;
+    }
+    #smartImageEditorModal .smart-image-slider-row input::-webkit-slider-runnable-track {
+      height: 5px; border: 0; border-radius: 999px; background: rgba(112, 128, 185, .2); box-shadow: inset 0 1px 2px rgba(58, 72, 126, .08);
+    }
+    #smartImageEditorModal .smart-image-slider-row input::-webkit-slider-thumb {
+      width: 14px; height: 14px; margin-top: -4.5px; appearance: none; -webkit-appearance: none;
+      border: 2px solid #fff; border-radius: 50%; background: #8265f3; box-shadow: 0 2px 6px rgba(73, 57, 160, .26);
+    }
+    #smartImageEditorModal .smart-image-slider-row input::-moz-range-track { height: 5px; border: 0; border-radius: 999px; background: rgba(112, 128, 185, .2); }
+    #smartImageEditorModal .smart-image-slider-row input::-moz-range-thumb { width: 11px; height: 11px; border: 2px solid #fff; border-radius: 50%; background: #8265f3; box-shadow: 0 2px 6px rgba(73, 57, 160, .26); }
+    #smartImageEditorModal .is-disabled { opacity: .42; pointer-events: none; }
+    #smartImageEditorModal .smart-image-prompt {
+      width: 100%; min-height: 76px; max-height: 150px; resize: vertical; padding: 9px;
+      border: 1px solid rgba(145, 157, 203, .18); border-radius: 9px; outline: 0;
+      color: #d8def4; font-size: 10px; line-height: 1.5; background: rgba(8, 11, 21, .45);
+    }
+    #smartImageEditorModal .smart-image-prompt:disabled { opacity: .58; cursor: wait; }
+    #smartImageEditorModal .smart-image-model-actions { display: grid; grid-template-columns: 1fr 48px; gap: 0; }
+    #smartImageEditorModal .smart-image-model-actions button {
+      min-height: 32px; padding: 0 8px; border: 1px solid rgba(145, 157, 203, .16); border-radius: 8px;
+      color: #a7b0cb; font-size: 9px; background: rgba(255, 255, 255, .035); box-shadow: none;
+    }
+    #smartImageEditorModal .smart-image-model-actions button.primary {
+      color: #fff; border-color: rgba(140, 111, 255, .72); border-radius: 8px 0 0 8px; background: linear-gradient(135deg, #526fff, #8f5cf5);
+    }
+    #smartImageEditorModal #smartImageModelBatchCount {
+      min-width: 0; padding: 0 5px; border: 1px solid rgba(140, 111, 255, .72); border-left: 0; border-radius: 0 8px 8px 0;
+      color: #5f52ba; font-size: 9px; font-weight: 700; outline: 0; background: rgba(255, 255, 255, .9);
+    }
+    #smartImageEditorModal #smartImageModelBatchCount:disabled { cursor: wait; }
+    #smartImageEditorModal.is-processing .smart-image-model-actions { opacity: .58; }
+    #smartImageEditorModal.is-processing button,
+    #smartImageEditorModal.is-processing input,
+    #smartImageEditorModal.is-processing select,
+    #smartImageEditorModal.is-processing textarea { pointer-events: none; cursor: wait; }
+
+    #smartImageEditorModal .smart-image-message-bar {
+      min-width: 0; padding: 0 16px; display: flex; align-items: center; border-top: 1px solid rgba(120, 139, 205, .2);
+      color: #53618d; background: rgba(245, 248, 255, .92);
+    }
+    #smartImageEditorModal .smart-image-message-bar #smartImageStatus { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    #smartImageEditorModal .smart-image-message-bar #smartImageStatus[data-tone="success"] { color: #248a61; }
+    #smartImageEditorModal .smart-image-message-bar #smartImageStatus[data-tone="error"] { color: #d94b68; }
+
+    @media (prefers-reduced-motion: reduce) {
+      #smartImageEditorModal *, #smartImageEditorModal *::before, #smartImageEditorModal *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+    }
+
+    /* 与 AI8Video 主界面共用浅色玻璃拟态语汇，画布内容区仍保留必要对比度。 */
+    #smartImageEditorModal { background: rgba(99, 112, 170, .28); }
+    #smartImageEditorModal .smart-image-editor-panel {
+      color: #1a2242;
+      border-color: rgba(255, 255, 255, .72);
+      background: rgba(239, 244, 255, .92);
+      box-shadow: 0 24px 70px rgba(45, 63, 130, .2), inset 0 1px 0 rgba(255, 255, 255, .72);
+    }
+    #smartImageEditorModal .smart-image-editor-head,
+    #smartImageEditorModal .smart-image-side {
+      color: #1a2242;
+      background: linear-gradient(145deg, rgba(255, 255, 255, .82), rgba(228, 237, 255, .68));
+      border-color: rgba(120, 139, 205, .16);
+      backdrop-filter: blur(14px) saturate(1.08);
+    }
+    #smartImageEditorModal .smart-image-editor-workspace { background: #e8eefb; }
+    #smartImageEditorModal .smart-image-brand strong,
+    #smartImageEditorModal .smart-image-panel-title,
+    #smartImageEditorModal .smart-image-panel-title strong { color: #1a2242; }
+    #smartImageEditorModal .smart-image-brand span:last-child,
+    #smartImageEditorModal .smart-image-panel-title span,
+    #smartImageEditorModal .smart-image-empty-list { color: #667197; }
+    #smartImageEditorModal .smart-image-head-actions button,
+    #smartImageEditorModal .smart-image-create-grid button,
+    #smartImageEditorModal .smart-image-inline-actions button,
+    #smartImageEditorModal .smart-image-model-actions button,
+    #smartImageEditorModal .smart-image-row-actions button {
+      color: #52608c;
+      border-color: rgba(255, 255, 255, .7);
+      background: linear-gradient(145deg, rgba(255, 255, 255, .82), rgba(231, 239, 255, .58));
+      box-shadow: 0 5px 14px rgba(45, 63, 130, .07), inset 0 1px 0 rgba(255, 255, 255, .54);
+    }
+    #smartImageEditorModal .smart-image-head-actions button:hover,
+    #smartImageEditorModal .smart-image-create-grid button:hover,
+    #smartImageEditorModal .smart-image-model-actions button:hover {
+      color: #4f6dff; border-color: rgba(79, 109, 255, .3); background: rgba(255, 255, 255, .9);
+    }
+    #smartImageEditorModal .smart-image-library-search,
+    #smartImageEditorModal .smart-image-field-grid input,
+    #smartImageEditorModal .smart-image-content-input,
+    #smartImageEditorModal .smart-image-style-fields input,
+    #smartImageEditorModal .smart-image-prompt {
+      color: #1a2242; border-color: rgba(255, 255, 255, .72);
+      background: linear-gradient(145deg, rgba(255, 255, 255, .82), rgba(231, 239, 255, .62));
+      box-shadow: inset 0 0 0 1px rgba(120, 139, 205, .08);
+    }
+    #smartImageEditorModal .smart-image-upload-button {
+      color: #4f6dff; border-color: rgba(79, 109, 255, .34);
+      background: linear-gradient(135deg, rgba(79, 109, 255, .12), rgba(139, 92, 246, .1));
+    }
+    #smartImageEditorModal .smart-image-upload-button strong,
+    #smartImageEditorModal .smart-image-upload-button small,
+    #smartImageEditorModal .smart-image-empty-list { color: #667197; }
+    #smartImageEditorModal .smart-image-library-card,
+    #smartImageEditorModal .smart-image-asset-card { border-color: rgba(120, 139, 205, .13); background: rgba(255, 255, 255, .56); }
+    #smartImageEditorModal .smart-image-inspector section { border-color: rgba(120, 139, 205, .14); }
+    #smartImageEditorModal .smart-image-field-grid label,
+    #smartImageEditorModal .smart-image-style-fields label,
+    #smartImageEditorModal .smart-image-slider-row { color: #667197; }
+    #smartImageEditorModal .smart-image-brand span:last-child,
+    #smartImageEditorModal .smart-image-panel-title span,
+    #smartImageEditorModal .smart-image-panel-title button,
+    #smartImageEditorModal .smart-image-library-card span,
+    #smartImageEditorModal .smart-image-asset-card span,
+    #smartImageEditorModal .smart-image-empty-list,
+    #smartImageEditorModal .smart-image-field-grid label,
+    #smartImageEditorModal .smart-image-style-fields label,
+    #smartImageEditorModal .smart-image-slider-row { color: #4b587f; }
+    #smartImageEditorModal .smart-image-layer button,
+    #smartImageEditorModal .smart-image-toolbar button { color: #38476f; }
+    #smartImageEditorModal input::placeholder,
+    #smartImageEditorModal textarea::placeholder { color: #7a86aa; opacity: 1; }

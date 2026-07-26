@@ -490,6 +490,45 @@
       return items.find((item) => String(item?.videoKey || '') === String(state.viralBreakdown.selectedVideoKey || '')) || items[0] || null;
     }
 
+    function hasViralBreakdownFrames(item) {
+      return Number(item?.frameCount || 0) > 0 && Boolean(item?.gridImageUrl);
+    }
+
+    function hasViralBreakdownTranscript(item) {
+      return Boolean(String(item?.transcriptText || '').trim());
+    }
+
+    function hasCurrentViralBreakdownShotLanguage(item) {
+      const analysis = item?.shotLanguageAnalysis;
+      return Boolean(
+        analysis
+        && typeof analysis === 'object'
+        && analysis.stale !== true
+        && String(analysis.text || '').trim(),
+      );
+    }
+
+    function hasUnsavedViralBreakdownTranscript(item) {
+      if (!item?.videoKey) return false;
+      return getViralBreakdownTranscriptDraft(item.videoKey, item.transcriptText || '')
+        !== String(item.transcriptText || '');
+    }
+
+    function isViralBreakdownBusy() {
+      const workbench = state.viralBreakdown || {};
+      return [
+        'loading',
+        'uploading',
+        'frameProcessing',
+        'shotLanguageProcessing',
+        'transcriptProcessing',
+        'transcriptSaving',
+        'scriptGuessProcessing',
+        'scriptTreeProcessing',
+        'scriptTreeSaving',
+      ].some((key) => !!workbench[key]);
+    }
+
     function getViralBreakdownTranscriptDraft(videoKey, fallbackText = '') {
       const normalizedVideoKey = String(videoKey || '').trim();
       if (!normalizedVideoKey) return String(fallbackText || '');

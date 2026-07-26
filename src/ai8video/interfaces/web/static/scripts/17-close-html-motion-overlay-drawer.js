@@ -466,7 +466,16 @@
     function renderAssistantToolsPanel() {
       if (!els.assistantToolsList) return;
       els.assistantToolsList.innerHTML = `
-        <div class="material-card">
+        <div class="material-card assistant-tool-card assistant-tool-card--smart-image">
+          <div class="material-heading stacked">
+            <div class="material-title">智能修图</div>
+            <div class="material-meta">调用图片模型精修并导出副本</div>
+          </div>
+          <div class="material-actions">
+            <button type="button" class="material-library-button" data-open-smart-image-editor-entry aria-expanded="false">开始修图</button>
+          </div>
+        </div>
+        <div class="material-card assistant-tool-card assistant-tool-card--hot-radar">
           <div class="material-heading stacked">
             <div class="material-title">热点雷达</div>
             <div class="material-meta">聚合公开热点数据并生成选题摘要</div>
@@ -475,7 +484,7 @@
             <button type="button" class="material-library-button" data-open-hot-radar-entry>查看热点</button>
           </div>
         </div>
-        <div class="material-card">
+        <div class="material-card assistant-tool-card assistant-tool-card--viral-breakdown">
           <div class="material-heading stacked">
             <div class="material-title">爆款拆解</div>
             <div class="material-meta">一键预填拆解提示词，直接进入对话分析</div>

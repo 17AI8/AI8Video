@@ -16,6 +16,8 @@ from ai8video.generation.video_prompt_planner import (
     LLMCallable,
     infer_smart_video_count_with_ai,
     plan_video_prompts_with_ai,
+    repeat_single_prompt_to_videos,
+    repeat_video_prompt,
     single_prompt_to_video,
 )
 from ai8video.generation.business_prompt import (
@@ -130,7 +132,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                 trace_session_id=progress_session_id,
             )
             final_request = replace(final_request, smart_split_reason=smart_split_reason)
-        if smart_split or final_request.mode == "batch_videos":
+        if smart_split:
             if not video_count:
                 raise ValueError("video_count is required for video planning")
             videos = plan_video_prompts_with_ai(
@@ -143,6 +145,15 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                 llm=self.llm,
                 allow_mock=allow_mock_planning,
                 trace_session_id=progress_session_id,
+            )
+        elif final_request.mode == "batch_videos":
+            if not video_count:
+                raise ValueError("video_count is required for manual batch generation")
+            videos = repeat_single_prompt_to_videos(
+                planning_text,
+                video_count,
+                final_request.style_hint,
+                final_request.core_keywords,
             )
         else:
             videos = single_prompt_to_video(planning_text, final_request.style_hint, final_request.core_keywords)
@@ -191,12 +202,20 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             concurrent=bool(request.concurrent_generation and not request.tail_frame_chaining and len(videos) > 1),
         )
 
+        repeated_batch = (
+            request.mode == "batch_videos"
+            and not request.smart_split_reason
+            and len(videos) > 1
+            and len({video.prompt for video in videos}) == 1
+        )
         final_videos = finalize_video_prompts(
-            videos,
+            videos[:1] if repeated_batch else videos,
             llm=getattr(self, "llm", None),
             trace_session_id=progress_session_id,
             task_constraints=task_constraints,
         )
+        if repeated_batch:
+            final_videos = repeat_video_prompt(final_videos[0], len(videos))
         ordered_videos = sorted(final_videos, key=lambda item: item.index)
         if request.tail_frame_chaining:
             ordered_videos = [append_tail_frame_chain_prompt(video) for video in ordered_videos]

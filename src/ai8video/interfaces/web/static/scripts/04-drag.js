@@ -443,6 +443,17 @@
       }
     });
 
+    document.getElementById('viralBreakdownAnalyzeShotLanguageButton')?.addEventListener('click', async () => {
+      try {
+        await analyzeSelectedViralBreakdownShotLanguage();
+      } catch (error) {
+        console.error(error);
+        state.viralBreakdown.notice = '';
+        state.viralBreakdown.error = error?.message || '分析镜头语言失败，请稍后重试。';
+        renderViralBreakdownWorkbench();
+      }
+    });
+
     document.getElementById('viralBreakdownTranscribeButton')?.addEventListener('click', async () => {
       try {
         await transcribeSelectedViralBreakdownVideo();

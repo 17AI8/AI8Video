@@ -770,6 +770,55 @@
     }
     .multi-agent-detail-block ul { margin: 0; padding-left: 18px; }
     .multi-agent-detail-block p { margin: 0; }
+    .multi-agent-role-skills {
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+    }
+    .multi-agent-role-skill-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.72);
+    }
+    .multi-agent-role-skill-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      padding: 10px 12px;
+    }
+    .multi-agent-role-skill-item + .multi-agent-role-skill-item { border-top: 1px solid var(--line); }
+    .multi-agent-role-skill-item > div { min-width: 0; display: grid; gap: 4px; }
+    .multi-agent-role-skill-item code {
+      overflow: hidden;
+      color: var(--brand);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .multi-agent-role-skill-item p {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+    .multi-agent-role-skill-item > span {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 0 7px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
     .multi-agent-shared-note {
       display: flex;
       align-items: flex-start;
@@ -807,6 +856,8 @@
       .multi-agent-flow-item .multi-agent-role-flags { grid-column: 2; justify-content: flex-start; }
       .multi-agent-detail-grid { grid-template-columns: 1fr; }
       .multi-agent-shared-note { flex-direction: column; }
+      .multi-agent-role-skill-item { grid-template-columns: 1fr; }
+      .multi-agent-role-skill-item > span { justify-self: start; }
     }
     @media (prefers-reduced-motion: reduce) {
       .multi-agent-nav-item,

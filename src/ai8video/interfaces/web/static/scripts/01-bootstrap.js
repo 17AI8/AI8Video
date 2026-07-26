@@ -101,6 +101,7 @@
         loading: false,
         uploading: false,
         frameProcessing: false,
+        shotLanguageProcessing: false,
         transcriptProcessing: false,
         transcriptDrafts: {},
         scriptGuessProcessing: false,

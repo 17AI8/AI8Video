@@ -47,6 +47,28 @@ class AssetMaintenanceService:
 
         self.asset_store.mutate_records(update_matching_record)
 
+    def save_local_tts_result(
+        self,
+        relative_key: str,
+        video_path: Path,
+        result: dict[str, Any],
+    ) -> AssetRecord:
+        def update_matching_record(records: list[AssetRecord]) -> AssetRecord:
+            for index in range(len(records) - 1, -1, -1):
+                existing_record = records[index]
+                if not self._record_matches_user_generated_video(existing_record, relative_key, video_path):
+                    continue
+                updated_record = dict(existing_record)
+                archive_meta = updated_record.get("archiveMeta")
+                updated_archive_meta = dict(archive_meta) if isinstance(archive_meta, dict) else {}
+                updated_archive_meta["localTts"] = dict(result)
+                updated_record["archiveMeta"] = updated_archive_meta
+                records[index] = updated_record
+                return updated_record
+            raise LookupError("配音归档记录不存在")
+
+        return self.asset_store.mutate_records(update_matching_record)
+
     def save_extension_video_prompt(self, relative_key: str, video_path: Path, text: str) -> dict[str, Any]:
         def update_matching_record(records: list[AssetRecord]) -> dict[str, Any]:
             for index in range(len(records) - 1, -1, -1):

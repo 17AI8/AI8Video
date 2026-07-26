@@ -27,18 +27,9 @@
           return;
         }
         const video = els.videoPreviewBody?.querySelector('video');
-        if (video) {
-          const baseSrc = video.currentSrc || video.getAttribute('src') || data.videoUrl || '';
-          const cleanSrc = String(baseSrc).split('?')[0];
-          video.src = `${cleanSrc}?tts=${Date.now()}`;
-          video.load();
-          video.play().catch(() => {});
-        }
-        await refreshUserGeneratedResults();
-        renderResultModal();
-        renderStatus();
+        applyBurnReviewToVideoPreview(data?.burnReview || {}, video);
         if (button) {
-          setVideoPreviewButtonLabel(button, '已生成');
+          setVideoPreviewButtonLabel(button, '预览已生成');
           setTimeout(() => {
             setVideoPreviewButtonLabel(button, previous);
             button.disabled = false;
@@ -290,6 +281,7 @@
           setVideoPreviewButtonLabel(button, '重新生成 HTML 动效');
         }
         setHtmlMotionPreviewStatus('已取消 HTML 动效预览', 'warning');
+        void syncBurnReviewFromVideoPreview(key, els.videoPreviewBody?.querySelector('video'), { silent: true });
       } catch (error) {
         state.videoPreviewModal.htmlMotionCancelRequested = false;
         if (button) {
@@ -340,7 +332,7 @@
 
     function syncHtmlMotionDrawerWidth() {
       const drawer = els.videoPreviewBody?.querySelector('[data-video-preview-html-motion-drawer]');
-      const confirmButton = els.videoPreviewBody?.querySelector('[data-video-preview-action="confirm-html-motion"]');
+      const confirmButton = els.videoPreviewBody?.querySelector('[data-video-preview-action="confirm-burn"]');
       if (!drawer || !confirmButton) return;
       const width = Math.round(confirmButton.getBoundingClientRect().right - drawer.getBoundingClientRect().left);
       const next = width > 0 ? `${width}px` : '';
@@ -551,7 +543,12 @@
           if (jobKey) forgetHtmlMotionJob(jobKey);
           const overlay = data?.htmlMotionOverlay || data?.result?.htmlMotionOverlay || {};
           const video = els.videoPreviewBody?.querySelector('video');
-          showHtmlMotionPreview(video, overlay.previewUrl || data.previewUrl || data.videoUrl, overlay);
+          if (data?.burnReview?.tts?.pending === true) {
+            applyBurnReviewToVideoPreview(data.burnReview, video);
+          } else {
+            showHtmlMotionPreview(video, overlay.previewUrl || data.previewUrl || data.videoUrl, overlay);
+            syncBurnConfirmButton(data?.burnReview || { reviewReady: true, pendingKinds: ['htmlMotion'] });
+          }
           configureHtmlMotionTimeline(overlay);
           if (confirmButton) confirmButton.disabled = false;
           setHtmlMotionPreviewStatus(buildHtmlMotionSuccessStatus(timing, overlay), 'success');
@@ -566,7 +563,7 @@
           const displayReason = detail && !String(reason).includes(detail.slice(0, 24))
             ? `${reason}｜${detail.slice(0, 160)}`
             : reason;
-          if (confirmButton) confirmButton.disabled = true;
+          if (confirmButton && state.videoPreviewModal?.burnReview?.tts?.pending !== true) confirmButton.disabled = true;
           const failureMessage = status === 'cancelled' ? '已取消 HTML 动效预览' : `预览失败：${displayReason}`;
           setHtmlMotionPreviewStatus(buildHtmlMotionFailureStatus(failureMessage, timing), 'warning');
           if (status === 'cancelled') return data;
@@ -608,7 +605,7 @@
         });
         const data = await res.json().catch(() => ({}));
         const ready = res.ok && data?.reviewReady === true;
-        confirmButton.disabled = !ready;
+        if (state.videoPreviewModal?.burnReview?.tts?.pending !== true) confirmButton.disabled = !ready;
         configureHtmlMotionTimeline(data);
         if (ready) showHtmlMotionPreview(video, data.previewUrl, data);
       } catch (_) {

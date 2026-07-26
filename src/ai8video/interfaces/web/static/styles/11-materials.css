@@ -7,7 +7,29 @@
 
     .material-wall-entry-actions {
       display: flex;
+      gap: 6px;
       justify-content: flex-end;
+    }
+
+    .material-wall-smart-image-button {
+      min-height: 28px;
+      padding: 0 10px;
+      border: 1px solid rgba(111, 86, 246, 0.24);
+      border-radius: 6px;
+      color: #5b48d6;
+      background: rgba(111, 86, 246, 0.08);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .material-wall-smart-image-button:hover {
+      border-color: rgba(111, 86, 246, 0.38);
+      background: rgba(111, 86, 246, 0.14);
+    }
+    .material-wall-smart-image-button.is-selected {
+      color: #fff; border-color: transparent; background: linear-gradient(135deg, #4f6dff, #8b5cf6);
+      box-shadow: 0 7px 16px rgba(79, 109, 255, .2);
     }
 
     .material-wall-delete-button {

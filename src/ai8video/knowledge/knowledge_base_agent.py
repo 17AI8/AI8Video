@@ -8,6 +8,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from ai8video.agent_skills import apply_agent_skills
+
 
 TreeLLM = Callable[[str], str]
 MAX_LEAF_CHARS = 2400
@@ -112,7 +114,7 @@ def build_tree_prompt(
     feedback = str(revision_feedback or "").strip()
     feedback_block = f"\nReviewer 的返工要求：\n{feedback}\n" if feedback else ""
     units_text = "\n".join(unit.prompt_line() for unit in source_units)
-    return f"""你是 AI8video 的知识库 Agent，只负责规划知识树与原文单元归属。
+    return apply_agent_skills("knowledge-base", f"""你是 AI8video 的知识库 Agent，只负责规划知识树与原文单元归属。
 
 职责边界：
 1. 不生成、复制或改写知识正文；叶子只能返回 sourceUnitIds。
@@ -131,7 +133,7 @@ def build_tree_prompt(
 文档名称：{request.name}
 原文单元：
 {units_text}
-"""
+""")
 
 
 def parse_tree_result(value: str) -> dict[str, Any]:

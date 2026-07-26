@@ -1,10 +1,12 @@
     function beginViralBreakdownUpload() {
+      if (isViralBreakdownBusy()) return;
       const input = document.getElementById('viralBreakdownUploadInput');
       if (!input) return;
       input.click();
     }
 
     async function uploadViralBreakdownVideos(files) {
+      if (isViralBreakdownBusy() || !Array.from(files || []).length) return;
       const formData = new FormData();
       Array.from(files || []).forEach((file) => formData.append('files', file, file.name));
       state.viralBreakdown.uploading = true;
@@ -52,8 +54,10 @@
     }
 
     async function processSelectedViralBreakdownFrames() {
+      if (isViralBreakdownBusy()) return;
       const currentItem = getSelectedViralBreakdownItem();
       if (!currentItem?.videoKey) return;
+      closeViralBreakdownVideoMenu();
       state.viralBreakdown.frameProcessing = true;
       state.viralBreakdown.error = '';
       state.viralBreakdown.notice = '正在按设定间隔截图并拼接宫格图...';
@@ -80,9 +84,48 @@
       }
     }
 
-    async function transcribeSelectedViralBreakdownVideo() {
+    async function analyzeSelectedViralBreakdownShotLanguage() {
+      if (isViralBreakdownBusy()) return;
       const currentItem = getSelectedViralBreakdownItem();
-      if (!currentItem?.videoKey) return;
+      if (
+        !currentItem?.videoKey
+        || !hasViralBreakdownFrames(currentItem)
+        || !hasViralBreakdownTranscript(currentItem)
+      ) return;
+      const requestedVideoKey = String(currentItem.videoKey || '');
+      closeViralBreakdownVideoMenu();
+      state.viralBreakdown.shotLanguageProcessing = true;
+      state.viralBreakdown.error = '';
+      state.viralBreakdown.notice = '正在分析代表帧的镜头语言...';
+      activateViralBreakdownTab('shot-language');
+      renderViralBreakdownWorkbench();
+      try {
+        const res = await fetch('/api/viral-breakdown/analyze-shot-language', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoKey: currentItem.videoKey }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          throw new Error(data?.error || '分析镜头语言失败');
+        }
+        await refreshViralBreakdownWorkspace({ keepSelection: true });
+        if (String(state.viralBreakdown.selectedVideoKey || '') !== requestedVideoKey) return;
+        const frameCount = Number(data?.selectedFrames?.length || 0);
+        state.viralBreakdown.notice = frameCount
+          ? `镜头语言分析完成，已提取 ${frameCount} 个代表帧`
+          : '镜头语言分析完成';
+      } finally {
+        state.viralBreakdown.shotLanguageProcessing = false;
+        renderViralBreakdownWorkbench();
+      }
+    }
+
+    async function transcribeSelectedViralBreakdownVideo() {
+      if (isViralBreakdownBusy()) return;
+      const currentItem = getSelectedViralBreakdownItem();
+      if (!currentItem?.videoKey || !hasViralBreakdownFrames(currentItem)) return;
+      closeViralBreakdownVideoMenu();
       state.viralBreakdown.transcriptProcessing = true;
       state.viralBreakdown.error = '';
       state.viralBreakdown.notice = '正在调用 Whisper 识别台词...';
@@ -113,12 +156,18 @@
     }
 
     async function guessSelectedViralBreakdownScript(options = {}) {
+      if (isViralBreakdownBusy()) return;
       const resumeFrom = String(options.resumeFrom || 'full').trim() === 'tree' ? 'tree' : 'full';
       const currentItem = getSelectedViralBreakdownItem();
-      if (!currentItem?.videoKey) return;
+      if (
+        !currentItem?.videoKey
+        || !hasCurrentViralBreakdownShotLanguage(currentItem)
+        || hasUnsavedViralBreakdownTranscript(currentItem)
+      ) return;
       const transcriptTextFromItem = String(currentItem?.transcriptText || '');
       const transcriptText = getViralBreakdownTranscriptDraft(currentItem.videoKey, transcriptTextFromItem);
       const normalizedVideoKey = String(currentItem.videoKey || '');
+      closeViralBreakdownVideoMenu();
       let failedStage = resumeFrom === 'tree' ? 'tree' : 'skeleton';
       let streamedScriptText = '';
       state.viralBreakdown.error = '';
@@ -297,6 +346,7 @@
     }
 
     async function saveSelectedViralBreakdownTranscript() {
+      if (isViralBreakdownBusy()) return;
       const currentItem = getSelectedViralBreakdownItem();
       if (!currentItem?.videoKey) return;
       const normalizedVideoKey = String(currentItem.videoKey || '');

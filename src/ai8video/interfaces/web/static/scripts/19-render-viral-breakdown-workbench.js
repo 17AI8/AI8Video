@@ -17,7 +17,7 @@
       const labelText = currentItem
         ? String(currentItem.name || currentItem.videoKey || '未命名视频')
         : (items.length ? '请选择视频' : '还没有上传视频');
-      button.disabled = !items.length || !!state.viralBreakdown.loading;
+      button.disabled = !items.length || isViralBreakdownBusy();
       label.textContent = labelText;
       button.title = labelText;
       list.innerHTML = items.map((item) => {
@@ -29,6 +29,7 @@
     }
 
     function selectViralBreakdownVideo(videoKey) {
+      if (isViralBreakdownBusy()) return;
       const nextKey = String(videoKey || '');
       if (nextKey && nextKey === String(state.viralBreakdown.selectedVideoKey || '')) {
         closeViralBreakdownVideoMenu();
@@ -49,7 +50,10 @@
       const statusText = document.getElementById('viralBreakdownStatusText');
       const intervalInput = document.getElementById('viralBreakdownIntervalInput');
       const targetRatioSelect = document.getElementById('viralBreakdownTargetRatio');
+      const uploadInput = document.getElementById('viralBreakdownUploadInput');
+      const uploadButton = document.getElementById('viralBreakdownUploadButton');
       const processFramesButton = document.getElementById('viralBreakdownProcessFramesButton');
+      const analyzeShotLanguageButton = document.getElementById('viralBreakdownAnalyzeShotLanguageButton');
       const transcribeButton = document.getElementById('viralBreakdownTranscribeButton');
       const guessScriptButton = document.getElementById('viralBreakdownGuessScriptButton');
       const saveTranscriptButton = document.getElementById('viralBreakdownSaveTranscriptButton');
@@ -57,15 +61,21 @@
       const infoMeta = document.getElementById('viralBreakdownInfoMeta');
       const scriptGuessMeta = document.getElementById('viralBreakdownScriptGuessMeta');
       const gridMeta = document.getElementById('viralBreakdownGridMeta');
+      const shotLanguageMeta = document.getElementById('viralBreakdownShotLanguageMeta');
       const transcriptMeta = document.getElementById('viralBreakdownTranscriptMeta');
       const generatedMeta = document.getElementById('viralBreakdownGeneratedMeta');
       const originalPane = document.getElementById('viralBreakdownOriginalPane');
       const infoPane = document.getElementById('viralBreakdownInfoPane');
       const scriptGuessPane = document.getElementById('viralBreakdownScriptGuessPane');
       const gridPane = document.getElementById('viralBreakdownGridPane');
+      const shotLanguagePane = document.getElementById('viralBreakdownShotLanguagePane');
       const transcriptPane = document.getElementById('viralBreakdownTranscriptPane');
       const generatedPane = document.getElementById('viralBreakdownGeneratedPane');
       const currentItem = getSelectedViralBreakdownItem();
+      const shotLanguageAnalysis = currentItem?.shotLanguageAnalysis
+        && typeof currentItem.shotLanguageAnalysis === 'object'
+        ? currentItem.shotLanguageAnalysis
+        : null;
       const transcriptTextFromItem = String(currentItem?.transcriptText || '');
       const transcriptDisplayText = currentItem
         ? getViralBreakdownTranscriptDraft(currentItem.videoKey, transcriptTextFromItem)
@@ -77,6 +87,7 @@
         ? getViralBreakdownScriptTreeDraft(currentItem.videoKey)
         : null;
       const scriptSubTab = getViralBreakdownScriptSubTab();
+      const busy = isViralBreakdownBusy();
       const transcriptHasUnsavedChanges = !!currentItem && transcriptDisplayText !== transcriptTextFromItem;
       if (archiveMeta) {
         archiveMeta.textContent = state.viralBreakdown.archiveDisplay || '0 个视频 · 0 B';
@@ -84,28 +95,55 @@
       syncViralBreakdownVideoSelect(currentItem);
       if (intervalInput) {
         intervalInput.value = String(state.viralBreakdown.intervalSeconds || 1);
+        intervalInput.disabled = busy;
       }
       if (targetRatioSelect) {
         targetRatioSelect.value = String(state.viralBreakdown.targetRatio || '16:9');
+        targetRatioSelect.disabled = busy;
+      }
+      if (uploadInput) {
+        uploadInput.disabled = busy;
+      }
+      if (uploadButton) {
+        uploadButton.classList.toggle('is-disabled', busy);
+        uploadButton.setAttribute('aria-disabled', busy ? 'true' : 'false');
+        uploadButton.tabIndex = busy ? -1 : 0;
       }
       if (processFramesButton) {
-        processFramesButton.disabled = !currentItem || !!state.viralBreakdown.frameProcessing || !!state.viralBreakdown.loading;
+        processFramesButton.disabled = !currentItem || busy;
         processFramesButton.textContent = state.viralBreakdown.frameProcessing ? '截图中...' : '拆解画面';
       }
+      const framesReady = hasViralBreakdownFrames(currentItem);
+      const transcriptReady = hasViralBreakdownTranscript(currentItem);
+      const shotLanguageReady = hasCurrentViralBreakdownShotLanguage(currentItem);
       if (transcribeButton) {
-        transcribeButton.disabled = !currentItem || !!state.viralBreakdown.transcriptProcessing || !!state.viralBreakdown.loading;
+        transcribeButton.disabled = !framesReady || busy;
         transcribeButton.textContent = state.viralBreakdown.transcriptProcessing ? '识别中...' : '分析台词';
+        transcribeButton.title = framesReady ? '' : '请先完成拆解画面';
+      }
+      if (analyzeShotLanguageButton) {
+        const processing = !!state.viralBreakdown.shotLanguageProcessing;
+        analyzeShotLanguageButton.disabled = !transcriptReady || !framesReady || busy;
+        analyzeShotLanguageButton.textContent = processing
+          ? '分析中...'
+          : (shotLanguageAnalysis?.text ? '重新分析镜头语言' : '分析镜头语言');
+        analyzeShotLanguageButton.title = transcriptReady
+          ? ''
+          : (framesReady ? '请先完成分析台词' : '请先完成拆解画面');
       }
       if (guessScriptButton) {
-        const guessing = !!state.viralBreakdown.scriptGuessProcessing || !!state.viralBreakdown.scriptTreeProcessing;
-        guessScriptButton.disabled = !currentItem || guessing || !!state.viralBreakdown.loading;
+        const transcriptDirty = hasUnsavedViralBreakdownTranscript(currentItem);
+        guessScriptButton.disabled = !shotLanguageReady || transcriptDirty || busy;
         guessScriptButton.textContent = state.viralBreakdown.scriptGuessProcessing
           ? '猜测中...'
           : (state.viralBreakdown.scriptTreeProcessing ? '建树中...' : '猜剧本');
+        guessScriptButton.title = transcriptDirty
+          ? '请先保存修改后的台词并重新分析镜头语言'
+          : (shotLanguageReady ? '' : '请先完成有效的镜头语言分析');
       }
       syncViralBreakdownSaveScriptTreeButton(scriptTreeDraft);
       if (saveTranscriptButton) {
-        saveTranscriptButton.disabled = !currentItem || !!state.viralBreakdown.transcriptSaving || !transcriptHasUnsavedChanges;
+        saveTranscriptButton.disabled = !currentItem || busy || !transcriptHasUnsavedChanges;
         saveTranscriptButton.textContent = state.viralBreakdown.transcriptSaving
           ? '保存中...'
           : transcriptHasUnsavedChanges
@@ -130,9 +168,7 @@
           `;
           const retryButton = document.getElementById('viralBreakdownRetryButton');
           if (retryButton) {
-            retryButton.disabled = !!state.viralBreakdown.scriptGuessProcessing
-              || !!state.viralBreakdown.scriptTreeProcessing
-              || !!state.viralBreakdown.loading;
+            retryButton.disabled = busy;
             retryButton.onclick = async () => {
               try {
                 await retryViralBreakdownScriptFromBreakpoint();
@@ -177,6 +213,24 @@
       }
       if (gridMeta) {
         gridMeta.textContent = currentItem?.frameCount ? `${currentItem.frameCount} 张截图` : '';
+      }
+      if (shotLanguageMeta) {
+        const selectedFrames = Array.isArray(shotLanguageAnalysis?.selectedFrames)
+          ? shotLanguageAnalysis.selectedFrames.length
+          : 0;
+        const confidence = Number(shotLanguageAnalysis?.confidence);
+        if (state.viralBreakdown.shotLanguageProcessing) {
+          shotLanguageMeta.textContent = '分析中...';
+        } else if (shotLanguageAnalysis?.stale === true) {
+          shotLanguageMeta.textContent = '已失效 · 请重新分析';
+        } else if (shotLanguageAnalysis) {
+          const confidenceText = Number.isFinite(confidence)
+            ? ` · 置信度 ${Math.round(confidence * 100)}%`
+            : '';
+          shotLanguageMeta.textContent = `${selectedFrames} 个代表帧${confidenceText}`;
+        } else {
+          shotLanguageMeta.textContent = '';
+        }
       }
       if (transcriptMeta) {
         transcriptMeta.textContent = transcriptDisplayText ? `${transcriptDisplayText.length} 字` : '';
@@ -231,6 +285,9 @@
         gridPane.innerHTML = currentItem?.gridImageUrl
           ? `<img src="${escapeHtml(String(currentItem.gridImageUrl || ''))}" alt="拼接好的宫格图">`
           : '<div class="viral-breakdown-empty">点击“拆解画面”后，这里会显示按时间顺序拼好的宫格图。</div>';
+      }
+      if (shotLanguagePane) {
+        shotLanguagePane.innerHTML = buildViralBreakdownShotLanguageMarkup(shotLanguageAnalysis);
       }
       if (transcriptPane) {
         transcriptPane.innerHTML = transcriptDisplayText
@@ -316,7 +373,7 @@
         title: kind === 'script' ? '剧本知识库' : '图片素材库',
         sub: kind === 'script'
           ? '检索并引用本地剧本知识'
-          : `${items.length} 个图片素材，点击卡片可插入到当前对话。`,
+          : `${items.length} 个图片素材，点击卡片插入对话，也可直接送入智能修图。`,
         emptyText: kind === 'script'
           ? '还没有剧本知识。点右上角添加 TXT、Markdown 或 DOCX。'
           : '还没有图片素材。点右上角打开文件夹，把图片放进去。',

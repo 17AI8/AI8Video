@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ai8video.generation import generation_mode
+from ai8video.generation.pipeline import AI8VideoPipeline
 from ai8video.application.conversation_controller import AI8VideoConversationController
 from ai8video.core.models import VideoPrompt, ParsedRequest, PipelineResult, QuickVideoJob
 from ai8video.generation.tail_frame_chaining import (
@@ -15,6 +16,47 @@ from ai8video.generation.tail_frame_chaining import (
 
 
 class AI8VideoGenerationModeTest(unittest.TestCase):
+    def test_manual_batch_finalizes_once_then_reuses_the_same_model_input(self) -> None:
+        pipeline = object.__new__(AI8VideoPipeline)
+        pipeline.llm = lambda _prompt: ""
+        videos = [VideoPrompt(index=index, title="单条视频", prompt="同一提示词") for index in range(1, 4)]
+        finalized_counts: list[int] = []
+
+        def finalize(items, **_kwargs):
+            finalized_counts.append(len(items))
+            return [VideoPrompt(index=1, title="单条视频", prompt="统一定稿提示词")]
+
+        with patch("ai8video.generation.pipeline.finalize_video_prompts", side_effect=finalize), \
+                patch("ai8video.generation.pipeline.review_final_outputs", side_effect=lambda items, **_kwargs: items):
+            request = ParsedRequest(raw_text="手动批量", mode="batch_videos")
+            result = pipeline._finalize_video_queue(request, videos, "", None)
+
+        self.assertEqual(finalized_counts, [1])
+        self.assertEqual([video.index for video in result], [1, 2, 3])
+        self.assertEqual({video.prompt for video in result}, {"统一定稿提示词"})
+
+    def test_smart_split_never_uses_manual_repeat_finalization(self) -> None:
+        pipeline = object.__new__(AI8VideoPipeline)
+        pipeline.llm = lambda _prompt: ""
+        videos = [VideoPrompt(index=index, title=f"分集 {index}", prompt="偶然相同") for index in range(1, 4)]
+        finalized_counts: list[int] = []
+
+        def finalize(items, **_kwargs):
+            finalized_counts.append(len(items))
+            return list(items)
+
+        request = ParsedRequest(
+            raw_text="智能分集",
+            mode="batch_videos",
+            smart_split_reason="根据信息密度拆分",
+        )
+        with patch("ai8video.generation.pipeline.finalize_video_prompts", side_effect=finalize), \
+                patch("ai8video.generation.pipeline.review_final_outputs", side_effect=lambda items, **_kwargs: items):
+            result = pipeline._finalize_video_queue(request, videos, "", None)
+
+        self.assertEqual(finalized_counts, [3])
+        self.assertEqual([video.title for video in result], ["分集 1", "分集 2", "分集 3"])
+
     def test_generation_mode_defaults_to_normal_and_saves_concurrent(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             settings_path = Path(tempdir) / "生成模式" / "settings.json"

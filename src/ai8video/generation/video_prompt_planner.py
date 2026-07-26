@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Callable
 
+from ai8video.agent_skills import apply_agent_skills
 from ai8video.generation.business_prompt import (
     business_prompt_block,
     sanitize_internal_fidelity_notes,
@@ -101,7 +102,7 @@ def build_video_planning_prompt(
     )
     keyword_guidance_block = format_keyword_guidance_block(keyword_guidance)
     task_constraint_block = format_task_constraint_block(task_constraints)
-    return f"""你是AI8video 的批量视频提示词规划器。
+    return apply_agent_skills("planner", f"""你是AI8video 的批量视频提示词规划器。
 
 你的任务是服务 AI8video 的短视频生成流程。
 
@@ -151,7 +152,7 @@ def build_video_planning_prompt(
 
 用户剧本：
 {script}
-"""
+""")
 
 
 def build_keyword_extraction_prompt(
@@ -387,6 +388,32 @@ def single_prompt_to_video(
             keyword_guidance=keyword_guidance,
         )
     ]
+
+
+def repeat_video_prompt(video: VideoPrompt, video_count: int) -> list[VideoPrompt]:
+    return [
+        VideoPrompt(
+            index=index,
+            title=video.title,
+            prompt=video.prompt,
+            source_summary=video.source_summary,
+            keyword_guidance=dict(video.keyword_guidance),
+            archive_subdir=video.archive_subdir,
+        )
+        for index in range(1, max(1, int(video_count)) + 1)
+    ]
+
+
+def repeat_single_prompt_to_videos(
+    prompt: str,
+    video_count: int,
+    style_hint: str | None = None,
+    core_keywords: str | None = None,
+) -> list[VideoPrompt]:
+    return repeat_video_prompt(
+        single_prompt_to_video(prompt, style_hint, core_keywords)[0],
+        video_count,
+    )
 
 
 def build_rewrite_prompt(
