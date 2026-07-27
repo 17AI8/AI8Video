@@ -1,11 +1,9 @@
     function isViralBreakdownGenerateReady(item) {
       if (!item?.videoKey || !item.gridImageUrl) return false;
-      const transcriptText = getViralBreakdownTranscriptDraft(item.videoKey, item.transcriptText || '');
       const scriptText = getViralBreakdownComposerScript(item);
       const treeDraft = getViralBreakdownScriptTreeDraft(item.videoKey);
       return !!(
-        String(transcriptText || '').trim()
-        && scriptText
+        scriptText
         && treeDraft?.tree
         && Array.isArray(treeDraft.leaves)
         && treeDraft.leaves.length
@@ -15,10 +13,6 @@
     function getViralBreakdownGenerateMissingLabels(item) {
       const missing = [];
       if (!item?.gridImageUrl) missing.push('拼接宫格');
-      const transcriptText = item
-        ? getViralBreakdownTranscriptDraft(item.videoKey, item.transcriptText || '')
-        : '';
-      if (!String(transcriptText || '').trim()) missing.push('识别台词');
       if (!getViralBreakdownComposerScript(item)) missing.push('剧本骨架');
       const treeDraft = item?.videoKey ? getViralBreakdownScriptTreeDraft(item.videoKey) : null;
       if (!(treeDraft?.tree && Array.isArray(treeDraft.leaves) && treeDraft.leaves.length)) {
@@ -65,7 +59,7 @@
       const summary = String(
         tree.summary
         || treeDraft?.detail?.summary
-        || `基于《${stem}》的宫格、台词和猜剧本骨架生成。`,
+        || `基于《${stem}》的宫格、镜头语言和猜剧本骨架生成。`,
       ).trim();
       const tags = Array.isArray(tree.tags) ? tree.tags : [];
       return {

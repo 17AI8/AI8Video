@@ -112,12 +112,14 @@ def build_motion_manifest(artifact: dict[str, Any], media: dict[str, Any]) -> di
 
 def _scene_markup(scene: dict[str, Any], index: int, *, fixed: bool = False) -> str:
     scene_duration = scene["end"] - scene["start"]
+    source_index = int(scene.get("_timelineSourceIndex", index))
     zone_class = f"hf-zone zone-{html.escape(scene['zone'])}"
     if fixed:
         zone_class += " hf-fixed-zone"
     return (
         f'<section id="hf-scene-{index + 1}" class="hf-scene clip" '
-        f'data-start="{scene["start"]:.3f}" data-duration="{scene_duration:.3f}" data-track-index="{index + 1}">'
+        f'data-timeline-source-index="{source_index}" data-start="{scene["start"]:.3f}" '
+        f'data-duration="{scene_duration:.3f}" data-track-index="{index + 1}">'
         f'<div class="{zone_class}">{scene["html"]}</div></section>'
     )
 

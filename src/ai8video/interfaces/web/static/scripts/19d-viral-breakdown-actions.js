@@ -111,9 +111,10 @@
         }
         await refreshViralBreakdownWorkspace({ keepSelection: true });
         if (String(state.viralBreakdown.selectedVideoKey || '') !== requestedVideoKey) return;
-        const frameCount = Number(data?.selectedFrames?.length || 0);
+        const frameCount = Number(data?.inputFrameCount || data?.selectedFrames?.length || 0);
+        const batchCount = Number(data?.imageBatchCount || 0);
         state.viralBreakdown.notice = frameCount
-          ? `镜头语言分析完成，已提取 ${frameCount} 个代表帧`
+          ? `镜头语言分析完成，已全量分析 ${frameCount} 张截图（${batchCount} 批）`
           : '镜头语言分析完成';
       } finally {
         state.viralBreakdown.shotLanguageProcessing = false;
@@ -184,18 +185,15 @@
             failedStage = 'skeleton';
             throw new Error('还没有可用剧本骨架，请先重新生成骨架');
           }
-          if (!String(transcriptText || '').trim()) {
-            throw new Error('还没有可用台词，请先分析台词后再建树');
-          }
           state.viralBreakdown.scriptGuessProcessing = false;
           state.viralBreakdown.scriptTreeProcessing = true;
-          state.viralBreakdown.notice = '正在从断点继续：用已有骨架 + 台词调用知识库 Agent 建树...';
+          state.viralBreakdown.notice = '正在从断点继续：用已有骨架和可用分析资料调用知识库 Agent 建树...';
           activateViralBreakdownScriptSubTab('tree');
           renderViralBreakdownWorkbench();
         } else {
           state.viralBreakdown.scriptGuessProcessing = true;
           state.viralBreakdown.scriptTreeProcessing = false;
-          state.viralBreakdown.notice = '正在把宫格图和台词发给多模态，生成剧本骨架...';
+          state.viralBreakdown.notice = '正在把镜头语言和可选台词发给多模态，生成剧本骨架...';
           state.viralBreakdown.scriptGuessDrafts = {
             ...(state.viralBreakdown.scriptGuessDrafts || {}),
             [normalizedVideoKey]: '',
@@ -226,7 +224,7 @@
           failedStage = 'tree';
           state.viralBreakdown.scriptGuessProcessing = false;
           state.viralBreakdown.scriptTreeProcessing = true;
-          state.viralBreakdown.notice = '骨架已完成，正在用剧本骨架 + 台词调用知识库 Agent 补细节建树...';
+          state.viralBreakdown.notice = '骨架已完成，正在用剧本骨架和可用分析资料调用知识库 Agent 建树...';
           activateViralBreakdownScriptSubTab('tree');
           renderViralBreakdownWorkbench();
         }

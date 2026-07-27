@@ -113,6 +113,16 @@ def background_music_status() -> dict[str, Any]:
     }
 
 
+def resolve_background_music_preview(item_id: str) -> Path:
+    ensure_background_music_dir()
+    _sync_background_music_items_from_folder()
+    item = _find_background_music_item(item_id, _read_background_music_items())
+    path = _selected_background_music_path(item)
+    if path is None:
+        raise FileNotFoundError("背景音乐不存在")
+    return path
+
+
 def save_background_music_upload(upload: Any) -> dict[str, Any]:
     source_name = resolve_upload_filename(upload)
     if not source_name:
@@ -801,6 +811,7 @@ def _public_background_music_item(item: dict[str, Any], selected_id: str = "") -
         "createdAt": str(item.get("createdAt") or ""),
         "updatedAt": str(item.get("updatedAt") or ""),
         "selected": bool(selected_id and item_id == selected_id),
+        "previewUrl": f"/api/background-music/preview/{item_id}",
     }
 
 

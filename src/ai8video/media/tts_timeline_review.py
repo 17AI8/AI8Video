@@ -101,6 +101,7 @@ def render_tts_timeline_candidate(
     visual_source: Path,
     relative_key: str,
     *,
+    duration_seconds: float | None = None,
     ffmpeg_bin: str | None = None,
 ) -> dict[str, Any]:
     state = pending_tts_timeline_review(relative_key)
@@ -114,12 +115,13 @@ def render_tts_timeline_candidate(
         Path(str(state["audioPath"])),
         temporary,
         state["timelineChunks"],
-        duration_seconds=float(state["durationSeconds"]),
+        duration_seconds=float(duration_seconds or state["durationSeconds"]),
         tts_volume=float(state.get("ttsVolume") or 1.0),
         ffmpeg_bin=ffmpeg_bin,
     )
     temporary.replace(candidate)
     state["candidateName"] = candidate.name
+    state["previewAudioMode"] = "tts-only-v1"
     state["renderedAt"] = datetime.now(timezone.utc).isoformat()
     state["visualSignature"] = _file_signature(visual_source)
     _write_json(review_dir / "review.json", state)
@@ -180,7 +182,11 @@ def tts_timeline_candidate_needs_render(visual_source: Path, relative_key: str) 
     if not state:
         return False
     candidate = _review_dir(relative_key) / str(state.get("candidateName") or "candidate.mp4")
-    return not candidate.is_file() or state.get("visualSignature") != _file_signature(visual_source)
+    return (
+        not candidate.is_file()
+        or state.get("visualSignature") != _file_signature(visual_source)
+        or state.get("previewAudioMode") != "tts-only-v1"
+    )
 
 
 def mark_tts_timeline_review_confirmed(relative_key: str) -> dict[str, Any]:

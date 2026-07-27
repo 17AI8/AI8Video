@@ -5,10 +5,62 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from PIL import Image
+
 from ai8video.breakdown import viral_breakdown as vb
 
 
 class ViralBreakdownGenerateTests(unittest.TestCase):
+    def test_minimum_frame_interval_limits_capture_to_eighty_frames(self) -> None:
+        self.assertEqual(vb._minimum_frame_interval(326), 4.1)
+        self.assertEqual(vb._minimum_frame_interval(10), 0.2)
+
+    def test_compose_grid_image_adds_visible_grid_gap(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            frames = []
+            for index, color in enumerate(((240, 240, 240), (220, 220, 220))):
+                frame = root / f"frame-{index}.jpg"
+                Image.new("RGB", (100, 100), color=color).save(frame)
+                frames.append(frame)
+            output = root / "grid.jpg"
+
+            vb._compose_grid_image(frames, output, grid_columns=2, grid_rows=1)
+
+            with Image.open(output) as grid:
+                self.assertGreater(grid.width, 200)
+                middle = grid.getpixel((grid.width // 2, grid.height // 2))
+                self.assertLess(max(middle), 100)
+
+    def test_label_frame_images_draws_number_badge(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            frame = Path(directory) / "frame-0001.jpg"
+            Image.new("RGB", (320, 180), color=(230, 230, 230)).save(frame)
+
+            vb._label_frame_images([frame])
+
+            with Image.open(frame) as labeled:
+                badge = labeled.crop((270, 130, 315, 175))
+                low, high = badge.convert("L").getextrema()
+                self.assertLess(low, 30)
+                self.assertGreater(high, 200)
+                bright_pixels = sum(badge.convert("L").histogram()[201:])
+                self.assertGreater(bright_pixels, 80)
+
+    def test_grid_asset_url_changes_when_file_is_regenerated(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            asset = root / "宫格图" / "demo.jpg"
+            asset.parent.mkdir(parents=True)
+            asset.write_bytes(b"first")
+            with mock.patch.object(vb, "VIRAL_BREAKDOWN_ROOT", root):
+                first_url = vb._versioned_viral_breakdown_asset_url(asset)
+                asset.write_bytes(b"second-version")
+                second_url = vb._versioned_viral_breakdown_asset_url(asset)
+
+            self.assertNotEqual(first_url, second_url)
+            self.assertIn("&v=", second_url)
+
     def test_assess_readiness_requires_grid_transcript_script(self) -> None:
         ready = vb.assess_viral_breakdown_generate_readiness(
             has_grid=True,

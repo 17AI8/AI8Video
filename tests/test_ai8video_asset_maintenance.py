@@ -49,6 +49,23 @@ class AI8VideoAssetMaintenanceTest(unittest.TestCase):
         )
         self.assertIn("userTtsNarrationUpdatedAt", records[1]["generationMeta"])
 
+    def test_save_tts_narration_text_registers_existing_untracked_video(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            project_root = Path(temporary_directory)
+            video_path = project_root / "用户生成结果" / "video" / "demo.mp4"
+            video_path.parent.mkdir(parents=True)
+            video_path.touch()
+            store = JsonlAssetStore(project_root / "assets.jsonl")
+            service = AssetMaintenanceService(store, project_root)
+
+            service.save_tts_narration_text("video/demo.mp4", video_path, "补录台词")
+            records = store.read_all()
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["archiveKey"], "video/demo.mp4")
+        self.assertEqual(records[0]["generationStatus"], "restored")
+        self.assertEqual(records[0]["generationMeta"]["userTtsNarrationText"], "补录台词")
+
     def test_save_extension_video_prompt_preserves_explicit_empty_value(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             project_root = Path(temporary_directory)

@@ -4,6 +4,8 @@
       const previous = getVideoPreviewButtonLabel(button) || '重新生成TTS配音';
       if (button) {
         button.disabled = true;
+        button.classList.add('is-spinning');
+        button.setAttribute('aria-busy', 'true');
         setVideoPreviewButtonLabel(button, '生成中');
       }
       try {
@@ -42,6 +44,11 @@
           setVideoPreviewButtonLabel(button, previous);
           button.disabled = false;
         }
+      } finally {
+        if (button) {
+          button.classList.remove('is-spinning');
+          button.removeAttribute('aria-busy');
+        }
       }
     }
 
@@ -64,7 +71,17 @@
       if (!video) return;
       const livePreviewUrl = String(overlay?.livePreviewUrl || '').trim();
       if (livePreviewUrl) {
-        mountLiveHtmlMotionPreview(video, livePreviewUrl, overlay.timelineChunks || []);
+        if (previewUrl) {
+          video.src = `${previewUrl}${previewUrl.includes('?') ? '&' : '?'}v=${Date.now()}`;
+          video.load();
+        }
+        if (state.videoPreviewModal) state.videoPreviewModal.htmlMotionLivePreviewUrl = livePreviewUrl;
+        mountLiveHtmlMotionPreview(
+          video,
+          livePreviewUrl,
+          overlay.timelineChunks || [],
+          { preserveVideoSource: true },
+        );
         return;
       }
       if (!previewUrl) return;
@@ -73,11 +90,11 @@
       video.play().catch(() => {});
     }
 
-    function mountLiveHtmlMotionPreview(video, livePreviewUrl, chunks) {
+    function mountLiveHtmlMotionPreview(video, livePreviewUrl, chunks, options = {}) {
       const stage = video.closest('.video-preview-stage');
       if (!stage) return;
       const officialSrc = String(video.dataset.officialSrc || '').trim();
-      if (officialSrc && video.getAttribute('src') !== officialSrc) {
+      if (!options.preserveVideoSource && officialSrc && video.getAttribute('src') !== officialSrc) {
         video.src = officialSrc;
         video.load();
       }
@@ -89,24 +106,41 @@
         frame.setAttribute('aria-hidden', 'true');
         stage.appendChild(frame);
       }
-      frame.src = `${livePreviewUrl}${livePreviewUrl.includes('?') ? '&' : '?'}v=${Date.now()}`;
       const sync = () => frame.contentWindow?.postMessage({
         type: 'ai8-motion-preview',
         currentTime: Number(video.currentTime || 0),
         chunks: state.videoPreviewModal?.htmlMotionTimelineChunks || chunks,
       }, '*');
+      const syncWhenReady = (event) => {
+        if (event.source !== frame.contentWindow || event.data?.type !== 'ai8-motion-ready') return;
+        window.removeEventListener('message', syncWhenReady);
+        sync();
+      };
+      window.addEventListener('message', syncWhenReady);
       frame.addEventListener('load', sync, { once: true });
+      frame.src = `${livePreviewUrl}${livePreviewUrl.includes('?') ? '&' : '?'}v=${Date.now()}`;
       if (video.dataset.htmlMotionLiveBound !== 'true') {
         video.dataset.htmlMotionLiveBound = 'true';
         ['timeupdate', 'seeking', 'seeked', 'play', 'pause'].forEach((eventName) => {
-          video.addEventListener(eventName, sync);
+          video.addEventListener(eventName, () => syncLiveHtmlMotionPreview(video));
         });
       }
       video.play().catch(() => {});
     }
 
     function syncLiveHtmlMotionPreview(video) {
-      const frame = video?.closest('.video-preview-stage')?.querySelector('[data-video-preview-html-motion-live]');
+      if (!video) return;
+      let frame = video.closest('.video-preview-stage')?.querySelector('[data-video-preview-html-motion-live]');
+      const livePreviewUrl = String(state.videoPreviewModal?.htmlMotionLivePreviewUrl || '').trim();
+      if (!frame && livePreviewUrl) {
+        mountLiveHtmlMotionPreview(
+          video,
+          livePreviewUrl,
+          state.videoPreviewModal?.htmlMotionTimelineChunks || [],
+          { preserveVideoSource: true },
+        );
+        frame = video.closest('.video-preview-stage')?.querySelector('[data-video-preview-html-motion-live]');
+      }
       frame?.contentWindow?.postMessage({
         type: 'ai8-motion-preview',
         currentTime: Number(video?.currentTime || 0),
@@ -217,6 +251,7 @@
       if (button) {
         button.disabled = false;
         setVideoPreviewButtonLabel(button, '强行停止');
+        setHtmlMotionButtonBusy(button, true);
       }
       if (confirmButton) confirmButton.disabled = true;
       setHtmlMotionPreviewStatus('后台动效仍在生成，已重新接上进度');
@@ -238,6 +273,7 @@
         setHtmlMotionPreviewStatus(`预览失败：${message}`, 'warning');
       } finally {
         if (htmlMotionRequestIsCurrent(requestSeq) && button) {
+          setHtmlMotionButtonBusy(button, false);
           setVideoPreviewButtonLabel(button, '重新生成 HTML 动效');
           button.disabled = false;
         }
@@ -257,6 +293,7 @@
         if (button) {
           button.disabled = false;
           setVideoPreviewButtonLabel(button, '重新生成 HTML 动效');
+          setHtmlMotionButtonBusy(button, false);
         }
         return;
       }
@@ -279,6 +316,7 @@
         if (button) {
           button.disabled = false;
           setVideoPreviewButtonLabel(button, '重新生成 HTML 动效');
+          setHtmlMotionButtonBusy(button, false);
         }
         setHtmlMotionPreviewStatus('已取消 HTML 动效预览', 'warning');
         void syncBurnReviewFromVideoPreview(key, els.videoPreviewBody?.querySelector('video'), { silent: true });
@@ -287,6 +325,7 @@
         if (button) {
           button.disabled = false;
           setVideoPreviewButtonLabel(button, '强行停止');
+          setHtmlMotionButtonBusy(button, true);
         }
         window.alert(error?.message || '强行停止 HTML 动效失败');
       }

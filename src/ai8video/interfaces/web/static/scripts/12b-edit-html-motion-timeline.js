@@ -45,9 +45,13 @@
         : '可切块、删除或拖动';
     }
 
-    function setHtmlMotionSelectedChunkIndex(index) {
+    function setHtmlMotionSelectedChunkIndex(index, exclusive = true) {
       const chunks = state.videoPreviewModal?.htmlMotionTimelineChunks || [];
       const selected = Number.isInteger(index) && index >= 0 && index < chunks.length ? index : null;
+      if (selected !== null && exclusive) {
+        setVideoSelectedChunkIndex(null, false);
+        setTtsSelectedChunkIndex(null, false);
+      }
       if (state.videoPreviewModal) state.videoPreviewModal.htmlMotionSelectedChunkIndex = selected;
       htmlMotionTimelinePanel()?.querySelectorAll('[data-video-preview-html-motion-chunk]').forEach((element) => {
         const active = Number(element.dataset.chunkIndex) === selected;
@@ -106,6 +110,7 @@
       state.videoPreviewModal.htmlMotionTimelineChunks = [];
       state.videoPreviewModal.htmlMotionOriginalTimelineChunks = [];
       state.videoPreviewModal.htmlMotionTimelineReviewIdentity = '';
+      state.videoPreviewModal.htmlMotionLivePreviewUrl = '';
       state.videoPreviewModal.htmlMotionTimelineDirty = false;
       state.videoPreviewModal.htmlMotionSelectedChunkIndex = null;
       setHtmlMotionScissorMode(false, { render: false, updateStatus: false });
@@ -114,6 +119,8 @@
     function configureHtmlMotionTimeline(data = {}) {
       const panel = htmlMotionTimelinePanel();
       const incoming = normalizeHtmlMotionTimelineChunks(data?.timelineChunks || []);
+      const livePreviewUrl = String(data?.livePreviewUrl || '').trim();
+      if (livePreviewUrl) state.videoPreviewModal.htmlMotionLivePreviewUrl = livePreviewUrl;
       const adjustable = data?.timelineAdjustable === true && incoming.length > 0;
       if (!adjustable) {
         clearHtmlMotionTimelineState();
@@ -128,7 +135,9 @@
       const changedReview = identity && identity !== state.videoPreviewModal?.htmlMotionTimelineReviewIdentity;
       if (changedReview || !state.videoPreviewModal?.htmlMotionOriginalTimelineChunks?.length) {
         state.videoPreviewModal.htmlMotionTimelineReviewIdentity = identity;
-        state.videoPreviewModal.htmlMotionOriginalTimelineChunks = cloneHtmlMotionTimelineChunks(incoming);
+        state.videoPreviewModal.htmlMotionOriginalTimelineChunks = cloneHtmlMotionTimelineChunks(
+          normalizeHtmlMotionTimelineChunks(data?.originalTimelineChunks || incoming),
+        );
         state.videoPreviewModal.htmlMotionTimelineChunks = cloneHtmlMotionTimelineChunks(incoming);
         state.videoPreviewModal.htmlMotionTimelineDirty = false;
         state.videoPreviewModal.htmlMotionSelectedChunkIndex = null;
@@ -179,9 +188,10 @@
         const action = scissorMode
           ? `剪刀工具：点击${label}中的位置切块`
           : `选择并跳转到${label}，${start.toFixed(1)}秒；可左右拖动调整`;
-        return `<button type="button" class="video-preview-html-motion-chunk${index === selectedIndex ? ' is-selected' : ''}" data-video-preview-html-motion-chunk data-chunk-index="${index}" data-boundary-base-title="${escapeHtml(action)}" aria-label="${escapeHtml(action)}" aria-pressed="${index === selectedIndex ? 'true' : 'false'}" title="${escapeHtml(action)}" style="left:${left}%;width:${Math.min(width, 100 - left)}%;top:${1 + index % 2 * 22}px"><span>${escapeHtml(label)}</span><small>${start.toFixed(1)}s</small></button>`;
+        return `<button type="button" class="video-preview-html-motion-chunk${index === selectedIndex ? ' is-selected' : ''}" data-video-preview-html-motion-chunk data-chunk-index="${index}" data-full-label="${escapeHtml(label)}" data-boundary-base-title="${escapeHtml(action)}" aria-label="${escapeHtml(action)}" aria-pressed="${index === selectedIndex ? 'true' : 'false'}" title="${escapeHtml(action)}" style="left:${left}%;width:${Math.min(width, 100 - left)}%;top:${1 + index % 2 * 22}px"><span>${escapeHtml(label)}</span><small>${start.toFixed(1)}s</small></button>`;
       }).join('');
-      track.innerHTML = `<div class="video-preview-html-motion-chunk-lane">${timelineOverflowZoneMarkup(duration)}${markup}</div>`;
+      const boundary = timelineBoundaryDetails();
+      track.innerHTML = `<div class="video-preview-html-motion-chunk-lane">${timelineOverflowZoneMarkup(duration, boundary.htmlMotionOverflowIndexes, boundary)}${markup}</div>`;
       track.querySelectorAll('[data-video-preview-html-motion-chunk]').forEach((element) => {
         element.addEventListener('pointerdown', (event) => {
           if (!isHtmlMotionScissorMode()) beginHtmlMotionChunkDrag(event, element, duration);
@@ -212,7 +222,6 @@
         video.currentTime = Number.isFinite(video.duration) && video.duration > 0
           ? Math.min(start, video.duration)
           : start;
-        syncLiveHtmlMotionPreview(video);
       };
       if (video.readyState >= 1) seek();
       else video.addEventListener('loadedmetadata', seek, { once: true });
@@ -230,6 +239,33 @@
       syncLiveHtmlMotionPreview(video);
       syncTimelineBoundaryUi();
       setHtmlMotionTimelineStatus(`${message}，等待确认烧录`, 'success');
+      void persistHtmlMotionTimeline(message);
+    }
+
+    function persistHtmlMotionTimeline(message) {
+      const modal = state.videoPreviewModal;
+      const key = currentVideoPreviewUserGeneratedKey();
+      if (!modal || !key) return Promise.resolve();
+      const chunks = cloneHtmlMotionTimelineChunks(modal.htmlMotionTimelineChunks || []);
+      const previous = modal.htmlMotionPersistChain || Promise.resolve();
+      modal.htmlMotionPersistChain = previous.catch(() => {}).then(async () => {
+        const res = await fetch('/api/user-generated-results/save-html-motion-timeline', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userGeneratedKey: key, chunks }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.ok === false) throw buildRequestError(data);
+        if (state.videoPreviewModal === modal) {
+          modal.htmlMotionTimelineChunks = normalizeHtmlMotionTimelineChunks(data.timelineChunks || chunks);
+          setHtmlMotionTimelineStatus(`${message}，已保存，等待确认烧录`, 'success');
+        }
+      }).catch((error) => {
+        if (state.videoPreviewModal === modal) {
+          setHtmlMotionTimelineStatus(error?.message || 'HTML 动效时间轴保存失败', 'error');
+        }
+      });
+      return modal.htmlMotionPersistChain;
     }
 
     function splitHtmlMotionTimelineAtTime(currentTime) {
@@ -324,7 +360,6 @@
         if (video) {
           video.pause();
           video.currentTime = item.startSeconds;
-          syncLiveHtmlMotionPreview(video);
         }
         syncTimelineBoundaryUi();
       };

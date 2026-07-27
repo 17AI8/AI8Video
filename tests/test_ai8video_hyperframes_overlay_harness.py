@@ -681,22 +681,6 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
         self.assertEqual(target_beat_count(19.9, dialogue, beat_interval_seconds=1), 20)
         self.assertEqual(target_beat_count(19.9, dialogue, beat_interval_seconds=2.2), 9)
 
-    def test_rejects_under_count_beats_for_long_video(self) -> None:
-        with self.assertRaisesRegex(ValueError, "恰好 2 个 beats"):
-            build_hyperframes_overlay(
-                lambda _prompt: json.dumps({
-                    "designDirection": "signal",
-                    "layoutRecipe": "signal-frame",
-                    "motionRecipe": "kinetic-snap",
-                    "density": "balanced",
-                    "beats": [{"question": "在关键处停顿？", "result": "开始自然流动！"}],
-                }, ensure_ascii=False),
-                self.video,
-                {**self.media, "durationSeconds": 12.0},
-                dialogue_text="沟通关键处停顿。跨区总卡顿。信息开始自然流动。第三段给出结论。",
-                critique_enabled=False,
-            )
-
     def test_rejects_incomplete_pair_instead_of_single_headline(self) -> None:
         with self.assertRaisesRegex(ValueError, "question（？）与 result（！）"):
             build_hyperframes_overlay(
@@ -808,6 +792,33 @@ class AI8VideoHyperframesOverlayHarnessTest(unittest.TestCase):
         self.assertTrue(result.summary["aiAudit"]["fallback"])
         self.assertEqual(result.summary["aiAudit"]["score"], 72)
         self.assertEqual(result.summary["sceneCount"], 2)
+
+    def test_ai_passed_plan_allows_two_beat_deviation_and_repairs_it(self) -> None:
+        calls = 0
+
+        def llm(_prompt: str) -> str:
+            nonlocal calls
+            calls += 1
+            return json.dumps({
+                "audit": {"passed": True, "score": 95, "summary": "审核通过"},
+                "semantic": {
+                    "beats": [{"primary": "客户沟通", "secondary": "顺畅抵达"}],
+                },
+            }, ensure_ascii=False)
+
+        result = build_hyperframes_overlay(
+            llm,
+            self.video,
+            {**self.media, "durationSeconds": 10.0, "beatIntervalSeconds": 5},
+            dialogue_text="客户沟通总是卡壳。信息现在顺畅抵达。",
+            critique_enabled=False,
+            quality_retry_count=2,
+        )
+
+        self.assertEqual(calls, 1)
+        self.assertEqual(result.summary["agentTurns"], 1)
+        self.assertEqual(result.summary["sceneCount"], 2)
+        self.assertTrue(result.summary["aiAudit"]["adjusted"])
 
     def test_dual_level_beats_require_dialogue_source_and_global_uniqueness(self) -> None:
         dialogue = "独立跨境快一年半，客户沟通总是卡壳。AI同声传译，全球聊天、支付、办公全整合。"

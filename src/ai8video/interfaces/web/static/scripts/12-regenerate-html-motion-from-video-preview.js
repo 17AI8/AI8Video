@@ -1,3 +1,9 @@
+    function setHtmlMotionButtonBusy(button, busy) {
+      if (!button) return;
+      button.classList.toggle('is-spinning', Boolean(busy));
+      button.setAttribute('aria-busy', busy ? 'true' : 'false');
+    }
+
     async function regenerateHtmlMotionFromVideoPreview(userGeneratedKey, button, confirmButton) {
       const key = String(userGeneratedKey || '').trim();
       if (!key) return;
@@ -8,6 +14,7 @@
       if (button) {
         button.disabled = false;
         setVideoPreviewButtonLabel(button, '强行停止');
+        setHtmlMotionButtonBusy(button, true);
       }
       if (confirmButton) confirmButton.disabled = true;
       configureHtmlMotionTimeline({ timelineAdjustable: false });
@@ -73,6 +80,7 @@
           state.videoPreviewModal.htmlMotionCancelRequested = false;
         }
         if (button) {
+          setHtmlMotionButtonBusy(button, false);
           setTimeout(() => {
             if (!htmlMotionRequestIsCurrent(requestSeq)) return;
             setVideoPreviewButtonLabel(button, previous);

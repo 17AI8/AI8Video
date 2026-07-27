@@ -21,11 +21,16 @@ class ViralBreakdownScriptKnowledgeTests(unittest.TestCase):
         self.assertIn("【镜头语言摘要】", content)
         self.assertIn("前三秒用近景结果画面建立钩子。", content)
 
-    def test_compose_source_requires_both_parts(self) -> None:
+    def test_compose_source_requires_skeleton_but_allows_empty_transcript(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "剧本骨架"):
             compose_viral_breakdown_knowledge_source(script_text="", transcript_text="台词")
-        with self.assertRaisesRegex(RuntimeError, "台词"):
-            compose_viral_breakdown_knowledge_source(script_text="骨架", transcript_text="")
+        content = compose_viral_breakdown_knowledge_source(
+            script_text="骨架",
+            transcript_text="",
+            shot_language_text="固定机位展示操作流程",
+        )
+        self.assertIn("未识别到台词", content)
+        self.assertIn("固定机位展示操作流程", content)
 
 
 if __name__ == "__main__":

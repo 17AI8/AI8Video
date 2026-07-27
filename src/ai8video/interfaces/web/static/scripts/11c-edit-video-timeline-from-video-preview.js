@@ -11,6 +11,10 @@
       return state.videoPreviewModal?.videoTimelineScissorMode === true;
     }
 
+    function isVideoSeekMode() {
+      return state.videoPreviewModal?.videoTimelineSeekMode === true;
+    }
+
     function videoTimelineDefaultStatus(data = {}) {
       if (data?.pending) return '已裁剪，等待确认烧录';
       if (data?.filmstripStatus === 'failed') return '缩略图读取失败，仍可切块和删除';
@@ -25,9 +29,13 @@
       if (tone) status.classList.add(`is-${tone}`);
     }
 
-    function setVideoSelectedChunkIndex(index) {
+    function setVideoSelectedChunkIndex(index, exclusive = true) {
       const chunks = state.videoPreviewModal?.videoTimelineChunks || [];
       const selected = Number.isInteger(index) && index >= 0 && index < chunks.length ? index : null;
+      if (selected !== null && exclusive) {
+        setTtsSelectedChunkIndex(null, false);
+        setHtmlMotionSelectedChunkIndex(null, false);
+      }
       if (state.videoPreviewModal) state.videoPreviewModal.videoTimelineSelectedChunkIndex = selected;
       els.videoPreviewBody?.querySelectorAll('[data-video-preview-video-chunk]').forEach((element) => {
         const active = Number(element.dataset.chunkIndex) === selected;
@@ -60,6 +68,7 @@
       const panel = videoTimelinePanel();
       const button = panel?.querySelector('[data-video-preview-action="toggle-video-scissors"]');
       const enabled = Boolean(active && panel?.classList.contains('is-open'));
+      if (enabled) setVideoSeekMode(false, { updateStatus: false });
       if (state.videoPreviewModal) state.videoPreviewModal.videoTimelineScissorMode = enabled;
       panel?.classList.toggle('is-scissor-mode', enabled);
       if (enabled) setVideoSelectedChunkIndex(null);
@@ -78,6 +87,28 @@
 
     function toggleVideoScissorMode() {
       setVideoScissorMode(!isVideoScissorMode());
+    }
+
+    function setVideoSeekMode(active, options = {}) {
+      const panel = videoTimelinePanel();
+      const button = panel?.querySelector('[data-video-preview-action="toggle-video-seek"]');
+      const enabled = Boolean(active && panel?.classList.contains('is-open'));
+      if (state.videoPreviewModal) state.videoPreviewModal.videoTimelineSeekMode = enabled;
+      panel?.classList.toggle('is-seek-mode', enabled);
+      if (enabled) {
+        setVideoScissorMode(false, { render: false, updateStatus: false });
+        setVideoSelectedChunkIndex(null);
+      }
+      button?.classList.toggle('is-active', enabled);
+      button?.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+      if (button) button.title = enabled ? '关闭定位工具' : '开启定位工具';
+      if (options.updateStatus !== false) setVideoTimelineStatus(enabled
+        ? '定位工具已开启：点击胶片任意位置跳转'
+        : videoTimelineDefaultStatus(state.videoPreviewModal?.burnReview?.videoTimeline || {}));
+    }
+
+    function toggleVideoSeekMode() {
+      setVideoSeekMode(!isVideoSeekMode());
     }
 
     function packVideoTimelineChunks(chunks) {
@@ -147,6 +178,11 @@
 
     function handleVideoTimelineChunkClick(event, element) {
       const index = Number(element.dataset.chunkIndex);
+      if (isVideoSeekMode()) {
+        if (event.detail === 0) seekVideoTimelineToChunk(index);
+        else seekVideoTimelineAtPointer(event, element);
+        return;
+      }
       if (isVideoScissorMode()) {
         if (event.detail === 0) splitVideoTimelineAtPlayhead(currentVideoPreviewUserGeneratedKey());
         else splitVideoTimelineAtPointer(event, element);
@@ -159,6 +195,29 @@
       video.pause();
       video.currentTime = Math.max(0, Number(chunk.startSeconds || 0));
       syncVideoTimelinePlayhead();
+    }
+
+    function seekVideoTimelineToChunk(index) {
+      const chunk = state.videoPreviewModal?.videoTimelineChunks?.[index];
+      seekVideoTimelineToTime(Number(chunk?.startSeconds || 0));
+    }
+
+    function seekVideoTimelineAtPointer(event, element) {
+      const bounds = element.closest('.video-preview-tts-chunk-lane')?.getBoundingClientRect();
+      const duration = Number(state.videoPreviewModal?.videoTimelineOutputDuration || 0);
+      if (!bounds || bounds.width <= 0 || duration <= 0) return;
+      const ratio = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
+      seekVideoTimelineToTime(Math.round(ratio * duration * 1000) / 1000);
+    }
+
+    function seekVideoTimelineToTime(seconds) {
+      const video = els.videoPreviewBody?.querySelector('video');
+      if (!video) return;
+      video.pause();
+      video.currentTime = Math.max(0, Math.min(seconds, video.duration || seconds));
+      setVideoSelectedChunkIndex(null);
+      syncVideoTimelinePlayhead();
+      setVideoTimelineStatus(`已定位到 ${video.currentTime.toFixed(1)} 秒`, 'success');
     }
 
     function syncVideoTimelinePlayhead() {
@@ -271,6 +330,7 @@
       if (!panel) return;
       if (!state.videoPreviewModal?.videoTimelineFilmstripUrl) {
         button.disabled = true;
+        setVideoPreviewButtonLabel(button, '正在渲染…');
         setVideoTimelineStatus('正在生成胶片缩略图', 'working');
         try {
           const res = await fetch('/api/user-generated-results/video-timeline-review', {
@@ -283,10 +343,11 @@
           configureVideoTimeline(data.videoTimeline || {});
         } catch (error) {
           setVideoTimelineStatus(error?.message || '读取视频片段失败', 'error');
-          button.disabled = false;
           return;
+        } finally {
+          button.disabled = false;
+          setVideoPreviewButtonLabel(button, '裁剪视频');
         }
-        button.disabled = false;
       }
       const open = !panel.classList.contains('is-open');
       panel.hidden = false;
@@ -297,6 +358,7 @@
         closeDependentTimelinePanels();
         syncVideoTimelinePlayhead();
       } else {
+        setVideoSeekMode(false, { updateStatus: false });
         setVideoScissorMode(false, { render: false, updateStatus: false });
         setVideoSelectedChunkIndex(null);
       }

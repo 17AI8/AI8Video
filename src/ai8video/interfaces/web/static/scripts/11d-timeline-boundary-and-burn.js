@@ -75,7 +75,8 @@
       };
     }
 
-    function timelineOverflowZoneMarkup(duration, boundary = timelineBoundaryDetails()) {
+    function timelineOverflowZoneMarkup(duration, overflowIndexes, boundary = timelineBoundaryDetails()) {
+      if (!Array.isArray(overflowIndexes) || !overflowIndexes.length) return '';
       if (!boundary.active || duration <= 0 || boundary.videoDurationSeconds >= duration - 0.08) return '';
       const left = Math.min(100, Math.max(0, boundary.videoDurationSeconds / duration * 100));
       return `<span class="video-preview-timeline-overflow-zone" aria-hidden="true" style="left:${left}%"><small>新视频结尾 ${boundary.videoDurationSeconds.toFixed(1)}s</small></span>`;
@@ -191,6 +192,7 @@
     async function applyConfirmedBurn(data, shouldResumePlayback, button) {
       setTtsScissorMode(false, { render: false, updateStatus: false });
       setTtsSelectedChunkIndex(null);
+      setVideoSeekMode(false, { updateStatus: false });
       setVideoScissorMode(false, { render: false, updateStatus: false });
       setVideoSelectedChunkIndex(null);
       updateConfirmedBurnVideo(data, shouldResumePlayback);
@@ -218,6 +220,8 @@
       const currentVideo = els.videoPreviewBody?.querySelector('video');
       const shouldResumePlayback = Boolean(currentVideo && !currentVideo.paused);
       button.disabled = true;
+      button.classList.add('is-spinning');
+      button.setAttribute('aria-busy', 'true');
       setVideoPreviewButtonLabel(button, '烧录中');
       try {
         const data = await requestConfirmedBurn(key);
@@ -225,5 +229,8 @@
       } catch (error) {
         syncBurnConfirmButton(state.videoPreviewModal?.burnReview || {});
         window.alert(error?.message || '确认烧录失败');
+      } finally {
+        button.classList.remove('is-spinning');
+        button.setAttribute('aria-busy', 'false');
       }
     }

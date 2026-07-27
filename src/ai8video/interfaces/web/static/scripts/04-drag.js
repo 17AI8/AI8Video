@@ -360,6 +360,12 @@
     });
 
     document.getElementById('viralBreakdownModal')?.addEventListener('click', async (event) => {
+      const gridPreview = event.target.closest('[data-viral-grid-preview]');
+      if (gridPreview) {
+        event.preventDefault();
+        openViralBreakdownGridFrame(event, gridPreview, getSelectedViralBreakdownItem());
+        return;
+      }
       const videoOption = event.target.closest('[data-viral-video-key]');
       if (videoOption) {
         event.preventDefault();
@@ -422,9 +428,14 @@
       activateViralBreakdownTab(tabTrigger.getAttribute('data-viral-breakdown-tab'));
     });
 
+    document.getElementById('viralBreakdownIntervalInput')?.addEventListener('input', (event) => {
+      const item = getSelectedViralBreakdownItem();
+      syncViralBreakdownFrameEstimate(item, clampViralBreakdownInterval(item, event.target?.value));
+    });
+
     document.getElementById('viralBreakdownIntervalInput')?.addEventListener('change', (event) => {
-      const nextValue = Number(event.target?.value || 1);
-      state.viralBreakdown.intervalSeconds = Number.isFinite(nextValue) && nextValue > 0 ? nextValue : 1;
+      const item = getSelectedViralBreakdownItem();
+      state.viralBreakdown.intervalSeconds = clampViralBreakdownInterval(item, event.target?.value);
       renderViralBreakdownWorkbench();
     });
 

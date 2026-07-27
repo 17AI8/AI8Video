@@ -7,6 +7,68 @@
       if (list) list.hidden = true;
     }
 
+    const VIRAL_BREAKDOWN_MAX_FRAME_COUNT = 80;
+
+    function minimumViralBreakdownInterval(item) {
+      const duration = Number(item?.media?.durationSeconds || 0);
+      if (!Number.isFinite(duration) || duration <= 0) return 0.2;
+      return Math.max(0.2, Math.ceil((duration / VIRAL_BREAKDOWN_MAX_FRAME_COUNT) * 10) / 10);
+    }
+
+    function clampViralBreakdownInterval(item, intervalSeconds) {
+      const minimum = minimumViralBreakdownInterval(item);
+      const interval = Number(intervalSeconds);
+      return Number.isFinite(interval) && interval > 0 ? Math.max(minimum, interval) : minimum;
+    }
+
+    function estimateViralBreakdownFrameCount(item, intervalSeconds) {
+      const duration = Number(item?.media?.durationSeconds || 0);
+      if (!Number.isFinite(duration) || duration <= 0) return 0;
+      return Math.max(1, Math.ceil(duration / clampViralBreakdownInterval(item, intervalSeconds)));
+    }
+
+    function syncViralBreakdownFrameEstimate(item, intervalSeconds) {
+      const output = document.getElementById('viralBreakdownFrameEstimate');
+      if (!output) return;
+      const count = estimateViralBreakdownFrameCount(item, intervalSeconds);
+      output.textContent = count > 0 ? `预计 ${count} 张` : '预计 — 张';
+    }
+
+    function openViralBreakdownGridFrame(event, image, item) {
+      const columns = Number(item?.gridColumns || 0);
+      const rows = Number(item?.gridRows || 0);
+      const frameCount = Number(item?.frameCount || 0);
+      if (!columns || !rows || !frameCount || !item?.frameDirKey) return;
+      const rect = image.getBoundingClientRect();
+      const naturalRatio = image.naturalWidth / Math.max(1, image.naturalHeight);
+      const boxRatio = rect.width / Math.max(1, rect.height);
+      const width = boxRatio > naturalRatio ? rect.height * naturalRatio : rect.width;
+      const height = boxRatio > naturalRatio ? rect.height : rect.width / naturalRatio;
+      const left = rect.left + (rect.width - width) / 2;
+      const top = rect.top + (rect.height - height) / 2;
+      const x = event.clientX - left;
+      const y = event.clientY - top;
+      if (x < 0 || y < 0 || x >= width || y >= height) return;
+      const column = Math.min(columns - 1, Math.floor(x / width * columns));
+      const row = Math.min(rows - 1, Math.floor(y / height * rows));
+      const frameIndex = row * columns + column + 1;
+      if (frameIndex > frameCount) return;
+      showViralBreakdownFrameLightbox(item, frameIndex);
+    }
+
+    function showViralBreakdownFrameLightbox(item, frameIndex) {
+      document.getElementById('viralBreakdownFrameLightbox')?.remove();
+      const key = `${String(item.frameDirKey).replace(/\/$/, '')}/frame-${String(frameIndex).padStart(4, '0')}.jpg`;
+      const root = document.createElement('div');
+      root.id = 'viralBreakdownFrameLightbox';
+      root.className = 'viral-breakdown-frame-lightbox';
+      root.innerHTML = `<div class="viral-breakdown-frame-lightbox-panel" role="dialog" aria-modal="true" aria-label="截图 ${frameIndex} 大图预览"><button type="button" class="viral-breakdown-frame-lightbox-close" aria-label="关闭">×</button><img src="/api/viral-breakdown/file?key=${encodeURIComponent(key)}&v=${Date.now()}" alt="截图 ${frameIndex}"><strong>截图 ${frameIndex} / ${Number(item.frameCount || 0)}</strong></div>`;
+      const close = () => root.remove();
+      root.addEventListener('click', (event) => { if (event.target === root) close(); });
+      root.querySelector('button')?.addEventListener('click', close);
+      document.body.appendChild(root);
+    }
+
     function syncViralBreakdownVideoSelect(currentItem) {
       const button = document.getElementById('viralBreakdownVideoSelectButton');
       const label = document.getElementById('viralBreakdownVideoSelectLabel');
@@ -94,8 +156,21 @@
       }
       syncViralBreakdownVideoSelect(currentItem);
       if (intervalInput) {
-        intervalInput.value = String(state.viralBreakdown.intervalSeconds || 1);
+        const videoKey = String(currentItem?.videoKey || '');
+        const minimumInterval = minimumViralBreakdownInterval(currentItem);
+        if (videoKey && state.viralBreakdown.intervalVideoKey !== videoKey) {
+          state.viralBreakdown.intervalVideoKey = videoKey;
+          state.viralBreakdown.intervalSeconds = minimumInterval;
+        } else {
+          state.viralBreakdown.intervalSeconds = clampViralBreakdownInterval(
+            currentItem,
+            state.viralBreakdown.intervalSeconds,
+          );
+        }
+        intervalInput.min = String(minimumInterval);
+        intervalInput.value = String(state.viralBreakdown.intervalSeconds);
         intervalInput.disabled = busy;
+        syncViralBreakdownFrameEstimate(currentItem, intervalInput.value);
       }
       if (targetRatioSelect) {
         targetRatioSelect.value = String(state.viralBreakdown.targetRatio || '16:9');
@@ -215,9 +290,8 @@
         gridMeta.textContent = currentItem?.frameCount ? `${currentItem.frameCount} 张截图` : '';
       }
       if (shotLanguageMeta) {
-        const selectedFrames = Array.isArray(shotLanguageAnalysis?.selectedFrames)
-          ? shotLanguageAnalysis.selectedFrames.length
-          : 0;
+        const inputFrameCount = Number(shotLanguageAnalysis?.inputFrameCount || shotLanguageAnalysis?.selectedFrames?.length || 0);
+        const imageBatchCount = Number(shotLanguageAnalysis?.imageBatchCount || 0);
         const confidence = Number(shotLanguageAnalysis?.confidence);
         if (state.viralBreakdown.shotLanguageProcessing) {
           shotLanguageMeta.textContent = '分析中...';
@@ -227,7 +301,9 @@
           const confidenceText = Number.isFinite(confidence)
             ? ` · 置信度 ${Math.round(confidence * 100)}%`
             : '';
-          shotLanguageMeta.textContent = `${selectedFrames} 个代表帧${confidenceText}`;
+          shotLanguageMeta.textContent = imageBatchCount
+            ? `${inputFrameCount} 张全量帧 · ${imageBatchCount} 批${confidenceText}`
+            : `${inputFrameCount} 张分析帧${confidenceText}`;
         } else {
           shotLanguageMeta.textContent = '';
         }
@@ -283,7 +359,7 @@
       }
       if (gridPane) {
         gridPane.innerHTML = currentItem?.gridImageUrl
-          ? `<img src="${escapeHtml(String(currentItem.gridImageUrl || ''))}" alt="拼接好的宫格图">`
+          ? `<img src="${escapeHtml(String(currentItem.gridImageUrl || ''))}" alt="拼接好的宫格图，可点击任一宫格预览大图" data-viral-grid-preview>`
           : '<div class="viral-breakdown-empty">点击“拆解画面”后，这里会显示按时间顺序拼好的宫格图。</div>';
       }
       if (shotLanguagePane) {

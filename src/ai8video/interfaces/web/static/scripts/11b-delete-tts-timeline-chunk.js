@@ -22,9 +22,13 @@
         : '请先点击选择一个配音块';
     }
 
-    function setTtsSelectedChunkIndex(index) {
+    function setTtsSelectedChunkIndex(index, exclusive = true) {
       const chunks = state.videoPreviewModal?.ttsTimelineChunks || [];
       const selected = Number.isInteger(index) && index >= 0 && index < chunks.length ? index : null;
+      if (selected !== null && exclusive) {
+        setVideoSelectedChunkIndex(null, false);
+        setHtmlMotionSelectedChunkIndex(null, false);
+      }
       if (state.videoPreviewModal) state.videoPreviewModal.ttsSelectedChunkIndex = selected;
       els.videoPreviewBody?.querySelectorAll('[data-video-preview-tts-chunk]').forEach((element) => {
         const active = Number(element.dataset.chunkIndex) === selected;

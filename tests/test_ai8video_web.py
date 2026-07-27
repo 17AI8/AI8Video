@@ -33,6 +33,7 @@ from ai8video.media import timeline_boundary
 from ai8video.media import tts_waveform
 from ai8video.media import video_timeline_review
 from ai8video.media.motion import html_motion_review
+from ai8video.media.motion import hyperframes_overlay_renderer
 
 
 STATIC_ROOT = Path(__file__).resolve().parents[1] / "src" / "ai8video" / "interfaces" / "web" / "static"
@@ -990,6 +991,15 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
         self.assertIn('function seekVideoPreviewToHtmlMotionChunk(index)', source)
         self.assertIn('setHtmlMotionSelectedChunkIndex(index)', source)
+        self.assertIn('function setVideoSelectedChunkIndex(index, exclusive = true)', source)
+        self.assertIn('function setTtsSelectedChunkIndex(index, exclusive = true)', source)
+        self.assertIn('function setHtmlMotionSelectedChunkIndex(index, exclusive = true)', source)
+        self.assertIn('data-video-preview-action="toggle-video-seek"', source)
+        self.assertIn('function seekVideoTimelineAtPointer(event, element)', source)
+        self.assertIn("'定位工具已开启：点击胶片任意位置跳转'", source)
+        self.assertIn('setVideoSelectedChunkIndex(null, false)', source)
+        self.assertIn('setTtsSelectedChunkIndex(null, false)', source)
+        self.assertIn('setHtmlMotionSelectedChunkIndex(null, false)', source)
         self.assertIn('video.pause();', source)
         self.assertIn('function handleHtmlMotionChunkClick(event, element, duration)', source)
         self.assertIn('splitHtmlMotionTimelineAtPointer(event, element, duration)', source)
@@ -2577,6 +2587,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertFalse((music_root / "current.mp3").exists())
         selected = [item for item in body["items"] if item["selected"]]
         self.assertEqual([item["id"] for item in selected], ["second"])
+        self.assertEqual(selected[0]["previewUrl"], "/api/background-music/preview/second")
 
     def test_api_background_music_clear_selection(self) -> None:
         music_root = self.root / "background_music"
@@ -4950,6 +4961,27 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("const userGeneratedKey = item.userGeneratedKey || deriveUserGeneratedKeyFromMediaUrl(videoSrc);", html)
         self.assertIn("const explicitKey = trigger?.getAttribute?.('data-video-user-generated-key') || '';", html)
         self.assertIn("const userGeneratedKey = explicitKey || deriveUserGeneratedKeyFromMediaUrl(src);", html)
+
+    def test_viral_breakdown_interval_shows_live_frame_estimate(self) -> None:
+        html = read_static_source()
+
+        self.assertIn('id="viralBreakdownFrameEstimate"', html)
+        self.assertIn("function openViralBreakdownGridFrame(event, image, item)", html)
+        self.assertIn("function showViralBreakdownFrameLightbox(item, frameIndex)", html)
+        self.assertIn("data-viral-grid-preview", html)
+        self.assertIn("viral-breakdown-lightbox-fade-in", html)
+        self.assertNotIn("pendingProgressSweep", html)
+        self.assertIn("return Boolean(String(item?.transcriptJsonKey || '').trim());", html)
+        self.assertIn("const VIRAL_BREAKDOWN_MAX_FRAME_COUNT = 80;", html)
+        self.assertIn("function minimumViralBreakdownInterval(item)", html)
+        self.assertIn("function isViralBreakdownGenerateReady(item)", html)
+        self.assertNotIn("if (!String(transcriptText || '').trim()) missing.push('识别台词');", html)
+        self.assertIn("Math.ceil((duration / VIRAL_BREAKDOWN_MAX_FRAME_COUNT) * 10) / 10", html)
+        self.assertIn("intervalInput.min = String(minimumInterval);", html)
+        self.assertIn("intervalVideoKey: ''", html)
+        self.assertIn("function estimateViralBreakdownFrameCount(item, intervalSeconds)", html)
+        self.assertIn("Math.ceil(duration / clampViralBreakdownInterval(item, intervalSeconds))", html)
+        self.assertIn("addEventListener('input', (event) =>", html)
         self.assertIn("function resolvePlayablePreviewSrc(item)", html)
         self.assertIn("function deriveLocalPreviewKey(videoKey)", html)
         self.assertIn("data-video-user-generated-preview-key", html)
@@ -4959,12 +4991,22 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("data-video-preview-action=\"regenerate-tts\"", html)
         self.assertIn("data-video-preview-action=\"edit-video-timeline\"", html)
         self.assertIn("裁剪视频", html)
+        self.assertIn("setVideoPreviewButtonLabel(button, '正在渲染…')", html)
+        self.assertIn("setVideoPreviewButtonLabel(button, '裁剪视频')", html)
         self.assertLess(
             html.index('data-video-preview-action="edit-video-timeline"'),
             html.index('data-video-preview-action="regenerate-tts"'),
         )
         self.assertIn("data-video-preview-video-timeline", html)
         self.assertIn("data-video-preview-video-chunks", html)
+        self.assertIn('data-video-preview-action="toggle-background-music"', html)
+        self.assertIn("data-video-preview-background-music-drawer", html)
+        self.assertIn("function bindVideoPreviewBackgroundMusic(video)", html)
+        self.assertIn("selected?.previewUrl", html)
+        self.assertIn("function positionVideoPreviewBackgroundMusicDrawer()", html)
+        self.assertIn("max-height: min(320px, 52vh);", html)
+        self.assertIn('data-full-label="${escapeHtml(label)}"', html)
+        self.assertIn("content: attr(data-full-label)", html)
         self.assertIn("video-preview-timeline-toolbar", html)
         self.assertIn("video-preview-timeline-duration", html)
         self.assertNotIn("video-preview-html-motion-ruler", html)
@@ -4987,6 +5029,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertNotIn("开启剪刀后点击画面切块", html)
         self.assertNotIn("裁剪后仍可编辑配音和动效", html)
         self.assertIn("timelineOverflowZoneMarkup", html)
+        self.assertIn("boundary.ttsOverflowIndexes", html)
+        self.assertIn("boundary.htmlMotionOverflowIndexes", html)
         self.assertIn("video-preview-timeline-overflow-zone", html)
         self.assertNotIn("video-preview-tts-boundary-warning", html)
         self.assertNotIn("video-preview-html-motion-boundary-warning", html)
@@ -5010,6 +5054,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("/api/user-generated-results/tts-timeline-preview", html)
         self.assertIn("/api/user-generated-results/burn-review", html)
         self.assertIn("/api/user-generated-results/confirm-burn", html)
+        self.assertIn("button.classList.add('is-spinning')", html)
+        self.assertIn("button.classList.remove('is-spinning')", html)
         self.assertIn("/api/user-generated-results/regenerate-html-motion", html)
         self.assertIn("/api/user-generated-results/confirm-burn", html)
         self.assertIn("/api/user-generated-results/html-motion-review", html)
@@ -5054,6 +5100,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("/api/user-generated-results/batch-merge", html)
         self.assertIn("重新生成 HTML 动效", html)
         self.assertIn("强行停止", html)
+        self.assertIn("setHtmlMotionButtonBusy(button, true)", html)
+        self.assertIn("video-preview-button-spin 0.85s linear infinite", html)
         self.assertIn("cancelHtmlMotionFromVideoPreview", html)
         self.assertIn("确认烧录", html)
         self.assertNotIn("videoPreviewButtonInnerHtml('edit', '微调时间轴')", html)
@@ -5087,6 +5135,15 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("toggleHtmlMotionScissorMode", html)
         self.assertIn("splitHtmlMotionTimelineAtPointer", html)
         self.assertIn("deleteSelectedHtmlMotionChunk", html)
+        self.assertIn("htmlMotionLivePreviewUrl", html)
+        self.assertIn("if (previewUrl) {\n          video.src =", html)
+        self.assertIn("preserveVideoSource: true", html)
+        self.assertIn("frame.addEventListener('load', sync, { once: true });\n      frame.src =", html)
+        self.assertIn("mountPendingHtmlMotionPreview", html)
+        self.assertIn("ai8-motion-ready", html)
+        self.assertIn("video.addEventListener(eventName, () => syncLiveHtmlMotionPreview(video))", html)
+        self.assertIn("/api/user-generated-results/save-html-motion-timeline", html)
+        self.assertIn("originalTimelineChunks", html)
         self.assertIn("resetHtmlMotionTimeline", html)
         self.assertIn("htmlMotionSelectedChunkIndex", html)
         self.assertIn("恢复完整动效", html)
@@ -5709,8 +5766,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
     def test_video_timeline_ripple_packs_chunks_and_remaps_tts(self) -> None:
         chunks = video_timeline_review.normalize_video_timeline_chunks(
             [
-                {"sourceStartSeconds": 0, "sourceEndSeconds": 3},
-                {"sourceStartSeconds": 5, "sourceEndSeconds": 10},
+                {"sourceStartSeconds": 0, "sourceEndSeconds": 3, "durationSeconds": 3},
+                {"sourceStartSeconds": 5, "sourceEndSeconds": 10, "durationSeconds": 5},
             ],
             video_duration_seconds=10,
         )
@@ -5735,13 +5792,13 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 video_duration_seconds=10,
             )
 
-    def test_video_timeline_ffmpeg_command_trims_and_concatenates_audio(self) -> None:
+    def test_video_timeline_ffmpeg_command_keeps_audio_timeline_independent(self) -> None:
         command = video_timeline_review._video_timeline_ffmpeg_command(
             Path("source.mp4"),
             Path("target.mp4"),
             [
-                {"sourceStartSeconds": 0, "sourceEndSeconds": 3},
-                {"sourceStartSeconds": 5, "sourceEndSeconds": 10},
+                {"sourceStartSeconds": 0, "sourceEndSeconds": 3, "durationSeconds": 3},
+                {"sourceStartSeconds": 5, "sourceEndSeconds": 10, "durationSeconds": 5},
             ],
             True,
             "ffmpeg",
@@ -5749,10 +5806,11 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         filter_complex = command[command.index("-filter_complex") + 1]
 
         self.assertIn("split=2", filter_complex)
-        self.assertIn("asplit=2", filter_complex)
         self.assertIn("trim=start=0:end=3", filter_complex)
-        self.assertIn("atrim=start=5:end=10", filter_complex)
-        self.assertIn("concat=n=2:v=1:a=1", filter_complex)
+        self.assertNotIn("atrim", filter_complex)
+        self.assertIn("concat=n=2:v=1:a=0", filter_complex)
+        self.assertEqual(command[command.index("-map", command.index("-map") + 1) + 1], "0:a:0")
+        self.assertEqual(command[command.index("-t") + 1], "8.000")
 
     def test_timeline_boundary_blocks_chunks_past_cropped_video_end(self) -> None:
         status = timeline_boundary.timeline_boundary_status(
@@ -5782,6 +5840,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 {
                     "start": 0,
                     "end": 4,
+                    "zone": "top-left",
                     "html": '<div id="scene-1-title">第一段</div>',
                     "css": "#hf-scene-1 #scene-1-title{}",
                     "animations": [{"target": "#scene-1-title"}],
@@ -5790,6 +5849,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 {
                     "start": 4,
                     "end": 8,
+                    "zone": "top-right",
                     "html": '<div id="scene-2-title">第二段</div>',
                     "css": "#hf-scene-2 #scene-2-title{}",
                     "animations": [{"target": "#scene-2-title"}],
@@ -5821,6 +5881,13 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertEqual(len(deleted), 1)
         self.assertEqual(deleted[0]["sourceIndex"], 1)
         self.assertIn('id="scene-1-title"', deleted_artifact["scenes"][0]["html"])
+        markup = hyperframes_overlay_renderer._scene_markup(deleted_artifact["scenes"][0], 0)
+        self.assertIn('data-timeline-source-index="1"', markup)
+        runtime = (Path(html_motion_review.__file__).parent / "waapi_timeline_runtime.js").read_text(encoding="utf-8")
+        self.assertIn("updateChunks(Array.from(document.querySelectorAll('.hf-scene'))", runtime)
+        self.assertIn("const delaySeconds = number(item.at, 0) + staggerSeconds * index;", runtime)
+        self.assertIn("if (global.__ai8MotionManageSceneVisibility)", runtime)
+        self.assertIn("global.__ai8MotionManageSceneVisibility = true;", runtime)
 
     def test_pending_burn_context_rejects_tts_past_cropped_video_end(self) -> None:
         video_state = {"outputDurationSeconds": 8.0}
@@ -5837,6 +5904,44 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         ):
             with self.assertRaisesRegex(ValueError, "配音片段"):
                 ai8video_web._pending_burn_context(Path("demo.mp4"), "video/demo.mp4", None)
+
+    def test_burn_review_keeps_tts_and_html_preview_layers_independent(self) -> None:
+        video_path = self.root / "demo.mp4"
+        video_path.write_bytes(b"video")
+        html_candidate = self.root / "html-candidate.mp4"
+        video_candidate = self.root / "video-candidate.mp4"
+        with patch.object(
+            ai8video_web,
+            "_pending_burn_visual_source",
+            return_value=(html_candidate, {"reviewReady": True, "livePreviewUrl": "/live/composition.html"}),
+        ), patch.object(
+            ai8video_web,
+            "_current_tts_timeline_status",
+            return_value={"available": True, "timelineChunks": []},
+        ), patch.object(
+            ai8video_web,
+            "_render_pending_tts_burn_preview",
+            return_value={"pending": True, "previewUrl": "/tts.mp4", "reviewId": "tts-review"},
+        ) as render_tts, patch.object(
+            ai8video_web, "resolve_video_timeline_review_video", return_value=video_candidate,
+        ), patch.object(
+            ai8video_web,
+            "_render_pending_video_burn_preview",
+            return_value={
+                "pending": True,
+                "previewUrl": "/video.mp4",
+                "reviewId": "video-review",
+                "outputDurationSeconds": 8.0,
+            },
+        ), patch.object(
+            ai8video_web, "timeline_boundary_status", return_value={"valid": True},
+        ):
+            review = ai8video_web._burn_review_payload(video_path, "video/demo.mp4")
+
+        self.assertEqual(render_tts.call_args.kwargs["visual_source"], video_candidate)
+        self.assertEqual(render_tts.call_args.kwargs["duration_seconds"], 8.0)
+        self.assertEqual(review["previewUrl"], "/tts.mp4")
+        self.assertEqual(review["livePreviewUrl"], "/live/composition.html")
 
     def test_tts_waveform_extracts_and_reuses_cached_peaks(self) -> None:
         audio_path = self.root / "voice.m4a"
@@ -5864,11 +5969,11 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
     def test_confirm_burn_combines_pending_tts_and_html_before_replacing_video(self) -> None:
         result_root = self.root / "用户生成结果"
         video_path = result_root / "video" / "demo.mp4"
-        html_candidate = self.root / "html-candidate.mp4"
+        html_base = self.root / "html-base.mp4"
         audio_path = self.root / "tts.m4a"
         video_path.parent.mkdir(parents=True)
         video_path.write_bytes(b"official")
-        html_candidate.write_bytes(b"html")
+        html_base.write_bytes(b"clean")
         audio_path.write_bytes(b"audio")
         state = {
             "audioPath": str(audio_path),
@@ -5881,10 +5986,10 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 "durationSeconds": 8,
             }],
         }
-        rendered_from: list[Path] = []
+        rendered_from: list[bytes] = []
 
         def fake_render(visual_source, _audio, target, _chunks, **_kwargs):
-            rendered_from.append(Path(visual_source))
+            rendered_from.append(Path(visual_source).read_bytes())
             Path(target).write_bytes(b"combined")
             return {"status": "rendered"}
 
@@ -5894,8 +5999,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             return_value={"reviewReady": True},
         ), patch.object(
             ai8video_web,
-            "html_motion_review_candidate_path",
-            return_value=html_candidate,
+            "html_motion_review_base_path",
+            return_value=html_base,
         ), patch.object(
             ai8video_web,
             "pending_tts_timeline_review",
@@ -5912,6 +6017,17 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             ai8video_web,
             "mix_background_music",
             return_value={"enabled": False, "status": "skipped"},
+        ), patch.object(
+            ai8video_web,
+            "probe_media_video_info",
+            return_value={"width": 720, "height": 1280, "durationSeconds": 10.0},
+        ), patch.object(
+            ai8video_web,
+            "resolve_ffmpeg_bin",
+            return_value="ffmpeg",
+        ), patch.object(
+            ai8video_web,
+            "composite_transparent_layer",
         ), patch.object(
             ai8video_web,
             "finalize_html_motion_review",
@@ -5948,12 +6064,12 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             body = ai8video_web._confirm_user_generated_burn("video/demo.mp4")
 
         self.assertTrue(body["ok"])
-        self.assertEqual(rendered_from, [html_candidate])
+        self.assertEqual(rendered_from, [b"clean"])
         self.assertEqual(video_path.read_bytes(), b"combined")
         self.assertEqual(body["htmlMotionOverlay"]["status"], "applied")
         self.assertEqual(body["localTts"]["status"], "mixed")
 
-    def test_confirm_burn_applies_video_crop_after_tts_composite(self) -> None:
+    def test_confirm_burn_applies_video_crop_before_tts_composite(self) -> None:
         result_root = self.root / "用户生成结果"
         video_path = result_root / "video" / "crop.mp4"
         audio_path = self.root / "tts.m4a"
@@ -5983,12 +6099,13 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
         def render_tts(_source, _audio, target, _chunks, **_kwargs):
             render_order.append("tts")
+            self.assertEqual(Path(_source).read_bytes(), b"cropped")
             Path(target).write_bytes(b"composite")
             return {"status": "rendered"}
 
         def render_crop(source, target, _chunks, **_kwargs):
             render_order.append("crop")
-            self.assertEqual(Path(source).read_bytes(), b"composite")
+            self.assertEqual(Path(source).read_bytes(), b"official")
             Path(target).write_bytes(b"cropped")
             return {"status": "rendered"}
 
@@ -6020,13 +6137,13 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             body = ai8video_web._confirm_user_generated_burn("video/crop.mp4")
 
         self.assertTrue(body["ok"])
-        self.assertEqual(render_order, ["tts", "crop"])
-        self.assertEqual(video_path.read_bytes(), b"cropped")
+        self.assertEqual(render_order, ["crop", "tts"])
+        self.assertEqual(video_path.read_bytes(), b"composite")
         self.assertEqual(body["videoTimeline"]["status"], "applied")
         mark_crop.assert_called_once_with("video/crop.mp4")
         saved_state = save_tts.call_args.args[2]
-        self.assertEqual(saved_state["durationSeconds"], 8.0)
-        self.assertEqual([item["startSeconds"] for item in saved_state["timelineChunks"]], [0.0, 3.0])
+        self.assertEqual(saved_state["durationSeconds"], 10.0)
+        self.assertEqual([item["startSeconds"] for item in saved_state["timelineChunks"]], [0])
 
     def test_regenerate_html_motion_uses_retained_video_prompt(self) -> None:
         result_root = self.root / "用户生成结果"
@@ -6154,7 +6271,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertEqual(manifest["htmlMotionOverlayRegeneration"]["status"], "preview_ready")
         self.assertNotIn("htmlMotionOverlay", manifest)
 
-    def test_confirm_html_motion_publishes_prepared_preview_once(self) -> None:
+    def test_confirm_html_motion_composites_prepared_layer_once(self) -> None:
         result_root = self.root / "用户生成结果"
         video_dir = result_root / "video"
         video_dir.mkdir(parents=True)
@@ -6169,10 +6286,42 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             candidate.write_bytes(b"prepared-preview")
             return {"status": "applied", "reason": "rendered"}
 
+        def composite(base: Path, _layer: Path, _media: dict, _ffmpeg: str) -> None:
+            self.assertEqual(base.read_bytes(), b"official")
+            base.write_bytes(b"prepared-preview")
+
         with patch("ai8video.media.motion.html_motion_review.HTML_MOTION_REVIEW_ROOT", review_root), patch.object(
             ai8video_web,
             "ensure_user_generated_result_dir",
             return_value=result_root,
+        ), patch.object(
+            ai8video_web,
+            "html_motion_review_status",
+            return_value={"reviewReady": True},
+        ), patch.object(
+            ai8video_web,
+            "pending_tts_timeline_review",
+            return_value={},
+        ), patch.object(
+            ai8video_web,
+            "pending_video_timeline_review",
+            return_value={},
+        ), patch.object(
+            ai8video_web,
+            "probe_media_video_info",
+            return_value={"durationSeconds": 1.0},
+        ), patch.object(
+            ai8video_web,
+            "resolve_ffmpeg_bin",
+            return_value="ffmpeg",
+        ), patch.object(
+            ai8video_web,
+            "composite_transparent_layer",
+            side_effect=composite,
+        ) as composite_layer, patch.object(
+            ai8video_web,
+            "mix_background_music",
+            return_value={"enabled": False, "status": "unchanged"},
         ), patch.object(
             ai8video_web,
             "generate_preview_for_video",
@@ -6190,6 +6339,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertEqual(body["htmlMotionOverlay"]["status"], "applied")
         stored = JsonlAssetStore(self.root / "assets.jsonl").read_all()[0]
         self.assertEqual(stored["htmlMotionOverlay"]["status"], "applied")
+        composite_layer.assert_called_once()
         generate_preview.assert_called_once()
 
     def test_regenerate_html_motion_reports_deleted_video_prompt(self) -> None:
@@ -6747,7 +6897,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             "视频后处理失败，背景音乐或原声音轨合成没有完成。请重新生成，或先关闭背景音乐后再试。",
             html,
         )
-        self.assertIn("<summary>技术详情</summary>", html)
+        self.assertNotIn("<summary>技术详情</summary>", html)
         self.assertNotIn("item?.jobId ? `任务 ${item.jobId}` : ''", html)
         self.assertIn(
             "els.recycleBinSub.textContent = `${Number(bin.count || items.length || 0)} 个失败任务。失败但已产出视频的任务会放到这里。`;",

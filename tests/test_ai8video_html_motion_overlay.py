@@ -358,19 +358,12 @@ class AI8VideoHtmlMotionOverlayTest(unittest.TestCase):
             prepared = html_motion_review.prepare_html_motion_review(source, "video/result.mp4", render)
             layer = html_motion_review.html_motion_review_layer_path("video/result.mp4")
             layer.write_bytes(b"overlay")
+            saved = html_motion_review.save_html_motion_review_timeline(
+                "video/result.mp4",
+                [{"index": 0, "startSeconds": 4.2}],
+            )
+            saved_status = html_motion_review.html_motion_review_status("video/result.mp4")
             with patch.object(
-                html_motion_review,
-                "probe_media_video_info",
-                return_value={"width": 720, "height": 1280, "durationSeconds": 10.0},
-            ), patch.object(
-                html_motion_review,
-                "resolve_ffmpeg_bin",
-                return_value="ffmpeg",
-            ), patch.object(
-                html_motion_review,
-                "composite_transparent_layer",
-                side_effect=lambda candidate, *_args, **_kwargs: candidate.write_bytes(b"shifted-preview"),
-            ), patch.object(
                 html_motion_review,
                 "render_html_motion_artifact_layer",
                 side_effect=rerender_layer,
@@ -381,9 +374,29 @@ class AI8VideoHtmlMotionOverlayTest(unittest.TestCase):
                     [{"index": 0, "startSeconds": 4.2}],
                 )
             preview = html_motion_review.resolve_html_motion_review_video(prepared["reviewId"])
+            html_motion_review.finalize_html_motion_review("video/result.mp4")
+            confirmed_status = html_motion_review.html_motion_review_status("video/result.mp4")
+            reopened = html_motion_review.save_html_motion_review_timeline(
+                "video/result.mp4",
+                [{"index": 0, "startSeconds": 4.2}],
+            )
+            reopened_status = html_motion_review.html_motion_review_status("video/result.mp4")
+            preview.unlink()
+            candidate_free_status = html_motion_review.html_motion_review_status("video/result.mp4")
 
         self.assertEqual(source.read_bytes(), b"official")
-        self.assertEqual(preview.read_bytes(), b"shifted-preview")
+        self.assertEqual(saved["timelineChunks"][0]["startSeconds"], 4.2)
+        self.assertEqual(saved_status["timelineChunks"][0]["startSeconds"], 4.2)
+        self.assertEqual(saved_status["originalTimelineChunks"][0]["startSeconds"], 1.0)
+        self.assertFalse(confirmed_status["reviewReady"])
+        self.assertTrue(confirmed_status["reviewConfirmed"])
+        self.assertTrue(confirmed_status["timelineAdjustable"])
+        self.assertEqual(confirmed_status["timelineChunks"][0]["startSeconds"], 4.2)
+        self.assertTrue(reopened["reviewReady"])
+        self.assertTrue(reopened_status["reviewReady"])
+        self.assertFalse(reopened_status["reviewConfirmed"])
+        self.assertTrue(candidate_free_status["reviewReady"])
+        self.assertTrue(candidate_free_status["timelineAdjustable"])
         self.assertEqual(adjusted["timelineChunks"][0]["startSeconds"], 4.2)
         self.assertEqual(adjusted["timelineChunks"][0]["endSeconds"], 6.2)
         self.assertEqual(rerender.call_args.args[0]["scenes"][0]["start"], 4.2)

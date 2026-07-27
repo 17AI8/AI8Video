@@ -18,6 +18,8 @@
             </div>
             <span class="video-preview-timeline-duration" data-video-preview-video-duration>0.0 秒</span>
             <div class="video-preview-tts-timeline-actions">
+              <button type="button" class="video-preview-button" data-video-preview-action="toggle-background-music" aria-expanded="false">背景音乐</button>
+              <button type="button" class="video-preview-button video-preview-tts-tool-button" data-video-preview-video-editor-action data-video-preview-action="toggle-video-seek" data-icon="pointer" aria-label="定位工具" aria-pressed="false" title="开启定位工具">${videoPreviewIconSvg('pointer')}</button>
               <button type="button" class="video-preview-button video-preview-tts-tool-button" data-video-preview-video-editor-action data-video-preview-action="toggle-video-scissors" data-icon="scissors" aria-label="剪刀工具" aria-pressed="false" title="开启剪刀工具">${videoPreviewIconSvg('scissors')}</button>
               <button type="button" class="video-preview-button video-preview-tts-tool-button video-preview-tts-delete-button" data-video-preview-video-editor-action data-video-preview-action="delete-selected-video-chunk" data-icon="trash" aria-label="删除所选视频片段" title="请先点击选择一个视频片段" disabled>${videoPreviewIconSvg('trash')}</button>
               <button type="button" class="video-preview-button" data-video-preview-video-editor-action data-video-preview-action="reset-video-timeline">恢复完整视频</button>
@@ -25,6 +27,7 @@
           </div>
           <div class="video-preview-tts-chunks video-preview-video-chunks" data-video-preview-video-chunks></div>
         </div>
+        <div class="video-preview-background-music-drawer" data-video-preview-background-music-drawer hidden></div>
         <div class="video-preview-tts-timeline" data-video-preview-tts-timeline hidden aria-hidden="true">
           <div class="video-preview-tts-timeline-head video-preview-timeline-toolbar">
             <div class="video-preview-timeline-heading">
@@ -33,6 +36,7 @@
             </div>
             <span class="video-preview-timeline-duration" data-video-preview-tts-duration>0.0 秒</span>
             <div class="video-preview-tts-timeline-actions">
+              <button type="button" class="video-preview-button video-preview-tts-tool-button" data-video-preview-tts-editor-action data-video-preview-action="smart-split-tts" data-icon="sparkles" aria-label="智能切块" title="根据音波停顿智能切块">${videoPreviewIconSvg('sparkles')}</button>
               <button type="button" class="video-preview-button video-preview-tts-tool-button" data-video-preview-tts-editor-action data-video-preview-action="toggle-tts-scissors" data-icon="scissors" aria-label="剪刀工具" aria-pressed="false" title="开启剪刀工具">${videoPreviewIconSvg('scissors')}</button>
               <button type="button" class="video-preview-button video-preview-tts-tool-button video-preview-tts-delete-button" data-video-preview-tts-editor-action data-video-preview-action="delete-selected-tts-chunk" data-icon="trash" aria-label="删除所选配音块" title="请先点击选择一个配音块" disabled>${videoPreviewIconSvg('trash')}</button>
               <button type="button" class="video-preview-button" data-video-preview-tts-editor-action data-video-preview-action="reset-tts-timeline">恢复完整配音</button>

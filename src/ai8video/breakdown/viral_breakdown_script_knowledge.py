@@ -32,15 +32,13 @@ def compose_viral_breakdown_knowledge_source(
     shot_language = str(shot_language_text or "").strip()
     if not script:
         raise RuntimeError("多模态没有返回可用剧本骨架，无法调用知识库 Agent 建树")
-    if not transcript:
-        raise RuntimeError("还没有可用台词，知识库 Agent 需要台词来补全细节")
     content = (
         "【剧本骨架】\n"
         "（多模态根据分镜与台词反推的情节逻辑骨架）\n\n"
         f"{script}\n\n"
         "【台词细节】\n"
         "（识别台词，供知识库 Agent 补全对白、节奏与可检索细节）\n\n"
-        f"{transcript}"
+        f"{transcript or '（未识别到台词，仅依据剧本骨架与镜头语言建树）'}"
     )
     if shot_language:
         content += (

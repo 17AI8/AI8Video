@@ -5,11 +5,13 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import mimetypes
 import re
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 from typing import Any
+
+from PIL import Image, ImageOps
 
 from ai8video.agent_skills import apply_agent_skills
 from ai8video.breakdown.viral_breakdown import (
@@ -23,11 +25,11 @@ from ai8video.breakdown.viral_breakdown import (
 from ai8video.core.config import AI8VideoConfig
 from ai8video.integrations.http_client import api_request
 from ai8video.integrations.llm_provider import normalize_chat_completions_url
+from ai8video.media.ffmpeg_utils import probe_media_metadata
 
 
 SHOT_LANGUAGE_SCHEMA_VERSION = 1
-SHOT_LANGUAGE_PROMPT_VERSION = "prompt-lens-method-v1"
-SHOT_LANGUAGE_MAX_FRAMES = 10
+SHOT_LANGUAGE_PROMPT_VERSION = "prompt-lens-method-v2"
 
 
 def analyze_viral_breakdown_shot_language(
@@ -49,7 +51,9 @@ def analyze_viral_breakdown_shot_language(
         "model": str(config.multimodal_model or ""),
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "inputSignature": context["inputSignature"],
-        "selectedFrames": context["selectedFrames"],
+        "selectedFrames": context["allFrames"],
+        "inputFrameCount": len(context["allFrames"]),
+        "imageBatchCount": len(context["rowBatches"]),
         **normalized,
         "stale": False,
     }
@@ -93,26 +97,23 @@ def _build_analysis_context(video_path: Path) -> dict[str, Any]:
     if not frames:
         raise RuntimeError("还没有可分析的截图，请先点击“拆解画面”")
     interval_seconds = max(0.01, float(meta.get("intervalSeconds") or 1.0))
+    media = probe_media_metadata(video_path) or {}
     transcript = _read_json(VIRAL_BREAKDOWN_TRANSCRIPT_DIR / f"{video_path.stem}.json")
-    selected = _select_representative_frames(frames, SHOT_LANGUAGE_MAX_FRAMES)
-    selected_frames = [
+    all_frames = [
         _selected_frame_payload(path, interval_seconds, transcript)
-        for path in selected
+        for path in frames
     ]
+    columns = max(1, int(meta.get("gridColumns") or 1))
+    row_batches = [frames[index:index + columns] for index in range(0, len(frames), columns)]
     return {
         "videoPath": video_path,
         "meta": meta,
+        "media": media,
         "transcript": transcript,
-        "selectedFrames": selected_frames,
+        "allFrames": all_frames,
+        "rowBatches": row_batches,
         "inputSignature": _input_signature(video_path, meta, transcript, frames),
     }
-
-
-def _select_representative_frames(frames: list[Path], limit: int) -> list[Path]:
-    if len(frames) <= limit:
-        return frames
-    indices = [round(index * (len(frames) - 1) / (limit - 1)) for index in range(limit)]
-    return [frames[index] for index in dict.fromkeys(indices)]
 
 
 def _selected_frame_payload(
@@ -224,8 +225,11 @@ def _build_analysis_messages(context: dict[str, Any]) -> list[dict[str, Any]]:
         "水印、音乐或受版权保护的具体表达。只输出合法 JSON，不要 Markdown。"
     ))
     content: list[dict[str, Any]] = [{"type": "text", "text": _analysis_request_text(context)}]
-    for frame in context["selectedFrames"]:
-        content.extend(_frame_message_blocks(frame))
+    for batch_index, frame_paths in enumerate(context["rowBatches"], start=1):
+        content.extend([
+            {"type": "text", "text": _row_batch_guide(context, batch_index, frame_paths)},
+            {"type": "image_url", "image_url": {"url": _row_batch_data_url(frame_paths)}},
+        ])
     return [
         {"role": "system", "content": system},
         {"role": "user", "content": content},
@@ -235,7 +239,9 @@ def _build_analysis_messages(context: dict[str, Any]) -> list[dict[str, Any]]:
 def _analysis_request_text(context: dict[str, Any]) -> str:
     transcript_text = str(context["transcript"].get("text") or "").strip()[:6000]
     return (
-        "分析下面按时间均匀抽取的代表帧，并结合附近台词给出镜头语言结构。"
+        "下面按宫格行分批提供全部截图。请按截图右下角序号恢复完整时间顺序，"
+        "并结合台词给出镜头语言结构。分批仅用于传输图片，不代表镜头、场景或节拍分段；"
+        "不得直接把整行或整批图片合并成一个时间段。"
         "若截图不足以确认真实运镜，只能写‘画面变化推断’，不要伪造镜头运动。"
         "返回字段：overall、hook、rhythm、visualStyle、camera、lighting、reusable、avoid、"
         "beats、confidence。除 beats 外均为简洁字符串；beats 是数组，每项包含 time、visual、"
@@ -247,16 +253,51 @@ def _analysis_request_text(context: dict[str, Any]) -> str:
     )
 
 
-def _frame_message_blocks(frame: dict[str, Any]) -> list[dict[str, Any]]:
-    frame_path = (VIRAL_BREAKDOWN_ROOT / str(frame["frameKey"])).resolve()
-    nearby = str(frame.get("transcript") or "").strip() or "无"
-    return [
-        {
-            "type": "text",
-            "text": f"代表帧 {frame['frameIndex']}｜{frame['timestampLabel']}｜附近台词：{nearby}",
-        },
-        {"type": "image_url", "image_url": {"url": _image_data_url(frame_path)}},
-    ]
+def _row_batch_guide(context: dict[str, Any], batch_index: int, frame_paths: list[Path]) -> str:
+    meta = context.get("meta") if isinstance(context.get("meta"), dict) else {}
+    media = context.get("media") if isinstance(context.get("media"), dict) else {}
+    rows = max(1, int(meta.get("gridRows") or 1))
+    frame_count = max(0, int(meta.get("frameCount") or len(context.get("allFrames") or [])))
+    interval = max(0.01, float(meta.get("intervalSeconds") or 1.0))
+    duration = max(0.0, float(media.get("durationSeconds") or 0.0))
+    time_ranges = "、".join(
+        _frame_time_range(frame_path, interval, duration)
+        for frame_path in frame_paths
+    )
+    return (
+        f"全量截图第 {batch_index}/{rows} 批（对应宫格第 {batch_index} 行）｜"
+        f"总视频时长 {duration:.1f} 秒；截图间隔 {interval:g} 秒；共 {frame_count} 张截图。"
+        f"本批含 {len(frame_paths)} 张，序号 {frame_paths[0].stem[-4:].lstrip('0') or '0'}–"
+        f"{frame_paths[-1].stem[-4:].lstrip('0') or '0'}。"
+        "每张截图右下角黑色标签内的白色数字是唯一时间顺序依据。"
+        f"逐格时间区间：{time_ranges}。"
+        "请按单格内容判断语义变化；本批只是传输分组，禁止直接将本批整体作为一个节拍。"
+    )
+
+
+def _frame_time_range(frame_path: Path, interval: float, duration: float) -> str:
+    frame_index = _frame_index(frame_path)
+    start = max(0.0, (frame_index - 1) * interval)
+    end = min(duration, frame_index * interval) if duration > 0 else frame_index * interval
+    return f"序号{frame_index}={start:.1f}–{max(start, end):.1f}s"
+
+
+def _row_batch_data_url(frame_paths: list[Path]) -> str:
+    images = []
+    for frame_path in frame_paths:
+        with Image.open(frame_path) as source:
+            images.append(source.convert("RGB"))
+    cell_width = max(120, min(260, 1800 // max(1, len(images))))
+    cell_height = max(120, round(cell_width * images[0].height / images[0].width))
+    gap = 4
+    image = Image.new("RGB", (cell_width * len(images) + gap * (len(images) - 1), cell_height), (25, 34, 52))
+    for index, source in enumerate(images):
+        fitted = ImageOps.contain(source, (cell_width, cell_height), Image.Resampling.LANCZOS)
+        image.paste(fitted, (index * (cell_width + gap), (cell_height - fitted.height) // 2))
+    output = BytesIO()
+    image.save(output, format="JPEG", quality=68, optimize=True)
+    encoded = base64.b64encode(output.getvalue()).decode("ascii")
+    return f"data:image/jpeg;base64,{encoded}"
 
 
 def _response_content(payload: dict[str, Any]) -> str:
@@ -377,12 +418,6 @@ def _analysis_path(video_path: Path) -> Path:
 
 def _analysis_relative_key(video_path: Path) -> str:
     return _analysis_path(video_path).relative_to(VIRAL_BREAKDOWN_ROOT).as_posix()
-
-
-def _image_data_url(path: Path) -> str:
-    mime_type = mimetypes.guess_type(str(path))[0] or "image/jpeg"
-    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-    return f"data:{mime_type};base64,{encoded}"
 
 
 def _format_http_error(response: Any) -> str:

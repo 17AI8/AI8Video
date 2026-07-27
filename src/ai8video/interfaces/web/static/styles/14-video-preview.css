@@ -270,6 +270,15 @@
       stroke-linejoin: round;
     }
 
+    .video-preview-button.is-spinning .video-preview-button-icon {
+      animation: video-preview-button-spin 0.85s linear infinite;
+      transform-origin: center;
+    }
+
+    @keyframes video-preview-button-spin {
+      to { transform: rotate(360deg); }
+    }
+
     .video-preview-button-label {
       display: inline-block;
     }
@@ -968,8 +977,7 @@
 
     .video-preview-html-motion-chunks {
       padding: 2px;
-      overflow-x: hidden;
-      overflow-y: hidden;
+      overflow: visible;
       border-radius: 8px;
       background: rgba(255, 255, 255, 0.06);
     }
@@ -1002,7 +1010,7 @@
       gap: 6px;
       min-width: 28px;
       padding: 0 7px;
-      overflow: hidden;
+      overflow: visible;
       border: 1px solid rgba(167, 139, 250, 0.72);
       border-radius: 7px;
       background: linear-gradient(90deg, rgba(79, 70, 229, 0.9), rgba(124, 58, 237, 0.88));
@@ -1018,7 +1026,29 @@
 
     .video-preview-html-motion-chunk:hover,
     .video-preview-html-motion-chunk:focus-visible {
-      z-index: 2;
+      z-index: 10;
+    }
+
+    .video-preview-html-motion-chunk:hover::after,
+    .video-preview-html-motion-chunk:focus::after {
+      content: attr(data-full-label);
+      position: absolute;
+      z-index: 11;
+      bottom: calc(100% + 7px);
+      left: 50%;
+      width: max-content;
+      max-width: min(280px, 70vw);
+      padding: 6px 9px;
+      border: 1px solid rgba(167, 139, 250, 0.7);
+      border-radius: 7px;
+      background: rgba(15, 28, 43, 0.96);
+      box-shadow: 0 8px 22px rgba(4, 10, 20, 0.36);
+      color: #fff;
+      font-size: 12px;
+      line-height: 1.4;
+      white-space: normal;
+      pointer-events: none;
+      transform: translateX(-50%);
     }
 
     .video-preview-html-motion-chunk.is-selected {

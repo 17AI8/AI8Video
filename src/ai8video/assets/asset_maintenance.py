@@ -43,7 +43,9 @@ class AssetMaintenanceService:
                     continue
                 records[index] = self._with_tts_narration_text(existing_record, text)
                 return
-            raise LookupError("台词已删除")
+            if not video_path.is_file():
+                raise LookupError("台词已删除")
+            records.append(self._new_user_generated_record(relative_key, video_path, text))
 
         self.asset_store.mutate_records(update_matching_record)
 
@@ -230,6 +232,26 @@ class AssetMaintenanceService:
         ).isoformat()
         updated_record["generationMeta"] = updated_generation_meta
         return updated_record
+
+    @classmethod
+    def _new_user_generated_record(
+        cls,
+        relative_key: str,
+        video_path: Path,
+        text: str,
+    ) -> AssetRecord:
+        created_at = datetime.now(timezone.utc).isoformat()
+        return cls._with_tts_narration_text(
+            {
+                "createdAt": created_at,
+                "userGeneratedKey": relative_key,
+                "archiveKey": relative_key,
+                "archiveLocalPath": str(video_path.resolve()),
+                "archiveStatus": "available",
+                "generationStatus": "restored",
+            },
+            text,
+        )
 
     @staticmethod
     def _with_html_motion_overlay_result(

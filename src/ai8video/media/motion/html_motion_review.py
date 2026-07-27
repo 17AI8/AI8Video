@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ai8video.media.ffmpeg_utils import probe_media_video_info, resolve_ffmpeg_bin
-from ai8video.media.overlay_video_io import composite_transparent_layer, validate_composited_video
 from ai8video.media.motion.html_motion_overlay import render_html_motion_artifact_layer
+from ai8video.media.motion.hyperframes_overlay_renderer import build_composition_html
 from ai8video.media.motion.hyperframes_runtime import WAAPI_RUNTIME_SOURCE
 from ai8video.media.video_text_overlay import selected_video_text_overlay_font_path
 from ai8video.assets.user_files import USER_FILE_ROOT, ensure_user_file_root
@@ -160,33 +160,46 @@ def finalize_html_motion_review(relative_key: str) -> dict[str, Any]:
 def html_motion_review_status(relative_key: str) -> dict[str, Any]:
     review_dir = _review_dir(relative_key)
     payload = _load_json(review_dir / "review.json")
-    candidate = review_dir / str(payload.get("candidateName") or "")
-    ready = bool(
+    artifact = _load_json(review_dir / "artifact.json")
+    original_artifact = _load_json(review_dir / "artifact.original.json")
+    media = _load_json(review_dir / "media.json")
+    suffix = Path(str(payload.get("candidateName") or "candidate.mp4")).suffix or ".mp4"
+    base = review_dir / f"base{suffix}"
+    available = bool(
         payload.get("relativeKey") == relative_key
-        and not payload.get("confirmedAt")
-        and candidate.is_file()
+        and base.is_file()
+        and artifact
+        and media
     )
+    ready = bool(available and not payload.get("confirmedAt"))
+    if available and artifact and media:
+        composition = build_composition_html(artifact, media, font_family=str(payload.get("fontFamily") or ""))
+        (review_dir / "composition.html").write_text(composition, encoding="utf-8")
+        shutil.copy2(WAAPI_RUNTIME_SOURCE, review_dir / "waapi-timeline-runtime.js")
     live_ready = bool(
-        ready
+        available
         and (review_dir / "composition.html").is_file()
         and (review_dir / "waapi-timeline-runtime.js").is_file()
     )
     return {
         "ok": True,
         "reviewReady": ready,
-        "reviewId": review_dir.name if ready else "",
-        "previewUrl": (
-            f"/api/user-generated-results/html-motion-preview/{review_dir.name}" if ready else ""
+        "reviewId": review_dir.name if available else "",
+        "reviewConfirmed": bool(available and payload.get("confirmedAt")),
+        "previewUrl": f"/api/user-generated-results/html-motion-base/{review_dir.name}" if available else "",
+        "basePreviewUrl": (
+            f"/api/user-generated-results/html-motion-base/{review_dir.name}" if available else ""
         ),
         "livePreviewUrl": (
             f"/api/user-generated-results/html-motion-live/{review_dir.name}/composition.html"
             if live_ready else ""
         ),
-        "preparedAt": payload.get("preparedAt") if ready else None,
-        "durationSeconds": _review_duration(payload) if ready else 0.0,
-        "timelineChunks": payload.get("timelineChunks", []) if ready else [],
+        "preparedAt": payload.get("preparedAt") if available else None,
+        "durationSeconds": _review_duration(payload) if available else 0.0,
+        "timelineChunks": payload.get("timelineChunks", []) if available else [],
+        "originalTimelineChunks": _timeline_chunks(original_artifact) if available else [],
         "timelineAdjustable": bool(
-            ready
+            available
             and (review_dir / "overlay.webm").is_file()
             and (review_dir / "artifact.json").is_file()
             and payload.get("timelineChunks")
@@ -196,6 +209,50 @@ def html_motion_review_status(relative_key: str) -> dict[str, Any]:
 
 def html_motion_review_layer_path(relative_key: str) -> Path:
     return _review_dir(relative_key) / "overlay.webm"
+
+
+def html_motion_review_base_path(video_path: Path, relative_key: str) -> Path:
+    source = video_path.resolve()
+    base = _review_dir(relative_key) / f"base{source.suffix or '.mp4'}"
+    if not base.is_file():
+        raise LookupError("HTML 动效纯净基础视频不存在")
+    return base
+
+
+def save_html_motion_review_timeline(relative_key: str, chunks: Any) -> dict[str, Any]:
+    review_dir = _review_dir(relative_key)
+    payload = _load_json(review_dir / "review.json")
+    artifact_path = review_dir / "artifact.json"
+    original_artifact_path = review_dir / "artifact.original.json"
+    media = _load_json(review_dir / "media.json")
+    if payload.get("relativeKey") != relative_key:
+        raise LookupError("请先重新生成 HTML 动效预览")
+    if not original_artifact_path.is_file() or not media:
+        raise LookupError("HTML 动效编辑源不存在")
+    artifact = _load_json(original_artifact_path)
+    duration = float(media.get("durationSeconds") or 0.0)
+    normalized = _apply_timeline_chunks(artifact, chunks, duration)
+    composition = build_composition_html(
+        artifact,
+        media,
+        font_family=str(payload.get("fontFamily") or ""),
+    )
+    artifact_path.write_text(json.dumps(artifact, ensure_ascii=False, indent=2), encoding="utf-8")
+    (review_dir / "composition.html").write_text(composition, encoding="utf-8")
+    shutil.copy2(WAAPI_RUNTIME_SOURCE, review_dir / "waapi-timeline-runtime.js")
+    payload["timelineChunks"] = normalized
+    payload.pop("confirmedAt", None)
+    payload["timelineAdjustedAt"] = datetime.now(timezone.utc).isoformat()
+    _write_json(review_dir / "review.json", payload)
+    return {
+        "ok": True,
+        "reviewReady": True,
+        "reviewId": review_dir.name,
+        "livePreviewUrl": f"/api/user-generated-results/html-motion-live/{review_dir.name}/composition.html",
+        "durationSeconds": duration,
+        "timelineChunks": normalized,
+        "timelineAdjustable": bool(artifact_path.is_file()),
+    }
 
 
 def adjust_html_motion_review_timeline(
@@ -209,7 +266,6 @@ def adjust_html_motion_review_timeline(
     review_dir = _review_dir(relative_key)
     payload = _load_json(review_dir / "review.json")
     base = review_dir / f"base{source.suffix or '.mp4'}"
-    candidate = review_dir / f"candidate{source.suffix or '.mp4'}"
     layer = review_dir / "overlay.webm"
     artifact_path = review_dir / "artifact.json"
     original_artifact_path = review_dir / "artifact.original.json"
@@ -223,9 +279,7 @@ def adjust_html_motion_review_timeline(
     duration = float(media.get("durationSeconds") or 0.0)
     normalized = _apply_timeline_chunks(artifact, chunks, duration)
     temporary_layer = review_dir / "overlay.timeline.webm"
-    temporary = review_dir / f"candidate.timeline{source.suffix or '.mp4'}"
     temporary_layer.unlink(missing_ok=True)
-    temporary.unlink(missing_ok=True)
     try:
         composition_html, _manifest = render_html_motion_artifact_layer(
             artifact,
@@ -233,21 +287,11 @@ def adjust_html_motion_review_timeline(
             temporary_layer,
             font_family=str(payload.get("fontFamily") or ""),
         )
-        shutil.copy2(base, temporary)
-        composite_transparent_layer(
-            temporary,
-            temporary_layer,
-            media,
-            resolve_ffmpeg_bin(ffmpeg_bin),
-        )
-        validate_composited_video(probe_media_video_info(temporary), media)
         temporary_layer.replace(layer)
-        temporary.replace(candidate)
         artifact_path.write_text(json.dumps(artifact, ensure_ascii=False, indent=2), encoding="utf-8")
         (review_dir / "composition.html").write_text(composition_html, encoding="utf-8")
     finally:
         temporary_layer.unlink(missing_ok=True)
-        temporary.unlink(missing_ok=True)
     payload["timelineChunks"] = normalized
     payload["timelineAdjustedAt"] = datetime.now(timezone.utc).isoformat()
     _write_json(review_dir / "review.json", payload)
@@ -324,6 +368,20 @@ def resolve_html_motion_review_video(review_id: str) -> Path:
     if not candidate.is_file():
         raise FileNotFoundError("动效预览不存在")
     return candidate
+
+
+def resolve_html_motion_review_base_video(review_id: str) -> Path:
+    normalized = str(review_id or "").strip().lower()
+    if len(normalized) != 32 or any(char not in "0123456789abcdef" for char in normalized):
+        raise ValueError("动效预览标识不合法")
+    review_dir = (_review_root() / normalized).resolve()
+    _assert_within_review_root(review_dir)
+    payload = _load_json(review_dir / "review.json")
+    suffix = Path(str(payload.get("candidateName") or "candidate.mp4")).suffix or ".mp4"
+    base = review_dir / f"base{suffix}"
+    if not base.is_file():
+        raise FileNotFoundError("动效纯净基础视频不存在")
+    return base
 
 
 def resolve_html_motion_review_live_asset(review_id: str, asset_name: str) -> Path:

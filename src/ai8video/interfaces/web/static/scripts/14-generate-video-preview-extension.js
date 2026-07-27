@@ -305,6 +305,9 @@
       editVideoTimelineButton?.addEventListener('click', () => {
         void toggleAllTimelineEditors(userGeneratedKey, editVideoTimelineButton);
       });
+      els.videoPreviewBody.querySelector('[data-video-preview-action="toggle-video-seek"]')?.addEventListener('click', () => {
+        toggleVideoSeekMode();
+      });
       els.videoPreviewBody.querySelector('[data-video-preview-action="toggle-video-scissors"]')?.addEventListener('click', () => {
         toggleVideoScissorMode();
       });
@@ -314,12 +317,18 @@
       els.videoPreviewBody.querySelector('[data-video-preview-action="reset-video-timeline"]')?.addEventListener('click', () => {
         void resetVideoTimeline(userGeneratedKey);
       });
+      els.videoPreviewBody.querySelector('[data-video-preview-action="toggle-background-music"]')?.addEventListener('click', () => {
+        void toggleVideoPreviewBackgroundMusicDrawer();
+      });
       regenerateTtsButton?.addEventListener('click', () => {
         regenerateTtsFromVideoPreview(userGeneratedKey, regenerateTtsButton);
       });
       const ttsScissorsButton = els.videoPreviewBody.querySelector('[data-video-preview-action="toggle-tts-scissors"]');
       ttsScissorsButton?.addEventListener('click', () => {
         toggleTtsScissorMode();
+      });
+      els.videoPreviewBody.querySelector('[data-video-preview-action="smart-split-tts"]')?.addEventListener('click', () => {
+        smartSplitTtsTimeline(userGeneratedKey);
       });
       els.videoPreviewBody.querySelector('[data-video-preview-action="delete-selected-tts-chunk"]')?.addEventListener('click', () => {
         deleteSelectedTtsChunk(userGeneratedKey);
@@ -399,6 +408,7 @@
       };
       video?.addEventListener('timeupdate', syncEditingPlayheads);
       video?.addEventListener('seeking', syncEditingPlayheads);
+      bindVideoPreviewBackgroundMusic(video);
       if (video) video.dataset.officialSrc = src;
       state.videoPreviewModal = {
         ...(state.videoPreviewModal || {}),
@@ -423,6 +433,7 @@
         videoTimelineOutputDuration: 0,
         videoTimelineFilmstripUrl: '',
         videoTimelineFilmstripFrameCount: 0,
+        videoTimelineSeekMode: false,
         videoTimelineScissorMode: false,
         videoTimelineSelectedChunkIndex: null,
         videoTimelineBusy: false,
@@ -433,6 +444,7 @@
         ttsScissorMode: false,
         ttsSelectedChunkIndex: null,
         ttsTimelineBusy: false,
+        backgroundMusicDrawerOpen: false,
         burnReview: null,
       };
       els.videoPreviewModal.classList.remove('hidden');
@@ -464,6 +476,7 @@
       invalidateHtmlMotionPreviewRequest();
       const video = els.videoPreviewBody.querySelector('video');
       video?.pause();
+      stopVideoPreviewBackgroundMusic();
       state.videoPreviewModal = {
         ...(state.videoPreviewModal || {}),
         visible: false,

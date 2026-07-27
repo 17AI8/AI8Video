@@ -7,6 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from PIL import Image
+
 from ai8video.breakdown import viral_breakdown as viral_breakdown
 from ai8video.breakdown import viral_breakdown_shot_language as shot_language
 
@@ -56,7 +58,9 @@ class ViralBreakdownShotLanguageTests(unittest.TestCase):
                 )
 
                 self.assertTrue(result["ok"])
-                self.assertEqual(len(result["selectedFrames"]), 10)
+                self.assertEqual(len(result["selectedFrames"]), 12)
+                self.assertEqual(result["inputFrameCount"], 12)
+                self.assertEqual(result["imageBatchCount"], 3)
                 self.assertEqual(result["selectedFrames"][0]["timestampSeconds"], 0.0)
                 self.assertEqual(result["selectedFrames"][-1]["timestampSeconds"], 22.0)
                 self.assertIn("整体策略", result["text"])
@@ -68,8 +72,19 @@ class ViralBreakdownShotLanguageTests(unittest.TestCase):
                 content = request_payload["messages"][1]["content"]
                 image_blocks = [item for item in content if item.get("type") == "image_url"]
                 text_blocks = [item for item in content if item.get("type") == "text"]
-                self.assertEqual(len(image_blocks), 10)
-                self.assertTrue(all("附近台词" in item["text"] for item in text_blocks[1:]))
+                self.assertEqual(len(image_blocks), 3)
+                batch_texts = [item["text"] for item in text_blocks if "全量截图第" in item["text"]]
+                self.assertEqual(len(batch_texts), 3)
+                self.assertIn("总视频时长", batch_texts[0])
+                self.assertIn("截图间隔 2 秒", batch_texts[0])
+                self.assertIn("第 1/3 批", batch_texts[0])
+                self.assertIn("序号 9–12", batch_texts[-1])
+                self.assertIn("右下角黑色标签内的白色数字", batch_texts[0])
+                self.assertIn("序号1=0.0–2.0s", batch_texts[0])
+                self.assertIn("序号4=6.0–8.0s", batch_texts[0])
+                self.assertIn("禁止直接将本批整体作为一个节拍", batch_texts[0])
+                self.assertNotIn("从左往右", batch_texts[0])
+                self.assertNotIn("从上往下", batch_texts[0])
                 self.assertIn("不猜测隐藏提示词", request_payload["messages"][0]["content"])
                 self.assertIn("不可信参考数据", request_payload["messages"][0]["content"])
 
@@ -220,16 +235,31 @@ class ViralBreakdownShotLanguageTests(unittest.TestCase):
         video = root / "原视频" / "demo.mp4"
         frame_dir = root / "截图" / "demo"
         transcript_dir = root / "台词"
+        grid = root / "宫格图" / "demo-16x9.jpg"
         video.parent.mkdir(parents=True)
         frame_dir.mkdir(parents=True)
         transcript_dir.mkdir(parents=True)
+        grid.parent.mkdir(parents=True)
         video.write_bytes(b"video")
+        Image.new("RGB", (1600, 900), color=(225, 230, 240)).save(grid, quality=90)
         (frame_dir / "meta.json").write_text(
-            json.dumps({"intervalSeconds": 2.0}, ensure_ascii=False),
+            json.dumps(
+                {
+                    "intervalSeconds": 2.0,
+                    "frameCount": frame_count,
+                    "gridColumns": 4,
+                    "gridRows": 3,
+                    "gridImageKey": "宫格图/demo-16x9.jpg",
+                },
+                ensure_ascii=False,
+            ),
             encoding="utf-8",
         )
         for index in range(1, frame_count + 1):
-            (frame_dir / f"frame-{index:04d}.jpg").write_bytes(f"frame-{index}".encode())
+            Image.new("RGB", (240, 160), color=(220 - index, 225, 235)).save(
+                frame_dir / f"frame-{index:04d}.jpg",
+                quality=90,
+            )
         (transcript_dir / "demo.json").write_text(
             json.dumps(
                 {

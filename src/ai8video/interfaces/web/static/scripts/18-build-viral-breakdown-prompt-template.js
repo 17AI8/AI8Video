@@ -495,7 +495,7 @@
     }
 
     function hasViralBreakdownTranscript(item) {
-      return Boolean(String(item?.transcriptText || '').trim());
+      return Boolean(String(item?.transcriptJsonKey || '').trim());
     }
 
     function hasCurrentViralBreakdownShotLanguage(item) {

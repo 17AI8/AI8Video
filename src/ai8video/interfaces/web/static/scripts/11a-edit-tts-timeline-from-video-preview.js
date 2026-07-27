@@ -72,10 +72,12 @@
       if (options.showPreview === false || !review?.reviewReady) return;
       if (review?.videoTimeline?.pending === true && review.previewUrl) {
         showBurnCandidatePreview(targetVideo, review.previewUrl);
+        mountPendingHtmlMotionPreview(targetVideo, review);
         return;
       }
       if (review?.tts?.pending === true && review.previewUrl) {
         showBurnCandidatePreview(targetVideo, review.previewUrl);
+        mountPendingHtmlMotionPreview(targetVideo, review);
         return;
       }
       if (review?.htmlMotion?.reviewReady === true) {
@@ -84,6 +86,18 @@
           livePreviewUrl: review.livePreviewUrl || review.htmlMotion.livePreviewUrl,
         });
       }
+    }
+
+    function mountPendingHtmlMotionPreview(video, review = {}) {
+      const livePreviewUrl = String(review.livePreviewUrl || review.htmlMotion?.livePreviewUrl || '').trim();
+      if (review.htmlMotion?.reviewReady !== true || !livePreviewUrl) return;
+      if (state.videoPreviewModal) state.videoPreviewModal.htmlMotionLivePreviewUrl = livePreviewUrl;
+      mountLiveHtmlMotionPreview(
+        video,
+        livePreviewUrl,
+        state.videoPreviewModal?.htmlMotionTimelineChunks || review.htmlMotion.timelineChunks || [],
+        { preserveVideoSource: true },
+      );
     }
 
     async function syncBurnReviewFromVideoPreview(userGeneratedKey, video, options = {}) {
@@ -214,7 +228,8 @@
           : '<span class="video-preview-tts-waveform-empty" aria-hidden="true"></span>';
         return `<button type="button" class="video-preview-tts-chunk${selected ? ' is-selected' : ''}" data-video-preview-tts-chunk data-chunk-index="${index}" data-boundary-base-title="${escapeHtml(actionLabel)}" aria-label="${escapeHtml(actionLabel)}" aria-pressed="${selected ? 'true' : 'false'}" title="${escapeHtml(actionLabel)}" style="left:${left}%;width:${Math.min(width, 100 - left)}%">${waveform}<span class="video-preview-tts-chunk-meta"><span>${escapeHtml(label)}</span><small>${start.toFixed(1)}s</small></span></button>`;
       }).join('');
-      track.innerHTML = `<div class="video-preview-tts-chunk-lane">${timelineOverflowZoneMarkup(duration)}<span class="video-preview-tts-playhead" data-video-preview-tts-playhead></span>${markup}</div>`;
+      const boundary = timelineBoundaryDetails();
+      track.innerHTML = `<div class="video-preview-tts-chunk-lane">${timelineOverflowZoneMarkup(duration, boundary.ttsOverflowIndexes, boundary)}<span class="video-preview-tts-playhead" data-video-preview-tts-playhead></span>${markup}</div>`;
       track.querySelectorAll('[data-video-preview-tts-chunk]').forEach((element) => {
         element.addEventListener('pointerdown', (event) => {
           if (!isTtsScissorMode()) beginTtsChunkDrag(event, element, duration);

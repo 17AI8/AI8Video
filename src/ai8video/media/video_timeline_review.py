@@ -303,40 +303,24 @@ def _video_timeline_ffmpeg_command(
     filters: list[str] = []
     count = len(chunks)
     video_sources = ["[0:v:0]"] if count == 1 else [f"[videoSource{index}]" for index in range(count)]
-    audio_sources = ["[0:a:0]"] if count == 1 else [f"[audioSource{index}]" for index in range(count)]
     if count > 1:
         filters.append(f"[0:v:0]split={count}{''.join(video_sources)}")
-        if has_audio:
-            filters.append(f"[0:a:0]asplit={count}{''.join(audio_sources)}")
     for index, item in enumerate(chunks):
         filters.append(
             f"{video_sources[index]}trim=start={item['sourceStartSeconds']}:end={item['sourceEndSeconds']},"
             f"setpts=PTS-STARTPTS[video{index}]"
         )
-        if has_audio:
-            filters.append(
-                f"{audio_sources[index]}atrim=start={item['sourceStartSeconds']}:end={item['sourceEndSeconds']},"
-                f"asetpts=PTS-STARTPTS[audio{index}]"
-            )
     video_output = "[video0]"
-    audio_output = "[audio0]" if has_audio else ""
     if count > 1:
-        concat_inputs = "".join(
-            f"[video{index}]" + (f"[audio{index}]" if has_audio else "")
-            for index in range(count)
-        )
-        filters.append(
-            f"{concat_inputs}concat=n={count}:v=1:a={1 if has_audio else 0}[videoOut]"
-            + ("[audioOut]" if has_audio else "")
-        )
+        concat_inputs = "".join(f"[video{index}]" for index in range(count))
+        filters.append(f"{concat_inputs}concat=n={count}:v=1:a=0[videoOut]")
         video_output = "[videoOut]"
-        audio_output = "[audioOut]" if has_audio else ""
     command = [
         ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-i", str(source),
         "-filter_complex", ";".join(filters), "-map", video_output,
     ]
     if has_audio:
-        command.extend(["-map", audio_output])
+        command.extend(["-map", "0:a:0", "-t", f"{_output_duration(chunks):.3f}"])
     append_video_postprocess_encoding_args(command)
     command.extend(["-c:a", "aac"] if has_audio else ["-an"])
     command.extend(["-movflags", "+faststart", str(target)])

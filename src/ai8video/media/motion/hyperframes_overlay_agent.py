@@ -70,6 +70,22 @@ class HtmlMotionSemanticHarness:
                     audit=audit,
                     tool_trace=list(self._trace),
                 )
+            if _is_tolerable_deviation(audit, semantic, error, self._media, self._dialogue):
+                repaired = _repair_final_semantic(semantic, self._media, self._dialogue)
+                normalized = normalize_semantic_spec(repaired, self._media, self._dialogue)
+                adjusted_audit = {
+                    **audit,
+                    "passed": True,
+                    "adjusted": True,
+                    "summary": "小范围偏差已自动修正",
+                }
+                self._trace[-1]["tolerated"] = True
+                return AgentRunResult(
+                    semantic=normalized,
+                    turns=turn,
+                    audit=adjusted_audit,
+                    tool_trace=list(self._trace),
+                )
             self._last_error = error
             self._notify_retry(turn, audit, error, raw)
         return self._best_effort_result(candidates)
@@ -309,6 +325,25 @@ def _candidate_score(audit: dict[str, Any], semantic: dict[str, Any], error: str
         if any(marker in error for marker in markers):
             score -= penalty
     return max(0, min(100, score))
+
+
+def _is_tolerable_deviation(
+    audit: dict[str, Any],
+    semantic: dict[str, Any],
+    error: str,
+    media: dict[str, Any],
+    dialogue: str,
+) -> bool:
+    if audit.get("passed") is not True or not semantic:
+        return False
+    if not any(marker in error for marker in ("恰好", "文案过长", ">6字")):
+        return False
+    beats = semantic.get("beats")
+    if not isinstance(beats, list):
+        return False
+    interval = semantic.get("beatIntervalSeconds") if media.get("smartBeatInterval") else media.get("beatIntervalSeconds", 5)
+    expected = target_beat_count(float(media["durationSeconds"]), dialogue, beat_interval_seconds=interval)
+    return abs(len(beats) - expected) <= 2
 
 
 def _repair_final_semantic(

@@ -2,17 +2,9 @@
     .progress-video-bar.pending span,
     .result-notify-progress span.pending {
       width: 100% !important;
-      background:
-        linear-gradient(90deg,
-          rgba(79, 116, 255, 0.28) 0%,
-          rgba(79, 116, 255, 0.28) 32%,
-          #4f74ff 46%,
-          #8fb0ff 52%,
-          rgba(79, 116, 255, 0.28) 68%,
-          rgba(79, 116, 255, 0.28) 100%);
-      background-size: 220% 100%;
+      background: rgba(79, 116, 255, 0.38);
       transform: none;
-      animation: pendingProgressSweep 1.15s linear infinite;
+      animation: none;
     }
 
     .result-notify-strip.wall {
@@ -331,11 +323,6 @@
     @keyframes resultMetaHoverScroll {
       from { transform: translateX(0); }
       to { transform: translateX(calc(-100% + 116px)); }
-    }
-
-    @keyframes pendingProgressSweep {
-      0% { background-position: 120% 0; }
-      100% { background-position: -120% 0; }
     }
 
     .composer.locked {

@@ -2,6 +2,76 @@
       max-height: 270px;
     }
 
+    .video-preview-background-music-drawer {
+      position: absolute;
+      z-index: 30;
+      width: min(380px, calc(100% - 20px));
+      max-height: min(320px, 52vh);
+      padding: 10px;
+      overflow: hidden;
+      border: 1px solid rgba(113, 170, 224, 0.42);
+      border-radius: 10px;
+      background: rgba(5, 18, 32, 0.96);
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+    }
+
+    .video-preview-background-music-head,
+    .video-preview-background-music-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .video-preview-background-music-head span,
+    .video-preview-background-music-item small,
+    .video-preview-background-music-empty {
+      color: rgba(236, 246, 255, 0.65);
+      font-size: 12px;
+    }
+
+    .video-preview-background-music-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 250px;
+      margin-top: 8px;
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+
+    .video-preview-background-music-item {
+      padding: 8px 10px;
+      border: 1px solid rgba(126, 174, 220, 0.35);
+      border-radius: 8px;
+      background: rgba(24, 43, 63, 0.9);
+      color: #f4f9ff;
+      cursor: pointer;
+    }
+
+    .video-preview-background-music-item > span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .video-preview-background-music-item > small {
+      flex: 0 0 auto;
+    }
+
+    .video-preview-background-music-item.is-selected {
+      border-color: #58d3a4;
+      background: rgba(24, 111, 82, 0.5);
+    }
+
+    [data-video-preview-action="toggle-background-music"][aria-expanded="true"] {
+      border-color: rgba(140, 200, 255, 0.92);
+      background: rgba(43, 119, 190, 0.46);
+      color: #f4faff;
+    }
+
     .video-preview-controls-row .video-preview-button[aria-expanded="true"] {
       border-color: rgba(140, 200, 255, 0.92);
       background: rgba(43, 119, 190, 0.46);
@@ -13,6 +83,11 @@
 
     .video-preview-controls-row .video-preview-button[aria-expanded="true"]:hover {
       background: rgba(51, 135, 214, 0.58);
+    }
+
+    .video-preview-video-timeline.is-seek-mode .video-preview-video-chunks,
+    .video-preview-video-timeline.is-seek-mode .video-preview-video-chunk {
+      cursor: crosshair;
     }
 
     .video-preview-video-timeline .video-preview-tts-timeline-head [data-video-preview-video-status] {

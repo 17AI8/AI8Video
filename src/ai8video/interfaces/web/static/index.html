@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" href="/static/images/ai8video-avatar.png?v=20260727-1">
   <link rel="stylesheet" href="/static/script-knowledge.css?v=20260724-18">
   <!-- Updated: 2026-06-23 15:17 CST - 花字调色预览连体按钮圆角修正 -->
-  <link rel="stylesheet" href="/static/workbench.css?v=20260727-66">
+  <link rel="stylesheet" href="/static/workbench.css?v=20260727-69">
 </head>
 <body>
   <div class="shell">
@@ -201,8 +201,9 @@
           <div class="viral-breakdown-toolbar-fields">
             <label class="viral-breakdown-field is-compact">
               <span>截图间隔</span>
-              <input id="viralBreakdownIntervalInput" type="number" min="0.2" max="60" step="0.1" value="1" class="config-input compact" aria-label="截图间隔（秒）">
+              <input id="viralBreakdownIntervalInput" type="number" min="0.2" step="0.1" value="0.2" class="config-input compact" aria-label="截图间隔（秒）">
               <em>秒</em>
+              <em id="viralBreakdownFrameEstimate" class="viral-breakdown-frame-estimate" aria-live="polite">预计 — 张</em>
             </label>
           </div>
           <div class="viral-breakdown-toolbar-actions">
@@ -564,6 +565,6 @@
       </div>
     </div>
   </div>
-    <script src="/static/workbench.js?v=20260727-57"></script>
+  <script src="/static/workbench.js?v=20260727-65"></script>
 </body>
 </html>

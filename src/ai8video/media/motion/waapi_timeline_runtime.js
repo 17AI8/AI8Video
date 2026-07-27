@@ -64,9 +64,10 @@
     const to = keyframe(item.to);
     if (item.kind === 'entrance') initializeEntrance(node, from);
     const staggerSeconds = number(item.to && item.to.stagger, 0);
+    const delaySeconds = number(item.at, 0) + staggerSeconds * index;
     const animation = node.animate([from, to], {
       duration: Math.max(1, number(item.duration, 0.001) * 1000),
-      delay: Math.max(0, (number(item.at, 0) + staggerSeconds * index) * 1000),
+      delay: Math.max(0, delaySeconds * 1000),
       easing: easing(item.to && item.to.ease),
       fill: 'forwards',
       iterations: 1,
@@ -75,9 +76,18 @@
     animation.currentTime = 0;
     return {
       animation,
-      baseDelay: Math.max(0, (number(item.at, 0) + staggerSeconds * index) * 1000),
-      sceneIndex: number(node.closest('.hf-scene')?.id?.replace('hf-scene-', ''), 0) - 1,
+      baseDelay: Math.max(0, delaySeconds * 1000),
+      sceneIndex: sceneSourceIndex(node.closest('.hf-scene')),
     };
+  }
+
+  function sceneSourceIndex(scene) {
+    return number(scene?.dataset.timelineSourceIndex, number(scene?.id?.replace('hf-scene-', ''), 0) - 1);
+  }
+
+  function sceneForSourceIndex(sourceIndex) {
+    return Array.from(document.querySelectorAll('.hf-scene'))
+      .find((scene) => sceneSourceIndex(scene) === sourceIndex) || null;
   }
 
   function mount(plan) {
@@ -97,6 +107,13 @@
     global.__ai8MotionAnimations = animations.map((entry) => entry.animation);
     global.__ai8MotionRecords = animations;
     fitPreviewViewport();
+    updateChunks(Array.from(document.querySelectorAll('.hf-scene')).map((scene, index) => ({
+      sourceIndex: sceneSourceIndex(scene),
+      startSeconds: number(scene.dataset.start, 0),
+      durationSeconds: number(scene.dataset.duration, 0.1),
+      index,
+    })));
+    global.parent?.postMessage({ type: 'ai8-motion-ready' }, '*');
     return global.__ai8MotionAnimations;
   }
 
@@ -118,10 +135,12 @@
     const time = current * 1000;
     const windowsBySource = global.__ai8MotionChunkWindows;
     global.__ai8MotionCurrentTime = current;
-    for (const scene of document.querySelectorAll('.hf-scene')) {
-      const sourceIndex = number(scene.dataset.timelineSourceIndex, number(scene.id.replace('hf-scene-', ''), 0) - 1);
-      const windows = windowsBySource instanceof Map ? windowsBySource.get(sourceIndex) || [] : null;
-      scene.hidden = Array.isArray(windows) && !windows.some((window) => current >= window.start && current < window.end);
+    if (global.__ai8MotionManageSceneVisibility) {
+      for (const scene of document.querySelectorAll('.hf-scene')) {
+        const sourceIndex = sceneSourceIndex(scene);
+        const windows = windowsBySource instanceof Map ? windowsBySource.get(sourceIndex) || [] : null;
+        scene.hidden = Array.isArray(windows) && !windows.some((window) => current >= window.start && current < window.end);
+      }
     }
     for (const record of global.__ai8MotionRecords || []) {
       const windows = windowsBySource instanceof Map ? windowsBySource.get(record.sceneIndex) || [] : null;
@@ -141,7 +160,7 @@
     const windowsBySource = new Map();
     chunks.forEach((chunk, index) => {
       const sourceIndex = number(chunk && chunk.sourceIndex, number(chunk && chunk.index, index));
-      const scene = document.querySelector(`#hf-scene-${sourceIndex + 1}`);
+      const scene = sceneForSourceIndex(sourceIndex);
       const original = number(scene?.dataset.originalStart, number(scene?.dataset.start, 0));
       const start = Math.max(0, number(chunk.startSeconds, original));
       const duration = Math.max(0.1, number(chunk.durationSeconds, number(chunk.endSeconds, start) - start));
@@ -151,7 +170,7 @@
     });
     for (const [sourceIndex, windows] of windowsBySource) {
       windows.sort((left, right) => left.start - right.start);
-      const scene = document.querySelector(`#hf-scene-${sourceIndex + 1}`);
+      const scene = sceneForSourceIndex(sourceIndex);
       if (scene) {
         scene.dataset.timelineSourceIndex = String(sourceIndex);
         scene.dataset.originalStart = String(windows[0]?.originalStart || 0);
@@ -163,6 +182,7 @@
 
   global.addEventListener('message', (event) => {
     if (event.data?.type !== 'ai8-motion-preview') return;
+    global.__ai8MotionManageSceneVisibility = true;
     updateChunks(event.data.chunks);
     seek(event.data.currentTime);
   });
