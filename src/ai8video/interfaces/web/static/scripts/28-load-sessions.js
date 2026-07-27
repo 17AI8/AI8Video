@@ -41,6 +41,15 @@
 
     function migrateAssistantMessageBranding(message) {
       if (!message || typeof message !== 'object' || message.role === 'user') return message;
+      const isStoredWelcomeMessage = message.welcome
+        || String(message.payload?.meta?.operation || '').trim() === 'welcome';
+      if (isStoredWelcomeMessage && message.payload?.text !== WELCOME_PAYLOAD.text) {
+        return {
+          ...message,
+          text: message.text ? WELCOME_PAYLOAD.text : message.text,
+          payload: { ...message.payload, ...WELCOME_PAYLOAD },
+        };
+      }
       const text = replaceLegacyBrandText(replaceLegacyAssistantSemantics(message.text));
       const payload = migrateAssistantPayloadBranding(message.payload);
       if (text === message.text && payload === message.payload) return message;
@@ -226,7 +235,6 @@
       }
       return false;
     }
-
 
 
 

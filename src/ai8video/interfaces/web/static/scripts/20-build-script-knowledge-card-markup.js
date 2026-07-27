@@ -509,29 +509,24 @@
       const folder = String(item?.folder || '').trim();
       const selected = (state.recycleBinModal.selectedFolders || []).includes(folder);
       const restoring = state.recycleBinModal.restoringFolder === folder;
-      const title = item?.videoTitle || `视频 ${item?.videoIndex || ''}`.trim();
       const rawReason = String(item?.reason || '').trim();
       const reason = humanizeRecycleBinReason(item?.displayReason || rawReason || '任务失败');
       const meta = [
         item?.createdAt ? formatAssetTime(item.createdAt) : '',
         videos.length ? `${videos.length} 个视频` : '',
       ].filter(Boolean).join(' · ');
-      const showTechnicalReason = rawReason && rawReason !== reason && looksTechnicalError(rawReason);
       return `
-        <article class="material-wall-card">
-          <label class="result-modal-batch-toggle">
-            <input type="checkbox" data-select-recycle-bin-folder="${escapeHtml(folder)}" ${selected ? 'checked' : ''}>
-            <span>选择此任务</span>
-          </label>
-          ${firstVideo?.url ? `<video class="recycle-video-preview" controls preload="metadata" src="${escapeHtml(firstVideo.url)}"></video>` : '<span class="material-wall-icon">!</span>'}
-          <span class="material-title">${escapeHtml(title)}</span>
-          ${meta ? `<span class="material-meta">${escapeHtml(meta)}</span>` : ''}
-          <span class="material-wall-doc-preview">${escapeHtml(reason)}</span>
-          ${showTechnicalReason ? `<details class="material-meta"><summary>技术详情</summary>${escapeHtml(rawReason)}</details>` : ''}
-          ${videos.length > 1 ? `<span class="material-meta">${escapeHtml(videos.map((video) => video.name || '视频').join('；'))}</span>` : ''}
+        <article class="material-wall-card recycle-bin-task-card">
           <div class="recycle-bin-card-actions">
+            <label class="result-modal-batch-toggle">
+              <input type="checkbox" data-select-recycle-bin-folder="${escapeHtml(folder)}" ${selected ? 'checked' : ''}>
+              <span>选择此任务</span>
+            </label>
             <button type="button" class="recycle-bin-restore-button" data-restore-recycle-bin-folder="${escapeHtml(folder)}" ${!folder || restoring ? 'disabled' : ''}>${restoring ? '恢复中...' : '恢复到生成结果'}</button>
           </div>
+          ${firstVideo?.url ? `<video class="recycle-video-preview" controls preload="metadata" src="${escapeHtml(firstVideo.url)}"></video>` : '<span class="material-wall-icon">!</span>'}
+          ${meta ? `<span class="material-meta">${escapeHtml(meta)}</span>` : ''}
+          <span class="material-wall-doc-preview recycle-bin-failure-reason" tabindex="0">${escapeHtml(reason)}</span>
         </article>
       `;
     }

@@ -45,7 +45,7 @@
     }));
     migrateLegacyBrowserStorage();
     const WELCOME_PAYLOAD = {
-      text: `我是${BRAND_NAME}。把提示词、脚本素材或批量视频需求直接发我；视频数量由下方“智能分集 / 手动批量”开关决定，正文里的数字不会改变数量。参考图标签页未选择时默认不用；需要时可在标签页选择，也可以直接发送图片路径。`,
+      text: '准备好开始创作了吗？把你的想法、脚本或素材发给我，我来帮你完成接下来的创作。',
       stage: 'collecting',
       awaiting: null,
       draft: null,

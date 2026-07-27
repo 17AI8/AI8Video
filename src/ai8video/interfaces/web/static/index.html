@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" href="/static/images/ai8video-avatar.png?v=20260727-1">
   <link rel="stylesheet" href="/static/script-knowledge.css?v=20260724-18">
   <!-- Updated: 2026-06-23 15:17 CST - 花字调色预览连体按钮圆角修正 -->
-  <link rel="stylesheet" href="/static/workbench.css?v=20260726-49">
+  <link rel="stylesheet" href="/static/workbench.css?v=20260727-66">
 </head>
 <body>
   <div class="shell">
@@ -167,7 +167,6 @@
       <div class="modal-head">
         <div class="modal-title">
           <strong id="viralBreakdownTitle">爆款拆解工作台</strong>
-          <div class="modal-sub">本地抽帧拼宫格 · Whisper 台词 · 猜剧本</div>
         </div>
         <button id="viralBreakdownCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
       </div>
@@ -177,6 +176,22 @@
             <span class="viral-breakdown-kicker">素材库</span>
             <div id="viralBreakdownArchiveMeta" class="material-meta">0 个视频 · 0 B</div>
           </div>
+          <label class="viral-breakdown-field is-video">
+            <span>当前视频</span>
+            <div class="viral-breakdown-select" data-viral-select="video">
+              <button
+                id="viralBreakdownVideoSelectButton"
+                type="button"
+                class="viral-breakdown-select-trigger config-input compact"
+                aria-haspopup="listbox"
+                aria-expanded="false"
+                aria-controls="viralBreakdownVideoSelectList"
+              >
+                <span id="viralBreakdownVideoSelectLabel">还没有上传视频</span>
+              </button>
+              <div id="viralBreakdownVideoSelectList" class="viral-breakdown-select-list" role="listbox" hidden></div>
+            </div>
+          </label>
           <div class="viral-breakdown-toolbar-files">
             <label id="viralBreakdownUploadButton" class="button-secondary viral-breakdown-upload-trigger" for="viralBreakdownUploadInput" role="button" tabindex="0">上传视频</label>
             <button id="viralBreakdownOpenFolderButton" type="button" class="button-secondary">打开文件夹</button>
@@ -184,41 +199,17 @@
         </div>
         <div class="viral-breakdown-toolbar-main">
           <div class="viral-breakdown-toolbar-fields">
-            <label class="viral-breakdown-field is-video">
-              <span>当前视频</span>
-              <div class="viral-breakdown-select" data-viral-select="video">
-                <button
-                  id="viralBreakdownVideoSelectButton"
-                  type="button"
-                  class="viral-breakdown-select-trigger config-input compact"
-                  aria-haspopup="listbox"
-                  aria-expanded="false"
-                  aria-controls="viralBreakdownVideoSelectList"
-                >
-                  <span id="viralBreakdownVideoSelectLabel">还没有上传视频</span>
-                </button>
-                <div id="viralBreakdownVideoSelectList" class="viral-breakdown-select-list" role="listbox" hidden></div>
-              </div>
-            </label>
             <label class="viral-breakdown-field is-compact">
               <span>截图间隔</span>
               <input id="viralBreakdownIntervalInput" type="number" min="0.2" max="60" step="0.1" value="1" class="config-input compact" aria-label="截图间隔（秒）">
               <em>秒</em>
             </label>
-            <label class="viral-breakdown-field is-compact">
-              <span>宫格比例</span>
-              <select id="viralBreakdownTargetRatio" class="config-input compact">
-                <option value="16:9">16:9</option>
-                <option value="9:16">9:16</option>
-                <option value="1:1">1:1</option>
-              </select>
-            </label>
           </div>
           <div class="viral-breakdown-toolbar-actions">
-            <button id="viralBreakdownProcessFramesButton" type="button" class="viral-breakdown-run-button">拆解画面</button>
-            <button id="viralBreakdownTranscribeButton" type="button" class="viral-breakdown-run-button">分析台词</button>
-            <button id="viralBreakdownAnalyzeShotLanguageButton" type="button" class="viral-breakdown-run-button">分析镜头语言</button>
-            <button id="viralBreakdownGuessScriptButton" type="button" class="viral-breakdown-run-button">猜剧本</button>
+            <button id="viralBreakdownProcessFramesButton" type="button" class="viral-breakdown-run-button is-primary">开始拆解</button>
+            <button id="viralBreakdownTranscribeButton" type="button" class="viral-breakdown-run-button">识别台词</button>
+            <button id="viralBreakdownAnalyzeShotLanguageButton" type="button" class="viral-breakdown-run-button">镜头分析</button>
+            <button id="viralBreakdownGuessScriptButton" type="button" class="viral-breakdown-run-button">生成剧本</button>
           </div>
         </div>
         <div id="viralBreakdownStatusText" class="viral-breakdown-status"></div>
@@ -234,10 +225,6 @@
               <div class="viral-breakdown-panels">
                 <div class="viral-breakdown-panel is-active" data-viral-breakdown-preview-panel="preview">
                   <article class="viral-breakdown-pane viral-breakdown-glass-card area-video">
-                    <div class="material-heading">
-                      <div class="material-title">视频预览</div>
-                      <div id="viralBreakdownOriginalMeta" class="material-meta"></div>
-                    </div>
                     <div id="viralBreakdownOriginalPane" class="viral-breakdown-pane-body"></div>
                   </article>
                 </div>
@@ -253,12 +240,14 @@
               </div>
             </div>
             <div class="viral-breakdown-detail-column">
-              <div class="viral-breakdown-tabs" role="tablist" aria-label="拆解结果分区">
-                <button type="button" class="viral-breakdown-tab is-active" data-viral-breakdown-tab="grid" aria-selected="true">拼接宫格</button>
-                <button type="button" class="viral-breakdown-tab" data-viral-breakdown-tab="transcript" aria-selected="false">识别台词</button>
-                <button type="button" class="viral-breakdown-tab" data-viral-breakdown-tab="shot-language" aria-selected="false">镜头语言</button>
-                <button type="button" class="viral-breakdown-tab" data-viral-breakdown-tab="script" aria-selected="false">猜剧本</button>
-                <button type="button" class="viral-breakdown-tab" data-viral-breakdown-tab="generated" aria-selected="false">生成准备</button>
+              <div class="viral-breakdown-detail-toolbar">
+                <div class="viral-breakdown-tabs" role="tablist" aria-label="拆解结果分区">
+                  <button type="button" class="viral-breakdown-tab is-active" data-viral-breakdown-tab="grid" aria-selected="true">拼接宫格</button>
+                  <button type="button" class="viral-breakdown-tab" data-viral-breakdown-tab="transcript" aria-selected="false">识别台词</button>
+                  <button type="button" class="viral-breakdown-tab" data-viral-breakdown-tab="shot-language" aria-selected="false">镜头语言</button>
+                  <button type="button" class="viral-breakdown-tab" data-viral-breakdown-tab="script" aria-selected="false">猜剧本</button>
+                  <button type="button" class="viral-breakdown-tab" data-viral-breakdown-tab="generated" aria-selected="false">生成准备</button>
+                </div>
               </div>
               <div class="viral-breakdown-script-drawer" data-viral-breakdown-script-drawer aria-hidden="true">
                 <div class="viral-breakdown-script-drawer-slot">
@@ -279,6 +268,14 @@
                   <article class="viral-breakdown-pane viral-breakdown-glass-card area-grid">
                     <div class="material-heading">
                       <div class="material-title">拼接宫格图</div>
+                      <label class="viral-breakdown-ratio-control">
+                        <span>宫格比例</span>
+                        <select id="viralBreakdownTargetRatio" class="config-input compact">
+                          <option value="16:9">16:9</option>
+                          <option value="9:16">9:16</option>
+                          <option value="1:1">1:1</option>
+                        </select>
+                      </label>
                       <div id="viralBreakdownGridMeta" class="material-meta"></div>
                     </div>
                     <div id="viralBreakdownGridPane" class="viral-breakdown-pane-body"></div>
@@ -567,6 +564,6 @@
       </div>
     </div>
   </div>
-    <script src="/static/workbench.js?v=20260726-50"></script>
+    <script src="/static/workbench.js?v=20260727-57"></script>
 </body>
 </html>

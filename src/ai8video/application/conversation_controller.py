@@ -69,12 +69,7 @@ class AI8VideoConversationController:
 
     def get_welcome_reply(self) -> ChatReply:
         return ChatReply(
-            text=(
-                "把提示词、脚本素材或批量视频需求直接发我；视频数量由智能/手动分集开关决定。"
-                "参考图可以下一句再给。如果暂时不用参考图，直接回复“不用参考图”。\n"
-                "如果要批量跑量，也可以直接说“今天先跑两条商务风”，"
-                "再把候选内容逐行发我，或者一次性发“候选：A；B；C”。"
-            ),
+            text="准备好开始创作了吗？把你的想法、脚本或素材发给我，我来帮你完成接下来的创作。",
             stage="collecting",
             meta={"operation": "welcome"},
         )
