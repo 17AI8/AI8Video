@@ -4972,7 +4972,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("viral-breakdown-lightbox-fade-in", html)
         self.assertNotIn("pendingProgressSweep", html)
         self.assertIn("return Boolean(String(item?.transcriptJsonKey || '').trim());", html)
-        self.assertIn("const VIRAL_BREAKDOWN_MAX_FRAME_COUNT = 80;", html)
+        self.assertIn("const VIRAL_BREAKDOWN_MAX_FRAME_COUNT = 188;", html)
         self.assertIn("function minimumViralBreakdownInterval(item)", html)
         self.assertIn("function isViralBreakdownGenerateReady(item)", html)
         self.assertNotIn("if (!String(transcriptText || '').trim()) missing.push('识别台词');", html)

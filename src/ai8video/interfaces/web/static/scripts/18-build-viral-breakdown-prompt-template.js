@@ -510,8 +510,8 @@
 
     function hasUnsavedViralBreakdownTranscript(item) {
       if (!item?.videoKey) return false;
-      return getViralBreakdownTranscriptDraft(item.videoKey, item.transcriptText || '')
-        !== String(item.transcriptText || '');
+      return hasViralBreakdownTranscriptSegmentChanges(item)
+        || getViralBreakdownTranscriptDraft(item.videoKey, item.transcriptText || '') !== String(item.transcriptText || '');
     }
 
     function isViralBreakdownBusy() {

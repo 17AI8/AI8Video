@@ -7,7 +7,7 @@
       if (list) list.hidden = true;
     }
 
-    const VIRAL_BREAKDOWN_MAX_FRAME_COUNT = 80;
+    const VIRAL_BREAKDOWN_MAX_FRAME_COUNT = 188;
 
     function minimumViralBreakdownInterval(item) {
       const duration = Number(item?.media?.durationSeconds || 0);
@@ -119,12 +119,13 @@
       const transcribeButton = document.getElementById('viralBreakdownTranscribeButton');
       const guessScriptButton = document.getElementById('viralBreakdownGuessScriptButton');
       const saveTranscriptButton = document.getElementById('viralBreakdownSaveTranscriptButton');
+      const exportTranscriptMp3Button = document.getElementById('viralBreakdownExportTranscriptMp3Button');
       const originalMeta = document.getElementById('viralBreakdownOriginalMeta');
-      const infoMeta = document.getElementById('viralBreakdownInfoMeta');
       const scriptGuessMeta = document.getElementById('viralBreakdownScriptGuessMeta');
       const gridMeta = document.getElementById('viralBreakdownGridMeta');
       const shotLanguageMeta = document.getElementById('viralBreakdownShotLanguageMeta');
       const transcriptMeta = document.getElementById('viralBreakdownTranscriptMeta');
+      const transcriptUnsaved = document.getElementById('viralBreakdownTranscriptUnsaved');
       const generatedMeta = document.getElementById('viralBreakdownGeneratedMeta');
       const originalPane = document.getElementById('viralBreakdownOriginalPane');
       const infoPane = document.getElementById('viralBreakdownInfoPane');
@@ -150,7 +151,10 @@
         : null;
       const scriptSubTab = getViralBreakdownScriptSubTab();
       const busy = isViralBreakdownBusy();
-      const transcriptHasUnsavedChanges = !!currentItem && transcriptDisplayText !== transcriptTextFromItem;
+      const transcriptHasUnsavedChanges = !!currentItem && (
+        transcriptDisplayText !== transcriptTextFromItem
+        || hasViralBreakdownTranscriptSegmentChanges(currentItem)
+      );
       if (archiveMeta) {
         archiveMeta.textContent = state.viralBreakdown.archiveDisplay || '0 个视频 · 0 B';
       }
@@ -160,7 +164,11 @@
         const minimumInterval = minimumViralBreakdownInterval(currentItem);
         if (videoKey && state.viralBreakdown.intervalVideoKey !== videoKey) {
           state.viralBreakdown.intervalVideoKey = videoKey;
-          state.viralBreakdown.intervalSeconds = minimumInterval;
+          state.viralBreakdown.intervalSeconds = clampViralBreakdownInterval(
+            currentItem,
+            currentItem?.intervalSeconds || minimumInterval,
+          );
+          state.viralBreakdown.targetRatio = String(currentItem?.targetRatio || '16:9');
         } else {
           state.viralBreakdown.intervalSeconds = clampViralBreakdownInterval(
             currentItem,
@@ -198,11 +206,13 @@
       }
       if (analyzeShotLanguageButton) {
         const processing = !!state.viralBreakdown.shotLanguageProcessing;
-        analyzeShotLanguageButton.disabled = !transcriptReady || !framesReady || busy;
+        analyzeShotLanguageButton.disabled = !transcriptReady || !framesReady || transcriptHasUnsavedChanges || busy;
         analyzeShotLanguageButton.textContent = processing
           ? '分析中...'
           : (shotLanguageAnalysis?.text ? '重新分析镜头语言' : '分析镜头语言');
-        analyzeShotLanguageButton.title = transcriptReady
+        analyzeShotLanguageButton.title = transcriptHasUnsavedChanges
+          ? '请先保存台词修改'
+          : transcriptReady
           ? ''
           : (framesReady ? '请先完成分析台词' : '请先完成拆解画面');
       }
@@ -225,6 +235,14 @@
             ? '保存台词'
             : '已保存';
       }
+      if (exportTranscriptMp3Button) {
+        const hasTranscriptSegments = !!currentItem
+          && getViralBreakdownTranscriptSegments(currentItem.videoKey, currentItem.transcriptSegments).length > 0;
+        exportTranscriptMp3Button.disabled = !hasTranscriptSegments || busy || !!state.viralBreakdown.transcriptExporting;
+        exportTranscriptMp3Button.textContent = state.viralBreakdown.transcriptExporting ? '导出中...' : '导出 MP3';
+        exportTranscriptMp3Button.title = hasTranscriptSegments ? '导出当前预览中的完整配音' : '暂无可导出的时间轴台词';
+      }
+      transcriptUnsaved?.classList.toggle('hidden', !transcriptHasUnsavedChanges);
       if (statusText) {
         const error = String(state.viralBreakdown.error || '');
         const notice = String(state.viralBreakdown.notice || '');
@@ -261,9 +279,6 @@
       }
       if (originalMeta) {
         originalMeta.textContent = currentItem ? `${currentItem.sizeLabel || humanizeByteSize(currentItem.sizeBytes || 0)}` : '';
-      }
-      if (infoMeta) {
-        infoMeta.textContent = currentItem ? viralBreakdownMediaSummary(currentItem) : '';
       }
       if (scriptGuessMeta) {
         if (scriptSubTab === 'tree') {
@@ -366,27 +381,13 @@
         shotLanguagePane.innerHTML = buildViralBreakdownShotLanguageMarkup(shotLanguageAnalysis);
       }
       if (transcriptPane) {
-        transcriptPane.innerHTML = transcriptDisplayText
-          ? `<textarea class="viral-breakdown-text-output viral-breakdown-text-editor" spellcheck="false">${escapeHtml(transcriptDisplayText)}</textarea>`
-          : '<div class="viral-breakdown-empty">点击“分析台词”后，这里会显示 Whisper 识别到的文本。</div>';
-        const transcriptEditor = transcriptPane.querySelector('.viral-breakdown-text-editor');
-        if (transcriptEditor instanceof HTMLTextAreaElement && currentItem?.videoKey) {
-          transcriptEditor.oninput = () => {
-            const normalizedVideoKey = String(currentItem.videoKey || '').trim();
-            const nextTranscriptText = String(transcriptEditor.value || '');
-            state.viralBreakdown.transcriptDrafts = {
-              ...(state.viralBreakdown.transcriptDrafts || {}),
-              [normalizedVideoKey]: nextTranscriptText,
-            };
-            if (transcriptMeta) {
-              transcriptMeta.textContent = nextTranscriptText ? `${nextTranscriptText.length} 字` : '';
-            }
-            if (saveTranscriptButton) {
-              saveTranscriptButton.disabled = false;
-              saveTranscriptButton.textContent = '保存台词';
-            }
-          };
-        }
+        renderViralBreakdownTranscriptTree({
+          pane: transcriptPane,
+          item: currentItem,
+          displayText: transcriptDisplayText,
+          meta: transcriptMeta,
+          saveButton: saveTranscriptButton,
+        });
       }
       if (generatedPane) {
         generatedPane.innerHTML = buildViralBreakdownGeneratedPaneMarkup(currentItem);

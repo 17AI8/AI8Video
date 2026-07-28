@@ -139,6 +139,7 @@ from ai8video.media.local_tts import (
 )
 from ai8video.media.tts_mp3_export import (
     choose_tts_mp3_export_path,
+    export_segmented_audio_mp3,
     export_tts_timeline_mp3,
     load_tts_mp3_export_directory,
 )
@@ -273,6 +274,7 @@ from ai8video.breakdown.viral_breakdown import (
     guess_viral_breakdown_script,
     prepare_viral_breakdown_generate,
     resolve_viral_breakdown_asset_path,
+    save_viral_breakdown_frame_preferences,
     save_viral_breakdown_generate_session,
     save_viral_breakdown_script_draft,
     save_viral_breakdown_transcript,
@@ -556,6 +558,9 @@ def api_viral_breakdown_file():
     except (ValueError, RuntimeError) as exc:
         response.status = 400
         return {"ok": False, "error": str(exc)}
+    except (ValueError, RuntimeError) as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
     except ValueError as exc:
         response.status = 400
         return {"ok": False, "error": str(exc)}
@@ -605,6 +610,28 @@ def api_viral_breakdown_transcribe():
         return {"ok": False, "error": str(exc)}
 
 
+@app.route("/api/viral-breakdown/frame-preferences", method=["POST", "OPTIONS"])
+def api_viral_breakdown_frame_preferences():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    if not isinstance(payload, dict):
+        response.status = 400
+        return {"ok": False, "error": "payload must be an object"}
+    try:
+        return save_viral_breakdown_frame_preferences(
+            payload.get("videoKey"),
+            interval_seconds=payload.get("intervalSeconds"),
+            target_ratio=payload.get("targetRatio"),
+        )
+    except FileNotFoundError as exc:
+        response.status = 404
+        return {"ok": False, "error": str(exc)}
+    except (TypeError, ValueError, RuntimeError) as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+
+
 @app.route("/api/viral-breakdown/analyze-shot-language", method=["POST", "OPTIONS"])
 def api_viral_breakdown_analyze_shot_language():
     if request.method == "OPTIONS":
@@ -638,6 +665,7 @@ def api_viral_breakdown_save_transcript():
         return save_viral_breakdown_transcript(
             payload.get("videoKey"),
             transcript_text=payload.get("text"),
+            transcript_segments=payload.get("segments"),
         )
     except FileNotFoundError as exc:
         response.status = 404
@@ -645,6 +673,117 @@ def api_viral_breakdown_save_transcript():
     except (ValueError, RuntimeError) as exc:
         response.status = 400
         return {"ok": False, "error": str(exc)}
+
+
+@app.route("/api/viral-breakdown/transcript-segment-tts", method=["POST", "OPTIONS"])
+def api_viral_breakdown_transcript_segment_tts():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    text = str(payload.get("text") or "").strip() if isinstance(payload, dict) else ""
+    if not text:
+        response.status = 400
+        return {"ok": False, "error": "台词为空，无法重新配音"}
+    try:
+        audio_path, cached = _ensure_viral_transcript_audio(text)
+    except (ValueError, RuntimeError, OSError) as exc:
+        response.status = 500
+        return {"ok": False, "error": str(exc)}
+    return {
+        "ok": True,
+        "audioUrl": f"/api/viral-breakdown/transcript-audio/{audio_path.name}",
+        "cached": cached,
+    }
+
+
+def _ensure_viral_transcript_audio(text: str) -> tuple[Path, bool]:
+    settings = local_tts_status()
+    cache_payload = {
+        "text": text,
+        "voice": settings.get("voice"),
+        "volume": settings.get("volume"),
+        "model": settings.get("model"),
+        "cloneModel": settings.get("cloneModel"),
+    }
+    digest = hashlib.sha1(json.dumps(cache_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:20]
+    output_dir = local_tts_output_dir()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    audio_path = output_dir / f"viral-transcript-{digest}.m4a"
+    cached = audio_path.is_file() and audio_path.stat().st_size > 0
+    if not cached:
+        result = synthesize_local_tts(
+            text,
+            audio_path,
+            settings=settings,
+            output_volume=float(settings.get("volume") or 1),
+        )
+        if result.get("status") != "generated":
+            raise RuntimeError(result.get("reason") or "单段配音生成失败")
+    return audio_path, cached
+
+
+def _viral_transcript_cached_audio(audio_url: object) -> Path | None:
+    clean_name = Path(str(audio_url or "")).name
+    if not clean_name.startswith("viral-transcript-") or not clean_name.endswith(".m4a"):
+        return None
+    candidate = (local_tts_output_dir() / clean_name).resolve()
+    root = local_tts_output_dir().resolve()
+    return candidate if _is_within(root, candidate) and candidate.is_file() else None
+
+
+def _prepare_viral_transcript_export_segments(raw_segments: object) -> tuple[list[dict[str, Any]], float]:
+    if not isinstance(raw_segments, list) or not raw_segments:
+        raise ValueError("当前没有可导出的时间轴台词")
+    prepared: list[dict[str, Any]] = []
+    duration = 0.0
+    for raw in raw_segments[:1000]:
+        if not isinstance(raw, dict):
+            continue
+        start = max(0.0, float(raw.get("start") or 0))
+        end = max(start, float(raw.get("end") or start))
+        duration = max(duration, end)
+        text = str(raw.get("text") or "").strip()
+        if bool(raw.get("deleted")) or not text or end <= start:
+            continue
+        audio_path = _viral_transcript_cached_audio(raw.get("audioUrl"))
+        if audio_path is None:
+            audio_path, _ = _ensure_viral_transcript_audio(text)
+        prepared.append({"audioPath": str(audio_path), "start": start, "end": end})
+    if duration <= 0:
+        raise ValueError("时间轴时长无效")
+    return prepared, duration
+
+
+@app.route("/api/viral-breakdown/export-transcript-mp3", method=["POST", "OPTIONS"])
+def api_viral_breakdown_export_transcript_mp3():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    if not isinstance(payload, dict):
+        response.status = 400
+        return {"ok": False, "error": "payload must be an object"}
+    try:
+        segments, duration = _prepare_viral_transcript_export_segments(payload.get("segments"))
+        export_path = choose_tts_mp3_export_path(str(payload.get("videoKey") or "向飞讯操作指南"))
+        if export_path is None:
+            return {"ok": True, "canceled": True}
+        return export_segmented_audio_mp3(segments, duration_seconds=duration, export_path=export_path)
+    except (ValueError, RuntimeError, OSError) as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+
+
+@app.route("/api/viral-breakdown/transcript-audio/<filename:path>", method=["GET", "OPTIONS"])
+def api_viral_breakdown_transcript_audio(filename: str):
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    clean_name = Path(str(filename or "")).name
+    if clean_name != filename or not clean_name.startswith("viral-transcript-") or not clean_name.endswith(".m4a"):
+        response.status = 404
+        return {"ok": False, "error": "audio not found"}
+    file_response = static_file(clean_name, root=str(local_tts_output_dir()))
+    file_response.set_header("Cache-Control", "public, max-age=31536000, immutable")
+    return file_response
 
 
 @app.route("/api/viral-breakdown/guess-script", method=["POST", "OPTIONS"])

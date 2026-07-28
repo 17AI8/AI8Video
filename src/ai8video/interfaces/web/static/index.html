@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" href="/static/images/ai8video-avatar.png?v=20260727-1">
   <link rel="stylesheet" href="/static/script-knowledge.css?v=20260724-18">
   <!-- Updated: 2026-06-23 15:17 CST - 花字调色预览连体按钮圆角修正 -->
-  <link rel="stylesheet" href="/static/workbench.css?v=20260727-69">
+  <link rel="stylesheet" href="/static/workbench.css?v=20260728-78">
 </head>
 <body>
   <div class="shell">
@@ -231,10 +231,6 @@
                 </div>
                 <div class="viral-breakdown-panel" data-viral-breakdown-preview-panel="info">
                   <article class="viral-breakdown-pane viral-breakdown-glass-card area-video-info">
-                    <div class="material-heading">
-                      <div class="material-title">媒体元数据</div>
-                      <div id="viralBreakdownInfoMeta" class="material-meta"></div>
-                    </div>
                     <div id="viralBreakdownInfoPane" class="viral-breakdown-pane-body"></div>
                   </article>
                 </div>
@@ -298,7 +294,11 @@
                         <div class="material-title">识别到的台词</div>
                         <div id="viralBreakdownTranscriptMeta" class="material-meta"></div>
                       </div>
-                      <button id="viralBreakdownSaveTranscriptButton" type="button" class="button-secondary">已保存</button>
+                      <div class="viral-transcript-save-area">
+                        <span id="viralBreakdownTranscriptUnsaved" class="viral-transcript-unsaved hidden">有未保存修改</span>
+                        <button id="viralBreakdownSaveTranscriptButton" type="button" class="button-secondary">已保存</button>
+                        <button id="viralBreakdownExportTranscriptMp3Button" type="button" class="button-secondary">导出 MP3</button>
+                      </div>
                     </div>
                     <div id="viralBreakdownTranscriptPane" class="viral-breakdown-pane-body"></div>
                   </article>
@@ -565,6 +565,6 @@
       </div>
     </div>
   </div>
-  <script src="/static/workbench.js?v=20260727-65"></script>
+  <script src="/static/workbench.js?v=20260728-75"></script>
 </body>
 </html>

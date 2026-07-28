@@ -11,8 +11,8 @@ from ai8video.breakdown import viral_breakdown as vb
 
 
 class ViralBreakdownGenerateTests(unittest.TestCase):
-    def test_minimum_frame_interval_limits_capture_to_eighty_frames(self) -> None:
-        self.assertEqual(vb._minimum_frame_interval(326), 4.1)
+    def test_minimum_frame_interval_limits_capture_to_one_hundred_eighty_eight_frames(self) -> None:
+        self.assertEqual(vb._minimum_frame_interval(326), 1.8)
         self.assertEqual(vb._minimum_frame_interval(10), 0.2)
 
     def test_compose_grid_image_adds_visible_grid_gap(self) -> None:

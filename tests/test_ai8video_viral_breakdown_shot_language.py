@@ -203,6 +203,37 @@ class ViralBreakdownShotLanguageTests(unittest.TestCase):
                 self.assertEqual(result["segments"], [])
                 self.assertTrue(result["segmentsStale"])
 
+    def test_timeline_transcript_edit_preserves_segment_timestamps(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            video = self._prepare_source(root, frame_count=3)
+            with mock.patch.multiple(
+                viral_breakdown,
+                VIRAL_BREAKDOWN_ROOT=root,
+                VIRAL_BREAKDOWN_TRANSCRIPT_DIR=root / "台词",
+                resolve_viral_breakdown_video_path=mock.Mock(return_value=(video, "原视频/demo.mp4")),
+            ):
+                result = viral_breakdown.save_viral_breakdown_transcript(
+                    "原视频/demo.mp4",
+                    transcript_text="旧文本",
+                    transcript_segments=[
+                        {
+                            "start": 1.24,
+                            "end": 2.67,
+                            "text": "时间轴文本",
+                            "audioUrl": "/api/viral-breakdown/transcript-audio/viral-transcript-demo.m4a",
+                        },
+                        {"start": 2.67, "end": 4.0, "text": "", "deleted": True},
+                    ],
+                )
+
+                self.assertEqual(result["text"], "时间轴文本\n")
+                self.assertEqual(len(result["segments"]), 2)
+                self.assertEqual(result["segments"][0]["audioUrl"], "/api/viral-breakdown/transcript-audio/viral-transcript-demo.m4a")
+                self.assertTrue(result["segments"][1]["deleted"])
+                self.assertEqual(result["segments"][1]["start"], 2.67)
+                self.assertFalse(result["segmentsStale"])
+
     def test_missing_frames_and_multimodal_config_fail_before_request(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()

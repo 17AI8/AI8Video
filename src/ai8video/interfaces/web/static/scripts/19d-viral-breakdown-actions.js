@@ -53,6 +53,24 @@
       }
     }
 
+    async function persistViralBreakdownFramePreferences() {
+      const currentItem = getSelectedViralBreakdownItem();
+      if (!currentItem?.videoKey) return;
+      const res = await fetch('/api/viral-breakdown/frame-preferences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoKey: currentItem.videoKey,
+          intervalSeconds: state.viralBreakdown.intervalSeconds,
+          targetRatio: state.viralBreakdown.targetRatio,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.ok === false) throw new Error(data?.error || '保存拆解设置失败');
+      currentItem.intervalSeconds = Number(data.intervalSeconds || state.viralBreakdown.intervalSeconds);
+      currentItem.targetRatio = String(data.targetRatio || state.viralBreakdown.targetRatio);
+    }
+
     async function processSelectedViralBreakdownFrames() {
       if (isViralBreakdownBusy()) return;
       const currentItem = getSelectedViralBreakdownItem();
@@ -147,6 +165,10 @@
         state.viralBreakdown.transcriptDrafts = {
           ...(state.viralBreakdown.transcriptDrafts || {}),
           [String(currentItem.videoKey || '')]: String(data?.text || ''),
+        };
+        state.viralBreakdown.transcriptSegmentDrafts = {
+          ...(state.viralBreakdown.transcriptSegmentDrafts || {}),
+          [String(currentItem.videoKey || '')]: Array.isArray(data?.segments) ? data.segments : [],
         };
         state.viralBreakdown.notice = data?.text ? '台词识别完成' : '没有识别到可用台词';
         await refreshViralBreakdownWorkspace({ keepSelection: true });
@@ -349,6 +371,7 @@
       if (!currentItem?.videoKey) return;
       const normalizedVideoKey = String(currentItem.videoKey || '');
       const transcriptText = getViralBreakdownTranscriptDraft(normalizedVideoKey, currentItem.transcriptText || '');
+      const transcriptSegments = getViralBreakdownTranscriptSegments(normalizedVideoKey, currentItem.transcriptSegments);
       state.viralBreakdown.transcriptSaving = true;
       state.viralBreakdown.error = '';
       state.viralBreakdown.notice = '正在保存台词...';
@@ -360,6 +383,7 @@
           body: JSON.stringify({
             videoKey: normalizedVideoKey,
             text: transcriptText,
+            segments: transcriptSegments,
           }),
         });
         const data = await res.json().catch(() => ({}));
@@ -367,15 +391,43 @@
           throw new Error(data?.error || '保存台词失败');
         }
         currentItem.transcriptText = String(data?.text || transcriptText);
+        currentItem.transcriptSegments = Array.isArray(data?.segments) ? data.segments : transcriptSegments;
         currentItem.transcriptJsonKey = String(data?.transcriptJsonKey || currentItem.transcriptJsonKey || '');
         currentItem.transcriptTextKey = String(data?.transcriptTextKey || currentItem.transcriptTextKey || '');
         state.viralBreakdown.transcriptDrafts = {
           ...(state.viralBreakdown.transcriptDrafts || {}),
           [normalizedVideoKey]: currentItem.transcriptText,
         };
+        state.viralBreakdown.transcriptSegmentDrafts = {
+          ...(state.viralBreakdown.transcriptSegmentDrafts || {}),
+          [normalizedVideoKey]: currentItem.transcriptSegments,
+        };
         state.viralBreakdown.notice = '台词已保存';
       } finally {
         state.viralBreakdown.transcriptSaving = false;
+        renderViralBreakdownWorkbench();
+      }
+    }
+
+    async function exportSelectedViralBreakdownTranscriptMp3() {
+      const currentItem = getSelectedViralBreakdownItem();
+      if (!currentItem?.videoKey || state.viralBreakdown.transcriptExporting) return;
+      const segments = getViralBreakdownTranscriptSegments(currentItem.videoKey, currentItem.transcriptSegments);
+      state.viralBreakdown.transcriptExporting = true;
+      state.viralBreakdown.error = '';
+      state.viralBreakdown.notice = '正在生成完整 MP3...';
+      renderViralBreakdownWorkbench();
+      try {
+        const res = await fetch('/api/viral-breakdown/export-transcript-mp3', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoKey: currentItem.videoKey, segments }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.ok === false) throw new Error(data?.error || '导出 MP3 失败');
+        state.viralBreakdown.notice = data.canceled ? '已取消导出' : `MP3 已导出：${data.fileName || ''}`;
+      } finally {
+        state.viralBreakdown.transcriptExporting = false;
         renderViralBreakdownWorkbench();
       }
     }

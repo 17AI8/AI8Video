@@ -44,7 +44,7 @@ SUPPORTED_VIRAL_BREAKDOWN_VIDEO_EXTENSIONS = {
     ".avi",
 }
 SUPPORTED_GRID_IMAGE_EXTENSION = ".jpg"
-VIRAL_BREAKDOWN_MAX_FRAME_COUNT = 80
+VIRAL_BREAKDOWN_MAX_FRAME_COUNT = 188
 SUPPORTED_TARGET_RATIOS = {
     "16:9": 16 / 9,
     "9:16": 9 / 16,
@@ -165,6 +165,30 @@ def process_viral_breakdown_video_frames(
     return payload
 
 
+def save_viral_breakdown_frame_preferences(
+    video_key: object,
+    *,
+    interval_seconds: object,
+    target_ratio: object,
+) -> dict[str, Any]:
+    video_path, relative_video_key = resolve_viral_breakdown_video_path(video_key)
+    media = probe_media_metadata(video_path) or {}
+    minimum_interval = _minimum_frame_interval(media.get("durationSeconds"))
+    safe_interval = max(minimum_interval, float(interval_seconds or minimum_interval))
+    ratio_key = str(target_ratio or "16:9")
+    if ratio_key not in SUPPORTED_TARGET_RATIOS:
+        ratio_key = "16:9"
+    meta_path = VIRAL_BREAKDOWN_FRAME_DIR / video_path.stem / "meta.json"
+    payload = _read_json(meta_path)
+    payload.update({
+        "videoKey": relative_video_key,
+        "intervalSeconds": safe_interval,
+        "targetRatio": ratio_key,
+    })
+    _write_json(meta_path, payload)
+    return {"ok": True, "videoKey": relative_video_key, "intervalSeconds": safe_interval, "targetRatio": ratio_key}
+
+
 def _minimum_frame_interval(duration_seconds: object) -> float:
     try:
         duration = float(duration_seconds or 0.0)
@@ -230,20 +254,24 @@ def save_viral_breakdown_transcript(
     video_key: object,
     *,
     transcript_text: object,
+    transcript_segments: object | None = None,
 ) -> dict[str, Any]:
     video_path, relative_video_key = resolve_viral_breakdown_video_path(video_key)
     normalized_transcript_text = str(transcript_text if transcript_text is not None else "").replace("\r\n", "\n")
     transcript_json_path = VIRAL_BREAKDOWN_TRANSCRIPT_DIR / f"{video_path.stem}.json"
     transcript_text_path = VIRAL_BREAKDOWN_TRANSCRIPT_DIR / f"{video_path.stem}.txt"
     existing_payload = _read_json(transcript_json_path)
+    normalized_segments = _normalize_transcript_segments(transcript_segments)
+    if normalized_segments:
+        normalized_transcript_text = "\n".join(segment["text"] for segment in normalized_segments)
     payload = {
         "ok": True,
         "videoKey": relative_video_key,
         "language": str(existing_payload.get("language") or ""),
         "durationSeconds": float(existing_payload.get("durationSeconds", 0.0) or 0.0),
         "text": normalized_transcript_text,
-        "segments": [],
-        "segmentsStale": bool(existing_payload.get("segments")),
+        "segments": normalized_segments,
+        "segmentsStale": bool(existing_payload.get("segments")) and not normalized_segments,
         "model": str(existing_payload.get("model") or ""),
         "generatedAt": str(existing_payload.get("generatedAt") or datetime.now(timezone.utc).isoformat()),
         "updatedAt": datetime.now(timezone.utc).isoformat(),
@@ -254,6 +282,34 @@ def save_viral_breakdown_transcript(
     payload["transcriptJsonKey"] = transcript_json_path.relative_to(VIRAL_BREAKDOWN_ROOT).as_posix()
     payload["transcriptTextKey"] = transcript_text_path.relative_to(VIRAL_BREAKDOWN_ROOT).as_posix()
     return payload
+
+
+def _normalize_transcript_segments(value: object) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text") or "").strip()
+        try:
+            start = float(item.get("start", 0.0) or 0.0)
+            end = float(item.get("end", start) or start)
+        except (TypeError, ValueError):
+            continue
+        deleted = bool(item.get("deleted")) or not text
+        if not math.isfinite(start) or not math.isfinite(end):
+            continue
+        start = max(0.0, start)
+        segment = {"start": round(start, 3), "end": round(max(start, end), 3), "text": text}
+        if deleted:
+            segment["deleted"] = True
+            segment["text"] = ""
+        audio_url = str(item.get("audioUrl") or "").strip()
+        if audio_url.startswith("/api/viral-breakdown/transcript-audio/"):
+            segment["audioUrl"] = audio_url
+        normalized.append(segment)
+    return normalized
 
 
 def save_viral_breakdown_script_draft(
@@ -999,11 +1055,15 @@ def _build_viral_breakdown_item(source_video_path: Path) -> dict[str, Any]:
         "updatedAt": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
         "frameCount": frame_count,
         "frameDirKey": frame_dir_path.relative_to(VIRAL_BREAKDOWN_ROOT).as_posix() if frame_dir_path.is_dir() else "",
+        "intervalSeconds": float(frame_meta.get("intervalSeconds") or 0),
+        "targetRatio": str(frame_meta.get("targetRatio") or "16:9"),
         "gridColumns": int(frame_meta.get("gridColumns") or 0),
         "gridRows": int(frame_meta.get("gridRows") or 0),
         "gridImageKey": grid_image_path.relative_to(VIRAL_BREAKDOWN_ROOT).as_posix() if grid_image_path else "",
         "gridImageUrl": _versioned_viral_breakdown_asset_url(grid_image_path) if grid_image_path else "",
         "transcriptText": str(transcript_payload.get("text") or "").strip(),
+        "transcriptSegments": _normalize_transcript_segments(transcript_payload.get("segments")),
+        "transcriptSegmentsStale": bool(transcript_payload.get("segmentsStale")),
         "transcriptJsonKey": transcript_json_path.relative_to(VIRAL_BREAKDOWN_ROOT).as_posix() if transcript_json_path.is_file() else "",
         "shotLanguageAnalysis": shot_language_analysis,
         "shotLanguageAnalysisKey": shot_language_path.relative_to(VIRAL_BREAKDOWN_ROOT).as_posix() if shot_language_path.is_file() else "",

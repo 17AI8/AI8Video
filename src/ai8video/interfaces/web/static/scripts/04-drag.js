@@ -433,15 +433,27 @@
       syncViralBreakdownFrameEstimate(item, clampViralBreakdownInterval(item, event.target?.value));
     });
 
-    document.getElementById('viralBreakdownIntervalInput')?.addEventListener('change', (event) => {
+    document.getElementById('viralBreakdownIntervalInput')?.addEventListener('change', async (event) => {
       const item = getSelectedViralBreakdownItem();
       state.viralBreakdown.intervalSeconds = clampViralBreakdownInterval(item, event.target?.value);
       renderViralBreakdownWorkbench();
+      try {
+        await persistViralBreakdownFramePreferences();
+      } catch (error) {
+        state.viralBreakdown.error = error?.message || String(error);
+        renderViralBreakdownWorkbench();
+      }
     });
 
-    document.getElementById('viralBreakdownTargetRatio')?.addEventListener('change', (event) => {
+    document.getElementById('viralBreakdownTargetRatio')?.addEventListener('change', async (event) => {
       state.viralBreakdown.targetRatio = String(event.target?.value || '16:9');
       renderViralBreakdownWorkbench();
+      try {
+        await persistViralBreakdownFramePreferences();
+      } catch (error) {
+        state.viralBreakdown.error = error?.message || String(error);
+        renderViralBreakdownWorkbench();
+      }
     });
 
     document.getElementById('viralBreakdownProcessFramesButton')?.addEventListener('click', async () => {
@@ -470,6 +482,27 @@
         await transcribeSelectedViralBreakdownVideo();
       } catch (error) {
         console.error(error);
+        state.viralBreakdown.error = error?.message || String(error);
+        renderViralBreakdownWorkbench();
+      }
+    });
+
+    document.getElementById('viralBreakdownSaveTranscriptButton')?.addEventListener('click', async () => {
+      try {
+        await saveSelectedViralBreakdownTranscript();
+      } catch (error) {
+        console.error(error);
+        state.viralBreakdown.error = error?.message || String(error);
+        renderViralBreakdownWorkbench();
+      }
+    });
+
+    document.getElementById('viralBreakdownExportTranscriptMp3Button')?.addEventListener('click', async () => {
+      try {
+        await exportSelectedViralBreakdownTranscriptMp3();
+      } catch (error) {
+        console.error(error);
+        state.viralBreakdown.notice = '';
         state.viralBreakdown.error = error?.message || String(error);
         renderViralBreakdownWorkbench();
       }

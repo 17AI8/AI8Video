@@ -68,6 +68,113 @@ def export_tts_timeline_mp3(
     }
 
 
+def export_segmented_audio_mp3(
+    segments: list[dict[str, Any]],
+    *,
+    duration_seconds: float,
+    export_path: Path,
+) -> dict[str, Any]:
+    target = _normalize_mp3_target(export_path)
+    normalized = _normalize_segmented_audio(segments, duration_seconds)
+    _render_segmented_audio_mp3(normalized, duration_seconds, target)
+    return {
+        "ok": True,
+        "canceled": False,
+        "exportDirectory": str(target.parent),
+        "outputPath": str(target),
+        "fileName": target.name,
+        "sizeBytes": target.stat().st_size,
+        "durationSeconds": round(float(duration_seconds), 3),
+        "segmentCount": len(normalized),
+    }
+
+
+def _normalize_segmented_audio(
+    segments: list[dict[str, Any]],
+    duration_seconds: float,
+) -> list[dict[str, Any]]:
+    duration = max(0.1, float(duration_seconds))
+    normalized: list[dict[str, Any]] = []
+    for segment in segments:
+        audio_path = Path(str(segment.get("audioPath") or "")).resolve()
+        start = max(0.0, float(segment.get("start") or 0))
+        end = min(duration, float(segment.get("end") or start))
+        if audio_path.is_file() and end > start:
+            normalized.append({"audioPath": audio_path, "start": start, "end": end})
+    return normalized
+
+
+def _build_segmented_audio_filter(segments: list[dict[str, Any]], duration_seconds: float) -> str:
+    filters: list[str] = []
+    labels: list[str] = []
+    for index, segment in enumerate(segments):
+        slot_duration = float(segment["end"]) - float(segment["start"])
+        delay_ms = max(0, round(float(segment["start"]) * 1000))
+        label = f"slot{index}"
+        filters.append(
+            f"[{index}:a]atrim=0:{slot_duration:.3f},asetpts=PTS-STARTPTS,"
+            f"apad,atrim=0:{slot_duration:.3f},adelay={delay_ms}:all=1[{label}]"
+        )
+        labels.append(f"[{label}]")
+    mixed = "".join(labels)
+    filters.append(
+        f"{mixed}amix=inputs={len(labels)}:duration=longest:dropout_transition=0,"
+        f"atrim=0:{float(duration_seconds):.3f}[aout]"
+    )
+    return ";".join(filters)
+
+
+def _render_segmented_audio_mp3(
+    segments: list[dict[str, Any]],
+    duration_seconds: float,
+    target: Path,
+) -> None:
+    temporary = target.with_name(f".{target.stem}.exporting.mp3")
+    temporary.unlink(missing_ok=True)
+    ffmpeg = resolve_ffmpeg_bin(None)
+    inputs = [part for segment in segments for part in ("-i", str(segment["audioPath"]))]
+    if segments:
+        audio_source = ["-filter_complex", _build_segmented_audio_filter(segments, duration_seconds), "-map", "[aout]"]
+    else:
+        inputs = ["-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo"]
+        audio_source = ["-map", "0:a"]
+    try:
+        if _ffmpeg_supports_libmp3lame(ffmpeg):
+            command = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error", *inputs, *audio_source,
+                       "-vn", "-c:a", "libmp3lame", "-b:a", "192k", "-t", f"{duration_seconds:.3f}", str(temporary)]
+            _run_export_command(command)
+        else:
+            _render_segmented_audio_with_lame(ffmpeg, inputs, audio_source, duration_seconds, temporary)
+        if not temporary.is_file() or temporary.stat().st_size <= 0:
+            raise RuntimeError("MP3 导出完成但未生成文件")
+        os.replace(temporary, target)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def _render_segmented_audio_with_lame(
+    ffmpeg: str,
+    inputs: list[str],
+    audio_source: list[str],
+    duration_seconds: float,
+    target: Path,
+) -> None:
+    lame = _resolve_lame_bin()
+    if not lame:
+        raise RuntimeError("当前电脑缺少 MP3 编码器（FFmpeg libmp3lame 或 LAME）")
+    wav_target = target.with_suffix(".wav")
+    wav_target.unlink(missing_ok=True)
+    try:
+        command = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error", *inputs, *audio_source,
+                   "-vn", "-c:a", "pcm_s16le", "-ar", "44100", "-ac", "2",
+                   "-t", f"{duration_seconds:.3f}", str(wav_target)]
+        _run_export_command(command)
+        _run_export_command([lame, "--silent", "-b", "192", str(wav_target), str(target)])
+    finally:
+        wav_target.unlink(missing_ok=True)
+
+
 def _normalize_export_timeline(
     audio_path: Path,
     chunks: Any,
