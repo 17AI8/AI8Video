@@ -9,9 +9,11 @@
       AI8SmartImage.state.processingTotal = Math.max(0, Number(total) || 0);
       const percent = total ? Math.min(100, Math.round(done / total * 100)) : 0;
       const modal = smartImageElements().modal;
-      const percentElement = modal.querySelector('#smartImageProcessingPercent');
+      const percentElement = modal.querySelector('#smartImageProcessingPercentValue');
+      const countElement = modal.querySelector('#smartImageProcessingCount');
       const bar = modal.querySelector('#smartImageProcessingBar');
-      if (percentElement) percentElement.textContent = `${percent}% · ${done}/${total}`;
+      if (percentElement) percentElement.textContent = `${percent}%`;
+      if (countElement) countElement.textContent = `${done}/${total}`;
       if (bar) bar.style.width = `${percent}%`;
     }
 

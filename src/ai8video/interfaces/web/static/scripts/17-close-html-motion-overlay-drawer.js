@@ -450,48 +450,41 @@
       if (!els.recycleBinList) return;
       const bin = state.recycleBin || {};
       const count = Number(bin.count || 0) || 0;
-      els.recycleBinList.innerHTML = `
-        <div class="material-card">
-          <div class="material-heading">
-            <div class="material-title">回收站</div>
-            <div class="material-meta">${escapeHtml(`${count} 个失败任务`)}</div>
-          </div>
-          <div class="material-actions">
-            <button type="button" class="material-library-button" data-show-recycle-bin>查看回收站</button>
-          </div>
-        </div>
-      `;
+      els.recycleBinList.innerHTML = buildSidebarNavItemMarkup({
+        icon: 'recycle',
+        title: '回收站',
+        meta: `${count} 个失败任务`,
+        actionLabel: '查看回收站',
+        attrs: 'data-show-recycle-bin',
+      });
     }
 
     function renderAssistantToolsPanel() {
       if (!els.assistantToolsList) return;
-      els.assistantToolsList.innerHTML = `
-        <div class="material-card assistant-tool-card assistant-tool-card--smart-image">
-          <div class="material-heading stacked">
-            <div class="material-title">智能修图</div>
-            <div class="material-meta">调用图片模型精修并导出副本</div>
-          </div>
-          <div class="material-actions">
-            <button type="button" class="material-library-button" data-open-smart-image-editor-entry aria-expanded="false">开始修图</button>
-          </div>
-        </div>
-        <div class="material-card assistant-tool-card assistant-tool-card--hot-radar">
-          <div class="material-heading stacked">
-            <div class="material-title">热点雷达</div>
-            <div class="material-meta">聚合公开热点数据并生成选题摘要</div>
-          </div>
-          <div class="material-actions">
-            <button type="button" class="material-library-button" data-open-hot-radar-entry>查看热点</button>
-          </div>
-        </div>
-        <div class="material-card assistant-tool-card assistant-tool-card--viral-breakdown">
-          <div class="material-heading stacked">
-            <div class="material-title">爆款拆解</div>
-            <div class="material-meta">一键预填拆解提示词，直接进入对话分析</div>
-          </div>
-          <div class="material-actions">
-            <button type="button" class="material-library-button" data-open-viral-breakdown-entry>开始拆解</button>
-          </div>
-        </div>
-      `;
+      els.assistantToolsList.innerHTML = [
+        buildSidebarNavItemMarkup({
+          icon: 'smartImage',
+          title: '智能修图',
+          meta: '调用图片模型精修并导出副本',
+          actionLabel: '开始修图',
+          attrs: 'data-open-smart-image-editor-entry aria-expanded="false"',
+          extraClass: 'assistant-tool-card assistant-tool-card--smart-image',
+        }),
+        buildSidebarNavItemMarkup({
+          icon: 'hotRadar',
+          title: '热点雷达',
+          meta: '聚合公开热点数据并生成选题摘要',
+          actionLabel: '查看热点',
+          attrs: 'data-open-hot-radar-entry',
+          extraClass: 'assistant-tool-card assistant-tool-card--hot-radar',
+        }),
+        buildSidebarNavItemMarkup({
+          icon: 'viral',
+          title: '爆款拆解',
+          meta: '一键预填拆解提示词，直接进入对话分析',
+          actionLabel: '开始拆解',
+          attrs: 'data-open-viral-breakdown-entry',
+          extraClass: 'assistant-tool-card assistant-tool-card--viral-breakdown',
+        }),
+      ].join('');
     }

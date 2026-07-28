@@ -188,14 +188,14 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("white-space: pre-wrap;", user_message_style)
         self.assertIn("overflow-wrap: anywhere;", user_message_style)
 
-    def test_pending_only_bubble_uses_available_message_width(self) -> None:
+    def test_pending_only_bubble_uses_compact_content_width(self) -> None:
         source = read_static_source()
         rule_start = source.index(".message:not(.user) .bubble.pending-only {")
         rule_end = source.index("}", rule_start)
         rule = source[rule_start:rule_end]
 
-        self.assertIn("width: 100%;", rule)
-        self.assertIn("max-width: 100%;", rule)
+        self.assertIn("width: fit-content;", rule)
+        self.assertIn("max-width: min(100%, 760px);", rule)
 
     def test_historical_completion_guide_is_not_rendered(self) -> None:
         source = read_static_source()
@@ -520,12 +520,21 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("fetch('/api/upload-user-material'", source)
         self.assertIn("refreshUserMaterials()", source)
         self.assertIn("smartImageToolButton('mask'", source)
+        self.assertIn('smartImage: \'<svg class="sidebar-nav-icon-svg"', source)
+        self.assertGreaterEqual(source.count('M12 3a9 9 0 100 18h1.5'), 2)
         self.assertIn('data-smart-image-action="export"', source)
         self.assertIn("ai8video-smart-image-canvas-v2", source)
 
         canvas_style = (STATIC_ROOT / "styles" / "20a-smart-image-canvas.css").read_text(encoding="utf-8")
         self.assertIn("#smartImageEditorModal .smart-image-canvas-viewport", canvas_style)
         self.assertNotIn(".smart-image-canvas-viewport {", canvas_style.replace("#smartImageEditorModal .smart-image-canvas-viewport {", ""))
+
+    def test_static_settings_entry_uses_gear_icon(self) -> None:
+        source = read_static_source()
+
+        self.assertIn('data-icon="settings"', source)
+        self.assertIn('M12.22 2h-.44', source)
+        self.assertNotIn('M12 1v2M12 21v2', source)
 
     def test_smart_image_editor_calls_configured_image_model(self) -> None:
         output_root = self.root / "smart-image-results"
@@ -4898,6 +4907,14 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("生成视频", html)
         self.assertIn("归档结果", html)
         self.assertIn(".agent-step-chain", html)
+        self.assertIn("flex: 0 0 20px;", html)
+        self.assertIn("justify-content: center;", html)
+        self.assertIn("line-height: 1;", html)
+        self.assertIn("const AGENT_STEP_ORBIT_DURATION_MS = 1200;", html)
+        self.assertIn("const orbitDelayMs = -(Date.now() % AGENT_STEP_ORBIT_DURATION_MS);", html)
+        self.assertIn("--agent-step-orbit-delay:${orbitDelayMs}ms", html)
+        self.assertIn("animation-delay: var(--agent-step-orbit-delay, 0ms);", html)
+        self.assertIn("index === activeStepIndex ? 'active'", html)
         self.assertIn(".agent-step-details", html)
         self.assertIn("agent-step-detail-marker", html)
         self.assertIn(".agent-step-details-drawer", html)
@@ -4934,7 +4951,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("const hasAgentProgress = !!renderedPendingStatus?.generationProgress;", html)
         self.assertIn("if (payload.meta?.operation === 'pending' || hasAgentProgress)", html)
         self.assertIn("if (isGeneratedResult && summary && !hasAgentProgress)", html)
-        self.assertIn("const generatingStatuses = new Set(['submitting', 'preparing_first_frame', 'submitted', 'polling']);", html)
+        self.assertIn("const submittingCount = countStatuses(new Set(['preparing_first_frame', 'submitting']));", html)
+        self.assertIn("const generatingCount = countStatuses(new Set(['submitted', 'polling']));", html)
         self.assertIn("status === 'polling' && Number.isFinite(Number(event?.providerProgress))", html)
         self.assertIn("index === 0 && !['succeeded', 'completed'].includes(status)", html)
         self.assertIn("本轮已结束：已生成 ${done}/${total}，失败 ${failed} 条。", html)
@@ -6636,18 +6654,24 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertNotIn("deleted-placeholder", html)
         self.assertNotIn('<div class="result-notify-failed-mark" aria-hidden="true">×</div>', html)
 
-    def test_static_brand_uses_project_png_avatar(self) -> None:
+    def test_static_brand_uses_project_png_assets(self) -> None:
         from PIL import Image
 
         html = read_static_source()
         avatar_path = STATIC_ROOT / "images" / "ai8video-avatar.png"
+        sidebar_brand_path = STATIC_ROOT / "images" / "ai8video-sidebar-brand.png"
 
         self.assertIn("/static/images/ai8video-avatar.png?v=20260727-1", html)
-        self.assertIn('background: transparent url("/static/images/ai8video-avatar.png?v=20260727-1")', html)
+        self.assertIn('background: transparent url("/static/images/ai8video-sidebar-brand.png?v=20260728-1")', html)
+        self.assertIn("const avatar = message.role === 'user' ? '我' : 'AI8video';", html)
         self.assertTrue(avatar_path.is_file())
+        self.assertTrue(sidebar_brand_path.is_file())
         with Image.open(avatar_path) as avatar:
             self.assertEqual(avatar.format, "PNG")
             self.assertEqual(avatar.size, (512, 512))
+        with Image.open(sidebar_brand_path) as sidebar_brand:
+            self.assertEqual(sidebar_brand.format, "PNG")
+            self.assertEqual(sidebar_brand.size, (384, 193))
 
     def test_static_failed_result_card_uses_humanized_reason_badge(self) -> None:
         html = read_static_source()
@@ -6695,6 +6719,15 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         html = read_static_source()
 
         self.assertIn('id="clearConversationButton"', html)
+        self.assertIn('id="mainBackgroundButton"', html)
+        self.assertIn('<span data-main-background-label>背景</span>', html)
+        self.assertIn("const MAIN_BACKGROUND_MODES = ['grid', 'dots', 'blank'];", html)
+        self.assertIn("function bindMainBackgroundSwitcher()", html)
+        self.assertIn("label.textContent = '背景';", html)
+        self.assertIn("bindMainBackgroundSwitcher();", html)
+        self.assertIn(".main.is-grid-background", html)
+        self.assertIn(".main-background-button", html)
+        self.assertIn('22-main-background.css?v=20260729-4', html)
         self.assertIn('id="clearConversationConfirmModal"', html)
         self.assertIn("确认清空对话？", html)
         self.assertIn("只会清空当前窗口里的文字对话，不会删除任务、结果、素材或媒体文件。", html)
@@ -6702,7 +6735,14 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("function closeClearConversationConfirmModal()", html)
         self.assertIn("openClearConversationConfirmModal();", html)
         self.assertIn("clearConversationConfirmSubmitButton?.addEventListener('click'", html)
-        self.assertIn("function clearActiveConversationTextMessages()", html)
+        self.assertIn("async function clearActiveConversationTextMessages()", html)
+        self.assertIn("function playMessageBubbleLeaveAnimation()", html)
+        self.assertIn("await playMessageBubbleLeaveAnimation();", html)
+        self.assertIn("is-bubble-entering", html)
+        self.assertIn("animation: message-bubble-fade-in 320ms", html)
+        self.assertIn("animation: message-bubble-fade-out 220ms", html)
+        self.assertIn("@keyframes message-bubble-fade-in", html)
+        self.assertIn("@keyframes message-bubble-fade-out", html)
         self.assertIn("return (session?.messages || []).length;", html)
         self.assertIn("session.messages = [];", html)
         self.assertIn("session.title = NEW_SESSION_TITLE;", html)
@@ -6933,9 +6973,10 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             html,
         )
         self.assertIn(
-            '<div class="material-meta">${escapeHtml(`${count} 个失败任务`)}</div>',
+            "meta: `${count} 个失败任务`,",
             html,
         )
+        self.assertIn("attrs: 'data-show-recycle-bin',", html)
         self.assertNotIn(
             "count ? `${count} 个失败任务` : '失败但已产出视频的任务会放到这里。'",
             html,

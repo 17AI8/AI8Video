@@ -286,13 +286,36 @@
       filter: none;
     }
 
-    .mark,
-    .message:not(.user) .avatar {
+    .mark {
       border-radius: 50%;
       background-color: #ffffff;
       box-shadow:
         0 10px 24px rgba(79, 109, 255, 0.16),
         inset 0 0 0 1px rgba(255, 255, 255, 0.72);
+    }
+
+    .message:not(.user) .avatar {
+      position: relative;
+      align-self: stretch;
+      height: auto;
+      margin-top: 20px;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    .message:not(.user) .avatar::before {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 60px;
+      aspect-ratio: 384 / 193;
+      background: transparent url("/static/images/ai8video-sidebar-brand.png?v=20260728-1") center / contain no-repeat;
+      transform: translate(-50%, -50%) rotate(-90deg);
+      filter:
+        drop-shadow(0 6px 10px rgba(45, 63, 130, 0.18))
+        drop-shadow(0 18px 22px rgba(45, 63, 130, 0.16));
     }
     .sidebar #settingsEntryButton.settings-entry-button {
       min-height: 42px;

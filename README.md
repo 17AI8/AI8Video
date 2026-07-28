@@ -1,182 +1,94 @@
 <div align="center">
-  <img src="desktop/electron/icons/icon.png" width="112" alt="AI8video Logo">
+  <img src="src/ai8video/interfaces/web/static/images/ai8video-brand-logo.png" width="260" alt="AI8video Logo">
 
   <h1>AI8video</h1>
 
-  <p><strong>策划、生成、交付——用一个可控的本地 AI Agent 完成短视频生产</strong></p>
+  <p><strong>从选题、脚本、素材到生成、精剪与交付的本地 AI 短视频工作台</strong></p>
 
   <p>
-    AI8video 是一个开源、本地优先的 AI 短视频生产工作台，帮助内容团队和开发者<br>
-    在统一流程中完成需求理解、脚本生成、素材管理、媒体生成、批量任务和结果交付。
+    把热点研究、知识召回、脚本规划、图片与视频生成、配音动效、批量监督和本地资产管理<br>
+    放进一个可观察、可编辑、可恢复的有界 AI Agent 工作流。
   </p>
 
   <p>
-    <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-v0.3.0-0ea5e9?style=flat-square" alt="Python package v0.3.0"></a>
-    <img src="https://img.shields.io/badge/status-active-22c55e?style=flat-square" alt="Status Active">
-    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2563eb?style=flat-square" alt="MIT License"></a>
+    <a href="pyproject.toml"><img src="https://img.shields.io/badge/version-0.3.0-4f6dff?style=flat-square" alt="Version 0.3.0"></a>
+    <img src="https://img.shields.io/badge/Python-3.10--3.13-0ea5e9?style=flat-square&logo=python&logoColor=white" alt="Python 3.10 to 3.13">
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" alt="MIT License"></a>
+    <img src="https://img.shields.io/badge/runtime-local--first-0891b2?style=flat-square" alt="Local-first Runtime">
     <img src="https://img.shields.io/badge/Agent-bounded-7c3aed?style=flat-square" alt="Bounded Agent">
-    <img src="https://img.shields.io/badge/Web-local-0891b2?style=flat-square" alt="Local Web Workbench">
-    <img src="https://img.shields.io/badge/Electron-optional-47848f?style=flat-square" alt="Optional Electron Desktop Shell">
+    <a href="https://github.com/17AI8/AI8Video/stargazers"><img src="https://img.shields.io/github/stars/17AI8/AI8Video?style=flat-square" alt="GitHub Stars"></a>
   </p>
 
   <p>
-    <img src="https://img.shields.io/badge/Platforms-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Web-16a34a?style=flat-square" alt="Platforms: Windows, macOS, Linux and Web">
+    <img src="https://img.shields.io/badge/Windows-supported-2563eb?style=flat-square&logo=windows" alt="Windows">
+    <img src="https://img.shields.io/badge/macOS-supported-111827?style=flat-square&logo=apple" alt="macOS">
+    <img src="https://img.shields.io/badge/Linux-supported-f59e0b?style=flat-square&logo=linux&logoColor=white" alt="Linux">
+    <img src="https://img.shields.io/badge/Web-127.0.0.1-16a34a?style=flat-square" alt="Local Web">
   </p>
 
   <p>
-    <a href="#快速开始从源码运行">快速开始</a> ·
-    <a href="ARCHITECTURE.md">架构文档</a> ·
-    <a href="CONTRIBUTING.md">参与开发</a> ·
-    <a href="https://github.com/17AI8/AI8Video">GitHub</a>
+    <a href="#快速开始">快速开始</a> ·
+    <a href="#核心能力">核心能力</a> ·
+    <a href="#典型工作流">工作流</a> ·
+    <a href="#模型与运行环境">模型配置</a> ·
+    <a href="#架构">架构</a> ·
+    <a href="CONTRIBUTING.md">参与开发</a>
   </p>
-
-  <p><a href="README.md">简体中文</a></p>
 </div>
 
-**适合谁用：** 希望用自然语言组织短视频生产、需要批量处理脚本与媒体任务、重视本地素材管理和工作流可控性的内容团队、运营人员与开发者。
-
-`AI8video` **不是** 通用自主 Agent，也不是把任务交给云端托管的 SaaS。模型负责理解意图、补全信息和生成内容；本地 Python Runtime（运行时）负责会话状态、能力选择、安全护栏、任务顺序、媒体处理与结果落盘。Agent 的自主范围被限制在项目内置的短视频能力中，不开放 Shell、任意文件权限或通用网络工具。
-
 ---
 
-## 核心功能
+## AI8video 是什么
 
-| 功能 | 说明 |
+AI8video 是一个开源、本地优先的 AI 短视频生产工作台。它面向内容团队、运营人员和开发者，用自然语言串联选题研究、脚本规划、素材管理、媒体生成、后期编辑、批量任务和结果交付。
+
+模型负责理解意图、提炼知识和生成内容；本地 Python Runtime（运行时）负责会话状态、任务顺序、安全护栏、媒体处理和结果落盘。所有自主决策都被限制在项目内置的短视频能力中，不开放 Shell、任意文件访问或通用网络工具。
+
+| 适合 | 不适合 |
 |---|---|
-| **对话式短视频生产** | 用自然语言描述目标，系统自动理解需求、追问缺失信息，并组织后续脚本与生成步骤。 |
-| **脚本生成与拆分** | 支持智能分集与手动批量：智能模式按全文容量和单条时长规划，手动模式可固定 1～12 条；规划结果可展开、编辑并在刷新后恢复。 |
-| **剧本知识库** | 管理 TXT、Markdown、DOCX 原稿，使用 PostgreSQL 中文检索、模型查询提炼和 Rerank（重排）为生成提供参考。 |
-| **图片与视频生成** | 接入兼容的文本、图像和视频模型，支持参考图、首帧、分段生成与结果审核。 |
-| **智能修图画布** | 与图片素材库联动，支持无限画布、最多 3 个图层、局部蒙版、比例预览、X1～X8 并发修图、结果持久化及单图保存/导出。 |
-| **多 Agent 与 Skills** | Supervisor（监督者）统一编排 Intent Agent（意图判断）、Planner（规划者）与 Reviewer（审核者）；各角色按需加载自己的 Skill（技能），并使用本地任务图、租约和账本管理并发、取消与恢复。 |
-| **批量任务** | 统一管理生成批次、任务进度、报告、告警与真实额度保护；失败视频支持单条重试，缺失首帧时可自动重建。 |
-| **配音、字幕与合并** | 通过本地 TTS、FFmpeg 完成配音、字幕、背景音乐和媒体后处理；TTS 波形支持按停顿智能切块，当前时间轴可通过系统“保存为”窗口导出 192 kbps MP3，并自定义文件名与保存位置；结果库支持按勾选顺序批量合并并清理源资产。 |
-| **视频预览精剪** | 预览态由视频、TTS、HTML 动效和背景音乐四层组成，各层可独立编辑；支持胶片定位、剪刀切块、删除与拖动，越界片段会标红并阻止烧录。 |
-| **HTML 动效** | 使用项目自有 WAAPI（Web Animations API）时间线生成透明动效层；逐 Chunk 的删除、移动和切块会实时预览并立即持久化，不触发视频或 TTS 重渲染。 |
-| **热点与爆款拆解** | 聚合公开热点源；爆款拆解支持最多 188 张带序号截图、可点击宫格大图、0.1 秒时间轴台词编辑、全量镜头语言分析，以及无台词视频的猜剧本与生成准备。 |
-| **素材与结果管理** | 管理用户素材、生成结果、封面、预览、归档和回收站；最终媒体保留在本地用户目录。 |
-| **多入口复用** | Web、CLI 与 Electron 复用同一套 Python Agent Runtime 和本地数据，不复制业务流程。 |
+| 希望用自然语言组织短视频生产流程 | 需要无限自主、可任意调用系统工具的通用 Agent |
+| 需要本地管理素材、脚本、结果和编辑状态 | 希望把全部素材交给云端托管的 SaaS |
+| 需要批量生成、进度跟踪、失败重试和结果归档 | 需要开箱即用的公网多人协作服务 |
+| 希望按需接入自己的文本、图片、视频与 TTS 服务 | 不准备配置任何模型或媒体运行环境 |
 
-### 生成与审核工作流
+## 为什么选择 AI8video
 
-- **智能分集**：Planner 根据全文信息容量、单条视频时长和内容完整性决定数量；正文中的普通数字不会被误判为分集数量。规划卡可查看引用依据、展开每条详细提示词并单独编辑。
-- **手动批量**：固定生成 1～12 条视频，可选尾帧串联；尾帧模式下后续视频依赖上一条结果，界面会明确显示等待状态。
-- **结果修订**：视频预览中可编辑续作提示词并单条或批量延长；配音台词可结合知识库进行 AI 润色、扩写，并由 Reviewer 按视频时长和字数复核。即使历史资产记录缺失，已有本地视频也可重新登记并保存台词。
-- **四层预览**：视频、TTS、HTML 动效和背景音乐共享播放时钟，但状态互不改写。裁剪视频不会同步裁剪 TTS；删除或移动 HTML Chunk 只更新透明动效层；背景音乐来自主界面音乐库，可在预览抽屉中选择、试听或取消。
-- **精剪工具**：视频胶片提供定位和剪刀工具，三条时间轴保持单选；TTS 可根据音波停顿智能切块，也可按当前切块、删除和移动结果单独导出 MP3。导出时使用系统“保存为”窗口，可自定义中文文件名和目录，未填写扩展名时自动补全 `.mp3`，下次默认打开上次使用的目录。超出新视频结尾的片段只在对应时间轴标红，处理完越界片段后才允许确认烧录。
-- **Reviewer 兜底**：HTML 动效每轮方案都会给出 0～100 分；审核已通过且仅存在小范围节拍偏差时会自动修正采用，达到最大尝试次数仍未通过时则选择最高分方案并保留简短说明。
-- **确认后落盘**：编辑阶段始终保留纯净基础视频与独立图层；确认烧录时按“视频裁剪 → TTS → 背景音乐 → HTML 透明层”合成正式视频，不再依赖旧版 `candidate.mp4` 部分烧录文件。
+| 本地可控 | 端到端生产 | 有界 Agent | 可继续编辑 |
+|---|---|---|---|
+| 用户素材、项目状态和最终结果默认保存在本机 | 从热点、知识、脚本到生成、精剪和归档是一条完整链路 | 外部副作用显式执行，生成、归档等步骤不会被盲目自动重放 | 视频、TTS、背景音乐和 HTML 动效保持独立图层，确认后再烧录 |
 
-### 智能修图与爆款拆解
+| 批量监督 | 多模型接入 | 失败可恢复 | 多入口复用 |
+|---|---|---|---|
+| 支持日目标、预算门禁、报告、告警和 macOS launchd 守护 | 文本、图片、多模态和多种视频模板可独立配置 | 任务账本、租约、心跳、取消、重试和回收站保留真实状态 | Web、CLI 与可选 Electron 桌面壳共享同一 Python Runtime |
 
-- **智能修图**：从图片素材库选图或本地导入，在同一图层内保留原图和多个独立生成结果；批量数量支持 X1～X8，并发请求的完成进度会在画布遮罩中实时显示。
-- **局部修改**：蒙版笔刷会将选区转换为归一化区域坐标随请求提交；未绘制选区时默认修改全图。模型同时接收当前画布选中的比例，不绑定预览尺寸。
-- **结果持久化**：画布、图层、同层多图结果、模型提示词和批量数量都会持久化；刷新页面后继续恢复，结果只在用户主动删除时移除。
-- **爆款拆解**：截图间隔会按视频时长自动限制为最多 188 张，并以 0.1 秒精度实时显示预计张数；截图间隔与宫格比例按原视频分别持久化，刷新或切换视频后自动恢复。每张截图右下角带序号，宫格具有清晰分隔线且可点击查看大图，重新生成后通过版本参数立即刷新。
-- **时间轴台词预览**：Whisper 结果按固定时间槽展示，每个 Chunk 可独立编辑、删除、拖动内容换位、定位循环播放和重新配音；删除只将该时间槽留空，不会压缩或打乱后续时间轴。未保存修改只在当前预览生效，不进入镜头语言和猜剧本环节。
-- **当前草稿导出 MP3**：无需先保存台词即可导出当前编辑后的完整 MP3；已重新配音的 Chunk 复用缓存，其他非空 Chunk 按当前 TTS 设置补生成，删除段按原时间槽输出静音，从而保持音画时间不偏移。
-- **全量镜头语言**：全部截图按宫格行拼接为多张传输图，在一次多模态请求中完整提交；提示同时携带总时长、真实截图间隔、序号和逐格时间范围，要求模型按序号而非整行推断时间线。
-- **无台词流程**：台词识别完成后，无论是否识别出文本，都可继续镜头语言、猜剧本和生成准备；猜剧本复用已有镜头证据和可选台词，不重复执行画面拆解。
+## 快速开始
 
----
-
-## 架构设计
-
-```text
-AI8video
-├─ 入口层
-│  ├─ Web 工作台
-│  ├─ CLI
-│  └─ Electron 桌面壳（可选）
-│
-├─ Agent Runtime · application/
-│  ├─ Intent Agent 意图路由与信息补全
-│  ├─ 会话上下文与状态
-│  ├─ 能力选择与工作流编排
-│  ├─ Supervisor / Intent Agent / Planner / Reviewer 协作
-│  └─ 参数校验、额度、幂等与超时护栏
-│
-├─ Agent Skills · agent_skills/
-│  ├─ 角色级 Skill 注册、读取与注入
-│  └─ 内置 Skill 可查看不可删除，占位 Skill 不展示
-│
-├─ 短视频能力层
-│  ├─ generation/        脚本、图片、视频与结果审核
-│  ├─ batch/             Agent 调度、批量任务、报告、告警与任务账本
-│  ├─ knowledge/         剧本知识库、检索与重排
-│  ├─ media/             TTS 波形、视频时间轴、字幕、合并与 HTML 动效
-│  ├─ assets/            素材、结果、归档与回收站
-│  ├─ radar/             热点聚合与摘要
-│  └─ breakdown/         台词识别、镜头语言与爆款剧本重建
-│
-└─ 外部资源适配器
-   ├─ 文本、图像与视频模型 API
-   ├─ FFmpeg / FFprobe
-   ├─ HyperFrames（可选）
-   ├─ PostgreSQL（剧本知识库）
-   └─ 本地文件系统 / S3（可选）
-```
-
-核心设计原则：**Python 是会话、任务状态、业务规则、媒体处理和持久化的唯一真值来源。** Web、CLI 与 Electron 只负责接入；外部资源失败时必须返回真实错误，不伪造成功。
-
-当前消息与用户可编辑业务提示词都是用户输入。生成时必须合并两者全部能够共存的主题、主体、人物、产品、核心关键词、风格、镜头、排版和禁用要求，不能让任何一方把另一方删掉；只有真正无法共存的直接矛盾，才以当前消息处理冲突项。
-
-完整运行闭环、模块职责和依赖规则见 [ARCHITECTURE.md](ARCHITECTURE.md)。
-
----
-
-## 多 Agent 协作
-
-AI8video 采用**本地有界多 Agent**，不是让多个通用 Agent 任意调用工具。当前由 Supervisor 负责统一调度，Intent Agent、Planner 与 Reviewer 作为受约束的专业角色执行路由、规划和审核；任务状态持久化在本地 SQLite 账本中，并通过依赖关系、租约、心跳、重试和取消规则保证恢复一致性。每个角色只注入与自身职责匹配且已启用的 Skill，占位 Skill 不参与运行也不在设置界面展示。模型与媒体能力仍由现有 Python Runtime 调用，不拆成独立微服务。
-
-当前 Intent Agent、Planner 与 Reviewer 已进入共享调度器：Intent Agent 只负责识别新任务、会话跟进、重新分集和改写等路由；真实视频提交和媒体处理仍在既有生成流水线中执行。这一边界可以保持计费副作用显式，并避免任务恢复时重复提交外部请求。
-
-多 Agent 调度不改变普通视频生成的产品参数：生成数量、单条时长、并发方式和 `merge2` / `merge4` 合并模式继续以用户请求及本机配置为准，不额外施加 1～5 条、固定 10 秒或强制串行限制。真实模型提交、轮询、媒体后处理与归档具有外部副作用，仍不属于自动重放安全步骤。
-
-`AI8VIDEO_DRY_RUN=1` 下的占位结果会明确标记为模拟内容，并从真实生成结果列表中排除。
-
----
-
-## 环境要求
-
-- Python `3.10` 至 `3.13`。
-- 完整媒体链路需要 FFmpeg 与 FFprobe。请使用系统安装或 LGPL 兼容构建。
-- 使用剧本知识库时需要 PostgreSQL `16+`。
-- 爆款拆解的台词识别使用 `faster-whisper`；源码启动器会自动安装运行时，模型在首次分析时按需下载。
-- 使用可选 HyperFrames HTML 动效时需要 Node.js 与 npm；核心工作台和 CLI 不依赖 Node。
-- Electron 桌面壳需要在 `desktop/electron/` 中单独安装 Node 依赖。
-
-需要指定 FFmpeg 路径时设置：
-
-```bash
-export AI8VIDEO_FFMPEG_BIN=/absolute/path/to/ffmpeg
-export AI8VIDEO_FFPROBE_BIN=/absolute/path/to/ffprobe
-```
-
----
-
-## 快速开始（从源码运行）
+### 一键启动
 
 ```bash
 git clone https://github.com/17AI8/AI8Video.git
 cd AI8Video
-cp mykey_template.py mykey.py
 ./start_ai8video_web.sh
 ```
 
-首次启动会自动创建 `.venv`、安装 Python 依赖，并从 `18720-18820` 中选择可用端口。已有环境若缺少 `faster-whisper`，启动器也会自动补装。检测到 Node.js 与 npm 时，启动器还会安装可选的 HyperFrames 依赖；安装失败不会阻止核心工作台启动。
+启动器会自动：
 
-爆款拆解默认使用 `base` 模型进行本地 CPU 台词识别。模型权重不提交到仓库，首次分析时从模型源下载，并缓存到 `用户文件夹/爆款拆解/.model-cache/faster-whisper/`；后续分析复用本地缓存。商业发行若把 Python 运行时和模型一并打包，请同时保留 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) 中列出的许可证声明。
+- 检查 Python `3.10–3.13`，创建项目内 `.venv`；
+- 安装 `.[ai8video]` 依赖；
+- 检测 FFmpeg、PostgreSQL 与可选运行时；
+- 在检测到 Node.js/npm 且缺少依赖时运行 `npm ci`；
+- 从 `18720–18820` 选择可用端口；
+- 在 macOS 自动打开浏览器，可通过 `AI8VIDEO_NO_OPEN=1` 禁用。
 
-### 各平台入口
+各平台也可以直接使用：
 
 | 平台 | 启动方式 |
 |---|---|
 | macOS | 双击 `双击启动.command`，或执行 `./start_ai8video_web.sh` |
-| Linux | 执行 `./start_ai8video_web.sh` |
 | Windows | 双击 `双击启动.bat` |
+| Linux | 执行 `./start_ai8video_web.sh` |
 
-默认服务只监听本机回环地址，启动后访问：
+默认服务仅监听本机：
 
 ```text
 http://127.0.0.1:18720
@@ -184,11 +96,192 @@ http://127.0.0.1:18720
 
 实际端口可能因占用情况自动顺延。
 
----
+> [!IMPORTANT]
+> `AI8VIDEO_DRY_RUN` 默认关闭，也就是程序默认允许真实模型任务。首次冒烟建议先执行 `export AI8VIDEO_DRY_RUN=1`，确认配置和流程正确后再切换真实生成。
 
-## 模型配置
+### 手动安装
 
-推荐使用环境变量配置兼容的模型服务：
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install -e '.[ai8video]'
+
+# 仅 HTML 动效和完整测试需要，要求 Node.js 22+
+npm ci
+
+ai8video serve --port 0
+```
+
+## 核心能力
+
+### 1. 对话式策划与生成
+
+- 识别新任务、会话跟进、改写、重新分集和信息补全；
+- 支持普通生成、智能分集和手动批量；
+- 智能计划可展开、编辑、保存并在刷新后恢复；
+- 支持单段视频与 2 段、4 段连续生成，使用尾帧衔接保持连贯；
+- 真实提交、轮询、下载、校验、后处理与归档均展示明确状态；
+- 失败任务支持单条重试、缺失首帧重建和安全停止。
+
+### 2. 热点雷达与剧本知识库
+
+- 内置微博、知乎、B站、V2EX、Hacker News、NodeSeek、少数派、Solidot 等 8 个公开源；
+- 支持自定义 RSS/Atom、并行抓取、过滤去重、缓存降级和事实约束总结；
+- 热点可以一键转换为创作提示词并填入主工作台；
+- TXT、Markdown、DOCX 原稿保留在本地，PostgreSQL 保存可重建的检索结构；
+- 使用标题/标签匹配、`pg_trgm`、`tsvector`、查询提炼和模型 Rerank（重排）完成召回；
+- 支持临时知识和爆款拆解知识树，不必先污染长期素材库。
+
+### 3. 爆款视频拆解
+
+- 按视频时长自动抽取最多 188 张带序号截图；
+- 宫格可切换比例、点击查看原图，并保持时间轴对应关系；
+- 使用 Whisper 生成台词时间轴，支持编辑、删除、拖动、定位和重新配音；
+- 将全部截图按序号和时间范围提交给多模态模型，生成镜头语言分析；
+- 在有台词或无台词场景下都可重建脚本骨架；
+- 当前前端会把确认后的脚本填回主创作框，由用户发送后进入生成，不会在拆解结束时偷偷直接提交付费任务。
+
+### 4. 智能修图画布
+
+- 图片素材库与本地导入统一进入无限画布；
+- 支持图层、选择、拖拽、局部蒙版、裁剪、比例预览、滤镜、撤销与重做；
+- 支持 X1～X8 并行调用图片模型，进度实时回填；
+- 同一图层保留原图和多个独立生成结果；
+- 画布、图层、结果、提示词和批量数量自动保存；
+- 支持保存到素材库和 PNG 导出。
+
+### 5. 配音、声音克隆与精剪
+
+- 当前 TTS 引擎为 MiMo API，本地使用 FFmpeg 完成转码、时长适配和音量处理；
+- 支持上传 MP3、WAV 或视频创建克隆音色；
+- TTS 时间轴支持试听、拖拽、删除、按停顿智能切块和独立重生成；
+- 当前草稿可通过系统“保存为”对话框导出 `192 kbps` MP3；
+- 视频胶片支持定位、剪切、删除与拖动；
+- 视频、TTS、背景音乐和 HTML 动效共享播放时钟，但各自保持独立编辑状态。
+
+### 6. HTML 动效与媒体后处理
+
+- Agent 生成基于 WAAPI（Web Animations API）的透明 HTML 动效层；
+- 动效方案会经过渲染、修复和 `0–100` 分审核；
+- 时间轴 Chunk 可删除、移动、切分并立即预览；
+- 确认烧录时按“视频裁剪 → TTS → 背景音乐 → HTML 透明层”生成正式视频；
+- 归档阶段不会自动生成 HTML 动效，必须由用户在结果预览中明确触发和确认。
+
+### 7. 批量监督与任务系统
+
+- 按日目标扩展候选，达到目标、预算或停止条件后收敛；
+- 运行前探测模型、存储和真实归档链路；
+- 输出批次报告、通过率、失败原因和告警；
+- SQLite 任务账本保存状态、依赖、CAS（比较并交换）版本、租约、心跳和取消事件；
+- 只有明确标记为可重放的纯观察任务可以自动恢复；
+- macOS 支持安装、检查和卸载 launchd 批量监督器。
+
+### 8. 素材、结果与回收站
+
+- 统一管理图片、脚本、花字、水印和背景音乐素材；
+- `@素材名` 可将本地素材展开到当前任务；
+- 生成结果包含视频、封面、预览、manifest 和编辑元数据；
+- 支持本地归档，或按需配置 S3 兼容存储；
+- 失败任务的视频和相关文件也会被保留；
+- 回收站支持原子恢复，并延续可用的编辑元数据。
+
+## 典型工作流
+
+```mermaid
+flowchart LR
+    Goal["用户目标"] --> Research{"需要选题或参考？"}
+    Research -->|热点| Radar["热点雷达"]
+    Research -->|原稿| Knowledge["剧本知识库"]
+    Research -->|直接创作| Plan["脚本规划 / 分集"]
+    Radar --> Plan
+    Knowledge --> Plan
+    Plan --> Review["编辑并确认计划"]
+    Review --> Generate["图片 / 视频模型任务"]
+    Generate --> Track["五阶段进度跟踪"]
+    Track --> Archive["下载、校验、封面、归档"]
+    Archive --> Edit["视频 / TTS / 音乐 / HTML 动效"]
+    Edit --> Deliver["确认烧录与本地交付"]
+    Deliver --> Extend["续写、合并、重试或回收"]
+```
+
+<details>
+<summary><strong>智能分集与手动批量</strong></summary>
+
+- Planner 根据全文容量、单条时长和内容完整性规划独立视频数量；
+- 正文中的普通数字不会被误判为数量；
+- 手动模式可固定 `1–12` 条；
+- 尾帧串联时，后续视频明确等待上一条结果，不会伪装成并行；
+- 确认计划后才进入真实模型提交。
+
+</details>
+
+<details>
+<summary><strong>爆款拆解到主创作</strong></summary>
+
+1. 上传视频并生成宫格截图；
+2. 转录台词并编辑时间轴；
+3. 完成全量镜头语言分析；
+4. 生成并编辑脚本骨架；
+5. 将临时知识和脚本填入主创作框；
+6. 用户发送后进入标准规划与生成流程。
+
+</details>
+
+<details>
+<summary><strong>后期编辑与正式落盘</strong></summary>
+
+编辑阶段始终保留纯净基础视频和独立图层。裁剪视频不会自动改写 TTS，移动 HTML Chunk 也不会触发视频或配音重渲染。只有点击确认烧录后，系统才按确定顺序合成正式媒体。
+
+</details>
+
+## 工作台体验
+
+| 能力 | 行为 |
+|---|---|
+| 可折叠玻璃侧栏 | 展开时展示品牌、资源和工具信息；折叠后变为统一图标轨，并记忆本地状态 |
+| 统一工具入口 | 当前进度、图片素材、剧本知识、回收站、智能修图、热点雷达和爆款拆解使用同一导航语言 |
+| 五阶段任务链 | 依次展示理解需求、规划任务、提交生成、生成视频和归档结果；只有当前阶段显示状态环 |
+| 后台任务跟踪 | 页面持续回填等待时间、任务事件和生成结果，可明确终止 |
+| 三种背景 | 网格、点阵和纯色背景可循环切换并持久化 |
+| 对话动效 | 新消息淡入，清空对话时气泡淡出，并遵循系统减少动态效果偏好 |
+| 本地设置 | 模型、接口、TTS、视频参数和系统偏好统一在工作台内管理 |
+
+## 模型与运行环境
+
+### 系统要求
+
+| 组件 | 要求 | 用途 |
+|---|---|---|
+| Python | `3.10–3.13` | 核心 Web、CLI、Agent Runtime 和媒体编排 |
+| FFmpeg / FFprobe | 建议系统安装 LGPL 兼容构建 | 视频合并、裁剪、花字、配音、音乐和动效烧录 |
+| Node.js / npm | HTML 动效和完整测试要求 Node.js `22+` | HyperFrames Worker 与 Node 子进程测试 |
+| PostgreSQL | 可选，建议 `16+` | 剧本知识库；角色需能创建并使用 `pg_trgm`、表和索引 |
+| `zenity` | Linux 可选 | TTS MP3 图形化“保存为”窗口 |
+| Electron | 可选 | 桌面窗口和本地 Python 服务发现/启动 |
+
+核心 Web 与 CLI 不强制安装 Node.js，也不要求 GPU。爆款拆解默认使用 `faster-whisper` 的 `base` 模型进行本地 CPU 转录，首次分析时按需下载模型。
+
+需要指定 FFmpeg 路径时：
+
+```bash
+export AI8VIDEO_FFMPEG_BIN=/absolute/path/to/ffmpeg
+export AI8VIDEO_FFPROBE_BIN=/absolute/path/to/ffprobe
+```
+
+### 模型接入
+
+| 类别 | 当前接入方式 |
+|---|---|
+| 文本模型 | OpenAI 兼容 Base URL、API Key 和模型名 |
+| 多模态模型 | 可独立配置；缺失时继承文本模型地址和凭据 |
+| 图片模型 | OpenAI 兼容图片接口，可独立配置并由用户设置覆盖模型名 |
+| 视频模型 | 豆包 Seedance、云雾 Grok、云雾 Omni、云雾 Veo、百炼 Wan 等直连模板 |
+| TTS | MiMo API；接口、密钥、模型、音色和克隆设置由本地设置界面管理 |
+| 归档 | 本地目录；可选 S3 兼容对象存储 |
+
+推荐通过环境变量配置核心模型：
 
 ```bash
 # 文本模型
@@ -201,45 +294,58 @@ export AI8VIDEO_MULTIMODAL_BASE_URL=https://example.com/v1
 export AI8VIDEO_MULTIMODAL_API_KEY=your-key
 export AI8VIDEO_MULTIMODAL_MODEL=your-multimodal-model
 
-# 图片模型
+# 图片模型（可选）
 export AI8VIDEO_IMAGE_BASE_URL=https://example.com/v1
 export AI8VIDEO_IMAGE_API_KEY=your-key
 export AI8VIDEO_IMAGE_MODEL=your-image-model
 
 # 视频模型
-export AI8VIDEO_VIDEO_BASE_URL=https://example.com/v1
+export AI8VIDEO_VIDEO_BASE_URL=https://example.com
 export AI8VIDEO_VIDEO_API_KEY=your-key
 export AI8VIDEO_VIDEO_MODEL=your-video-model
+export AI8VIDEO_VIDEO_TEMPLATE=doubao-seedance
 ```
 
-也可以复制 `mykey_template.py` 为 `mykey.py`，只填写模板中的本地配置。`mykey.py` 与 `.env` 已被 Git 忽略，禁止提交真实密钥。
+配置优先使用对应环境变量；多模态和图片凭据缺失时可继承文本模型；文本模型缺失时兼容读取本地 `mykey.py`；模型名称还可由工作台用户设置覆盖。需要本地模板时执行：
 
-真实图片与视频生成可能产生费用。建议显式启用额度保护：
+```bash
+cp mykey_template.py mykey.py
+```
+
+> [!NOTE]
+> 项目不会自动加载 `.env`。如需使用 `.env`，请由 Shell、IDE 或进程管理器显式加载。`.env`、`mykey.py` 和用户设置文件都已被 Git 忽略，禁止提交真实密钥。
+
+### 真实任务安全门禁
+
+首次验证建议：
+
+```bash
+export AI8VIDEO_DRY_RUN=1
+```
+
+启用真实模型前，建议同时配置额度保护：
 
 ```bash
 export AI8VIDEO_REAL_JOB_MAX_COUNT=5
 export AI8VIDEO_REAL_JOB_WINDOW_SECONDS=3600
 ```
 
----
+`AI8VIDEO_REAL_JOB_MAX_COUNT=0` 表示没有硬上限。真实图片、视频和 TTS 请求可能产生费用，请以所配置服务商的计费规则为准。
 
 ## 剧本知识库
 
-剧本知识库将原始 TXT、Markdown、DOCX 文件保存在 `用户文件夹/用户素材/剧本素材库/`，PostgreSQL 只保存文档元数据、知识段、标签和可重建的检索索引，不替代或删除用户原稿。
+原始 TXT、Markdown、DOCX 文件保存在：
 
-创建默认数据库：
+```text
+用户文件夹/用户素材/剧本素材库/
+```
+
+PostgreSQL 只保存文档元数据、知识段、标签和可重建索引，不替代或删除用户原稿。
 
 ```bash
 createdb ai8video
-```
-
-使用远程数据库或自定义账号时设置：
-
-```bash
 export AI8VIDEO_SCRIPT_DATABASE_URL='postgresql://user:password@127.0.0.1:5432/ai8video'
 ```
-
-当前检索链路：
 
 ```text
 标题 / 标签精确匹配
@@ -255,95 +361,84 @@ SQL 加权排序 + 模型 Rerank
 最终输出审核与可执行修正
 ```
 
-默认方案不运行本地 Embedding（向量嵌入）模型，数据库索引可随时从用户原稿重建。
+默认方案不运行本地 Embedding（向量嵌入）模型，数据库内容可从用户原稿重建。
 
----
-
-## CLI 命令
+## CLI
 
 macOS 与 Linux 可使用根目录的 `AI8video` 启动器；Windows 使用 `AI8video.cmd`。
 
 | 命令 | 说明 |
 |---|---|
-| `./AI8video --version` | 查看当前版本 |
-| `./AI8video serve --port 18720` | 启动本地 Web 工作台；端口设为 `0` 时自动选择 |
-| `./AI8video status` | 读取已运行工作台的健康状态 |
+| `./AI8video --version` | 查看版本 |
+| `./AI8video serve --port 0` | 自动选择端口并启动本地工作台 |
+| `./AI8video status --url http://127.0.0.1:18720` | 读取指定工作台健康状态 |
 | `./AI8video config` | 检查本机模型配置，不显示密钥 |
-| `./AI8video chat "生成一条 10 秒的产品介绍短视频" --text` | 不启动 Web，直接执行一次短视频对话 |
+| `./AI8video chat "生成一条产品介绍短视频" --session cli --timeout 300 --text` | 不启动 Web，直接执行一次对话 |
 
-`chat` 默认输出完整 JSON；增加 `--text` 后只输出回复文本。
+`status` 默认只检查 `18720`。如果启动器选择了其他端口，请通过 `--url` 指定实际地址。
 
----
+## 架构
 
-## 项目结构
-
-```text
-src/ai8video/
-├─ core/          产品身份、配置、路径和基础数据模型
-├─ application/   Agent Runtime、会话、意图理解与应用门面
-├─ agent_skills/   角色级 Skill 注册、说明与运行时注入
-├─ generation/    脚本拆分、生成流水线、任务与结果审核
-├─ batch/         Agent 调度、批量任务、报告、告警、账本和守护进程
-├─ assets/        用户素材、生成结果、归档和回收站
-├─ knowledge/     剧本知识库、查询、重排和文本处理
-├─ media/         FFmpeg、配音、字幕、合并与 HTML 动效
-├─ integrations/  文本、图片、视频模型及 HTTP 适配器
-├─ radar/         热点聚合与摘要
-├─ breakdown/     爆款视频拆解
-└─ interfaces/    Web、CLI 和演示入口
-
-desktop/electron/  可选 Electron 桌面壳
-tests/             离线质量门禁，不进入运行包
+```mermaid
+flowchart LR
+    Interfaces["Web / CLI / Electron"] --> Runtime["Python Agent Runtime"]
+    Runtime --> Conversation["Conversation Controller"]
+    Runtime --> Scheduler["Agent Task Scheduler"]
+    Conversation --> Domains["Generation · Knowledge · Radar · Breakdown"]
+    Scheduler --> Domains
+    Domains --> Media["FFmpeg · TTS · HTML Motion"]
+    Domains --> Models["Text · Image · Video APIs"]
+    Domains --> Storage["Local Files · PostgreSQL · Optional S3"]
+    Media --> Results["用户生成结果"]
+    Storage --> Results
 ```
 
----
+核心原则：**Python 是会话、任务状态、业务规则、媒体处理和持久化的唯一真值来源。** Web、CLI 与 Electron 只负责接入；外部资源失败时返回真实错误，不伪造成功。
 
-## 本地数据
+### 工程分层
+
+```text
+AI8Video/
+├── src/ai8video/
+│   ├── core/           # 配置、路径和基础模型
+│   ├── application/    # Agent Runtime、会话和跨领域编排
+│   ├── agent_skills/   # 角色级 Skill 注册与注入
+│   ├── interfaces/     # Web、CLI
+│   ├── integrations/   # 模型、数据库和 HTTP 适配器
+│   ├── generation/     # 视频生成与连续合并流程
+│   ├── media/          # FFmpeg、TTS、精剪和 HTML 动效
+│   ├── batch/          # 批量任务、监督器、报告和账本
+│   ├── knowledge/      # 剧本知识库、查询和重排
+│   ├── breakdown/      # 爆款视频拆解
+│   ├── radar/          # 热点聚合与摘要
+│   └── assets/         # 素材、结果、归档和回收站
+├── tests/              # 60+ 个 unittest 测试文件
+├── desktop/electron/   # 可选 Electron 桌面壳
+├── 用户字体/           # 内置字体与授权材料
+├── start_ai8video_web.sh
+├── 双击启动.command
+└── 双击启动.bat
+```
+
+完整运行闭环、模块职责和依赖规则见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
+## 本地数据与隐私
 
 以下内容默认只保存在本机，不进入仓库：
 
 | 路径 | 内容 |
 |---|---|
-| `用户文件夹/` | 用户素材、模型设置、字体选择、生成结果和回收站 |
-| `用户文件夹/智能修图画布.json` | 智能修图的画布、图层、同层多图结果、提示词和批量数量 |
-| `用户文件夹/爆款拆解/` | 上传视频、宫格、台词、镜头语言、猜剧本结果和本地模型缓存 |
-| `用户文件夹/用户生成结果/` | 最终可见的本地媒体事实源 |
-| `用户文件夹/TTS/export-settings.json` | TTS MP3 上次导出目录；不保存音频内容或系统访问凭据 |
-| `用户文件夹/HTML动效/reviews/` | HTML 动效纯净基础视频、透明图层、可编辑时间轴和待确认烧录状态 |
-| `media_resources/ai8video/` | 归档视频、批次报告和告警 |
-| `temp/ai8video/` | 可丢弃的任务账本、进度和运行时状态 |
-| `mykey.py`、`.env` | 本地密钥与配置 |
-
-可通过健康接口查看模型配置、任务状态和本地运行信息：
-
-```bash
-curl http://127.0.0.1:18720/api/health
-```
-
----
-
-## Electron
-
-Electron 是可选桌面壳，代码位于 `desktop/electron/`。它负责发现或启动本地 Python Web 服务并承载工作台窗口，短视频业务仍由 Python Runtime 处理。
-
-```bash
-cd desktop/electron
-npm install
-npm run dev
-```
-
-可用打包命令：
-
-| 命令 | 说明 |
-|---|---|
-| `npm run dist:mac` | 构建 macOS DMG |
-| `npm run dist:win` | 构建 Windows NSIS 安装包 |
-
----
+| `用户文件夹/用户素材/` | 图片、脚本、花字、水印和背景音乐素材 |
+| `用户文件夹/用户生成结果/` | 最终视频、封面、预览、manifest 和恢复元数据 |
+| `用户文件夹/智能修图画布.json` | 智能修图画布、图层、同层多图结果和提示词 |
+| `用户文件夹/爆款拆解/` | 上传视频、宫格、台词、镜头语言、脚本树、热点缓存和模型缓存 |
+| `用户文件夹/TTS/` | TTS 设置、音色克隆、时间轴审核、输出和导出偏好 |
+| `用户文件夹/HTML动效/reviews/` | 基础视频、透明图层、可编辑时间轴和待确认状态 |
+| `media_resources/ai8video/` | 可选归档、批次报告和告警 |
+| `temp/ai8video/` | 可丢弃、可重建的任务账本和运行时状态 |
+| `mykey.py`、`.env` | 本地密钥和配置，不会提交到仓库 |
 
 ## 测试
-
-离线测试不会调用真实模型或触发视频生成：
 
 ```bash
 AI8VIDEO_DISABLE_MYKEY=1 \
@@ -352,26 +447,51 @@ PYTHONPATH=src \
 python -m unittest discover -s tests
 ```
 
-`tests/` 用于防止重构破坏 Agent Runtime、生成、媒体、批量任务、资产管理和 Web 接口。
+测试说明：
 
----
+- 测试套件使用标准库 `unittest`，覆盖 Agent Runtime、生成、媒体、批量、资产和 Web 接口；
+- 完整测试包含真实 Node 子进程测试，请先安装 Node.js `22+`；
+- FFmpeg 缺失时，部分媒体测试会跳过；
+- PostgreSQL 集成测试只在设置 `AI8VIDEO_TEST_POSTGRES_URL` 后运行；
+- PostgreSQL 测试会清理专用测试表，**只能使用独立、可丢弃的测试数据库，严禁指向生产库或用户库**。
 
-## 参与开发
+## Electron 与部署边界
 
-提交改动前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。项目坚持本地有界单体和纯 Python 核心，不引入无关的通用 Agent 框架、重复入口或仓库内大型二进制。
+Electron 位于 `desktop/electron/`，负责承载桌面窗口并发现或启动本地 Python Web 服务。短视频业务仍由项目目录中的 Python Runtime 执行。
 
----
+```bash
+cd desktop/electron
+npm install
+npm run dev
+npm run dist:mac
+npm run dist:win
+```
+
+当前边界：
+
+- Web 服务固定监听 `127.0.0.1`；
+- 项目未提供官方 Docker、Compose、Kubernetes 或生产服务器部署方案；
+- 当前 Web 层没有面向公网的认证和 TLS，不应直接反向代理到公网；
+- Electron DMG/NSIS 是桌面启动壳，不包含完整 Python 服务、项目源码和媒体依赖。
 
 ## 安全说明
 
-- Web 服务默认只监听 `127.0.0.1`，不会主动暴露到局域网或公网。
-- 用户素材和生成结果默认保存在本地；启用 S3 归档时，只有配置的归档内容会发送到对应存储服务。
-- 调用文本、图片、视频或 TTS 模型时，请求会发送到你配置的服务提供商，请自行确认其隐私与计费政策。
-- 不要把真实 API Key、数据库密码、用户素材或生成结果提交到仓库。
-- FFmpeg 是外部运行时，仓库不分发 FFmpeg 二进制。
+- 不要提交真实 API Key、数据库密码、S3 凭据、用户素材或生成结果；
+- 启用模型前确认服务商的隐私、内容审核和计费政策；
+- S3 归档只有在明确配置后才会发送对应产物；
+- FFmpeg 是外部运行时，仓库不分发其二进制；
+- 本项目是本地生产工具，不是经过加固的公网多租户服务；
+- Agent 不拥有 Shell、任意文件或通用网络工具权限。
 
----
+## 参与开发
+
+提交改动前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。项目坚持本地有界单体和纯 Python 核心，不重复实现入口，不用伪成功掩盖外部错误，也不为尚不存在的需求引入微服务或通用 Agent 框架。
+
+- 架构与边界：[ARCHITECTURE.md](ARCHITECTURE.md)
+- 第三方依赖声明：[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+- 字体授权：[FONT_LICENSES.md](FONT_LICENSES.md)
+- 问题反馈：[GitHub Issues](https://github.com/17AI8/AI8Video/issues)
 
 ## License
 
-项目源码采用 [MIT License](LICENSE)。第三方依赖及其许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+项目源码采用 [MIT License](LICENSE)。第三方依赖、模型和媒体运行时遵循各自许可证与服务条款。

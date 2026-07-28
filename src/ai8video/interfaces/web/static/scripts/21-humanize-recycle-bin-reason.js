@@ -1,3 +1,5 @@
+    const messageBubbleEnterUntil = new Map();
+
     function humanizeRecycleBinReason(value) {
       const text = String(value || '').trim();
       const lowered = text.toLowerCase();
@@ -398,6 +400,16 @@
       repairRecoveredSmartSplitFailure(session);
       if (stripStaleWelcomeMessages(session)) persistSessions();
       renderClearConversationButton(session);
+      const sessionId = String(session?.id || '');
+      const renderedSessionId = String(els.messages.dataset.renderedSessionId || '');
+      const renderedMessageCount = renderedSessionId === sessionId
+        ? Array.from(els.messages.children).filter((node) => node.classList.contains('message')).length
+        : 0;
+      const bubbleEnterNow = Date.now();
+      messageBubbleEnterUntil.forEach((until, key) => {
+        if (until <= bubbleEnterNow) messageBubbleEnterUntil.delete(key);
+      });
+      els.messages.dataset.renderedSessionId = sessionId;
       const scroller = els.messages.parentElement;
       const distanceFromBottom = Math.max(0, scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight);
       const shouldStickToBottom = distanceFromBottom < 64;
@@ -414,7 +426,14 @@
           + (message.role === 'user' ? ' user' : '')
           + (message.textCleared ? ' text-cleared' : '')
           + (isWelcomeMessage(message) ? ' is-welcome' : '');
-        const avatar = message.role === 'user' ? '我' : '讯';
+        const bubbleEnterKey = `${sessionId}:${messageIndex}`;
+        if (renderedSessionId !== sessionId || messageIndex >= renderedMessageCount) {
+          messageBubbleEnterUntil.set(bubbleEnterKey, bubbleEnterNow + 340);
+        }
+        if ((messageBubbleEnterUntil.get(bubbleEnterKey) || 0) > bubbleEnterNow) {
+          wrap.classList.add('is-bubble-entering');
+        }
+        const avatar = message.role === 'user' ? '我' : 'AI8video';
         wrap.innerHTML = `<div class="avatar">${avatar}</div><div class="bubble"></div>`;
         const bubble = wrap.querySelector('.bubble');
         if (message.role === 'user') {
@@ -478,7 +497,17 @@
       els.clearConversationConfirmModal?.classList.add('hidden');
     }
 
-    function clearActiveConversationTextMessages() {
+    function playMessageBubbleLeaveAnimation() {
+      const messageNodes = Array.from(els.messages?.children || [])
+        .filter((node) => node.classList?.contains('message'));
+      if (!messageNodes.length || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        return Promise.resolve();
+      }
+      messageNodes.forEach((node) => node.classList.add('is-bubble-leaving'));
+      return new Promise((resolve) => window.setTimeout(resolve, 240));
+    }
+
+    async function clearActiveConversationTextMessages() {
       const session = getActiveSession();
       if (!session) return;
       const before = Array.isArray(session.messages) ? session.messages.length : 0;
@@ -486,6 +515,7 @@
         renderClearConversationButton(session);
         return;
       }
+      await playMessageBubbleLeaveAnimation();
       session.messages = [];
       session.title = NEW_SESSION_TITLE;
       persistSessions();

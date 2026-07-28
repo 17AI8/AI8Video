@@ -25,6 +25,10 @@ class AI8VideoConversationControllerGenerationSummaryTest(unittest.TestCase):
             "ai8video.application.conversation_controller.default_concurrent_generation_enabled",
             return_value=False,
         )
+        self.default_smart_split_patcher = patch(
+            "ai8video.application.conversation_controller.default_smart_split_enabled",
+            return_value=False,
+        )
         self.default_html_motion_patcher = patch(
             "ai8video.application.conversation_controller.default_html_motion_overlay_enabled",
             return_value=False,
@@ -32,10 +36,12 @@ class AI8VideoConversationControllerGenerationSummaryTest(unittest.TestCase):
         self.default_script_reference_patcher.start()
         self.default_reference_image_patcher.start()
         self.default_generation_mode_patcher.start()
+        self.default_smart_split_patcher.start()
         self.default_html_motion_patcher.start()
 
     def tearDown(self) -> None:
         self.default_generation_mode_patcher.stop()
+        self.default_smart_split_patcher.stop()
         self.default_html_motion_patcher.stop()
         self.default_reference_image_patcher.stop()
         self.default_script_reference_patcher.stop()

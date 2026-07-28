@@ -1,0 +1,57 @@
+.main.is-grid-background {
+  background-image:
+    linear-gradient(rgba(79, 109, 255, 0.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(79, 109, 255, 0.14) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.main.is-dots-background {
+  background-image: radial-gradient(circle, rgba(79, 109, 255, 0.3) 1.25px, transparent 1.5px);
+  background-size: 20px 20px;
+}
+
+.main.is-blank-background {
+  background-image: none;
+}
+
+.main-background-button {
+  pointer-events: auto;
+  min-width: 84px;
+  min-height: 38px;
+  padding: 0 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid rgba(79, 109, 255, 0.32);
+  border-radius: 8px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(229, 238, 255, 0.86));
+  color: #3158e2;
+  box-shadow: 0 9px 22px rgba(47, 109, 183, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.76);
+  font-size: 13px;
+  font-weight: 900;
+  transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.main-background-button svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.main-background-button:hover {
+  border-color: rgba(79, 109, 255, 0.5);
+  background: linear-gradient(145deg, #fff, rgba(223, 234, 255, 0.94));
+  box-shadow: 0 11px 25px rgba(47, 109, 183, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+@media (max-width: 760px) {
+  .conversation-actions { gap: 6px; }
+  .mobile-settings-entry-button { min-width: 72px; padding-inline: 10px; }
+  .clear-conversation-button { min-width: 96px; padding-inline: 11px; }
+  .main-background-button { min-width: 78px; padding-inline: 10px; }
+}

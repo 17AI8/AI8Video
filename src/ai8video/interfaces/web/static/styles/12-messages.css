@@ -22,6 +22,44 @@
       transform: translateY(-8px);
     }
 
+    .message.is-bubble-entering > .bubble {
+      animation: message-bubble-fade-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    .message.is-bubble-leaving > .bubble {
+      pointer-events: none;
+      animation: message-bubble-fade-out 220ms ease forwards;
+    }
+
+    @keyframes message-bubble-fade-in {
+      from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.985);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    @keyframes message-bubble-fade-out {
+      from {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+      to {
+        opacity: 0;
+        transform: translateY(-6px) scale(0.985);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .message.is-bubble-entering > .bubble,
+      .message.is-bubble-leaving > .bubble {
+        animation: none;
+      }
+    }
+
     .message.pinned-progress {
       position: sticky;
       top: 0;
@@ -42,7 +80,7 @@
       border-radius: 50%;
       display: grid;
       place-items: center;
-      background: transparent url("/static/images/ai8video-avatar.png?v=20260727-1") center / contain no-repeat;
+      background: transparent url("/static/images/ai8video-sidebar-brand.png?v=20260728-1") center / contain no-repeat;
       color: transparent;
       font-weight: 900;
       font-size: 0;
@@ -100,7 +138,12 @@
     }
 
     .message:not(.user) .bubble.pending-only {
-      width: 100%;
+      width: fit-content;
+      max-width: min(100%, 760px);
+    }
+
+    .bubble.pending-only > .pending-card {
+      width: fit-content;
       max-width: 100%;
     }
 

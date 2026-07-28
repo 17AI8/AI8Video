@@ -189,7 +189,8 @@ class AI8VideoVideoMergeRoutingTest(unittest.TestCase):
                 patch(
                     "ai8video.application.conversation_controller.enabled_default_reference_image_options",
                     return_value={"autoChangeClothes": True, "autoChangeBackground": False, "autoChangePose": True},
-                ), patch("ai8video.application.conversation_controller.default_concurrent_generation_enabled", return_value=True):
+                ), patch("ai8video.application.conversation_controller.default_concurrent_generation_enabled", return_value=True), \
+                patch("ai8video.application.conversation_controller.default_smart_split_enabled", return_value=False):
             reply = agent.handle_message("merge2-tabs-concurrent", "2个")
 
         self.assertEqual(reply.stage, "completed")

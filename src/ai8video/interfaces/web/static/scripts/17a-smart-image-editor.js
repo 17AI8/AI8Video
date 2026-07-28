@@ -102,7 +102,7 @@
             <div id="smartImageMarquee" class="smart-image-marquee hidden"></div>
             <div id="smartImageEmpty" class="smart-image-canvas-empty"><span>${smartImageIcon('upload')}</span><strong>把图片拖到这里开始创作</strong><small>滚轮缩放，空格拖动画布，支持多选和撤销</small><button type="button" data-smart-image-action="upload">选择图片</button></div>
             <div id="smartImageMinimap" class="smart-image-minimap" aria-label="画布小地图"></div>
-            <div class="smart-image-processing-overlay" aria-live="polite" aria-hidden="true"><div class="smart-image-processing-card"><strong id="smartImageProcessingPercent">0% · 0/0</strong><div class="smart-image-processing-track"><i id="smartImageProcessingBar"></i></div></div></div>
+            <div class="smart-image-processing-overlay" aria-live="polite" aria-hidden="true"><div class="smart-image-processing-card"><strong id="smartImageProcessingPercent"><span id="smartImageProcessingPercentValue">0%</span> · <span id="smartImageProcessingCount" class="smart-image-processing-count">0/0</span></strong><div class="smart-image-processing-track"><i id="smartImageProcessingBar"></i></div></div></div>
           </div>
         </main>
       `;

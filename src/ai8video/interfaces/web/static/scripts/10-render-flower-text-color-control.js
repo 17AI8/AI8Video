@@ -135,31 +135,40 @@
       } else if (String(model.summary || '').trim()) {
         meta = String(model.summary).trim().slice(0, 28);
       }
-      els.progressPanel.innerHTML = `
-        <div class="progress-card material-card">
-          <div class="material-heading">
-            <div class="material-title">${escapeHtml(model.title || '当前进度')}</div>
-            <div class="material-meta">${escapeHtml(meta)}</div>
-          </div>
-          <div class="material-actions">
-            <button type="button" class="material-library-button" data-show-result-modal="1">查看结果</button>
-          </div>
-        </div>
-      `;
+      els.progressPanel.innerHTML = buildSidebarNavItemMarkup({
+        icon: 'progress',
+        title: model.title || '当前进度',
+        meta,
+        actionLabel: '查看结果',
+        attrs: 'data-show-result-modal="1"',
+        extraClass: 'progress-card',
+      });
     }
 
-    function renderProgressOverview(overview) {
+    function renderProgressOverview(overview, stepChainMarkup = '') {
       if (!overview) return '';
       const pendingClass = overview.pending ? ' pending' : '';
       const terminalClass = overview.terminal ? ' terminal' : '';
       const percent = Math.max(0, Math.min(100, Number(overview.percent || 0)));
+      const stepChain = String(stepChainMarkup || '').trim();
+      const middle = stepChain || `
+        <div class="progress-overview-track${pendingClass}${terminalClass}" aria-hidden="true">
+          <div class="progress-overview-fill" style="--progress: ${percent}%"></div>
+        </div>
+      `;
       return `
         <div class="progress-overview">
-          <div class="progress-overview-row">
+          <div
+            class="progress-overview-row${stepChain ? ' has-step-chain' : ''}"
+            role="progressbar"
+            aria-label="总体进度"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="${percent}"
+            aria-valuetext="${escapeHtml(overview.label || `${percent}%`)}"
+          >
             <strong>总体进度</strong>
-            <div class="progress-overview-track${pendingClass}${terminalClass}" aria-label="总体进度">
-              <div class="progress-overview-fill" style="--progress: ${percent}%"></div>
-            </div>
+            ${middle}
             <span class="progress-overview-value">${escapeHtml(overview.label || `${percent}%`)}</span>
           </div>
         </div>

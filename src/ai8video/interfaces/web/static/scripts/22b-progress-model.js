@@ -1,3 +1,66 @@
+    const AGENT_STEP_ORBIT_DURATION_MS = 1200;
+
+    function buildAgentStepChainModel(pending = {}) {
+      const progress = pending.generationProgress || {};
+      const items = Array.isArray(progress.items) ? progress.items : [];
+      const itemStatuses = items.map((item) => String(item?.status || '').trim());
+      const countStatuses = (statuses) => itemStatuses.filter((value) => statuses.has(value)).length;
+      const phase = String(pending.phase || '').trim();
+      const status = String(pending.status || '').trim();
+      const total = Number(progress.totalRequested || pending.videoCount || 0) || 0;
+      const submitted = Number(progress.submittedCount || 0) || 0;
+      const finished = Number(progress.succeededCount || 0) || 0;
+      const failed = Number(progress.failedCount || 0) || 0;
+      const planning = phase === 'planning' || String(progress.status || '').trim() === 'planning';
+      const planningCount = countStatuses(new Set(['pending_submission', 'planning']));
+      const submittingCount = countStatuses(new Set(['preparing_first_frame', 'submitting']));
+      const generatingCount = countStatuses(new Set(['submitted', 'polling']));
+      const archivingCount = countStatuses(new Set(['archiving']));
+      const archiveStarted = archivingCount > 0 || (Array.isArray(progress.events) && progress.events.some(
+        (event) => String(event?.status || '').trim() === 'archiving'
+      ));
+      const terminal = ['cancelled', 'canceled'].includes(status)
+        || (total > 0 && finished + failed >= total);
+      let activeStepIndex = 0;
+      if (!terminal && (planning || planningCount)) activeStepIndex = 1;
+      else if (!terminal && submittingCount) activeStepIndex = 2;
+      else if (!terminal && generatingCount) activeStepIndex = 3;
+      else if (!terminal && archiveStarted) activeStepIndex = 4;
+      else if (!terminal && submitted) activeStepIndex = 3;
+      const steps = [
+        { label: '理解需求', detail: activeStepIndex === 0 ? '正在整理你的目标、数量和已附带素材。' : '已识别本次任务的核心要求。' },
+        { label: '规划任务', detail: activeStepIndex === 1 ? '正在拆分可执行的视频任务并核对生成条件。' : activeStepIndex > 1 || terminal ? '已形成生成任务和执行顺序。' : '等待需求理解完成后开始规划。' },
+        { label: '提交生成', detail: activeStepIndex === 2 ? `正在准备并提交 ${submittingCount || total || 1} 个视频任务。` : submitted ? `已提交 ${submitted}/${total || submitted} 个生成任务。` : '等待任务规划完成后提交。' },
+        { label: '生成视频', detail: activeStepIndex === 3 ? `正在生成 ${generatingCount || submitted || 1} 个视频任务。` : terminal ? `已生成 ${finished} 个${failed ? `，${failed} 个失败` : ''}。` : '等待上游视频服务开始处理。' },
+        { label: '归档结果', detail: activeStepIndex === 4 ? `正在整理 ${archivingCount || 1} 个已生成结果。` : terminal ? '本轮任务已结束，结果会保留在当前对话和结果库。' : '视频完成后会自动整理到结果库。' },
+      ];
+      return steps.map((step, index) => ({
+        ...step,
+        state: terminal
+          ? (failed && index >= 3 ? 'error' : 'done')
+          : (index < activeStepIndex ? 'done' : index === activeStepIndex ? 'active' : 'waiting'),
+      }));
+    }
+
+    function renderAgentStepChain(pending = {}, options = {}) {
+      void options;
+      const steps = buildAgentStepChainModel(pending);
+      const orbitDelayMs = -(Date.now() % AGENT_STEP_ORBIT_DURATION_MS);
+      return `
+        <div class="agent-step-chain-wrap">
+          <div class="agent-step-chain" role="list" aria-label="任务步骤链" style="--agent-step-orbit-delay:${orbitDelayMs}ms">
+            ${steps.map((step, index) => `
+              ${index ? `<span class="agent-step-connector${steps[index - 1].state === 'done' ? ' done' : ''}" aria-hidden="true"></span>` : ''}
+              <span class="agent-step ${step.state}" role="listitem"${step.state === 'active' ? ' aria-current="step"' : ''}>
+                <span class="agent-step-index">${index + 1}</span>
+                <span class="agent-step-label">${escapeHtml(step.label)}</span>
+              </span>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
     function buildProgressModel(session) {
       if (!session) return null;
       const liveProgress = buildGenerationProgressModel(session);

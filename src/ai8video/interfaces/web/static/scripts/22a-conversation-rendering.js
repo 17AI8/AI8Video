@@ -148,6 +148,10 @@
               messageIndex: context.messageIndex,
             })
           : '';
+        const pendingStepChain = `${renderAgentStepChain(displayedPending, { messageIndex: context.messageIndex })}`;
+        const pendingExecutionEvents = renderAgentExecutionEvents(displayedPending, {
+          messageIndex: context.messageIndex,
+        });
         blocks.push(`
           <div class="mini-card pending-card${staticPending ? ' is-history' : ''}">
             <div class="pending-card-head">
@@ -157,8 +161,8 @@
               </div>
               ${pendingCancel}
             </div>
-            ${renderProgressOverview(pendingOverview)}
-            ${renderAgentStepChain(displayedPending, { messageIndex: context.messageIndex })}
+            ${renderProgressOverview(pendingOverview, pendingStepChain)}
+            ${pendingExecutionEvents}
           </div>
         `);
       }
@@ -258,55 +262,6 @@
           }],
         },
       };
-    }
-
-    function buildAgentStepChainModel(pending = {}) {
-      const progress = pending.generationProgress || {};
-      const items = Array.isArray(progress.items) ? progress.items : [];
-      const phase = String(pending.phase || '').trim();
-      const status = String(pending.status || '').trim();
-      const total = Number(progress.totalRequested || pending.videoCount || 0) || 0;
-      const submitted = Number(progress.submittedCount || 0) || 0;
-      const generatingStatuses = new Set(['submitting', 'preparing_first_frame', 'submitted', 'polling']);
-      const generating = items.filter((item) => generatingStatuses.has(String(item?.status || '').trim())).length;
-      const finished = Number(progress.succeededCount || 0) || 0;
-      const failed = Number(progress.failedCount || 0) || 0;
-      const archiving = items.filter((item) => String(item?.status || '').trim() === 'archiving').length;
-      const archiveStarted = archiving > 0 || (Array.isArray(progress.events) && progress.events.some(
-        (event) => String(event?.status || '').trim() === 'archiving'
-      ));
-      const terminal = ['cancelled', 'canceled'].includes(status)
-        || (total > 0 && finished + failed >= total);
-      const planning = phase === 'planning' || String(progress.status || '').trim() === 'planning';
-      const planningState = planning ? 'active' : (submitted || generating || archiveStarted || terminal ? 'done' : 'waiting');
-      const understandingState = planningState === 'waiting' ? 'active' : (planning ? 'active' : 'done');
-      const generationState = generating ? 'active' : (archiveStarted ? 'done' : (terminal ? (failed ? 'error' : 'done') : 'waiting'));
-      const archiveState = archiving ? 'active' : (terminal ? (failed ? 'error' : 'done') : 'waiting');
-      return [
-        { label: '理解需求', state: understandingState, detail: understandingState === 'active' ? '正在整理你的目标、数量和已附带素材。' : '已识别本次任务的核心要求。' },
-        { label: '规划任务', state: planningState, detail: planningState === 'active' ? '正在拆分可执行的视频任务并核对生成条件。' : planningState === 'done' ? '已形成生成任务和执行顺序。' : '等待需求理解完成后开始规划。' },
-        { label: '提交生成', state: submitted || generating || archiveStarted || terminal ? 'done' : 'waiting', detail: submitted ? `已提交 ${submitted}/${total || submitted} 个生成任务。` : '等待任务规划完成后提交。' },
-        { label: '生成视频', state: generationState, detail: generating ? `正在生成 ${generating} 个视频任务。` : archiveStarted ? '视频生成已完成，正在处理本地结果。' : terminal ? `已生成 ${finished} 个${failed ? `，${failed} 个失败` : ''}。` : '等待上游视频服务开始处理。' },
-        { label: '归档结果', state: archiveState, detail: archiving ? `正在整理 ${archiving} 个已生成结果。` : terminal ? '本轮任务已结束，结果会保留在当前对话和结果库。' : '视频完成后会自动整理到结果库。' },
-      ];
-    }
-
-    function renderAgentStepChain(pending = {}, options = {}) {
-      const steps = buildAgentStepChainModel(pending);
-      return `
-        <div class="agent-step-chain-wrap">
-          <div class="agent-step-chain" aria-label="任务步骤链">
-            ${steps.map((step, index) => `
-              ${index ? '<span class="agent-step-connector" aria-hidden="true"></span>' : ''}
-              <span class="agent-step ${step.state}">
-                <span class="agent-step-index">${index + 1}</span>
-                <span>${escapeHtml(step.label)}</span>
-              </span>
-            `).join('')}
-          </div>
-        </div>
-        ${renderAgentExecutionEvents(pending, options)}
-      `;
     }
 
     function buildAgentStepDetailsKey(sessionId, messageIndex) {

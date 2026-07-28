@@ -3,6 +3,8 @@
 
     async function init() {
       document.title = `${BRAND_NAME} 工作台`;
+      bindSidebarCollapse();
+      bindMainBackgroundSwitcher();
 
       if (els.brandName) {
         els.brandName.textContent = BRAND_NAME;

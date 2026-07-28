@@ -288,7 +288,8 @@ class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
                 patch("ai8video.knowledge.default_script_reference.read_script_material_text") as read_full, \
                 patch("ai8video.application.conversation_controller.default_reference_image_path", return_value="/tmp/default.png"), \
                 patch("ai8video.application.conversation_controller.enabled_default_reference_image_options", return_value={}), \
-                patch("ai8video.application.conversation_controller.default_concurrent_generation_enabled", return_value=True):
+                patch("ai8video.application.conversation_controller.default_concurrent_generation_enabled", return_value=True), \
+                patch("ai8video.application.conversation_controller.default_smart_split_enabled", return_value=False):
             reply = agent.handle_message("script-ref-count-batch-misread", "5个")
 
         self.assertEqual(reply.stage, "completed")
@@ -331,7 +332,8 @@ class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
         agent.sessions[session_id] = state
 
         with patch("ai8video.knowledge.default_script_reference.load_default_script_reference", return_value=script_item), \
-                patch("ai8video.knowledge.default_script_reference.read_script_material_text", return_value="参考剧本正文：AI8video 全球发布倒计时。"):
+                patch("ai8video.knowledge.default_script_reference.read_script_material_text", return_value="参考剧本正文：AI8video 全球发布倒计时。"), \
+                patch("ai8video.application.conversation_controller.default_smart_split_enabled", return_value=False):
             reply = agent.handle_message(session_id, "开始生成")
 
         self.assertEqual(reply.stage, "completed")

@@ -10,8 +10,12 @@
       align-items: center;
       gap: 6px;
       min-width: 0;
-      overflow-x: auto;
+      padding: 4px 0;
+      overflow: visible;
+      scrollbar-width: none;
     }
+
+    .agent-step-chain::-webkit-scrollbar { display: none; }
 
     .agent-step {
       display: inline-flex;
@@ -25,30 +29,85 @@
     }
 
     .agent-step-index {
-      display: grid;
-      width: 18px;
-      height: 18px;
-      place-items: center;
+      position: relative;
+      display: inline-flex;
+      flex: 0 0 20px;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      min-width: 20px;
+      max-width: 20px;
+      height: 20px;
+      box-sizing: border-box;
       border: 1px solid currentColor;
       border-radius: 50%;
+      background: rgba(255, 255, 255, 0.72);
       font-size: 10px;
+      line-height: 1;
+      text-align: center;
       font-variant-numeric: tabular-nums;
     }
 
     .agent-step.done { color: #15803d; }
     .agent-step.active { color: #3158e2; }
 
+    .agent-step.done .agent-step-index {
+      background: rgba(220, 252, 231, 0.82);
+    }
+
     .agent-step.active .agent-step-index {
       border-color: transparent;
       color: #fff;
       background: #3158e2;
-      box-shadow: 0 0 0 3px rgba(49, 88, 226, 0.12);
+      box-shadow: 0 2px 7px rgba(49, 88, 226, 0.28);
+    }
+
+    .agent-step.active .agent-step-index::before {
+      position: absolute;
+      inset: -4px;
+      border: 2px solid rgba(99, 102, 241, 0.46);
+      border-top-color: #3158e2;
+      border-right-color: #8b5cf6;
+      border-radius: 50%;
+      content: "";
+      pointer-events: none;
+      animation: agentStepOrbit 1.2s linear infinite;
+      animation-delay: var(--agent-step-orbit-delay, 0ms);
     }
 
     .agent-step-connector {
       flex: 0 0 14px;
       height: 1px;
       background: rgba(148, 163, 184, 0.58);
+    }
+
+    .agent-step-connector.done {
+      background: rgba(34, 197, 94, 0.66);
+    }
+
+    .progress-overview-row.has-step-chain {
+      width: max-content;
+      max-width: 100%;
+      grid-template-columns: auto max-content auto;
+      gap: 12px;
+    }
+
+    .progress-overview-row.has-step-chain .agent-step-chain-wrap {
+      width: auto;
+      margin: 0;
+    }
+
+    .progress-overview-row.has-step-chain .agent-step-chain {
+      width: auto;
+      justify-content: flex-start;
+    }
+
+    .progress-overview-row.has-step-chain .agent-step-connector {
+      flex: 0 0 14px;
+    }
+
+    @keyframes agentStepOrbit {
+      to { transform: rotate(360deg); }
     }
 
     .agent-step-details {
@@ -135,6 +194,35 @@
     @media (prefers-reduced-motion: reduce) {
       .agent-step-details-drawer {
         transition: none;
+      }
+
+      .agent-step.active .agent-step-index::before {
+        animation: none;
+        border-color: rgba(49, 88, 226, 0.32);
+        border-top-color: #3158e2;
+      }
+    }
+
+    @media (max-width: 680px) {
+      .progress-overview-row.has-step-chain {
+        width: 100%;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 7px;
+      }
+
+      .progress-overview-row.has-step-chain .agent-step-chain {
+        gap: 4px;
+        overflow-x: auto;
+        overflow-y: hidden;
+      }
+
+      .progress-overview-row.has-step-chain .agent-step {
+        gap: 3px;
+        font-size: 10px;
+      }
+
+      .progress-overview-row.has-step-chain .agent-step-connector {
+        min-width: 4px;
       }
     }
 

@@ -410,6 +410,7 @@
       shell: document.querySelector('.shell'),
       brandName: document.getElementById('brandName'),
       brandSlug: document.getElementById('brandSlug'),
+      sidebarCollapseButton: document.getElementById('sidebarCollapseButton'),
       progressPanel: document.getElementById('progressPanel'),
       settingsEntryButton: document.getElementById('settingsEntryButton'),
       mobileSettingsEntryButton: document.getElementById('mobileSettingsEntryButton'),

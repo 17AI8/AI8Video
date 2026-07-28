@@ -96,7 +96,7 @@ class AgentSkillRegistryTests(unittest.TestCase):
         )
         review_prompt = build_knowledge_review_prompt(request, proposal)
         shot_messages = viral_breakdown_shot_language._build_analysis_messages(
-            {"transcript": {"text": "台词"}, "selectedFrames": []}
+            {"transcript": {"text": "台词"}, "selectedFrames": [], "rowBatches": []}
         )
         script_messages = viral_breakdown._build_script_guess_messages(
             "台词",

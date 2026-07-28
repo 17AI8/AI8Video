@@ -400,18 +400,14 @@
     function renderMaterialLibrary(container, kind, items, title, emptyText) {
       if (!container) return;
       const openLabel = kind === 'script' ? '打开知识库' : '打开素材库';
-      container.innerHTML = `
-        <div class="material-card">
-          <div class="material-heading">
-            <div class="material-title">${escapeHtml(title)}</div>
-            <div class="material-meta">${escapeHtml(items.length ? `${items.length} 个文件` : emptyText)}</div>
-          </div>
-          <div class="material-actions">
-            <button type="button" class="material-library-button" data-show-user-materials="${escapeHtml(kind)}">${openLabel}</button>
-            <button type="button" class="material-add-button" data-add-user-material="${escapeHtml(kind)}">添加素材</button>
-          </div>
-        </div>
-      `;
+      const meta = items.length ? `${items.length} 个文件` : '暂无文件';
+      container.innerHTML = buildSidebarNavItemMarkup({
+        icon: kind === 'script' ? 'script' : 'image',
+        title,
+        meta,
+        actionLabel: openLabel,
+        attrs: `data-show-user-materials="${escapeHtml(kind)}"`,
+      });
     }
 
     function renderMaterialLibraryModal() {
