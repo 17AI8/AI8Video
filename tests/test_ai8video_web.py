@@ -5095,6 +5095,12 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("buildTtsWaveformPath", html)
         self.assertIn("waveformPeaks", html)
         self.assertIn("修改台词", html)
+        self.assertIn("导出 MP3", html)
+        self.assertIn('data-video-preview-action="export-tts-mp3"', html)
+        self.assertIn("exportTtsMp3FromVideoPreview", html)
+        self.assertIn("/api/user-generated-results/export-tts-mp3", html)
+        self.assertIn("保存为…", html)
+        self.assertIn("请设置 MP3 文件名和保存位置", html)
         self.assertIn('id="resultModalBatchMergeButton"', html)
         self.assertIn('data-result-batch-merge-select', html)
         self.assertIn("/api/user-generated-results/batch-merge", html)
@@ -5686,6 +5692,29 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         ):
             with self.assertRaisesRegex(RuntimeError, "BGM 混音失败"):
                 ai8video_web._regenerate_user_generated_tts("video/demo.mp4")
+
+    def test_api_export_user_generated_tts_mp3_passes_video_key(self) -> None:
+        request_backup = ai8video_web.request
+        response_backup = ai8video_web.response
+        ai8video_web.request = SimpleNamespace(
+            method="POST",
+            json={"userGeneratedKey": "video/demo.mp4"},
+        )
+        ai8video_web.response = SimpleNamespace(status=200)
+        expected = {"ok": True, "canceled": False, "fileName": "demo-TTS配音.mp3"}
+        try:
+            with patch.object(
+                ai8video_web,
+                "_export_user_generated_tts_mp3",
+                return_value=expected,
+            ) as export_mp3:
+                body = ai8video_web.api_export_user_generated_tts_mp3()
+        finally:
+            ai8video_web.request = request_backup
+            ai8video_web.response = response_backup
+
+        self.assertEqual(body, expected)
+        export_mp3.assert_called_once_with("video/demo.mp4")
 
     def test_tts_timeline_starts_complete_and_preserves_source_order(self) -> None:
         complete = tts_timeline_review.normalize_tts_timeline_chunks(

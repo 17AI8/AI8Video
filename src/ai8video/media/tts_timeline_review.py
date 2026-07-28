@@ -295,11 +295,33 @@ def _tts_timeline_ffmpeg_command(
     tts_volume: float,
     ffmpeg: str,
 ) -> list[str]:
+    filter_complex = build_tts_timeline_audio_filter(
+        chunks,
+        duration_seconds,
+        tts_volume,
+        source_label="[1:a:0]",
+    )
+    return [
+        ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+        "-i", str(visual_source), "-i", str(audio_path),
+        "-filter_complex", filter_complex,
+        "-map", "0:v:0", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac",
+        "-t", f"{float(duration_seconds):.3f}", "-movflags", "+faststart", str(target),
+    ]
+
+
+def build_tts_timeline_audio_filter(
+    chunks: list[dict[str, Any]],
+    duration_seconds: float,
+    tts_volume: float,
+    *,
+    source_label: str = "[0:a:0]",
+) -> str:
     filters: list[str] = []
-    source_labels = ["[1:a:0]"]
+    source_labels = [source_label]
     if len(chunks) > 1:
         source_labels = [f"[source{index}]" for index in range(len(chunks))]
-        filters.append(f"[1:a:0]asplit={len(chunks)}{''.join(source_labels)}")
+        filters.append(f"{source_label}asplit={len(chunks)}{''.join(source_labels)}")
     output_labels = []
     for index, item in enumerate(chunks):
         label = f"tts{index}"
@@ -319,13 +341,7 @@ def _tts_timeline_ffmpeg_command(
     filters.append(
         f"{mixed}apad,atrim=duration={float(duration_seconds):.3f},asetpts=N/SR/TB[aout]"
     )
-    return [
-        ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
-        "-i", str(visual_source), "-i", str(audio_path),
-        "-filter_complex", ";".join(filters),
-        "-map", "0:v:0", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac",
-        "-t", f"{float(duration_seconds):.3f}", "-movflags", "+faststart", str(target),
-    ]
+    return ";".join(filters)
 
 
 def _media_durations(video_path: Path, audio_path: Path) -> tuple[float, float]:

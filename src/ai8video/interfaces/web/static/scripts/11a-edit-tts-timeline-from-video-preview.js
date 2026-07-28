@@ -345,6 +345,41 @@
       void previewTtsTimeline(userGeneratedKey, '已恢复为完整配音');
     }
 
+    async function exportTtsMp3FromVideoPreview(userGeneratedKey, button) {
+      const key = String(userGeneratedKey || '').trim();
+      if (!key || button?.dataset.exportBusy === 'true') return;
+      const previousLabel = button?.textContent || '导出 MP3';
+      if (button) {
+        button.dataset.exportBusy = 'true';
+        button.disabled = true;
+        button.textContent = '保存为…';
+      }
+      setTtsTimelineStatus('请设置 MP3 文件名和保存位置', 'working');
+      try {
+        const res = await fetch('/api/user-generated-results/export-tts-mp3', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userGeneratedKey: key }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.ok === false) throw buildRequestError(data);
+        if (data?.canceled) {
+          setTtsTimelineStatus('已取消导出');
+          return;
+        }
+        if (button && data?.outputPath) button.title = `已导出到 ${data.outputPath}`;
+        setTtsTimelineStatus(`已导出 ${data?.fileName || 'MP3'}`, 'success');
+      } catch (error) {
+        setTtsTimelineStatus(error?.message || 'MP3 导出失败', 'error');
+      } finally {
+        if (button) {
+          delete button.dataset.exportBusy;
+          button.disabled = false;
+          button.textContent = previousLabel;
+        }
+      }
+    }
+
     function beginTtsChunkDrag(event, element, duration) {
       const index = Number(element.dataset.chunkIndex);
       const chunks = state.videoPreviewModal?.ttsTimelineChunks || [];

@@ -137,6 +137,11 @@ from ai8video.media.local_tts import (
     synthesize_local_tts,
     update_local_tts_settings,
 )
+from ai8video.media.tts_mp3_export import (
+    choose_tts_mp3_export_path,
+    export_tts_timeline_mp3,
+    load_tts_mp3_export_directory,
+)
 from ai8video.media.tts_timeline_review import (
     mark_tts_timeline_review_confirmed,
     pending_tts_timeline_review,
@@ -2527,6 +2532,27 @@ def _current_tts_timeline_status(video_path: Path, relative_key: str) -> dict[st
         audio_path=context["audioPath"],
         persisted_chunks=context["timelineChunks"],
         tts_volume=context["ttsVolume"],
+    )
+
+
+def _export_user_generated_tts_mp3(raw_key: object) -> dict[str, Any]:
+    video_path, relative_key = _resolve_user_generated_video_key(raw_key)
+    current = _current_tts_timeline_status(video_path, relative_key)
+    if current.get("available") is not True:
+        raise LookupError(str(current.get("reason") or "当前视频没有可导出的 TTS 配音"))
+    export_path = choose_tts_mp3_export_path(relative_key)
+    if export_path is None:
+        return {
+            "ok": True,
+            "canceled": True,
+            "exportDirectory": str(load_tts_mp3_export_directory()),
+        }
+    return export_tts_timeline_mp3(
+        Path(str(current["audioPath"])),
+        current["timelineChunks"],
+        duration_seconds=float(current["durationSeconds"]),
+        tts_volume=float(current.get("ttsVolume") or 1.0),
+        export_path=export_path,
     )
 
 
@@ -5772,6 +5798,30 @@ def api_user_generated_tts_timeline_preview():
         return {"ok": False, "error": "payload must be an object"}
     try:
         return _prepare_tts_timeline_preview(payload.get("userGeneratedKey"), payload.get("chunks"))
+    except FileNotFoundError:
+        response.status = 404
+        return {"ok": False, "error": "视频或配音已删除"}
+    except LookupError as exc:
+        response.status = 409
+        return {"ok": False, "error": str(exc)}
+    except ValueError as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+    except RuntimeError as exc:
+        response.status = 500
+        return {"ok": False, "error": str(exc)}
+
+
+@app.route("/api/user-generated-results/export-tts-mp3", method=["POST", "OPTIONS"])
+def api_export_user_generated_tts_mp3():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    if not isinstance(payload, dict):
+        response.status = 400
+        return {"ok": False, "error": "payload must be an object"}
+    try:
+        return _export_user_generated_tts_mp3(payload.get("userGeneratedKey"))
     except FileNotFoundError:
         response.status = 404
         return {"ok": False, "error": "视频或配音已删除"}

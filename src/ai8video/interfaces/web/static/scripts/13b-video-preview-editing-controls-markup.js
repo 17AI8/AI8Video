@@ -39,6 +39,7 @@
               <button type="button" class="video-preview-button video-preview-tts-tool-button" data-video-preview-tts-editor-action data-video-preview-action="smart-split-tts" data-icon="sparkles" aria-label="智能切块" title="根据音波停顿智能切块">${videoPreviewIconSvg('sparkles')}</button>
               <button type="button" class="video-preview-button video-preview-tts-tool-button" data-video-preview-tts-editor-action data-video-preview-action="toggle-tts-scissors" data-icon="scissors" aria-label="剪刀工具" aria-pressed="false" title="开启剪刀工具">${videoPreviewIconSvg('scissors')}</button>
               <button type="button" class="video-preview-button video-preview-tts-tool-button video-preview-tts-delete-button" data-video-preview-tts-editor-action data-video-preview-action="delete-selected-tts-chunk" data-icon="trash" aria-label="删除所选配音块" title="请先点击选择一个配音块" disabled>${videoPreviewIconSvg('trash')}</button>
+              <button type="button" class="video-preview-button" data-video-preview-tts-editor-action data-video-preview-action="export-tts-mp3" title="自定义文件名和保存位置并导出当前时间轴配音">导出 MP3</button>
               <button type="button" class="video-preview-button" data-video-preview-tts-editor-action data-video-preview-action="reset-tts-timeline">恢复完整配音</button>
             </div>
           </div>

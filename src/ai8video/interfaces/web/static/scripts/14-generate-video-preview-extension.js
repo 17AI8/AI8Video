@@ -333,6 +333,10 @@
       els.videoPreviewBody.querySelector('[data-video-preview-action="delete-selected-tts-chunk"]')?.addEventListener('click', () => {
         deleteSelectedTtsChunk(userGeneratedKey);
       });
+      const exportTtsMp3Button = els.videoPreviewBody.querySelector('[data-video-preview-action="export-tts-mp3"]');
+      exportTtsMp3Button?.addEventListener('click', () => {
+        void exportTtsMp3FromVideoPreview(userGeneratedKey, exportTtsMp3Button);
+      });
       els.videoPreviewBody.querySelector('[data-video-preview-action="reset-tts-timeline"]')?.addEventListener('click', () => {
         resetTtsTimeline(userGeneratedKey);
       });
