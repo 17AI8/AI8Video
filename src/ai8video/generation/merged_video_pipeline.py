@@ -208,7 +208,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
             and len(videos) > 1
             and len({video.prompt for video in videos}) == 1
         )
-        final_videos = finalize_video_prompts(
+        final_videos = list(videos) if request.smart_split_reason else finalize_video_prompts(
             videos[:1] if repeated_batch else videos,
             llm=getattr(self, "llm", None),
             trace_session_id=progress_session_id,
@@ -222,7 +222,11 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         observe_reviewer_shadow(
             ordered_videos,
             session_id=progress_session_id,
-            review_source="deterministic_finalization",
+            review_source=(
+                "confirmed_smart_split_output"
+                if request.smart_split_reason
+                else "deterministic_finalization"
+            ),
             merge_mode=self._merge_mode,
         )
         for video in ordered_videos:

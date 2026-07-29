@@ -331,10 +331,19 @@
       width: 42px;
       height: 42px;
       border-radius: 14px;
+      color: #4f6dff;
       background: linear-gradient(135deg, rgba(79, 109, 255, 0.16), rgba(139, 92, 246, 0.2));
       box-shadow:
         0 10px 24px rgba(79, 109, 255, 0.16),
         inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    }
+
+    #hotRadarModal .hot-radar-brand-glyph {
+      width: 24px;
+      height: 24px;
+      background: currentColor;
+      -webkit-mask: url("/static/vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/tower-broadcast.svg") center / contain no-repeat;
+      mask: url("/static/vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/tower-broadcast.svg") center / contain no-repeat;
     }
 
     #hotRadarModal .hot-radar-brand h1,

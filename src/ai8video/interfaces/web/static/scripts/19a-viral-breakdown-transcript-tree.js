@@ -12,6 +12,9 @@
         text: String(segment.text || ''),
         deleted: !!segment.deleted,
         audioUrl: String(segment.audioUrl || ''),
+        chunkId: String(segment.chunkId || ''),
+        sourceAudioKey: String(segment.sourceAudioKey || ''),
+        durationSeconds: Number(segment.durationSeconds || 0),
       })));
     }
 
@@ -82,15 +85,17 @@
       }
     }
 
-    function moveViralBreakdownTranscriptContent(segments, fromIndex, toIndex) {
-      const payloads = segments.map((segment) => ({
-        text: String(segment.text || ''),
-        deleted: !!segment.deleted,
-        audioUrl: String(segment.audioUrl || ''),
-      }));
-      const [moved] = payloads.splice(fromIndex, 1);
-      payloads.splice(toIndex, 0, moved);
-      return segments.map((slot, index) => ({ ...slot, ...payloads[index] }));
+    function moveViralBreakdownTranscriptChunks(segments, fromIndex, toIndex) {
+      const reordered = segments.map((segment) => ({ ...segment }));
+      const [moved] = reordered.splice(fromIndex, 1);
+      reordered.splice(toIndex, 0, moved);
+      let cursor = 0;
+      return reordered.map((segment) => {
+        const duration = Math.max(0.01, Number(segment.durationSeconds) || Number(segment.end) - Number(segment.start) || 0);
+        const next = { ...segment, start: cursor, end: cursor + duration, durationSeconds: duration };
+        cursor += duration;
+        return next;
+      });
     }
 
     function bindTranscriptChunkDrag(pane, videoKey, segments) {
@@ -125,7 +130,7 @@
         chunk.classList.remove('is-dragging');
         delete chunk.dataset.dragActive;
         if (!Number.isInteger(toIndex) || fromIndex === toIndex) return;
-        commitViralBreakdownTranscriptDraft(videoKey, moveViralBreakdownTranscriptContent(segments, fromIndex, toIndex));
+        commitViralBreakdownTranscriptDraft(videoKey, moveViralBreakdownTranscriptChunks(segments, fromIndex, toIndex));
         renderViralBreakdownWorkbench();
       };
       window.addEventListener(moveEvent, move);
@@ -193,7 +198,7 @@
         button.onclick = () => {
           const index = Number(button.dataset.transcriptDelete);
           const deleted = !segments[index]?.deleted;
-          segments[index] = { ...segments[index], text: deleted ? '' : String(item.transcriptSegments?.[index]?.text || ''), deleted, audioUrl: '' };
+          segments[index] = { ...segments[index], deleted };
           commitViralBreakdownTranscriptDraft(item.videoKey, segments);
           renderViralBreakdownWorkbench();
         };
@@ -202,10 +207,11 @@
 
     function playViralBreakdownTranscriptRange(video, segment, button) {
       video.__viralTranscriptFinish?.();
-      const start = Number(segment.start) || 0;
-      const end = Number(segment.end) || start;
+      const start = Number(segment.sourceStart ?? segment.start) || 0;
+      const end = Number(segment.sourceEnd ?? segment.end) || start;
       const previousMuted = video.muted;
-      const audio = segment.audioUrl ? new Audio(segment.audioUrl) : null;
+      const playbackUrl = String(segment.audioUrl || segment.sourceAudioUrl || '');
+      const audio = playbackUrl ? new Audio(playbackUrl) : null;
       document.querySelectorAll('.viral-transcript-chunk.is-playing').forEach((item) => item.classList.remove('is-playing'));
       const chunk = button.closest('.viral-transcript-chunk');
       chunk?.classList.add('is-playing');

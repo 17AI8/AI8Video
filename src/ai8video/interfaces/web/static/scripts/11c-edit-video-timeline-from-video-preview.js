@@ -128,6 +128,18 @@
       });
     }
 
+    function videoOutputTimeToSourceTime(outputSeconds) {
+      const chunks = state.videoPreviewModal?.videoTimelineChunks || [];
+      const output = Math.max(0, Number(outputSeconds || 0));
+      if (!chunks.length) return output;
+      const chunk = chunks.find((item) => output <= Number(item.endSeconds || 0) + 0.001) || chunks.at(-1);
+      const offset = Math.min(
+        Number(chunk.durationSeconds || 0),
+        Math.max(0, output - Number(chunk.startSeconds || 0)),
+      );
+      return Math.round((Number(chunk.sourceStartSeconds || 0) + offset) * 1000) / 1000;
+    }
+
     function buildVideoFilmstripTiles(chunk) {
       const url = String(state.videoPreviewModal?.videoTimelineFilmstripUrl || '');
       const frameCount = Math.max(1, Number(state.videoPreviewModal?.videoTimelineFilmstripFrameCount || 1));
@@ -168,7 +180,10 @@
           : `选择并跳转到${label}，${start.toFixed(1)}秒`;
         return `<button type="button" class="video-preview-tts-chunk video-preview-video-chunk${index === selectedIndex ? ' is-selected' : ''}" data-video-preview-video-chunk data-chunk-index="${index}" aria-label="${escapeHtml(action)}" aria-pressed="${index === selectedIndex ? 'true' : 'false'}" title="${escapeHtml(action)}" style="left:${left}%;width:${Math.min(width, 100 - left)}%"><span class="video-preview-video-frames">${buildVideoFilmstripTiles(chunk)}</span><span class="video-preview-tts-chunk-meta"><span>${escapeHtml(label)}</span><small>${start.toFixed(1)}s</small></span></button>`;
       }).join('');
-      track.innerHTML = `<div class="video-preview-tts-chunk-lane"><span class="video-preview-tts-playhead" data-video-preview-video-playhead></span>${markup}</div>`;
+      track.innerHTML = `<div class="video-preview-tts-chunk-lane"><span class="video-preview-timeline-cut-guide" data-video-preview-cut-guide hidden></span><span class="video-preview-tts-playhead" data-video-preview-video-playhead title="拖动播放头"></span>${markup}</div>`;
+      const lane = track.querySelector('.video-preview-tts-chunk-lane');
+      bindTimelineScissorGuide(lane, duration, isVideoScissorMode());
+      bindTimelinePlayheadDrag(track.querySelector('[data-video-preview-video-playhead]'), lane, duration, 'video');
       track.querySelectorAll('[data-video-preview-video-chunk]').forEach((element) => {
         element.addEventListener('click', (event) => handleVideoTimelineChunkClick(event, element));
       });
@@ -203,11 +218,10 @@
     }
 
     function seekVideoTimelineAtPointer(event, element) {
-      const bounds = element.closest('.video-preview-tts-chunk-lane')?.getBoundingClientRect();
+      const lane = element.closest('.video-preview-tts-chunk-lane');
       const duration = Number(state.videoPreviewModal?.videoTimelineOutputDuration || 0);
-      if (!bounds || bounds.width <= 0 || duration <= 0) return;
-      const ratio = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
-      seekVideoTimelineToTime(Math.round(ratio * duration * 1000) / 1000);
+      if (!lane || duration <= 0) return;
+      seekVideoTimelineToTime(timelineSecondsAtPointer(event, lane, duration));
     }
 
     function seekVideoTimelineToTime(seconds) {
@@ -261,11 +275,11 @@
     }
 
     function splitVideoTimelineAtPointer(event, element) {
-      const bounds = element.closest('.video-preview-tts-chunk-lane')?.getBoundingClientRect();
+      const lane = element.closest('.video-preview-tts-chunk-lane');
       const duration = Number(state.videoPreviewModal?.videoTimelineOutputDuration || 0);
-      if (!bounds || bounds.width <= 0 || duration <= 0) return;
+      if (!lane || duration <= 0) return;
       event.preventDefault();
-      const current = Math.round(Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width)) * duration * 1000) / 1000;
+      const current = timelineSecondsAtPointer(event, lane, duration);
       const video = els.videoPreviewBody?.querySelector('video');
       if (video) {
         video.pause();
@@ -304,14 +318,8 @@
     function configureVideoTimeline(data = {}) {
       if (!state.videoPreviewModal) return;
       const panel = videoTimelinePanel();
-      if (data?.needsLoad === true) {
-        state.videoPreviewModal.videoTimelineChunks = [];
-        state.videoPreviewModal.videoTimelineSourceDuration = 0;
-        state.videoPreviewModal.videoTimelineOutputDuration = 0;
-        state.videoPreviewModal.videoTimelineFilmstripUrl = '';
-        state.videoPreviewModal.videoTimelineFilmstripFrameCount = 0;
-        return;
-      }
+      // needsLoad 只表示烧录预览没有携带时间轴数据，不能覆盖编辑器已加载的状态。
+      if (data?.needsLoad === true) return;
       const chunks = Array.isArray(data?.timelineChunks) ? data.timelineChunks.map((item) => ({ ...item })) : [];
       if (!chunks.length) return;
       state.videoPreviewModal.videoTimelineChunks = chunks;
@@ -452,3 +460,19 @@
       video.src = `${official}?preview=${Date.now()}`;
       video.load();
     }
+
+    function handleVideoTimelineSpacePlayback(event) {
+      if (event.code !== 'Space' || event.altKey || event.ctrlKey || event.metaKey) return;
+      const panel = videoTimelinePanel();
+      const target = event.target;
+      const editingText = target?.matches?.('input, textarea, select, [contenteditable="true"]');
+      if (editingText || !panel?.classList.contains('is-open') || els.videoPreviewModal?.classList.contains('hidden')) return;
+      const video = els.videoPreviewBody?.querySelector('.video-preview-stage video');
+      if (!video) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (video.paused) video.play().catch(() => {});
+      else video.pause();
+    }
+
+    document.addEventListener('keydown', handleVideoTimelineSpacePlayback);

@@ -156,11 +156,10 @@
     #viralBreakdownModal .viral-breakdown-toolbar-bar {
       grid-column: 1 / -1;
       display: grid;
-      grid-template-columns: auto minmax(280px, 1fr) auto;
+      grid-template-columns: auto minmax(280px, 320px) auto;
+      justify-content: space-between;
       align-items: center;
       gap: 18px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid rgba(79, 109, 255, 0.08);
     }
 
     #viralBreakdownModal .viral-breakdown-toolbar-bar .viral-breakdown-field.is-video {
@@ -169,24 +168,10 @@
       grid-template-columns: auto minmax(0, 1fr);
     }
 
-    #viralBreakdownModal .viral-breakdown-toolbar-main {
-      grid-column: 1 / -1;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 16px;
-      align-items: end;
-    }
-
     #viralBreakdownModal .viral-breakdown-toolbar-meta .material-meta {
       color: var(--viral-text);
       font-size: 13px;
       font-weight: 700;
-    }
-
-    #viralBreakdownModal .viral-breakdown-toolbar-actions {
-      display: flex;
-      flex-wrap: nowrap;
-      gap: 6px;
     }
 
     #viralBreakdownModal .viral-breakdown-field .config-input {
@@ -334,15 +319,25 @@
     }
 
     #viralBreakdownModal .viral-breakdown-detail-toolbar {
-      display: block;
+      display: flex;
+      align-items: center;
       border-bottom: 1px solid rgba(79, 109, 255, 0.1);
       background: rgba(255, 255, 255, 0.35);
     }
 
     #viralBreakdownModal .viral-breakdown-detail-toolbar .viral-breakdown-tabs {
+      flex: 1;
       min-width: 0;
       border-bottom: 0;
       background: transparent;
+      overflow-x: auto;
+    }
+
+    #viralBreakdownModal .viral-breakdown-context-action {
+      flex: none;
+      min-width: 132px;
+      margin: 6px 10px 6px 8px;
+      white-space: nowrap;
     }
 
     #viralBreakdownModal .viral-breakdown-ratio-control {
@@ -365,6 +360,35 @@
       border: 1px solid rgba(79, 109, 255, 0.16);
       border-radius: 8px;
       background-color: rgba(255, 255, 255, 0.88);
+      color: var(--viral-text);
+    }
+
+    #viralBreakdownModal .viral-breakdown-grid-controls {
+      justify-self: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    #viralBreakdownModal .viral-breakdown-grid-interval {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--viral-muted);
+      font-size: 10px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    #viralBreakdownModal .viral-breakdown-grid-interval .config-input {
+      width: 64px;
+      min-height: 30px;
+      padding: 0 8px;
+      border: 1px solid rgba(79, 109, 255, 0.16);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.88);
       color: var(--viral-text);
     }
 
@@ -469,6 +493,10 @@
       border-radius: 12px;
     }
 
+    #viralBreakdownModal .area-transcript .viral-breakdown-empty {
+      color: var(--viral-muted);
+    }
+
     #viralBreakdownModal .material-title {
       font-size: 13px;
       font-weight: 800;
@@ -483,15 +511,6 @@
       #viralBreakdownModal .viral-breakdown-toolbar-bar .viral-breakdown-field.is-video {
         grid-column: 1 / -1;
         grid-row: 2;
-      }
-
-      #viralBreakdownModal .viral-breakdown-toolbar-main {
-        grid-template-columns: minmax(0, 1fr);
-        align-items: stretch;
-      }
-
-      #viralBreakdownModal .viral-breakdown-toolbar-actions {
-        flex-wrap: wrap;
       }
 
       #viralBreakdownModal .viral-breakdown-workspace-layout {
@@ -527,16 +546,16 @@
         grid-template-columns: minmax(0, 1fr);
       }
 
-      #viralBreakdownModal .viral-breakdown-toolbar-main {
-        align-items: stretch;
-      }
-
       #viralBreakdownModal .viral-breakdown-field {
         flex-basis: 100%;
       }
 
       #viralBreakdownModal .viral-breakdown-detail-toolbar {
-        overflow-x: auto;
+        min-width: 0;
+      }
+
+      #viralBreakdownModal .viral-breakdown-context-action {
+        min-width: 112px;
       }
     }
 

@@ -1,5 +1,7 @@
-    function restoreVideoPreviewExtensionState(video, userGeneratedKey, button) {
+    function restoreVideoPreviewExtensionState(video, userGeneratedKey, extendButton, regenerateButton) {
       const savedState = loadVideoPreviewExtensionStates()[String(userGeneratedKey || '').trim()];
+      const mode = savedState?.mode === 'replace' ? 'replace' : 'extend';
+      const button = mode === 'replace' ? regenerateButton : extendButton;
       if (!savedState?.active || !video || !button) return;
       const restoredVideoUrl = String(savedState.rightVideoUrl || savedState.videoUrl || '').trim();
       const restoredVideoKey = String(
@@ -33,7 +35,10 @@
       };
       const seekSavedFrame = () => {
         video.pause();
-        const targetTime = Math.max(0, Math.min(Number(savedState.frameTime || 0), video.duration || Infinity));
+        const targetTime = Math.max(0, Math.min(
+          Number(savedState.previewTime ?? savedState.frameTime ?? 0),
+          video.duration || Infinity,
+        ));
         if (Math.abs(video.currentTime - targetTime) < 0.04) {
           void renderSavedFrame();
           return;

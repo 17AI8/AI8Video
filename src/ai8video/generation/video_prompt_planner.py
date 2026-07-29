@@ -25,6 +25,7 @@ from ai8video.generation.video_prompt_support import (
     parse_json_array,
     parse_json_object,
 )
+from ai8video.media.local_tts import extract_dialogue_text, prepare_narration_text
 
 LLMCallable = Callable[[str], str]
 SMART_SPLIT_MAX_VIDEOS = 12
@@ -135,7 +136,7 @@ def build_video_planning_prompt(
 2. 每条标题和提示词都要体现自己的独立角度，不要只叫“第几段”或“第几条”。
 3. 每条提示词都应能独立提交给“提示词 + 可选参考图 -> 单条视频”的视频模型模板。
 4. 每条视频必须先规划可直接口播/对白的中文台词；如果原素材有原句，优先保留有用原句，如果信息不足，再补齐真人能说出口且不虚构事实的口播。
-5. 每条提示词必须包含“台词/口播：...”，并把台词嵌入画面执行说明里，不能只写场景和镜头。
+5. 每条提示词必须包含“台词/口播：...”，并把台词嵌入画面执行说明里，不能只写场景和镜头；同时把纯台词正文单独写入 narration_text，供确认后直接生成音频，禁止混入镜头、音效和制作说明。
 6. 每条提示词都要写清主体、场景、动作、表情、情绪、身体状态、语气状态、镜头运动、氛围；口播/对白只写说话情绪和语气，不要添加用户原文没有要求的声线、性别或身份设定，让视频模型根据画面主体自行判断。
 7. {timing_rule}
 8. 先理解用户原文、风格要求和用户可编辑业务模型系统提示词里的视觉要求、文字要求、排版要求、镜头要求和禁用要求，并把这些要求落实进每条提示词；不要用固定词表机械判断，也不要为某个禁用项临时发明本地替换规则。
@@ -148,7 +149,7 @@ def build_video_planning_prompt(
 15. 每条都要在 preserved_keywords 写出实际保留或承接的关键词 / 事实；如果某些关键词没放入该视频，在 omitted_keywords_reason 写清是因为主题不匹配、系统提示词限制，还是为了避免堆砌。
 
 只返回 JSON 数组，不要解释。数组元素格式：
-{{"index":1,"title":"...","prompt":"...","source_summary":"...","preserved_keywords":["..."],"omitted_keywords_reason":"..."}}
+{{"index":1,"title":"...","prompt":"...","narration_text":"观众实际听到的完整台词正文","source_summary":"...","preserved_keywords":["..."],"omitted_keywords_reason":"..."}}
 
 用户剧本：
 {script}
@@ -340,6 +341,10 @@ def plan_video_prompts_with_ai(
         prompt = str(item.get("prompt") or "").strip()
         title = clean_video_title(title, idx)
         prompt = sanitize_internal_fidelity_notes(prompt)
+        narration_text = prepare_narration_text(
+            str(item.get("narration_text") or item.get("dialogue") or "").strip()
+            or extract_dialogue_text(prompt)
+        )
         videos.append(VideoPrompt(
             index=int(item.get("index") or idx),
             title=title,
@@ -349,6 +354,13 @@ def plan_video_prompts_with_ai(
                 "global": keyword_guidance or {},
                 "preserved_keywords": coerce_text_list(item.get("preserved_keywords")),
                 "omitted_keywords_reason": str(item.get("omitted_keywords_reason") or "").strip(),
+                "post_review": {
+                    "passes": True,
+                    "status": "confirmed_planning_output",
+                    "narrationText": narration_text,
+                    "violations": [],
+                    "userAdvisories": [],
+                },
             },
         ))
     if len(videos) != video_count:

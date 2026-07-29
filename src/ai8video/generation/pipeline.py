@@ -253,6 +253,8 @@ class AI8VideoPipeline:
         task_constraints: str,
         progress_session_id: str | None,
     ) -> list[VideoPrompt]:
+        if request.smart_split_reason:
+            return list(videos)
         repeated_batch = (
             request.mode == "batch_videos"
             and not request.smart_split_reason

@@ -16,6 +16,7 @@ import requests
 
 from ai8video.core.config import AI8VideoConfig
 from ai8video.integrations.http_client import api_request
+from ai8video.integrations.image_hosting import ImageHostError, upload_reference_image
 from ai8video.core.models import FirstFrameAsset, QuickVideoJob
 from ai8video.generation.real_generation_guard import RealGenerationGuard
 from ai8video.integrations.video_model_settings import VideoModelSettings, load_video_model_settings
@@ -122,6 +123,23 @@ class AI8VideoModelClient:
                     json=create_payload,
                     timeout=_create_timeout_seconds(settings.template, self.config.timeout_seconds),
                 )
+                active_payload = create_payload
+                for _ in range(3):
+                    retry_payload = (
+                        _duration_fallback_payload(settings.template, response, active_payload, seconds)
+                        or _size_fallback_payload(settings.template, response, active_payload)
+                        or _image_host_fallback_payload(settings.template, response, active_payload)
+                    )
+                    if retry_payload is None:
+                        break
+                    response = api_request(
+                        template["create_method"],
+                        create_url,
+                        headers=self._headers(settings),
+                        json=retry_payload,
+                        timeout=_create_timeout_seconds(settings.template, self.config.timeout_seconds),
+                    )
+                    active_payload = retry_payload
             except requests.Timeout as exc:
                 raise DirectVideoModelError(_format_create_timeout_error(settings.template, create_url, exc)) from exc
         _raise_for_response(response, "创建视频任务")
@@ -522,7 +540,6 @@ def _build_create_payload(
             "prompt": prompt,
             "image": image,
             "seconds": str(seconds),
-            "duration": seconds,
             "size": size,
             "aspect_ratio": ratio,
             "preset": preset,
@@ -565,6 +582,61 @@ def _build_create_payload(
     })
 
 
+def _duration_fallback_payload(
+    template: str,
+    response: requests.Response,
+    payload: dict[str, Any],
+    seconds: int,
+) -> dict[str, Any] | None:
+    if template != "openai-compatible" or response.status_code != 400 or "seconds" not in payload:
+        return None
+    error_text = str(response.text or "").lower()
+    if "seconds" not in error_text or "unmarshal" not in error_text:
+        return None
+    fallback = dict(payload)
+    fallback.pop("seconds", None)
+    fallback["duration"] = int(seconds)
+    return fallback
+
+
+def _size_fallback_payload(
+    template: str,
+    response: requests.Response,
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    if template != "openai-compatible" or response.status_code != 400:
+        return None
+    error_text = str(response.text or "").lower()
+    if "size" not in error_text or "not supported" not in error_text:
+        return None
+    if not str(payload.get("size") or "").strip():
+        return None
+    fallback = dict(payload)
+    fallback.pop("size", None)
+    return fallback
+
+
+def _image_host_fallback_payload(
+    template: str,
+    response: requests.Response,
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    image = str(payload.get("image") or "").strip()
+    if template != "openai-compatible" or response.status_code != 400 or not image.startswith("data:image/"):
+        return None
+    error_text = str(response.text or "").lower()
+    image_missing = "image" in error_text and any(
+        marker in error_text for marker in ("not exist", "does not exist", "不存在", "missing")
+    )
+    if not image_missing and "data:image" not in error_text and "url" not in error_text and "fetch" not in error_text:
+        return None
+    try:
+        hosted_url = upload_reference_image(image)
+    except ImageHostError as exc:
+        raise DirectVideoModelError(str(exc)) from exc
+    return {**payload, "image": hosted_url}
+
+
 def _resolve_endpoint(base_url: str, path: str, **values: str) -> str:
     base = base_url.rstrip("/")
     rendered = path
@@ -584,10 +656,23 @@ def _raise_for_response(response: requests.Response, action: str) -> None:
 def _format_response_error(response: requests.Response, action: str) -> str:
     status = f"{response.status_code} {response.reason or ''}".strip()
     body = _response_excerpt(response)
+    friendly = _friendly_upstream_error(body)
+    if friendly:
+        return friendly
     message = f"{action}失败：HTTP {status}，url={response.url}"
     if body:
         message += f"，上游返回：{body}"
     return message
+
+
+def _friendly_upstream_error(body: str) -> str:
+    normalized = str(body or "").lower()
+    if "real person" in normalized and ("may contain" in normalized or "input image" in normalized):
+        return (
+            "视频模型拒绝了参考图：检测到图片可能包含真人。"
+            "图床上传和模型请求均已成功，请更换支持真人参考图的模型，或改用非真人参考图。"
+        )
+    return ""
 
 
 def _response_excerpt(response: requests.Response, limit: int = 1200) -> str:

@@ -112,7 +112,7 @@
       const settings = state.authSettings || {};
       const videoSettings = state.videoModelSettings || {};
       const fields = Array.isArray(settings.fields) ? settings.fields : [];
-      const groups = groupSettingsFields(fields);
+      const groups = withImageHostSettingsGroup(groupSettingsFields(fields));
       const activeCategory = resolveActiveSettingsCategory(groups);
       const templateText = currentVideoTemplateStatusText(videoSettings);
       const videoMergeText = `视频合并：${videoMergeModeLabel(state.settingsModal.videoMergeMode)}`;
@@ -156,6 +156,9 @@
       const labelledBy = `settings-category-tab-${activeIndex}`;
       if (group.label === 'AI8video') {
         return buildMultiAgentSettingsMarkup(group, labelledBy);
+      }
+      if (group.label === '图床') {
+        return buildImageHostSettingsMarkup(labelledBy);
       }
       const archiveArtifacts = state.archiveArtifacts || state.authSettings?.archiveArtifacts || {};
       const archiveTotal = String(archiveArtifacts.totalDisplay || '0 B');
@@ -384,5 +387,5 @@
       selectMultiAgentSettingsRole(tabs[nextIndex].getAttribute('data-agent-settings-role') || 'overview', true);
     });
 
-    const settingsCategoryOrder = ['运行模式', 'TTS', 'AI8video', '文本/视频规划模型', '多模态模型', '图片模型', '视频模型', 'HTML 动效', '归档', '其他'];
+    const settingsCategoryOrder = ['运行模式', 'TTS', 'AI8video', '文本/视频规划模型', '多模态模型', '图片模型', '视频模型', '图床', 'HTML 动效', '归档', '其他'];
     const settingsCategoryAliasMap = {};

@@ -154,17 +154,23 @@
     }
 
     .result-notify-play.terminal-placeholder[aria-hidden="true"] span::before {
-      content: "✓";
-      width: auto;
-      height: auto;
-      margin-left: 0;
+      content: "";
+      width: 18px;
+      height: 18px;
       border: 0;
-      border-radius: 0;
-      color: #294c9d;
       animation: none;
-      font-size: 18px;
-      line-height: 1;
-      font-weight: 900;
+      background: #294c9d;
+      mask: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/video.svg") center / contain no-repeat;
+      -webkit-mask: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/video.svg") center / contain no-repeat;
+    }
+
+    .result-notify-play.historical-placeholder[aria-hidden="true"] span::before {
+      content: "";
+      width: 18px;
+      height: 18px;
+      background: #294c9d;
+      mask: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/clock-rotate-left.svg") center / contain no-repeat;
+      -webkit-mask: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/clock-rotate-left.svg") center / contain no-repeat;
     }
 
     .result-notify-play.processing-placeholder[aria-hidden="true"] span {
@@ -173,15 +179,14 @@
     }
 
     .result-notify-play.waiting-placeholder[aria-hidden="true"] span::before {
-      content: "…";
-      width: auto;
-      height: auto;
+      content: "";
+      width: 16px;
+      height: 16px;
       border: 0;
       animation: none;
-      color: #7180a6;
-      font-size: 18px;
-      font-weight: 900;
-      line-height: 1;
+      background: #7180a6;
+      mask: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/hourglass-half.svg") center / contain no-repeat;
+      -webkit-mask: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/hourglass-half.svg") center / contain no-repeat;
     }
 
     .result-notify-card.failed .result-notify-preview {
@@ -231,6 +236,52 @@
       font-size: 11px;
       font-weight: 900;
       cursor: pointer;
+    }
+
+    .result-video-prompt-button {
+      position: absolute;
+      top: 7px;
+      left: 7px;
+      z-index: 4;
+      width: 24px;
+      height: 24px;
+      padding: 0 0 5px;
+      border: 1px solid rgba(55, 79, 130, 0.18);
+      border-radius: 7px;
+      background: rgba(255, 255, 255, 0.94);
+      color: #52699d;
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(16, 30, 58, 0.14);
+    }
+
+    .result-video-prompt-panel {
+      width: min(680px, calc(100vw - 40px));
+    }
+
+    .result-video-prompt-body {
+      min-height: 180px;
+      max-height: min(58vh, 520px);
+      margin: 18px 0;
+      padding: 18px;
+      overflow: auto;
+      border: 1px solid rgba(79, 116, 255, 0.16);
+      border-radius: 14px;
+      background: rgba(245, 248, 255, 0.88);
+      color: #243352;
+      font-size: 14px;
+      line-height: 1.75;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .result-video-prompt-body.is-empty { color: #7b87a6; }
+
+    .result-video-prompt-actions {
+      display: flex;
+      justify-content: flex-end;
     }
 
     .result-notify-card.failed .result-notify-preview::after {

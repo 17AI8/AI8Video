@@ -163,10 +163,10 @@
 
     function extractGenerationBatchId(payload) {
       return String(
-        payload?.generationBatchId
-        || payload?.pendingStatus?.generationBatchId
+        payload?.pendingStatus?.generationBatchId
         || payload?.pendingStatus?.generationProgress?.generationBatchId
         || payload?.generationProgress?.generationBatchId
+        || payload?.generationBatchId
         || ''
       ).trim();
     }
@@ -286,6 +286,60 @@
       };
     }
 
+    function mergeGenerationProgressSnapshot(previousProgress = {}, nextProgress = {}) {
+      if (!nextProgress || typeof nextProgress !== 'object') return nextProgress;
+      const previousItems = Array.isArray(previousProgress?.items) ? previousProgress.items : [];
+      const nextItems = Array.isArray(nextProgress.items) ? nextProgress.items : [];
+      if (!previousItems.length || previousItems.length <= nextItems.length) return nextProgress;
+      const byVideo = new Map(previousItems.map((item, index) => [
+        Number(item?.videoIndex || 0) || index + 1,
+        item,
+      ]));
+      nextItems.forEach((item, index) => {
+        byVideo.set(Number(item?.videoIndex || 0) || index + 1, item);
+      });
+      const items = [...byVideo.entries()]
+        .sort(([left], [right]) => left - right)
+        .map(([, item]) => item);
+      return {
+        ...previousProgress,
+        ...nextProgress,
+        totalRequested: Math.max(
+          Number(previousProgress?.totalRequested || 0) || 0,
+          Number(nextProgress.totalRequested || 0) || 0,
+          items.length,
+        ),
+        items,
+      };
+    }
+
+    function mergeGenerationStatusPayload(payload = {}, data = {}, sessionId = '') {
+      const previousPending = payload?.pendingStatus || {};
+      const incomingPending = extractPendingStatus(data, sessionId) || {};
+      const incomingProgress = incomingPending.generationProgress;
+      const generationProgress = incomingProgress
+        ? mergeGenerationProgressSnapshot(previousPending.generationProgress, incomingProgress)
+        : previousPending.generationProgress;
+      const nextPayload = {
+        ...payload,
+        pendingStatus: normalizePendingStatusProgress({
+          ...previousPending,
+          ...incomingPending,
+          ...(generationProgress ? { generationProgress } : {}),
+        }),
+      };
+      mergePendingGenerationBatchId(payload, nextPayload);
+      if (data.status !== 'pending' && incomingProgress && isTerminalTaskStatus(data.status)) {
+        nextPayload.stage = 'completed';
+        nextPayload.meta = {
+          ...(nextPayload.meta || {}),
+          operation: 'pending',
+          continuationClosed: true,
+        };
+      }
+      return nextPayload;
+    }
+
     function replaceLocalAssistantError(session, message) {
       const last = session?.messages?.at?.(-1);
       if (last && last.role === 'assistant') {
@@ -342,7 +396,13 @@
       let changed = false;
       for (const session of sessions) {
         const last = session?.messages?.at?.(-1);
-        if (!last || last.role !== 'assistant' || !isStoredTransportFailureMessage(last.error)) continue;
+        if (!last || last.role !== 'assistant') continue;
+        if (isPendingPayload(last.payload) && !isConversationContinuationClosed(last.payload)) {
+          const recovered = await reconcilePendingSessionAfterReload(session);
+          if (recovered) changed = true;
+          continue;
+        }
+        if (!isStoredTransportFailureMessage(last.error)) continue;
         const recovered = await tryRecoverSessionAfterTransportFailure(
           session,
           getLatestUserRequestText(session),
@@ -350,6 +410,22 @@
         if (recovered) changed = true;
       }
       return changed;
+    }
+
+    async function reconcilePendingSessionAfterReload(session) {
+      const sessionId = String(session?.id || '').trim();
+      const last = session?.messages?.at?.(-1);
+      if (!sessionId || !last?.payload?.pendingStatus) return false;
+      try {
+        const res = await fetch(buildChatStatusUrl(sessionId, session));
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data?.generationProgress) return false;
+        last.payload = mergeGenerationStatusPayload(last.payload, data, sessionId);
+        return true;
+      } catch (error) {
+        console.error(error);
+        return false;
+      }
     }
 
     async function tryRecoverSessionAfterTransportFailure(session, requestText) {
@@ -367,12 +443,9 @@
         }
         if (data.status === 'pending' || data.generationProgress) {
           const pendingPayload = buildLocalPendingPayload(sessionId, requestText);
-          pendingPayload.pendingStatus = {
-            ...(pendingPayload.pendingStatus || {}),
-            ...extractPendingStatus(data, sessionId),
-          };
+          const recoveredPayload = mergeGenerationStatusPayload(pendingPayload, data, sessionId);
           delete last.error;
-          last.payload = pendingPayload;
+          last.payload = recoveredPayload;
           return true;
         }
       } catch (error) {
@@ -416,11 +489,10 @@
         }
         if (data.status !== 'pending' && data.generationProgress) {
           const pendingPayload = buildLocalPendingPayload(sessionId, requestText);
-          pendingPayload.pendingStatus = {
-            ...(pendingPayload.pendingStatus || {}),
-            ...extractPendingStatus(data, sessionId),
-          };
-          replaceLocalPendingPayload(session, pendingPayload);
+          replaceLocalPendingPayload(
+            session,
+            mergeGenerationStatusPayload(pendingPayload, data, sessionId),
+          );
           if (!data.statelessProgress && isTerminalTaskStatus(data.status)) {
             schedulePendingPoll(sessionId, 3000);
           }
@@ -428,11 +500,10 @@
         }
         if (data.status === 'pending') {
           const pendingPayload = buildLocalPendingPayload(sessionId, requestText);
-          pendingPayload.pendingStatus = {
-            ...(pendingPayload.pendingStatus || {}),
-            ...extractPendingStatus(data, sessionId),
-          };
-          replaceLocalPendingPayload(session, pendingPayload);
+          replaceLocalPendingPayload(
+            session,
+            mergeGenerationStatusPayload(pendingPayload, data, sessionId),
+          );
           return true;
         }
       }

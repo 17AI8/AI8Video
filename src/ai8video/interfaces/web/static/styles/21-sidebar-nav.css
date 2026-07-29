@@ -13,12 +13,14 @@
   --sidebar-ink: #1a2242;
   --sidebar-muted: #6a7494;
   --sidebar-accent: #4f6dff;
+  --sidebar-motion-duration: 280ms;
+  --sidebar-motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .shell {
   --shell-sidebar-w: var(--sidebar-w);
   grid-template-columns: var(--shell-sidebar-w) minmax(0, 1fr) !important;
-  transition: grid-template-columns 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: grid-template-columns var(--sidebar-motion-duration) var(--sidebar-motion-ease);
 }
 
 .shell.is-sidebar-collapsed {
@@ -81,6 +83,20 @@ body > .shell > aside.sidebar::before {
   gap: 10px;
   min-width: 0;
   flex: 1 1 auto;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  appearance: none;
+  cursor: pointer;
+}
+
+.sidebar-brand:focus-visible {
+  outline: 2px solid rgba(79, 109, 255, 0.45);
+  outline-offset: 3px;
+  border-radius: 10px;
 }
 
 .sidebar-brand-mark {
@@ -91,11 +107,15 @@ body > .shell > aside.sidebar::before {
   border-radius: 0;
   object-fit: contain;
   object-position: left center;
+  transform-origin: left center;
   background: transparent;
   box-shadow: none;
   filter:
     drop-shadow(0 1px 1px rgba(45, 63, 130, 0.32))
     drop-shadow(0 4px 6px rgba(79, 109, 255, 0.22));
+  transition:
+    transform var(--sidebar-motion-duration) var(--sidebar-motion-ease),
+    filter var(--sidebar-motion-duration) var(--sidebar-motion-ease);
 }
 
 .sidebar-brand-copy {
@@ -136,7 +156,13 @@ body > .shell > aside.sidebar::before {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   cursor: pointer;
-  transition: transform 180ms ease, background 180ms ease, border-color 180ms ease;
+  transition:
+    width var(--sidebar-motion-duration) var(--sidebar-motion-ease),
+    height var(--sidebar-motion-duration) var(--sidebar-motion-ease),
+    border-radius var(--sidebar-motion-duration) var(--sidebar-motion-ease),
+    transform var(--sidebar-motion-duration) var(--sidebar-motion-ease),
+    background var(--sidebar-motion-duration) var(--sidebar-motion-ease),
+    border-color var(--sidebar-motion-duration) var(--sidebar-motion-ease);
 }
 
 .sidebar-collapse-button:hover {
@@ -145,14 +171,17 @@ body > .shell > aside.sidebar::before {
   transform: translateY(-1px);
 }
 
-.sidebar-collapse-button .sidebar-nav-icon-svg {
+.sidebar-collapse-button .sidebar-nav-icon-glyph {
   width: 16px;
   height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.9;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  transition:
+    width var(--sidebar-motion-duration) var(--sidebar-motion-ease),
+    height var(--sidebar-motion-duration) var(--sidebar-motion-ease),
+    transform var(--sidebar-motion-duration) var(--sidebar-motion-ease);
+}
+
+.sidebar-collapse-button[data-icon="collapse"] {
+  --sidebar-icon-url: url("/static/vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/angles-left.svg");
 }
 
 .sidebar-body {
@@ -202,7 +231,7 @@ body > .shell > aside.sidebar #recycleBinList > .sidebar-nav-item,
 body > .shell > aside.sidebar #assistantToolsList > .sidebar-nav-item {
   position: relative !important;
   display: grid !important;
-  grid-template-columns: 36px minmax(0, 1fr) auto !important;
+  grid-template-columns: 36px minmax(0, 1fr) !important;
   align-items: center !important;
   gap: 10px !important;
   width: 100% !important;
@@ -277,6 +306,46 @@ body > .shell > aside.sidebar .sidebar-nav-item:focus-visible {
   stroke-linejoin: round;
 }
 
+.sidebar-nav-icon-glyph {
+  width: 18px;
+  height: 18px;
+  background: currentColor;
+  -webkit-mask: var(--sidebar-icon-url) center / contain no-repeat;
+  mask: var(--sidebar-icon-url) center / contain no-repeat;
+}
+
+.sidebar-nav-icon[data-icon="progress"] {
+  --sidebar-icon-url: url("/static/vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/eye.svg");
+}
+
+.sidebar-nav-icon[data-icon="image"] {
+  --sidebar-icon-url: url("/static/vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/images.svg");
+}
+
+.sidebar-nav-icon[data-icon="script"] {
+  --sidebar-icon-url: url("/static/vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/file-lines.svg");
+}
+
+.sidebar-nav-icon[data-icon="recycle"] {
+  --sidebar-icon-url: url("/static/vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/trash-can.svg");
+}
+
+.sidebar-nav-icon[data-icon="smartImage"] {
+  --sidebar-icon-url: url("/static/vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/wand-magic-sparkles.svg");
+}
+
+.sidebar-nav-icon[data-icon="hotRadar"] {
+  --sidebar-icon-url: url("/static/vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/tower-broadcast.svg");
+}
+
+.sidebar-nav-icon[data-icon="viral"] {
+  --sidebar-icon-url: url("/static/vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/bolt.svg");
+}
+
+.sidebar-nav-icon[data-icon="settings"] {
+  --sidebar-icon-url: url("/static/vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/gear.svg");
+}
+
 .sidebar-nav-copy {
   display: grid;
   gap: 2px;
@@ -311,6 +380,7 @@ body > .shell > aside.sidebar .sidebar-nav-meta {
 }
 
 .sidebar-nav-action {
+  display: none;
   flex: 0 0 auto;
   max-width: 72px;
   padding: 5px 8px;
@@ -375,10 +445,15 @@ body > .shell > aside.sidebar [data-open-smart-image-editor-entry].is-active .si
 }
 
 .shell.is-sidebar-collapsed .sidebar-brand-copy,
-.shell.is-sidebar-collapsed .sidebar-section-label,
 .shell.is-sidebar-collapsed .sidebar-nav-copy,
 .shell.is-sidebar-collapsed .sidebar-nav-action {
   display: none !important;
+}
+
+.shell.is-sidebar-collapsed .sidebar-section-label {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .shell.is-sidebar-collapsed .sidebar-top {
@@ -392,24 +467,24 @@ body > .shell > aside.sidebar [data-open-smart-image-editor-entry].is-active .si
 }
 
 .shell.is-sidebar-collapsed .sidebar-brand {
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .shell.is-sidebar-collapsed .sidebar-brand-mark {
   width: auto;
-  height: 24px;
+  height: 36px;
+  max-width: none;
+  transform: translateX(4px) scale(0.6667);
 }
 
 .shell.is-sidebar-collapsed .sidebar-collapse-button {
-  width: 100%;
-  height: 52px;
-  border-radius: 16px;
-  transform: scaleX(-1);
+  display: none;
 }
 
-.shell.is-sidebar-collapsed .sidebar-collapse-button .sidebar-nav-icon-svg {
+.shell.is-sidebar-collapsed .sidebar-collapse-button .sidebar-nav-icon-glyph {
   width: 18px;
   height: 18px;
+  transform: rotate(180deg);
 }
 
 .shell.is-sidebar-collapsed .sidebar-body {

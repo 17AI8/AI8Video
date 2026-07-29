@@ -39,6 +39,8 @@ class AI8VideoVideoPromptPlannerTest(unittest.TestCase):
         self.assertIn("不得把批量视频自动理解为连续故事或章节", prompt)
         self.assertIn("受众、痛点、场景、人物视角、开场方式、证据或行动引导", prompt)
         self.assertNotIn("强痛点/冲突开场 -> 解决方案/结果收束", prompt)
+        self.assertIn('"narration_text"', prompt)
+        self.assertIn("供确认后直接生成音频", prompt)
 
     def test_smart_split_count_uses_realtime_video_duration(self) -> None:
         prompts: list[str] = []

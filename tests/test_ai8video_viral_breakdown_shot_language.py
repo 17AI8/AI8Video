@@ -227,11 +227,11 @@ class ViralBreakdownShotLanguageTests(unittest.TestCase):
                     ],
                 )
 
-                self.assertEqual(result["text"], "时间轴文本\n")
+                self.assertEqual(result["text"], "时间轴文本")
                 self.assertEqual(len(result["segments"]), 2)
                 self.assertEqual(result["segments"][0]["audioUrl"], "/api/viral-breakdown/transcript-audio/viral-transcript-demo.m4a")
                 self.assertTrue(result["segments"][1]["deleted"])
-                self.assertEqual(result["segments"][1]["start"], 2.67)
+                self.assertEqual(result["segments"][1]["text"], "")
                 self.assertFalse(result["segmentsStale"])
 
     def test_missing_frames_and_multimodal_config_fail_before_request(self) -> None:

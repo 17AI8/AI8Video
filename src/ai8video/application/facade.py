@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from typing import Any, Callable
+
 from ai8video.application import ai8video_chat_service
 from ai8video.core.config import AI8VideoConfig
+from ai8video.generation.generation_task_runner import GenerationTask
 from ai8video.application.runtime import (
     CHAT_BACKEND,
     build_batch_seed_file_payload,
@@ -56,8 +59,31 @@ def get_chat_status(session_id: str, generation_batch_id: str | None = None) -> 
     )
 
 
-def cancel_chat(session_id: str, reason: str | None = None) -> dict:
-    return ai8video_chat_service.cancel_chat_via_ai8video(session_id=session_id, reason=reason)
+def start_external_generation_task(
+    session_id: str,
+    generation_batch_id: str,
+    target: Callable[..., object],
+    *,
+    args: tuple[Any, ...] = (),
+) -> GenerationTask:
+    return ai8video_chat_service.start_external_generation_task(
+        session_id=session_id,
+        generation_batch_id=generation_batch_id,
+        target=target,
+        args=args,
+    )
+
+
+def cancel_chat(
+    session_id: str,
+    reason: str | None = None,
+    generation_batch_id: str | None = None,
+) -> dict:
+    return ai8video_chat_service.cancel_chat_via_ai8video(
+        session_id=session_id,
+        reason=reason,
+        generation_batch_id=generation_batch_id,
+    )
 
 
 def cancel_smart_split_confirmation(session_id: str) -> dict:
@@ -78,5 +104,6 @@ __all__ = [
     "get_supervisor_admin_result_path",
     "handle_chat",
     "run_batch_payload",
+    "start_external_generation_task",
     "write_supervisor_admin_result_payload",
 ]

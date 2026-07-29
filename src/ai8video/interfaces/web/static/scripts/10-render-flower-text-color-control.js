@@ -122,23 +122,10 @@
         els.progressPanel.innerHTML = '';
         return;
       }
-      const resultCount = Array.isArray(model.cards) ? model.cards.length : 0;
-      const videoCount = Array.isArray(model.videos) ? model.videos.length : 0;
-      const overview = buildProgressOverview(model);
-      let meta = '暂无结果';
-      if (model.isActive) {
-        meta = overview?.label ? `进行中 · ${overview.label}` : '进行中';
-      } else if (resultCount > 0) {
-        meta = `${resultCount} 个结果`;
-      } else if (videoCount > 0) {
-        meta = `${videoCount} 条任务`;
-      } else if (String(model.summary || '').trim()) {
-        meta = String(model.summary).trim().slice(0, 28);
-      }
       els.progressPanel.innerHTML = buildSidebarNavItemMarkup({
         icon: 'progress',
-        title: model.title || '当前进度',
-        meta,
+        title: '查看结果',
+        meta: '查看所有结果',
         actionLabel: '查看结果',
         attrs: 'data-show-result-modal="1"',
         extraClass: 'progress-card',

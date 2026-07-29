@@ -1,14 +1,14 @@
     const SIDEBAR_COLLAPSED_STORAGE_KEY = `${BRAND_SLUG}-sidebar-collapsed`;
 
-    const SIDEBAR_NAV_ICONS = {
-      progress: '<svg class="sidebar-nav-icon-svg" viewBox="0 0 24 24" focusable="false"><path d="M4 19V5"/><path d="M4 19h16"/><path d="m8 15 3-4 3 2 4-6"/></svg>',
-      image: '<svg class="sidebar-nav-icon-svg" viewBox="0 0 24 24" focusable="false"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="m21 15-4.5-4.5L7 20"/></svg>',
-      script: '<svg class="sidebar-nav-icon-svg" viewBox="0 0 24 24" focusable="false"><path d="M5 4h9l5 5v11H5z"/><path d="M14 4v5h5"/><path d="M8 13h8"/><path d="M8 17h6"/></svg>',
-      recycle: '<svg class="sidebar-nav-icon-svg" viewBox="0 0 24 24" focusable="false"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>',
-      smartImage: '<svg class="sidebar-nav-icon-svg" viewBox="0 0 24 24" focusable="false"><path d="M12 3a9 9 0 100 18h1.5a2.5 2.5 0 001.2-4.7l-.8-.4a1.5 1.5 0 01.7-2.9H17a4 4 0 004-4c0-3.3-4-6-9-6z"/><circle cx="7.5" cy="10" r="1"/><circle cx="10" cy="6.8" r="1"/><circle cx="14" cy="6.8" r="1"/></svg>',
-      hotRadar: '<svg class="sidebar-nav-icon-svg" viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="12" r="2"/><path d="M7.5 7.5a6.4 6.4 0 0 1 9 0"/><path d="M5 5a10 10 0 0 1 14 0"/><path d="M12 12v8"/></svg>',
-      viral: '<svg class="sidebar-nav-icon-svg" viewBox="0 0 24 24" focusable="false"><path d="M13 2 4 14h7l-1 8 10-13h-7z"/></svg>',
-    };
+    const SIDEBAR_NAV_ICON_NAMES = new Set([
+      'progress',
+      'image',
+      'script',
+      'recycle',
+      'smartImage',
+      'hotRadar',
+      'viral',
+    ]);
 
     function buildSidebarNavItemMarkup({
       icon,
@@ -21,10 +21,10 @@
       const safeTitle = escapeHtml(title || '');
       const safeMeta = escapeHtml(meta || '');
       const safeAction = escapeHtml(actionLabel || '');
-      const iconSvg = SIDEBAR_NAV_ICONS[icon] || SIDEBAR_NAV_ICONS.progress;
+      const iconName = SIDEBAR_NAV_ICON_NAMES.has(icon) ? icon : 'progress';
       return `
         <button type="button" class="sidebar-nav-item material-card ${extraClass}" ${attrs} title="${safeTitle}">
-          <span class="sidebar-nav-icon" data-icon="${escapeHtml(icon || '')}" aria-hidden="true">${iconSvg}</span>
+          <span class="sidebar-nav-icon" data-icon="${iconName}" aria-hidden="true"><span class="sidebar-nav-icon-glyph"></span></span>
           <span class="sidebar-nav-copy">
             <span class="sidebar-nav-title">${safeTitle}</span>
             <span class="sidebar-nav-meta">${safeMeta}</span>
@@ -45,6 +45,7 @@
     function applySidebarCollapsed(collapsed) {
       const shell = els.shell || document.querySelector('.shell');
       const button = els.sidebarCollapseButton || document.getElementById('sidebarCollapseButton');
+      const brandButton = document.getElementById('sidebarBrandToggle');
       if (shell) {
         shell.classList.toggle('is-sidebar-collapsed', !!collapsed);
       }
@@ -52,6 +53,10 @@
         button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
         button.setAttribute('aria-label', collapsed ? '展开侧边栏' : '折叠侧边栏');
         button.title = collapsed ? '展开侧边栏' : '折叠侧边栏';
+      }
+      if (brandButton) {
+        brandButton.setAttribute('aria-label', collapsed ? '展开侧边栏' : '折叠侧边栏');
+        brandButton.title = collapsed ? '展开侧边栏' : '折叠侧边栏';
       }
     }
 
@@ -72,10 +77,11 @@
     function bindSidebarCollapse() {
       applySidebarCollapsed(isSidebarCollapsed());
       const button = els.sidebarCollapseButton || document.getElementById('sidebarCollapseButton');
-      if (!button || button.dataset.boundCollapse === '1') return;
-      button.dataset.boundCollapse = '1';
-      button.addEventListener('click', () => {
-        toggleSidebarCollapsed();
+      const brandButton = document.getElementById('sidebarBrandToggle');
+      [button, brandButton].filter(Boolean).forEach((control) => {
+        if (control.dataset.boundCollapse === '1') return;
+        control.dataset.boundCollapse = '1';
+        control.addEventListener('click', toggleSidebarCollapsed);
       });
     }
 

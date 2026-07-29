@@ -157,59 +157,24 @@ def concat_videos(video_paths: list[Path], output_path: Path, *, ffmpeg_bin: str
             raise RuntimeError(f"合并视频失败：片段不存在 {item}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     ffmpeg = resolve_ffmpeg_bin(ffmpeg_bin)
-    video_encoding: dict[str, str] | None = None
-    list_path = output_path.with_suffix(".concat.txt")
-    list_path.write_text(
-        "".join(f"file '{_escape_concat_path(Path(item))}'\n" for item in video_paths),
-        encoding="utf-8",
-    )
-    copy_cmd = [
-        ffmpeg,
-        "-y",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        str(list_path),
-        "-c",
-        "copy",
-        "-movflags",
-        "+faststart",
-        str(output_path),
-    ]
-    try:
-        _run_ffmpeg(copy_cmd, "concat copy 合并失败")
-        method = "concat-copy"
-    except RuntimeError as copy_exc:
-        if output_path.exists():
-            output_path.unlink()
-        reencode_cmd = [
-            ffmpeg,
-            "-y",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-f",
-            "concat",
-            "-safe",
-            "0",
-            "-i",
-            str(list_path),
-        ]
-        video_encoding = append_video_postprocess_encoding_args(reencode_cmd)
-        reencode_cmd.extend([
-            "-c:a",
-            "aac",
-            "-movflags",
-            "+faststart",
-            str(output_path),
+    reencode_cmd = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error"]
+    for item in video_paths:
+        reencode_cmd.extend(["-i", str(item)])
+    filters = []
+    concat_inputs = []
+    for index in range(len(video_paths)):
+        filters.extend([
+            f"[{index}:v]setpts=PTS-STARTPTS[v{index}]",
+            f"[{index}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
+            f"asetpts=PTS-STARTPTS[a{index}]",
         ])
-        _run_ffmpeg(reencode_cmd, f"重编码合并失败；copy 错误：{copy_exc}")
-        method = "reencode"
+        concat_inputs.append(f"[v{index}][a{index}]")
+    filters.append(f"{''.join(concat_inputs)}concat=n={len(video_paths)}:v=1:a=1[v][a]")
+    reencode_cmd.extend(["-filter_complex", ";".join(filters), "-map", "[v]", "-map", "[a]"])
+    video_encoding = append_video_postprocess_encoding_args(reencode_cmd)
+    reencode_cmd.extend(["-c:a", "aac", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", str(output_path)])
+    _run_ffmpeg(reencode_cmd, "重编码合并失败")
+    method = "filter-reencode"
     if not output_path.is_file() or output_path.stat().st_size <= 0:
         raise RuntimeError("合并视频失败：输出视频为空")
     return {

@@ -171,8 +171,9 @@ def start_generation_progress(
                 {
                     "videoIndex": video.index,
                     "title": video.title or f"视频 {video.index}",
+                    "videoPrompt": video.prompt,
                     "status": "pending_submission",
-                    "statusLabel": "正在生成视频方案",
+                    "statusLabel": "等待提交",
                     "jobId": None,
                     "updatedAt": _isoformat(now),
                 }
@@ -181,7 +182,7 @@ def start_generation_progress(
             "events": [{
                 "at": _isoformat(now),
                 "kind": "batch_started",
-                "message": f"已创建 {len(videos)} 个视频任务，正在生成视频方案。",
+                "message": f"已确认 {len(videos)} 个视频任务，正在准备提交。",
             }],
         }
         snapshot = _copy_progress(_PROGRESS[normalized_session_id])
@@ -198,6 +199,7 @@ def mark_job_submitted(session_id: str | None, video: VideoPrompt, job: QuickVid
         video.index,
         {
             "title": video.title or f"视频 {video.index}",
+            "videoPrompt": video.prompt,
             "status": "submitted",
             "statusLabel": _with_segment_label("已提交", segment_values.get("segmentLabel") if segment_values else ""),
             "jobId": job.job_id,
@@ -213,6 +215,7 @@ def mark_job_submitting(session_id: str | None, video: VideoPrompt) -> None:
         video.index,
         {
             "title": video.title or f"视频 {video.index}",
+            "videoPrompt": video.prompt,
             "status": "submitting",
             "statusLabel": _with_segment_label("提交中", segment_values.get("segmentLabel") if segment_values else ""),
             **segment_values,
@@ -228,6 +231,7 @@ def mark_job_preparing_first_frame(session_id: str | None, video: VideoPrompt) -
         video.index,
         {
             "title": video.title or f"视频 {video.index}",
+            "videoPrompt": video.prompt,
             "status": "preparing_first_frame",
             "statusLabel": "正在生成首帧图",
             "firstFrameStartedAt": current_started_at or _isoformat(now),
@@ -751,6 +755,7 @@ def clear_generation_progress(session_id: str | None) -> None:
 def cancel_generation_progress(
     session_id: str | None,
     reason: str = "用户强行终止，本地停止等待结果回填",
+    generation_batch_id: str | None = None,
 ) -> dict[str, Any] | None:
     normalized_session_id = _normalize_session_id(session_id)
     if not normalized_session_id:
@@ -758,29 +763,66 @@ def cancel_generation_progress(
     now = time.time()
     with _LOCK:
         progress = _PROGRESS.get(normalized_session_id)
-        if not progress:
+        if progress and _batch_context_matches(progress):
+            snapshot = _cancel_progress_snapshot(progress, reason, now)
+        else:
+            snapshot = None
+    if snapshot is None:
+        snapshot = _cancel_ledger_progress(
+            normalized_session_id,
+            reason,
+            generation_batch_id=generation_batch_id,
+            now=now,
+        )
+        if snapshot is None:
             return None
-        if not _batch_context_matches(progress):
-            return None
-        for item in progress.get("items") or []:
-            if item.get("status") in {"succeeded", "failed", "skipped"}:
-                continue
-            item["status"] = "skipped"
-            item["statusLabel"] = "已取消"
-            item["error"] = reason
-            item["updatedAt"] = _isoformat(now)
-        progress["status"] = "cancelled"
-        progress["cancelledAt"] = _isoformat(now)
-        progress["completedAt"] = _isoformat(now)
-        progress["updatedAt"] = _isoformat(now)
-        progress["error"] = reason
-        snapshot = {
-            **progress,
-            "items": [dict(item) for item in progress.get("items") or []],
-        }
     result = _with_counts(snapshot)
     _persist_progress_snapshot(result)
     return result
+
+
+def _cancel_progress_snapshot(progress: dict[str, Any], reason: str, now: float) -> dict[str, Any]:
+    for item in progress.get("items") or []:
+        if str(item.get("status") or "").strip() in _TERMINAL_ITEM_STATUSES:
+            continue
+        item.update(
+            status="skipped",
+            statusLabel="已取消",
+            error=reason,
+            updatedAt=_isoformat(now),
+        )
+    progress.update(
+        status="cancelled",
+        phase="cancelled",
+        cancelledAt=_isoformat(now),
+        completedAt=_isoformat(now),
+        updatedAt=_isoformat(now),
+        error=reason,
+    )
+    return _copy_progress(progress)
+
+
+def _cancel_ledger_progress(
+    session_id: str,
+    reason: str,
+    *,
+    generation_batch_id: str | None,
+    now: float,
+) -> dict[str, Any] | None:
+    normalized_batch_id = _normalize_generation_batch_id(generation_batch_id)
+    record = (
+        _TASK_LEDGER.get_generation_batch(normalized_batch_id)
+        if normalized_batch_id
+        else _TASK_LEDGER.get_latest_generation_batch_for_session(session_id)
+    )
+    if not record or str(record.get("sessionId") or "").strip() != session_id:
+        return None
+    if str(record.get("status") or "").strip() in _TERMINAL_PROGRESS_STATUSES:
+        return None
+    progress = dict(record.get("progress") or {})
+    progress.setdefault("sessionId", session_id)
+    progress.setdefault("generationBatchId", record.get("generationBatchId"))
+    return _cancel_progress_snapshot(progress, reason, now)
 
 
 def get_generation_progress(session_id: str | None) -> dict[str, Any] | None:

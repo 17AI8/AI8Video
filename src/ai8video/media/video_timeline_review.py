@@ -21,6 +21,7 @@ from ai8video.media.video_filmstrip import (
     resolve_video_filmstrip,
     video_filmstrip_payload,
 )
+from ai8video.media.tts_timeline_review import render_tts_timeline_video
 
 
 VIDEO_TIMELINE_REVIEW_ROOT = (USER_FILE_ROOT / "视频裁剪" / "reviews").resolve()
@@ -88,7 +89,12 @@ def reset_video_timeline_review(
     ffmpeg_bin: str | None = None,
 ) -> dict[str, Any]:
     review_dir = _review_dir(relative_key)
-    for name in ("review.json", "candidate.mp4", "candidate.rendering.mp4"):
+    for name in (
+        "review.json",
+        "candidate.mp4",
+        "candidate.rendering.mp4",
+        "candidate.tts-rendering.mp4",
+    ):
         (review_dir / name).unlink(missing_ok=True)
     return video_timeline_review_status(
         video_path,
@@ -109,6 +115,7 @@ def render_video_timeline_candidate(
     composite_source: Path,
     relative_key: str,
     *,
+    preserve_source_audio: bool = True,
     ffmpeg_bin: str | None = None,
 ) -> dict[str, Any]:
     state = pending_video_timeline_review(relative_key)
@@ -122,12 +129,54 @@ def render_video_timeline_candidate(
         temporary,
         state["timelineChunks"],
         source_duration_seconds=float(state["sourceDurationSeconds"]),
+        preserve_source_audio=preserve_source_audio,
         ffmpeg_bin=ffmpeg_bin,
     )
     temporary.replace(candidate)
     state["candidateName"] = candidate.name
     state["renderedAt"] = datetime.now(timezone.utc).isoformat()
     state["compositeSignature"] = _file_signature(composite_source)
+    state["preserveSourceAudio"] = preserve_source_audio
+    state.pop("audioPreviewSignature", None)
+    _write_json(review_dir / "review.json", state)
+    return _public_review(state, pending=True)
+
+
+def render_video_timeline_tts_preview(
+    relative_key: str,
+    audio_path: Path,
+    chunks: Any,
+    *,
+    tts_volume: float = 1.0,
+    ffmpeg_bin: str | None = None,
+) -> dict[str, Any]:
+    state = pending_video_timeline_review(relative_key)
+    if not state:
+        raise LookupError("请先编辑视频裁剪预览")
+    review_dir = _review_dir(relative_key)
+    candidate = review_dir / str(state.get("candidateName") or "candidate.mp4")
+    if not candidate.is_file():
+        raise FileNotFoundError("视频裁剪预览不存在")
+    duration = float(state.get("outputDurationSeconds") or 0)
+    clipped = _clip_tts_chunks_for_preview(chunks, duration)
+    signature = _tts_preview_signature(audio_path, clipped, duration, tts_volume)
+    if state.get("audioPreviewSignature") == signature:
+        return _public_review(state, pending=True)
+    temporary = review_dir / "candidate.tts-rendering.mp4"
+    if clipped:
+        render_tts_timeline_video(
+            candidate,
+            audio_path,
+            temporary,
+            clipped,
+            duration_seconds=duration,
+            tts_volume=tts_volume,
+            ffmpeg_bin=ffmpeg_bin,
+        )
+    else:
+        _strip_audio_track(candidate, temporary, ffmpeg_bin=ffmpeg_bin)
+    temporary.replace(candidate)
+    state["audioPreviewSignature"] = signature
     _write_json(review_dir / "review.json", state)
     return _public_review(state, pending=True)
 
@@ -138,6 +187,7 @@ def render_video_timeline_video(
     chunks: Any,
     *,
     source_duration_seconds: float | int | None = None,
+    preserve_source_audio: bool = True,
     ffmpeg_bin: str | None = None,
 ) -> dict[str, Any]:
     if not source.is_file():
@@ -148,7 +198,7 @@ def render_video_timeline_video(
     )
     normalized = normalize_video_timeline_chunks(chunks, video_duration_seconds=duration)
     metadata = probe_media_metadata(source) or {}
-    has_audio = int(metadata.get("audioChannels") or 0) > 0
+    has_audio = preserve_source_audio and int(metadata.get("audioChannels") or 0) > 0
     ffmpeg = resolve_ffmpeg_bin(ffmpeg_bin)
     command = _video_timeline_ffmpeg_command(source, target, normalized, has_audio, ffmpeg)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -174,12 +224,21 @@ def render_video_timeline_video(
     }
 
 
-def video_timeline_candidate_needs_render(composite_source: Path, relative_key: str) -> bool:
+def video_timeline_candidate_needs_render(
+    composite_source: Path,
+    relative_key: str,
+    *,
+    preserve_source_audio: bool = True,
+) -> bool:
     state = pending_video_timeline_review(relative_key)
     if not state:
         return False
     candidate = _review_dir(relative_key) / str(state.get("candidateName") or "candidate.mp4")
-    return not candidate.is_file() or state.get("compositeSignature") != _file_signature(composite_source)
+    return (
+        not candidate.is_file()
+        or state.get("compositeSignature") != _file_signature(composite_source)
+        or state.get("preserveSourceAudio") is not preserve_source_audio
+    )
 
 
 def mark_video_timeline_review_confirmed(relative_key: str) -> dict[str, Any]:
@@ -303,28 +362,98 @@ def _video_timeline_ffmpeg_command(
     filters: list[str] = []
     count = len(chunks)
     video_sources = ["[0:v:0]"] if count == 1 else [f"[videoSource{index}]" for index in range(count)]
+    audio_sources = ["[0:a:0]"] if count == 1 else [f"[audioSource{index}]" for index in range(count)]
     if count > 1:
         filters.append(f"[0:v:0]split={count}{''.join(video_sources)}")
+        if has_audio:
+            filters.append(f"[0:a:0]asplit={count}{''.join(audio_sources)}")
     for index, item in enumerate(chunks):
         filters.append(
             f"{video_sources[index]}trim=start={item['sourceStartSeconds']}:end={item['sourceEndSeconds']},"
             f"setpts=PTS-STARTPTS[video{index}]"
         )
+        if has_audio:
+            filters.append(
+                f"{audio_sources[index]}atrim=start={item['sourceStartSeconds']}:end={item['sourceEndSeconds']},"
+                f"asetpts=PTS-STARTPTS[audio{index}]"
+            )
     video_output = "[video0]"
+    audio_output = "[audio0]"
     if count > 1:
-        concat_inputs = "".join(f"[video{index}]" for index in range(count))
-        filters.append(f"{concat_inputs}concat=n={count}:v=1:a=0[videoOut]")
+        if has_audio:
+            concat_inputs = "".join(f"[video{index}][audio{index}]" for index in range(count))
+            filters.append(f"{concat_inputs}concat=n={count}:v=1:a=1[videoOut][audioOut]")
+            audio_output = "[audioOut]"
+        else:
+            concat_inputs = "".join(f"[video{index}]" for index in range(count))
+            filters.append(f"{concat_inputs}concat=n={count}:v=1:a=0[videoOut]")
         video_output = "[videoOut]"
     command = [
         ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-i", str(source),
         "-filter_complex", ";".join(filters), "-map", video_output,
     ]
     if has_audio:
-        command.extend(["-map", "0:a:0", "-t", f"{_output_duration(chunks):.3f}"])
+        command.extend(["-map", audio_output])
     append_video_postprocess_encoding_args(command)
     command.extend(["-c:a", "aac"] if has_audio else ["-an"])
     command.extend(["-movflags", "+faststart", str(target)])
     return command
+
+
+def _clip_tts_chunks_for_preview(chunks: Any, duration: float) -> list[dict[str, float]]:
+    if not isinstance(chunks, list) or duration <= 0:
+        return []
+    clipped: list[dict[str, float]] = []
+    for item in chunks:
+        if not isinstance(item, dict):
+            continue
+        start = max(0.0, float(item.get("startSeconds") or 0))
+        source_start = max(0.0, float(item.get("sourceStartSeconds") or 0))
+        source_end = max(source_start, float(item.get("sourceEndSeconds") or source_start))
+        retained = min(source_end - source_start, duration - start)
+        if retained < MIN_VIDEO_TIMELINE_CHUNK_SECONDS:
+            continue
+        clipped.append({
+            "sourceStartSeconds": round(source_start, 3),
+            "sourceEndSeconds": round(source_start + retained, 3),
+            "startSeconds": round(start, 3),
+        })
+    return clipped
+
+
+def _tts_preview_signature(
+    audio_path: Path,
+    chunks: list[dict[str, float]],
+    duration: float,
+    volume: float,
+) -> dict[str, Any]:
+    return {
+        "audio": _file_signature(audio_path),
+        "chunks": chunks,
+        "durationSeconds": round(duration, 3),
+        "ttsVolume": round(float(volume), 6),
+    }
+
+
+def _strip_audio_track(source: Path, target: Path, *, ffmpeg_bin: str | None = None) -> None:
+    command = [
+        resolve_ffmpeg_bin(ffmpeg_bin), "-y", "-hide_banner", "-loglevel", "error",
+        "-i", str(source), "-map", "0:v:0", "-c:v", "copy", "-an",
+        "-movflags", "+faststart", str(target),
+    ]
+    target.unlink(missing_ok=True)
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True, timeout=120)
+    except subprocess.CalledProcessError as exc:
+        target.unlink(missing_ok=True)
+        message = (exc.stderr or exc.stdout or str(exc)).strip()
+        raise RuntimeError(message[-500:] or "清理裁剪预览音轨失败") from exc
+    except subprocess.TimeoutExpired as exc:
+        target.unlink(missing_ok=True)
+        raise RuntimeError("清理裁剪预览音轨超时") from exc
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
 
 
 def _default_review(video_path: Path, relative_key: str, duration: float) -> dict[str, Any]:

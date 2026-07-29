@@ -65,7 +65,7 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
 
         self.assertIsNotNone(progress)
         messages = [event["message"] for event in progress["events"]]
-        self.assertIn("已创建 1 个视频任务，正在生成视频方案。", messages)
+        self.assertIn("已确认 1 个视频任务，正在准备提交。", messages)
         self.assertIn("生成任务已提交", messages)
         self.assertIn("视频生成中", messages)
         self.assertNotIn("job-events", str(progress["events"]))
@@ -369,6 +369,28 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
         self.assertIsNotNone(record["completedAt"])
         self.assertEqual(record["progress"]["items"][0]["status"], "skipped")
 
+    def test_cancel_generation_progress_falls_back_to_ledger_snapshot(self) -> None:
+        session_id = "session cancel restored ledger"
+        generation_batch_id = create_generation_batch_id(session_id)
+        video = VideoPrompt(index=1, title="第一条", prompt="video1")
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            ledger = TaskLedger(Path(temporary_directory) / "task_ledger.sqlite3")
+            with patch.object(generation_progress, "_TASK_LEDGER", ledger):
+                start_generation_progress(session_id, [video], generation_batch_id=generation_batch_id)
+                clear_generation_progress(session_id)
+                result = cancel_generation_progress(
+                    session_id,
+                    "用户取消",
+                    generation_batch_id=generation_batch_id,
+                )
+                record = ledger.get_generation_batch(generation_batch_id)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["status"], "cancelled")
+        self.assertEqual(result["items"][0]["status"], "skipped")
+        self.assertEqual(record["status"], "cancelled")
+
     def _build_session(self) -> ai8video_chat_service._AI8VideoSession:
         session = ai8video_chat_service._AI8VideoSession.__new__(
             ai8video_chat_service._AI8VideoSession
@@ -605,6 +627,43 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
             self.assertEqual(status["generationBatchId"], "gb-missing-batch")
             self.assertEqual(status["currentGenerationBatchId"], "gb-known-batch")
         finally:
+            with ai8video_chat_service._SESSIONS_LOCK:
+                ai8video_chat_service._SESSIONS.pop(session_id, None)
+
+    def test_external_retry_batch_becomes_current_session_batch(self) -> None:
+        session_id = "session-status-external-retry"
+        generation_batch_id = "gb-session-status-external-retry"
+        session = ai8video_chat_service._AI8VideoSession(session_id)
+        session.current_generation_batch_id = "gb-old"
+        session.background_final_payload = {"reply": {"text": "旧结果"}}
+        fake_task = SimpleNamespace(thread=SimpleNamespace(is_alive=lambda: True))
+        with ai8video_chat_service._SESSIONS_LOCK:
+            ai8video_chat_service._SESSIONS[session_id] = session
+        try:
+            clear_generation_progress(session_id)
+            claim_generation_batch(session_id, generation_batch_id)
+            start_generation_progress(
+                session_id,
+                [VideoPrompt(index=1, title="重试视频", prompt="retry")],
+                generation_batch_id=generation_batch_id,
+            )
+            with patch.object(session.task_runner, "start", return_value=fake_task):
+                ai8video_chat_service.start_external_generation_task(
+                    session_id,
+                    generation_batch_id,
+                    lambda task: None,
+                )
+
+            status = ai8video_chat_service.get_chat_status_via_ai8video(
+                session_id,
+                generation_batch_id=generation_batch_id,
+            )
+
+            self.assertEqual(status["status"], "pending")
+            self.assertEqual(status["generationBatchId"], generation_batch_id)
+            self.assertIsNone(session.background_final_payload)
+        finally:
+            clear_generation_progress(session_id)
             with ai8video_chat_service._SESSIONS_LOCK:
                 ai8video_chat_service._SESSIONS.pop(session_id, None)
 

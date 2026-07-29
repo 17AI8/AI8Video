@@ -8,6 +8,55 @@
       return state.videoPreviewModal?.ttsScissorMode === true;
     }
 
+    function timelineSecondsAtPointer(event, lane, duration) {
+      const bounds = lane?.getBoundingClientRect();
+      if (!bounds || bounds.width <= 0 || duration <= 0) return 0;
+      const ratio = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
+      return Math.round(ratio * duration * 1000) / 1000;
+    }
+
+    function bindTimelineScissorGuide(lane, duration, enabled) {
+      const guide = lane?.querySelector('[data-video-preview-cut-guide]');
+      if (!lane || !guide || !enabled || duration <= 0) return;
+      const update = (event) => {
+        const seconds = timelineSecondsAtPointer(event, lane, duration);
+        guide.style.left = `${seconds / duration * 100}%`;
+        guide.dataset.timeLabel = `${seconds.toFixed(2)}s`;
+        guide.hidden = false;
+      };
+      lane.addEventListener('pointermove', update);
+      lane.addEventListener('pointerleave', () => { guide.hidden = true; });
+    }
+
+    function bindTimelinePlayheadDrag(playhead, lane, duration, kind) {
+      if (!playhead || !lane || duration <= 0) return;
+      playhead.addEventListener('pointerdown', (event) => {
+        const video = els.videoPreviewBody?.querySelector('video');
+        if (!video || event.button !== 0) return;
+        event.preventDefault();
+        const resume = !video.paused;
+        video.pause();
+        playhead.setPointerCapture(event.pointerId);
+        const seek = (pointerEvent) => {
+          video.currentTime = Math.min(Number(video.duration || duration), timelineSecondsAtPointer(pointerEvent, lane, duration));
+          if (kind === 'tts') setTtsSelectedChunkIndex(null);
+          if (kind === 'video') setVideoSelectedChunkIndex(null);
+          syncTtsTimelinePlayhead();
+          syncVideoTimelinePlayhead();
+        };
+        const finish = () => {
+          playhead.removeEventListener('pointermove', seek);
+          playhead.removeEventListener('pointerup', finish);
+          playhead.removeEventListener('pointercancel', finish);
+          if (resume) video.play().catch(() => {});
+        };
+        seek(event);
+        playhead.addEventListener('pointermove', seek);
+        playhead.addEventListener('pointerup', finish);
+        playhead.addEventListener('pointercancel', finish);
+      });
+    }
+
     function setTtsScissorMode(active, options = {}) {
       const panel = els.videoPreviewBody?.querySelector('[data-video-preview-tts-timeline]');
       const button = panel?.querySelector('[data-video-preview-action="toggle-tts-scissors"]');
@@ -229,7 +278,10 @@
         return `<button type="button" class="video-preview-tts-chunk${selected ? ' is-selected' : ''}" data-video-preview-tts-chunk data-chunk-index="${index}" data-boundary-base-title="${escapeHtml(actionLabel)}" aria-label="${escapeHtml(actionLabel)}" aria-pressed="${selected ? 'true' : 'false'}" title="${escapeHtml(actionLabel)}" style="left:${left}%;width:${Math.min(width, 100 - left)}%">${waveform}<span class="video-preview-tts-chunk-meta"><span>${escapeHtml(label)}</span><small>${start.toFixed(1)}s</small></span></button>`;
       }).join('');
       const boundary = timelineBoundaryDetails();
-      track.innerHTML = `<div class="video-preview-tts-chunk-lane">${timelineOverflowZoneMarkup(duration, boundary.ttsOverflowIndexes, boundary)}<span class="video-preview-tts-playhead" data-video-preview-tts-playhead></span>${markup}</div>`;
+      track.innerHTML = `<div class="video-preview-tts-chunk-lane">${timelineOverflowZoneMarkup(duration, boundary.ttsOverflowIndexes, boundary)}<span class="video-preview-timeline-cut-guide" data-video-preview-cut-guide hidden></span><span class="video-preview-tts-playhead" data-video-preview-tts-playhead title="拖动播放头"></span>${markup}</div>`;
+      const lane = track.querySelector('.video-preview-tts-chunk-lane');
+      bindTimelineScissorGuide(lane, duration, scissorMode);
+      bindTimelinePlayheadDrag(track.querySelector('[data-video-preview-tts-playhead]'), lane, duration, 'tts');
       track.querySelectorAll('[data-video-preview-tts-chunk]').forEach((element) => {
         element.addEventListener('pointerdown', (event) => {
           if (!isTtsScissorMode()) beginTtsChunkDrag(event, element, duration);
@@ -313,11 +365,9 @@
     function splitTtsTimelineAtPointer(event, element, duration) {
       if (state.videoPreviewModal?.ttsTimelineBusy) return;
       const lane = element.closest('.video-preview-tts-chunk-lane');
-      const bounds = lane?.getBoundingClientRect();
-      if (!bounds || bounds.width <= 0) return;
+      if (!lane) return;
       event.preventDefault();
-      const ratio = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
-      const current = Math.round(ratio * duration * 1000) / 1000;
+      const current = timelineSecondsAtPointer(event, lane, duration);
       const video = els.videoPreviewBody?.querySelector('video');
       if (video) video.currentTime = current;
       syncTtsTimelinePlayhead();

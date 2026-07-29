@@ -107,6 +107,62 @@
       renderViralBreakdownWorkbench();
     }
 
+    function setViralBreakdownContextAction(button, config) {
+      const hidden = !!config.hidden;
+      button.classList.toggle('hidden', hidden);
+      button.setAttribute('aria-hidden', hidden ? 'true' : 'false');
+      button.disabled = hidden || !!config.disabled;
+      button.textContent = String(config.label || '');
+      button.title = String(config.title || '');
+    }
+
+    function syncViralBreakdownContextAction() {
+      const button = document.getElementById('viralBreakdownContextActionButton');
+      if (!button) return;
+      const item = getSelectedViralBreakdownItem();
+      const tab = getViralBreakdownActiveTab();
+      const busy = isViralBreakdownBusy();
+      if (tab === 'generated') {
+        setViralBreakdownContextAction(button, { hidden: true });
+        return;
+      }
+      if (tab === 'grid') {
+        setViralBreakdownContextAction(button, {
+          label: state.viralBreakdown.frameProcessing ? '截图中...' : '拆解画面',
+          disabled: !item || busy,
+          title: item ? '' : '请先选择视频',
+        });
+        return;
+      }
+      const framesReady = hasViralBreakdownFrames(item);
+      if (tab === 'transcript') {
+        setViralBreakdownContextAction(button, {
+          label: state.viralBreakdown.transcriptProcessing ? '识别中...' : '分析台词',
+          disabled: !framesReady || busy,
+          title: framesReady ? '' : '请先完成拆解画面',
+        });
+        return;
+      }
+      const transcriptReady = hasViralBreakdownTranscript(item);
+      if (tab === 'shot-language') {
+        const dirty = hasUnsavedViralBreakdownTranscript(item);
+        const hasAnalysis = !!item?.shotLanguageAnalysis?.text;
+        setViralBreakdownContextAction(button, {
+          label: state.viralBreakdown.shotLanguageProcessing ? '分析中...' : (hasAnalysis ? '重新分析镜头' : '分析镜头'),
+          disabled: !transcriptReady || !framesReady || dirty || busy,
+          title: dirty ? '请先保存台词修改' : (transcriptReady ? '' : (framesReady ? '请先完成分析台词' : '请先完成拆解画面')),
+        });
+        return;
+      }
+      const shotReady = hasCurrentViralBreakdownShotLanguage(item);
+      const transcriptDirty = hasUnsavedViralBreakdownTranscript(item);
+      setViralBreakdownContextAction(button, {
+        label: state.viralBreakdown.scriptGuessProcessing ? '猜测中...' : (state.viralBreakdown.scriptTreeProcessing ? '建树中...' : '猜剧本'),
+        disabled: !shotReady || transcriptDirty || busy,
+        title: transcriptDirty ? '请先保存修改后的台词并重新分析镜头语言' : (shotReady ? '' : '请先完成有效的镜头语言分析'),
+      });
+    }
+
     function renderViralBreakdownWorkbench() {
       const archiveMeta = document.getElementById('viralBreakdownArchiveMeta');
       const statusText = document.getElementById('viralBreakdownStatusText');
@@ -114,10 +170,6 @@
       const targetRatioSelect = document.getElementById('viralBreakdownTargetRatio');
       const uploadInput = document.getElementById('viralBreakdownUploadInput');
       const uploadButton = document.getElementById('viralBreakdownUploadButton');
-      const processFramesButton = document.getElementById('viralBreakdownProcessFramesButton');
-      const analyzeShotLanguageButton = document.getElementById('viralBreakdownAnalyzeShotLanguageButton');
-      const transcribeButton = document.getElementById('viralBreakdownTranscribeButton');
-      const guessScriptButton = document.getElementById('viralBreakdownGuessScriptButton');
       const saveTranscriptButton = document.getElementById('viralBreakdownSaveTranscriptButton');
       const exportTranscriptMp3Button = document.getElementById('viralBreakdownExportTranscriptMp3Button');
       const originalMeta = document.getElementById('viralBreakdownOriginalMeta');
@@ -192,40 +244,7 @@
         uploadButton.setAttribute('aria-disabled', busy ? 'true' : 'false');
         uploadButton.tabIndex = busy ? -1 : 0;
       }
-      if (processFramesButton) {
-        processFramesButton.disabled = !currentItem || busy;
-        processFramesButton.textContent = state.viralBreakdown.frameProcessing ? '截图中...' : '拆解画面';
-      }
-      const framesReady = hasViralBreakdownFrames(currentItem);
-      const transcriptReady = hasViralBreakdownTranscript(currentItem);
-      const shotLanguageReady = hasCurrentViralBreakdownShotLanguage(currentItem);
-      if (transcribeButton) {
-        transcribeButton.disabled = !framesReady || busy;
-        transcribeButton.textContent = state.viralBreakdown.transcriptProcessing ? '识别中...' : '分析台词';
-        transcribeButton.title = framesReady ? '' : '请先完成拆解画面';
-      }
-      if (analyzeShotLanguageButton) {
-        const processing = !!state.viralBreakdown.shotLanguageProcessing;
-        analyzeShotLanguageButton.disabled = !transcriptReady || !framesReady || transcriptHasUnsavedChanges || busy;
-        analyzeShotLanguageButton.textContent = processing
-          ? '分析中...'
-          : (shotLanguageAnalysis?.text ? '重新分析镜头语言' : '分析镜头语言');
-        analyzeShotLanguageButton.title = transcriptHasUnsavedChanges
-          ? '请先保存台词修改'
-          : transcriptReady
-          ? ''
-          : (framesReady ? '请先完成分析台词' : '请先完成拆解画面');
-      }
-      if (guessScriptButton) {
-        const transcriptDirty = hasUnsavedViralBreakdownTranscript(currentItem);
-        guessScriptButton.disabled = !shotLanguageReady || transcriptDirty || busy;
-        guessScriptButton.textContent = state.viralBreakdown.scriptGuessProcessing
-          ? '猜测中...'
-          : (state.viralBreakdown.scriptTreeProcessing ? '建树中...' : '猜剧本');
-        guessScriptButton.title = transcriptDirty
-          ? '请先保存修改后的台词并重新分析镜头语言'
-          : (shotLanguageReady ? '' : '请先完成有效的镜头语言分析');
-      }
+      syncViralBreakdownContextAction();
       syncViralBreakdownSaveScriptTreeButton(scriptTreeDraft);
       if (saveTranscriptButton) {
         saveTranscriptButton.disabled = !currentItem || busy || !transcriptHasUnsavedChanges;
@@ -395,6 +414,7 @@
       syncViralBreakdownPreviewTab();
       syncViralBreakdownActiveTab();
       syncViralBreakdownScriptSubTab();
+      if (state.viralBreakdown.libraryVisible) renderViralBreakdownLibraryModal();
     }
 
     function renderMaterialLibrary(container, kind, items, title, emptyText) {

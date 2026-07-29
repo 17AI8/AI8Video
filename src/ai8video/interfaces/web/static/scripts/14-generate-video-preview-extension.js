@@ -1,5 +1,38 @@
+    function videoPreviewExtensionMode(stageGrid = null) {
+      const grid = stageGrid || els.videoPreviewBody?.querySelector('.video-preview-stage-grid');
+      return grid?.dataset.extensionMode === 'replace' ? 'replace' : 'extend';
+    }
+
+    function videoPreviewExtensionActionLabel(mode, phase = 'ready') {
+      if (mode === 'replace') {
+        return phase === 'working' ? '替换中' : phase === 'pending' ? '待生成' : '替换';
+      }
+      return phase === 'working' ? '合并中' : phase === 'pending' ? '待生成' : '合并';
+    }
+
+    function videoPreviewExtensionMergeMarkup(mode, savedState = null) {
+      if (mode === 'replace') {
+        return `<div class="video-preview-merge-control video-preview-replace-control">
+          <button type="button" data-video-preview-merge disabled>待生成</button>
+        </div>`;
+      }
+      return `<div class="video-preview-merge-control">
+        <button type="button" data-video-preview-merge disabled>待生成</button>
+        <button type="button" data-video-preview-merge-settings-toggle>设置</button>
+      </div>
+      <div class="video-preview-merge-settings">
+        <div class="video-preview-merge-mode" role="radiogroup" aria-label="合并模式">
+          <label><input type="radio" name="video-preview-merge-mode" value="direct" ${savedState?.mergeMode === 'continuation' ? '' : 'checked'}>直接合并</label>
+          <label><input type="radio" name="video-preview-merge-mode" value="continuation" ${savedState?.mergeMode === 'continuation' ? 'checked' : ''}>延续合并</label>
+        </div>
+        <p class="video-preview-merge-tip" data-video-preview-merge-tip>${savedState?.mergeMode === 'continuation' ? '右视频续接到左视频截图处' : '直接拼接左右两个视频'}</p>
+      </div>`;
+    }
+
     async function generateVideoPreviewExtension(userGeneratedKey, button) {
       if (!button || button.disabled) return;
+      const stageGrid = els.videoPreviewBody?.querySelector('.video-preview-stage-grid');
+      const mode = videoPreviewExtensionMode(stageGrid);
       button.disabled = true;
       button.dataset.generating = 'true';
       button.textContent = '生成中';
@@ -8,20 +41,26 @@
         generationStartedAt: new Date().toISOString(),
         generationError: '',
       });
-      const generationSessionId = String(state.activeId || '').trim();
-      if (generationSessionId) {
-        startGenerationProgress(generationSessionId, '延长视频', { count: 1, kind: 'extension' });
-      }
+      const parentSessionId = String(state.activeId || 'session').trim() || 'session';
+      const generationNonce = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const generationSessionId = `extension-${parentSessionId}-${generationNonce}`;
+      startGenerationProgress(generationSessionId, mode === 'replace' ? '重新生成视频' : '延长视频', { count: 1, kind: 'extension' });
       try {
         const videoPrompt = String(loadVideoPreviewExtensionStates()[userGeneratedKey]?.videoPrompt || '').trim();
-        if (!videoPrompt) throw new Error('当前没有延续视频提示词，请先编辑并保存');
+        if (!videoPrompt) throw new Error('当前没有视频提示词，请先编辑并保存');
         const res = await fetch('/api/user-generated-results/extension-video/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userGeneratedKey, sessionId: generationSessionId, videoPrompt }),
+          body: JSON.stringify({
+            userGeneratedKey,
+            sessionId: generationSessionId,
+            videoPrompt,
+            mode,
+            frameKey: String(stageGrid?.dataset.extensionFrameKey || ''),
+          }),
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.ok) throw new Error(data.error || '生成延长视频失败');
+        if (!res.ok || !data.ok) throw new Error(data.error || '生成视频失败');
         if (!hasActiveVideoPreviewExtensionState(userGeneratedKey)) {
           await discardDetachedVideoPreviewExtensionResult(userGeneratedKey, data.userGeneratedKey);
           return;
@@ -30,6 +69,7 @@
           generating: false,
           generationCompletedAt: new Date().toISOString(),
           generationError: '',
+          mode,
           rightVideoKey: data.userGeneratedKey,
           rightVideoUrl: data.videoUrl,
         });
@@ -41,7 +81,7 @@
       } catch (error) {
         updateVideoPreviewExtensionState(userGeneratedKey, {
           generating: false,
-          generationError: error?.message || '生成延长视频失败',
+          generationError: error?.message || '生成视频失败',
         });
         delete button.dataset.generating;
         button.disabled = false;
@@ -50,25 +90,32 @@
         if (state.generationProgress?.kind === 'extension') {
           void refreshExtensionGenerationProgress(state.generationProgress);
         }
-        window.alert(error?.message || '生成延长视频失败');
+        window.alert(error?.message || '生成视频失败');
       }
     }
 
-    async function prepareVideoExtensionPreview(userGeneratedKey, button, savedState = null) {
+    async function prepareVideoExtensionPreview(userGeneratedKey, button, savedState = null, options = {}) {
       const key = String(userGeneratedKey || '').trim();
       const stageGrid = els.videoPreviewBody?.querySelector('.video-preview-stage-grid');
       const video = stageGrid?.querySelector('video');
       if (!key || !stageGrid || !video || button?.disabled) return;
+      const mode = options.mode === 'replace' || savedState?.mode === 'replace' ? 'replace' : 'extend';
       button.disabled = true;
-      setVideoPreviewButtonLabel(button, '截取画面中');
+      setVideoPreviewButtonLabel(button, mode === 'replace' ? '截取首帧中' : '截取画面中');
       try {
         video.pause();
         if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
           throw new Error('当前视频画面尚未加载完成，请稍后再试');
         }
+        const previewTime = mode === 'replace'
+          ? 0
+          : Math.max(0, Number(savedState?.previewTime ?? video.currentTime));
+        const sourceFrameTime = mode === 'replace'
+          ? 0
+          : Math.max(0, Number(savedState?.frameTime ?? videoOutputTimeToSourceTime(previewTime)));
         const frameAsset = savedState?.frameKey
           ? savedState
-          : await saveVideoPreviewExtensionFrame(key, video.currentTime);
+          : await saveVideoPreviewExtensionFrame(key, sourceFrameTime);
         stageGrid.querySelector('.video-preview-extension-stage')?.remove();
         stageGrid.querySelector('.video-preview-merge-control')?.remove();
         stageGrid.querySelector('.video-preview-merge-settings')?.remove();
@@ -76,13 +123,7 @@
         if (deleteExtensionButton) deleteExtensionButton.disabled = false;
         const extensionStage = document.createElement('div');
         extensionStage.className = 'video-preview-extension-stage';
-        const framePreview = video.cloneNode(true);
-        const restoredFrame = Boolean(savedState?.frameKey && savedState?.frameUrl);
-        framePreview.controls = false;
-        framePreview.autoplay = false;
-        framePreview.muted = true;
-        framePreview.dataset.framePreview = 'true';
-        extensionStage.appendChild(framePreview);
+        extensionStage.insertAdjacentHTML('afterbegin', `<img src="${escapeHtml(String(frameAsset.frameUrl || ''))}" alt="${mode === 'replace' ? '原视频首帧' : '已确认截图'}">`);
         extensionStage.insertAdjacentHTML('beforeend', `
           <button type="button" class="video-preview-extension-batch-toggle" data-extension-batch-toggle>批量</button>
           <div class="video-preview-extension-action-bar">
@@ -102,32 +143,13 @@
           void syncVideoPreviewExtensionGenerateButton(key);
         }
         stageGrid.appendChild(extensionStage);
-        const syncFrameTime = () => {
-          framePreview.currentTime = video.currentTime;
-          framePreview.pause();
-        };
-        if (restoredFrame) {
-          framePreview.replaceWith(Object.assign(document.createElement('img'), {
-            src: String(frameAsset.frameUrl), alt: '已确认截图',
-          }));
-        } else if (framePreview.readyState >= 1) syncFrameTime();
-        else framePreview.addEventListener('loadedmetadata', syncFrameTime, { once: true });
-        stageGrid.insertAdjacentHTML('beforeend', `
-          <div class="video-preview-merge-control">
-            <button type="button" data-video-preview-merge disabled>待生成</button>
-            <button type="button" data-video-preview-merge-settings-toggle>设置</button>
-          </div>
-          <div class="video-preview-merge-settings">
-            <div class="video-preview-merge-mode" role="radiogroup" aria-label="合并模式">
-              <label><input type="radio" name="video-preview-merge-mode" value="direct" ${savedState?.mergeMode === 'continuation' ? '' : 'checked'}>直接合并</label>
-              <label><input type="radio" name="video-preview-merge-mode" value="continuation" ${savedState?.mergeMode === 'continuation' ? 'checked' : ''}>延续合并</label>
-            </div>
-            <p class="video-preview-merge-tip" data-video-preview-merge-tip>${savedState?.mergeMode === 'continuation' ? '右视频续接到左视频截图处' : '直接拼接左右两个视频'}</p>
-          </div>
-        `);
+        stageGrid.insertAdjacentHTML('beforeend', videoPreviewExtensionMergeMarkup(mode, savedState));
         stageGrid.classList.add('extension-active');
+        stageGrid.classList.toggle('regeneration-active', mode === 'replace');
         setVideoPreviewMainControlsDisabled(true);
-        stageGrid.dataset.extensionFrameTime = String(video.currentTime);
+        stageGrid.dataset.extensionMode = mode;
+        stageGrid.dataset.extensionFrameTime = String(previewTime);
+        stageGrid.dataset.extensionSourceFrameTime = String(sourceFrameTime);
         stageGrid.dataset.extensionFrameKey = String(frameAsset.frameKey || '');
         stageGrid.dataset.extensionFrameUrl = String(frameAsset.frameUrl || '');
         if (savedState?.batchMode && Array.isArray(savedState.batchFrames)) {
@@ -149,7 +171,9 @@
         const saveState = () => persistVideoPreviewExtensionState(key, {
           ...(loadVideoPreviewExtensionStates()[key] || {}),
           active: true,
-          frameTime: video.currentTime,
+          mode,
+          frameTime: sourceFrameTime,
+          previewTime,
           outputName: defaultOutputName,
           mergeMode: String(stageGrid.querySelector('[name="video-preview-merge-mode"]:checked')?.value || 'direct'),
           frameKey: String(stageGrid.dataset.extensionFrameKey || '').trim(),
@@ -173,13 +197,13 @@
         syncMergeTip();
         saveState();
         syncVideoPreviewMergeAvailability();
-        setVideoPreviewButtonLabel(button, '重新截取');
+        setVideoPreviewButtonLabel(button, mode === 'replace' ? '重新生成' : '重新截取');
         button.disabled = false;
       } catch (error) {
-        setVideoPreviewButtonLabel(button, '延长');
+        setVideoPreviewButtonLabel(button, mode === 'replace' ? '重新生成' : '延长');
         button.disabled = false;
         if (savedState) console.warn('恢复视频延长状态失败', error);
-        else window.alert(error?.message || '截取当前视频画面失败');
+        else window.alert(error?.message || '截取视频画面失败');
       }
     }
 
@@ -193,7 +217,10 @@
       const hasVideoKeys = !!stageGrid.dataset.leftVideoKey && !!rightStage?.dataset.videoKey;
       mergeButton.disabled = !(hasLeftVideo && hasRightVideo && hasVideoKeys);
       if (mergeButton.dataset.merging !== 'true') {
-        mergeButton.textContent = mergeButton.disabled ? '待生成' : '合并';
+        mergeButton.textContent = videoPreviewExtensionActionLabel(
+          videoPreviewExtensionMode(stageGrid),
+          mergeButton.disabled ? 'pending' : 'ready',
+        );
       }
     }
 
@@ -203,16 +230,19 @@
       if (!stageGrid || !rightStage || !videoUrl || !userGeneratedKey) return;
       rightStage.dataset.videoKey = String(userGeneratedKey);
       rightStage.innerHTML = `<video controls playsinline preload="metadata" src="${escapeHtml(videoUrl)}"></video>`;
-      const extendButton = stageGrid.querySelector('[data-video-preview-action="extend-video"]');
-      if (extendButton) {
-        extendButton.disabled = true;
-        setVideoPreviewButtonLabel(extendButton, '已生成延长视频');
+      const mode = videoPreviewExtensionMode(stageGrid);
+      const action = mode === 'replace' ? 'regenerate-video' : 'extend-video';
+      const activeButton = stageGrid.querySelector(`[data-video-preview-action="${action}"]`);
+      if (activeButton) {
+        activeButton.disabled = true;
+        setVideoPreviewButtonLabel(activeButton, mode === 'replace' ? '已生成替换视频' : '已生成延长视频');
       }
       const leftKey = String(stageGrid.dataset.leftVideoKey || '').trim();
       const existing = loadVideoPreviewExtensionStates()[leftKey] || {};
       persistVideoPreviewExtensionState(leftKey, {
         ...existing,
         active: true,
+        mode,
         rightVideoKey: String(userGeneratedKey),
         rightVideoUrl: String(videoUrl),
       });
@@ -226,30 +256,37 @@
       const normalizedLeftKey = String(leftKey || stageGrid?.dataset.leftVideoKey || '').trim();
       if (!normalizedLeftKey || !rightKey || button?.disabled) return;
       const outputName = String(els.videoPreviewTitle?.textContent || '延长合并视频').trim();
+      const operationMode = videoPreviewExtensionMode(stageGrid);
       const mergeMode = String(stageGrid.querySelector('[name="video-preview-merge-mode"]:checked')?.value || 'direct');
       const splitTime = Number(stageGrid.dataset.extensionFrameTime || 0);
       button.disabled = true;
       button.dataset.merging = 'true';
-      button.textContent = '合并中';
+      button.textContent = videoPreviewExtensionActionLabel(operationMode, 'working');
       try {
-        const res = await fetch('/api/user-generated-results/merge', {
+        const endpoint = operationMode === 'replace'
+          ? '/api/user-generated-results/replace'
+          : '/api/user-generated-results/merge';
+        const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ leftKey: normalizedLeftKey, rightKey, outputName, mergeMode, splitTime }),
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.ok) throw new Error(data.error || '合并视频失败');
+        if (!res.ok || !data.ok) throw new Error(data.error || (operationMode === 'replace' ? '替换视频失败' : '合并视频失败'));
         persistVideoPreviewExtensionState(normalizedLeftKey, null);
         await refreshUserGeneratedResults();
+        const resultUrl = operationMode === 'replace'
+          ? `${data.videoUrl}${String(data.videoUrl || '').includes('?') ? '&' : '?'}v=${Date.now()}`
+          : data.videoUrl;
         openVideoPreviewModal({
-          src: data.videoUrl,
-          title: outputName || '延长合并视频',
+          src: resultUrl,
+          title: outputName || (operationMode === 'replace' ? '重新生成视频' : '延长合并视频'),
           userGeneratedKey: data.userGeneratedKey,
         });
       } catch (error) {
         delete button.dataset.merging;
         syncVideoPreviewMergeAvailability();
-        window.alert(error?.message || '合并视频失败');
+        window.alert(error?.message || (operationMode === 'replace' ? '替换视频失败' : '合并视频失败'));
       }
     }
 
@@ -276,6 +313,7 @@
           <div class="video-preview-stage">
             <video class="video-preview-large" controls autoplay playsinline preload="metadata" ${cover ? `poster="${escapeHtml(cover)}"` : ''} src="${escapeHtml(src)}"></video>
             <span class="video-preview-extend-actions">
+              <button type="button" class="video-preview-button video-preview-regenerate-button" data-video-preview-action="regenerate-video" data-icon="sparkles" data-video-user-generated-key="${escapeHtml(userGeneratedKey)}" ${userGeneratedKey ? '' : 'disabled'}>${videoPreviewButtonInnerHtml('sparkles', '重新生成')}</button>
               <button type="button" class="video-preview-button video-preview-extend-button" data-video-preview-action="extend-video" data-icon="extend" data-video-user-generated-key="${escapeHtml(userGeneratedKey)}" ${userGeneratedKey ? '' : 'disabled'}>${videoPreviewButtonInnerHtml('extend', '延长')}</button>
               <button type="button" class="video-preview-button video-preview-extension-close-button" data-video-preview-action="delete-extension" data-icon="trash" aria-label="删除右侧延长内容">${videoPreviewButtonInnerHtml('trash', '')}</button>
             </span>
@@ -293,6 +331,7 @@
       const editVideoTimelineButton = els.videoPreviewBody.querySelector('[data-video-preview-action="edit-video-timeline"]');
       const regenerateTtsButton = els.videoPreviewBody.querySelector('[data-video-preview-action="regenerate-tts"]');
       const editTtsTextButton = els.videoPreviewBody.querySelector('[data-video-preview-action="edit-tts-text"]');
+      const regenerateVideoButton = els.videoPreviewBody.querySelector('[data-video-preview-action="regenerate-video"]');
       const extendVideoButton = els.videoPreviewBody.querySelector('[data-video-preview-action="extend-video"]');
       const deleteExtensionButton = els.videoPreviewBody.querySelector('[data-video-preview-action="delete-extension"]');
       const regenerateHtmlMotionButton = els.videoPreviewBody.querySelector('[data-video-preview-action="regenerate-html-motion"]');
@@ -348,8 +387,11 @@
         }
         openTtsNarrationEditorFromVideoPreview(userGeneratedKey, editTtsTextButton);
       });
+      regenerateVideoButton?.addEventListener('click', () => {
+        prepareVideoExtensionPreview(userGeneratedKey, regenerateVideoButton, null, { mode: 'replace' });
+      });
       extendVideoButton?.addEventListener('click', () => {
-        prepareVideoExtensionPreview(userGeneratedKey, extendVideoButton);
+        prepareVideoExtensionPreview(userGeneratedKey, extendVideoButton, null, { mode: 'extend' });
       });
       deleteExtensionButton?.addEventListener('click', () => {
         deleteVideoPreviewExtensionState(userGeneratedKey, deleteExtensionButton);
@@ -454,7 +496,7 @@
       els.videoPreviewModal.classList.remove('hidden');
       renderHtmlMotionPreviewDrawer();
       requestAnimationFrame(() => syncHtmlMotionDrawerWidth());
-      restoreVideoPreviewExtensionState(video, userGeneratedKey, extendVideoButton);
+      restoreVideoPreviewExtensionState(video, userGeneratedKey, extendVideoButton, regenerateVideoButton);
       // Resume in-flight backend job if any; otherwise sync finished preview.
       void resumeHtmlMotionFromVideoPreview(
         userGeneratedKey,

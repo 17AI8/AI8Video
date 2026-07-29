@@ -208,6 +208,7 @@
         <div class="result-notify-card ${resultNotifyRatioClass(item)}${selectionOrder ? ' is-batch-selected' : ''}">
           <div class="result-notify-preview">
             ${batchSelection}
+            ${renderResultVideoPromptButton(item, index)}
             ${coverSrc
               ? `<img alt="${escapeHtml(title)}" src="${escapeHtml(coverSrc)}">`
               : (videoSrc ? `<video muted playsinline preload="none" src="${escapeHtml(videoSrc)}"></video>` : '')}
@@ -257,6 +258,7 @@
         __progressStatus: true,
         videoIndex,
         title,
+        videoPrompt: resultVideoPrompt(item, index),
         ratio: buildResultRatioLabel(item),
         stage,
         status,
@@ -319,6 +321,7 @@
         return `
           <div class="result-notify-card deleted ${resultNotifyRatioClass(item)}" title="已生成，文件已删除">
             <div class="result-notify-preview">
+              ${renderResultVideoPromptButton(item, index)}
               <div class="result-notify-deleted-mark" aria-hidden="true">已删除</div>
             </div>
             <div class="result-notify-meta">
@@ -344,6 +347,7 @@
         return `
           <div class="result-notify-card failed ${resultNotifyRatioClass(item)}">
             <div class="result-notify-preview" title="${escapeHtml(tooltipReason)}">
+              ${renderResultVideoPromptButton(item, index)}
               ${renderGenerationRetryButton(item)}
               <div class="result-notify-failed-mark reason">${escapeHtml(badgeReason)}</div>
               <div class="result-notify-progress"><span style="--progress-width: 100%"></span></div>
@@ -364,6 +368,7 @@
         return `
           <div class="result-notify-card failed ${resultNotifyRatioClass(item)}">
             <div class="result-notify-preview" title="${escapeHtml(tooltipReason)}">
+              ${renderResultVideoPromptButton(item, index)}
               ${renderGenerationRetryButton(item)}
               <div class="result-notify-failed-mark reason">${escapeHtml(badgeReason)}</div>
               <div class="result-notify-progress"><span style="--progress-width: 100%"></span></div>
@@ -376,12 +381,14 @@
         `;
       }
       const isTerminal = isTerminalProgressStatus(status) || Boolean(item?.historicalSnapshot);
+      const historicalClass = item?.historicalSnapshot ? ' historical-placeholder' : '';
       const processingClass = isPostProcessingProgressStatus(status) ? ' processing-placeholder' : '';
       const waitingClass = item?.waiting ? ' waiting-placeholder' : '';
       return `
-        <div class="result-notify-card ${resultNotifyRatioClass(item)}">
-          <div class="result-notify-preview">
-            <div class="result-notify-play${isTerminal ? ' terminal-placeholder' : `${processingClass}${waitingClass}`}" aria-hidden="true"><span></span></div>
+          <div class="result-notify-card ${resultNotifyRatioClass(item)}">
+            <div class="result-notify-preview">
+              ${renderResultVideoPromptButton(item, index)}
+            <div class="result-notify-play${isTerminal ? ` terminal-placeholder${historicalClass}` : `${processingClass}${waitingClass}`}" aria-hidden="true"><span></span></div>
             <div class="result-notify-progress"><span${isTerminal || item?.waiting ? '' : ' class="pending"'} style="--progress-width: ${isTerminal ? 100 : (item?.waiting ? 0 : (percent || 46))}%"></span></div>
           </div>
           <div class="result-notify-meta">
@@ -396,6 +403,7 @@
       return `
         <div class="result-notify-card ${resultNotifyRatioClass()}">
           <div class="result-notify-preview">
+            ${renderResultVideoPromptButton({}, index - 1)}
             <div class="result-notify-play" aria-hidden="true"><span></span></div>
             <div class="result-notify-progress"><span class="pending" style="--progress-width: 46%"></span></div>
           </div>
@@ -410,33 +418,156 @@
     function renderGenerationRetryButton(item) {
       const videoIndex = Number(item?.videoIndex || 0);
       const generationBatchId = String(item?.generationBatchId || '').trim();
-      if (videoIndex < 1 || !generationBatchId) return '';
+      if (videoIndex < 1) return '';
       return `<button type="button" class="result-notify-retry-button" data-retry-generation-video="${videoIndex}" data-generation-batch-id="${escapeHtml(generationBatchId)}" title="复用现有方案，必要时重新生成首帧">重试</button>`;
+    }
+
+    function resultVideoPrompt(item = {}, fallbackIndex = 0) {
+      const direct = String(item.videoPrompt || item.prompt || '').trim();
+      if (direct) return direct;
+      const records = item?.generationMeta?.segmentRecords || item?.generationMeta?.segments || [];
+      const segmentPrompt = (Array.isArray(records) ? records : [])
+        .map((record) => String(record?.segmentPrompt || '').trim())
+        .filter(Boolean)
+        .join('\n\n');
+      return segmentPrompt;
+    }
+
+    function renderResultVideoPromptButton(item, index) {
+      const prompt = resultVideoPrompt(item, index);
+      const videoIndex = Number(item?.videoIndex || 0) || index + 1;
+      const title = cleanDisplayText(item?.videoTitle || item?.title, `视频 ${videoIndex}`);
+      return `<button type="button" class="result-video-prompt-button"
+        data-result-video-prompt="${escapeHtml(encodeURIComponent(prompt))}"
+        data-result-video-index="${videoIndex}"
+        data-result-video-prompt-title="${escapeHtml(title)}"
+        aria-label="查看${escapeHtml(title)}的视频提示词" title="查看视频提示词">•••</button>`;
+    }
+
+    async function openResultVideoPromptModal(button) {
+      const modal = document.getElementById('resultVideoPromptModal');
+      const body = document.getElementById('resultVideoPromptBody');
+      const title = document.getElementById('resultVideoPromptTitle');
+      const copyButton = document.getElementById('resultVideoPromptCopyButton');
+      if (!modal || !body || !title || !copyButton) return;
+      const encoded = String(button?.getAttribute('data-result-video-prompt') || '');
+      let prompt = '';
+      try { prompt = decodeURIComponent(encoded); } catch (_error) { prompt = encoded; }
+      title.textContent = button?.getAttribute('data-result-video-prompt-title') || '视频提示词';
+      body.textContent = prompt || '正在读取实际提交给视频模型的最终提示词…';
+      body.classList.toggle('is-empty', !prompt);
+      copyButton.disabled = !prompt;
+      copyButton.dataset.copyText = prompt;
+      modal.classList.remove('hidden');
+      if (prompt) return;
+      const sessionId = String(state.activeId || '').trim();
+      const videoIndex = Number(button?.getAttribute('data-result-video-index') || 0);
+      try {
+        const res = await fetch(`/api/generation/video-prompt?sessionId=${encodeURIComponent(sessionId)}&videoIndex=${videoIndex}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.videoPrompt) throw new Error(data.error || '未找到最终提示词');
+        prompt = String(data.videoPrompt).trim();
+        body.textContent = prompt;
+        body.classList.remove('is-empty');
+        copyButton.disabled = false;
+        copyButton.dataset.copyText = prompt;
+        button.setAttribute('data-result-video-prompt', encodeURIComponent(prompt));
+      } catch (error) {
+        body.textContent = error?.message || '未找到该视频实际提交的最终提示词';
+      }
+    }
+
+    function closeResultVideoPromptModal() {
+      document.getElementById('resultVideoPromptModal')?.classList.add('hidden');
+    }
+
+    async function copyResultVideoPrompt() {
+      const button = document.getElementById('resultVideoPromptCopyButton');
+      const text = String(button?.dataset?.copyText || '').trim();
+      if (!button || !text) return;
+      await navigator.clipboard.writeText(text);
+      const previous = button.textContent;
+      button.textContent = '已复制';
+      window.setTimeout(() => { button.textContent = previous; }, 1200);
+    }
+
+    function showGenerationRetryPendingCard(button) {
+      const card = button?.closest?.('.result-notify-card');
+      const preview = card?.querySelector?.('.result-notify-preview');
+      if (!card || !preview) return () => {};
+      const previousClassName = card.className;
+      const previousMarkup = preview.innerHTML;
+      const promptButtonMarkup = preview.querySelector('.result-video-prompt-button')?.outerHTML || '';
+      card.classList.remove('failed');
+      card.classList.add('is-retrying');
+      preview.title = '正在重新生成';
+      preview.innerHTML = `
+        ${promptButtonMarkup}
+        <div class="result-notify-play" aria-hidden="true"><span></span></div>
+        <div class="result-notify-progress"><span class="pending" style="--progress-width: 46%"></span></div>
+      `;
+      return () => {
+        card.className = previousClassName;
+        preview.innerHTML = previousMarkup;
+      };
+    }
+
+    function persistGenerationRetryPendingState(sessionId, videoIndex, generationBatchId) {
+      const session = state.sessions.find((item) => item.id === sessionId);
+      const last = session?.messages?.at?.(-1);
+      if (!last?.payload || last.role !== 'assistant') return;
+      const pending = last.payload.pendingStatus || {};
+      const progress = pending.generationProgress || {};
+      const items = Array.isArray(progress.items) ? progress.items : [];
+      last.payload.meta = { ...(last.payload.meta || {}), operation: 'pending', continuationClosed: false };
+      last.payload.generationBatchId = generationBatchId;
+      last.payload.pendingStatus = normalizePendingStatusProgress({
+        ...pending,
+        status: 'pending',
+        phase: 'generating',
+        statusLabel: '视频生成中',
+        generationBatchId,
+        generationProgress: {
+          ...progress,
+          status: 'active',
+          generationBatchId,
+          items: items.map((item) => Number(item?.videoIndex || 0) === videoIndex
+            ? { ...item, status: 'pending_submission', statusLabel: '正在重新生成', error: '', generationBatchId }
+            : item),
+        },
+      });
+      persistSessions();
+      render();
+      schedulePendingPoll(sessionId, 200);
     }
 
     async function retryFailedGenerationVideo(button) {
       const videoIndex = Number(button?.getAttribute('data-retry-generation-video') || 0);
       const generationBatchId = String(button?.getAttribute('data-generation-batch-id') || '').trim();
       const sessionId = String(state.activeId || '').trim();
-      if (!sessionId || !generationBatchId || videoIndex < 1 || button.disabled) return;
-      button.disabled = true;
-      button.textContent = '重试中';
+      if (!sessionId || videoIndex < 1 || button.disabled) return;
+      const restoreFailedCard = showGenerationRetryPendingCard(button);
       try {
         const res = await fetch('/api/generation/retry', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId, generationBatchId, videoIndex }),
+          body: JSON.stringify({
+            sessionId,
+            generationBatchId,
+            videoIndex,
+            tailFrameChaining: !!state.generationMode?.tailFrameChaining,
+          }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data?.ok === false) throw buildRequestError(data);
-        await refreshAssets();
-        await refreshUserGeneratedResults();
+        persistGenerationRetryPendingState(
+          sessionId,
+          videoIndex,
+          String(data?.generationBatchId || generationBatchId).trim(),
+        );
       } catch (error) {
+        restoreFailedCard();
         window.alert(error?.message || String(error));
-      } finally {
-        button.disabled = false;
-        button.textContent = '重试';
-        renderProgressModal();
       }
     }
 
@@ -450,6 +581,7 @@
       return `
         <div class="result-notify-card failed ${resultNotifyRatioClass(item)}">
           <div class="result-notify-preview" title="${escapeHtml(reason)}">
+            ${renderResultVideoPromptButton(item, index - 1)}
             <div class="result-notify-failed-mark reason">${escapeHtml(badgeReason)}</div>
             <div class="result-notify-progress"><span style="--progress-width: 100%"></span></div>
           </div>

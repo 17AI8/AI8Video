@@ -20,11 +20,16 @@ from ai8video.integrations.direct_video_model_client import (
     AI8VideoModelClient,
     _build_create_payload,
     _create_timeout_seconds,
+    _duration_fallback_payload,
+    _format_response_error,
+    _image_host_fallback_payload,
+    _size_fallback_payload,
     _format_create_timeout_error,
     _poll_request_timeout,
     _raise_for_response,
 )
 from ai8video.integrations.llm_provider import build_openai_compat_llm
+from ai8video.integrations.image_hosting import _read_upload_response
 from ai8video.core.models import FirstFrameAsset, QuickVideoJob
 from ai8video.generation.pipeline import _current_video_settings_trace, _is_generated_job
 from ai8video.integrations.video_model_settings import (
@@ -49,6 +54,35 @@ class MockStreamResponse:
 
 
 class AI8VideoVideoModelSettingsTest(unittest.TestCase):
+    def test_mjj_upload_response_reads_root_image_url(self) -> None:
+        response = requests.Response()
+        response.status_code = 200
+        response._content = b'{"image":{"url":"https://img.example.com/reference.png"}}'
+
+        url = _read_upload_response(
+            response,
+            "image.url",
+            fallback_paths=("success.image.url",),
+        )
+
+        self.assertEqual(url, "https://img.example.com/reference.png")
+
+    def test_real_person_rejection_uses_friendly_message(self) -> None:
+        response = requests.Response()
+        response.status_code = 400
+        response.reason = "Bad Request"
+        response.url = "https://api.example.com/v1/videos"
+        response._content = (
+            b'{"message":"The request failed because the input image content[1] '
+            b'may contain real person."}'
+        )
+
+        message = _format_response_error(response, "创建视频任务")
+
+        self.assertIn("模型拒绝了参考图", message)
+        self.assertIn("图床上传和模型请求均已成功", message)
+        self.assertNotIn("HTTP 400", message)
+
     def test_api_request_disables_system_proxy_by_default(self) -> None:
         class FakeSession:
             def __init__(self) -> None:
@@ -314,6 +348,7 @@ class AI8VideoVideoModelSettingsTest(unittest.TestCase):
         self.assertEqual(payload["return_last_frame"], True)
         self.assertEqual(payload["camera_fixed"], True)
         self.assertEqual(payload["seed"], 7)
+        self.assertEqual(payload["seconds"], "10")
         self.assertEqual(payload["size"], "720x1280")
         self.assertEqual(payload["metadata"]["resolution"], "720p")
         self.assertEqual(payload["metadata"]["video_count"], 2)
@@ -377,9 +412,55 @@ class AI8VideoVideoModelSettingsTest(unittest.TestCase):
             video_count=1,
         )
 
+        self.assertEqual(payload["seconds"], "10")
+        self.assertNotIn("duration", payload)
+
+        response = requests.Response()
+        response.status_code = 400
+        response._content = b'{"message":"cannot unmarshal string into Go struct field seconds of type int"}'
+        fallback = _duration_fallback_payload("openai-compatible", response, payload, 10)
+        self.assertNotIn("seconds", fallback)
+        self.assertEqual(fallback["duration"], 10)
+
+        response._content = b'{"message":"size 720x1080 is not supported"}'
+        size_fallback = _size_fallback_payload(
+            "openai-compatible", response, {**payload, "size": "720x1080"}
+        )
+        self.assertNotIn("size", size_fallback)
+        self.assertEqual(size_fallback["aspect_ratio"], "9:16")
+
         self.assertEqual(payload["image"], image)
         self.assertNotIn("input_reference", payload)
         self.assertNotIn("images", payload)
+
+    def test_openai_reference_image_falls_back_to_selected_image_host(self) -> None:
+        response = requests.Response()
+        response.status_code = 400
+        response._content = b'{"message":"URL data:image/png;base64,AAA failed to fetch"}'
+        payload = {"model": "Grok-Video-GN", "image": "data:image/png;base64,AAA"}
+
+        with patch(
+            "ai8video.integrations.direct_video_model_client.upload_reference_image",
+            return_value="https://img.example.com/reference.png",
+        ) as upload:
+            fallback = _image_host_fallback_payload("openai-compatible", response, payload)
+
+        self.assertEqual(fallback["image"], "https://img.example.com/reference.png")
+        upload.assert_called_once_with(payload["image"])
+
+    def test_openai_missing_image_error_falls_back_to_selected_image_host(self) -> None:
+        response = requests.Response()
+        response.status_code = 400
+        response._content = '{"message":"image 不存在"}'.encode()
+        payload = {"model": "Grok-Video-GN", "image": "data:image/png;base64,AAA"}
+
+        with patch(
+            "ai8video.integrations.direct_video_model_client.upload_reference_image",
+            return_value="https://img.example.com/reference.png",
+        ):
+            fallback = _image_host_fallback_payload("openai-compatible", response, payload)
+
+        self.assertEqual(fallback["image"], "https://img.example.com/reference.png")
 
     def test_direct_client_submits_transformed_local_first_frame_to_openai_compatible_payload(self) -> None:
         settings = VideoModelSettings(

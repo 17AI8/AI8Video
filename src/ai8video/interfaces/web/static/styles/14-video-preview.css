@@ -811,11 +811,58 @@
       z-index: 4;
       top: -3px;
       bottom: -3px;
+      width: 12px;
+      transform: translateX(-6px);
+      cursor: ew-resize;
+      touch-action: none;
+    }
+
+    .video-preview-tts-playhead::after {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 5px;
       width: 2px;
       border-radius: 2px;
+      content: "";
       background: #ffdf6e;
       box-shadow: 0 0 0 1px rgba(15, 28, 43, 0.7);
+    }
+
+    .video-preview-tts-playhead::before {
+      position: absolute;
+      z-index: 1;
+      top: -2px;
+      left: 2px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      content: "";
+      background: #ffdf6e;
+      box-shadow: 0 0 0 1px rgba(15, 28, 43, 0.78);
+    }
+
+    .video-preview-timeline-cut-guide {
+      position: absolute;
+      z-index: 6;
+      top: -4px;
+      bottom: -4px;
+      width: 0;
+      border-left: 1px dashed rgba(255, 239, 158, 0.98);
       pointer-events: none;
+    }
+
+    .video-preview-timeline-cut-guide::after {
+      position: absolute;
+      top: -16px;
+      left: 4px;
+      padding: 1px 4px;
+      border-radius: 4px;
+      content: attr(data-time-label);
+      background: rgba(15, 28, 43, 0.94);
+      color: #ffef9e;
+      font-size: 9px;
+      white-space: nowrap;
     }
 
     .video-preview-tts-chunk {

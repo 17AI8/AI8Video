@@ -132,7 +132,12 @@ class HtmlMotionSemanticHarness:
         self._retry_count += 1
         if self._retry_callback is None:
             return
-        result = _audit_summary(audit.get("summary") if audit else error)
+        ai_passed = bool(audit and audit.get("passed") is True)
+        result = (
+            f"本地格式校验未通过：{error}"
+            if ai_passed and error
+            else _audit_summary(audit.get("summary") if audit else error)
+        )
         _, semantic = _parse_reviewed_semantic(raw)
         score = _candidate_score(audit, semantic, error)
         self._retry_callback({

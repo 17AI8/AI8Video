@@ -5,6 +5,7 @@ import time
 from datetime import datetime
 from queue import Empty
 from queue import Queue
+from typing import Any, Callable
 
 from ai8video.assets.asset_store import JsonlAssetStore
 from ai8video.core.config import AI8VideoConfig
@@ -403,6 +404,39 @@ class _AI8VideoSession:
             latest.segment_label = item.get("segmentLabel")
             mark_job_polling(self.session_id, latest)
 
+    def start_external_generation_task(
+        self,
+        generation_batch_id: str,
+        target: Callable[..., object],
+        *,
+        args: tuple[Any, ...] = (),
+    ) -> GenerationTask:
+        with self.lock:
+            runner = self._ensure_task_runner()
+            previous_batch_ids = runner.cancel_active(except_batch_id=generation_batch_id)
+            for previous_batch_id in previous_batch_ids:
+                record_generation_execution(
+                    session_id=self.session_id,
+                    generation_batch_id=previous_batch_id,
+                    execution_state="cancel_requested",
+                    cancel_requested=True,
+                )
+            clear_chat_snapshot(self.session_id)
+            self.latest_ai8video_payload = None
+            self.latest_error = None
+            self.current_generation_batch_id = generation_batch_id
+            self.current_started_at = time.time()
+            self.current_display_queue = None
+            self.current_message = None
+            self.background_delivery_pending = False
+            self.background_final_payload = None
+            self.background_completed_at = None
+            self.cancelled_at = None
+            self.cancel_reason = None
+            task = runner.start(generation_batch_id, target, args=args)
+            self.worker_thread = task.thread
+            return task
+
     def _start_task(self, message: str) -> None:
         task_runner = self._ensure_task_runner()
         previous_batch_ids = task_runner.cancel_active()
@@ -663,6 +697,21 @@ def handle_chat_via_ai8video(
     return session.handle_message(message=message, timeout_seconds=timeout_seconds)
 
 
+def start_external_generation_task(
+    session_id: str,
+    generation_batch_id: str,
+    target: Callable[..., object],
+    *,
+    args: tuple[Any, ...] = (),
+) -> GenerationTask:
+    session = _get_session(session_id=session_id)
+    return session.start_external_generation_task(
+        generation_batch_id,
+        target,
+        args=args,
+    )
+
+
 def get_chat_status_via_ai8video(session_id: str, generation_batch_id: str | None = None) -> dict:
     requested_generation_batch_id = str(generation_batch_id or "").strip()
     with _SESSIONS_LOCK:
@@ -764,11 +813,19 @@ def _unknown_generation_batch_status(
     }
 
 
-def cancel_chat_via_ai8video(session_id: str, reason: str | None = None) -> dict:
+def cancel_chat_via_ai8video(
+    session_id: str,
+    reason: str | None = None,
+    generation_batch_id: str | None = None,
+) -> dict:
     with _SESSIONS_LOCK:
         session = _SESSIONS.get(session_id)
     if session is None:
-        progress = cancel_generation_progress(session_id, reason or "用户强行终止，本地停止等待结果回填")
+        progress = cancel_generation_progress(
+            session_id,
+            reason or "用户强行终止，本地停止等待结果回填",
+            generation_batch_id=generation_batch_id,
+        )
         return {
             "status": "cancelled" if progress else "idle",
             "phase": "cancelled" if progress else "idle",

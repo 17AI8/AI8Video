@@ -320,7 +320,8 @@
       applyVideoPreviewExtensionBatchStage(stageGrid, frames);
       try {
         const videoPrompt = String(loadVideoPreviewExtensionStates()[userGeneratedKey]?.videoPrompt || '').trim();
-        if (!videoPrompt) throw new Error('当前没有延续视频提示词，请先编辑并保存');
+        if (!videoPrompt) throw new Error('当前没有视频提示词，请先编辑并保存');
+        const mode = videoPreviewExtensionMode(stageGrid);
         const sessionIdBase = String(state.activeId || '').trim() || `extension-${Date.now()}`;
         const pendingFrames = frames.map((frame, index) => ({
           ...frame,
@@ -342,6 +343,7 @@
                 sessionId: frame.videoSessionId,
                 frameKey: frame.frameKey,
                 videoPrompt,
+                mode,
               }),
             });
             const data = await res.json().catch(() => ({}));

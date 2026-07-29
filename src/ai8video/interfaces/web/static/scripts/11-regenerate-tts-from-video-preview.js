@@ -623,6 +623,8 @@
 
     function summarizeHtmlMotionRetryReason(reason) {
       const text = String(reason || '');
+      if (text.includes('本地格式校验未通过')) return text;
+      if (text.includes('审核通过')) return 'AI 审核通过，正在进行本地校验';
       if (text.includes('过长')) return '文案过长';
       if (text.includes('缺少真实痛点') || text.includes('伪问题')) return '问句缺少真实痛点';
       if (text.includes('不是台词连续片段') || text.includes('不是完整意群')) return '与原台词不一致';

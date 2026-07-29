@@ -323,6 +323,111 @@
       box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 12%, transparent);
     }
 
+    #settingsModal .image-host-settings-panel {
+      overflow: auto;
+    }
+
+    #settingsModal .image-host-settings-head p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .image-host-settings-status {
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .image-host-privacy-warning {
+      margin: 14px 16px 4px;
+      padding: 12px 14px;
+      border: 1px solid rgba(220, 70, 70, 0.3);
+      border-radius: 10px;
+      background: rgba(255, 239, 239, 0.88);
+      color: #9f2d3d;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .image-host-provider-list {
+      display: grid;
+      gap: 8px;
+      padding: 12px 16px;
+    }
+
+    .image-host-provider-option {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.84);
+      cursor: pointer;
+    }
+
+    .image-host-provider-option.is-selected {
+      border-color: color-mix(in srgb, var(--brand) 48%, transparent);
+      background: color-mix(in srgb, var(--brand-soft) 50%, #fff);
+    }
+
+    .image-host-provider-option span,
+    .image-host-provider-option small {
+      display: block;
+      min-width: 0;
+    }
+
+    .image-host-provider-option small {
+      margin-top: 3px;
+      overflow: hidden;
+      color: var(--muted);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .image-host-provider-option em {
+      display: inline-block;
+      margin-top: 5px;
+      color: #b23a48;
+      font-size: 11px;
+      font-style: normal;
+      font-weight: 700;
+    }
+
+    .image-host-delete {
+      border: 0;
+      background: transparent;
+      color: #c33b4d;
+      cursor: pointer;
+    }
+
+    .image-host-custom-form {
+      display: grid;
+      gap: 10px;
+      padding: 14px 16px 16px;
+      border-top: 1px solid var(--line);
+    }
+
+    .image-host-custom-form h4 {
+      margin: 0;
+    }
+
+    .image-host-custom-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .image-host-custom-grid input {
+      min-width: 0;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
     .settings-form {
       display: grid;
       gap: 14px;

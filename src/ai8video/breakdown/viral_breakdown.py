@@ -20,6 +20,7 @@ from ai8video.core.config import AI8VideoConfig
 from ai8video.integrations.http_client import api_request
 from ai8video.integrations.llm_provider import normalize_chat_completions_url
 from ai8video.assets.user_files import USER_FILE_ROOT
+from ai8video.breakdown.viral_breakdown_audio_chunks import create_transcript_audio_chunks
 
 
 VIRAL_BREAKDOWN_ROOT = (USER_FILE_ROOT / "爆款拆解").resolve()
@@ -27,6 +28,7 @@ VIRAL_BREAKDOWN_SOURCE_VIDEO_DIR = (VIRAL_BREAKDOWN_ROOT / "原视频").resolve(
 VIRAL_BREAKDOWN_FRAME_DIR = (VIRAL_BREAKDOWN_ROOT / "截图").resolve()
 VIRAL_BREAKDOWN_GRID_DIR = (VIRAL_BREAKDOWN_ROOT / "宫格图").resolve()
 VIRAL_BREAKDOWN_TRANSCRIPT_DIR = (VIRAL_BREAKDOWN_ROOT / "台词").resolve()
+VIRAL_BREAKDOWN_TRANSCRIPT_AUDIO_DIR = (VIRAL_BREAKDOWN_ROOT / "台词音频").resolve()
 VIRAL_BREAKDOWN_SHOT_LANGUAGE_DIR = (VIRAL_BREAKDOWN_ROOT / "镜头语言").resolve()
 VIRAL_BREAKDOWN_SCRIPT_DRAFT_DIR = (VIRAL_BREAKDOWN_ROOT / "剧本草稿").resolve()
 VIRAL_BREAKDOWN_GENERATE_SESSION_DIR = (VIRAL_BREAKDOWN_ROOT / "生成会话").resolve()
@@ -59,6 +61,7 @@ def ensure_viral_breakdown_dirs() -> Path:
         VIRAL_BREAKDOWN_FRAME_DIR,
         VIRAL_BREAKDOWN_GRID_DIR,
         VIRAL_BREAKDOWN_TRANSCRIPT_DIR,
+        VIRAL_BREAKDOWN_TRANSCRIPT_AUDIO_DIR,
         VIRAL_BREAKDOWN_SHOT_LANGUAGE_DIR,
         VIRAL_BREAKDOWN_SCRIPT_DRAFT_DIR,
         VIRAL_BREAKDOWN_GENERATE_SESSION_DIR,
@@ -111,13 +114,14 @@ def list_viral_breakdown_items(limit: int = 200) -> dict[str, Any]:
         items.append(_build_viral_breakdown_item(source_video_path))
         if len(items) >= max(1, min(200, int(limit or 200))):
             break
-    summary = _describe_directory(VIRAL_BREAKDOWN_ROOT)
+    archive_size_bytes = sum(int(item.get("archiveSizeBytes") or 0) for item in items)
+    archive_size_label = _format_bytes(archive_size_bytes)
     return {
         "root": str(VIRAL_BREAKDOWN_ROOT),
         "itemCount": len(items),
-        "sizeBytes": summary["sizeBytes"],
-        "sizeLabel": summary["sizeLabel"],
-        "archiveDisplay": f"{len(items)} 个视频 · {summary['sizeLabel']}",
+        "sizeBytes": archive_size_bytes,
+        "sizeLabel": archive_size_label,
+        "archiveDisplay": f"{len(items)} 个视频 · {archive_size_label}",
         "items": items,
     }
 
@@ -163,6 +167,45 @@ def process_viral_breakdown_video_frames(
     }
     _write_json(frame_output_dir / "meta.json", payload)
     return payload
+
+
+def _create_transcript_audio_chunks(
+    video_path: Path,
+    segments: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    output_dir = VIRAL_BREAKDOWN_TRANSCRIPT_AUDIO_DIR / video_path.stem
+    chunks = create_transcript_audio_chunks(
+        video_path,
+        output_dir,
+        segments,
+        ffmpeg_bin=resolve_ffmpeg_bin(),
+    )
+    enriched: list[dict[str, Any]] = []
+    for chunk in chunks:
+        source_path = output_dir / str(chunk.pop("fileName"))
+        source_key = source_path.relative_to(VIRAL_BREAKDOWN_ROOT).as_posix()
+        enriched.append({
+            **chunk,
+            "sourceAudioKey": source_key,
+            "sourceAudioUrl": _versioned_viral_breakdown_asset_url(source_path),
+        })
+    return enriched
+
+
+def _ensure_transcript_audio_chunks(
+    video_path: Path,
+    transcript_payload: dict[str, Any],
+) -> dict[str, Any]:
+    segments = transcript_payload.get("segments")
+    if not isinstance(segments, list) or not segments:
+        return transcript_payload
+    normalized = _normalize_transcript_segments(segments)
+    if normalized and all(segment.get("sourceAudioKey") for segment in normalized):
+        return transcript_payload
+    enriched = _create_transcript_audio_chunks(video_path, segments)
+    migrated = {**transcript_payload, "segments": enriched, "audioChunksGeneratedAt": datetime.now(timezone.utc).isoformat()}
+    _write_json(VIRAL_BREAKDOWN_TRANSCRIPT_DIR / f"{video_path.stem}.json", migrated)
+    return migrated
 
 
 def save_viral_breakdown_frame_preferences(
@@ -233,6 +276,7 @@ def transcribe_viral_breakdown_video(
         )
         transcript_lines.append(text)
     transcript_text = "\n".join(transcript_lines).strip()
+    normalized_segments = _create_transcript_audio_chunks(video_path, normalized_segments)
     payload = {
         "ok": True,
         "videoKey": relative_video_key,
@@ -263,7 +307,9 @@ def save_viral_breakdown_transcript(
     existing_payload = _read_json(transcript_json_path)
     normalized_segments = _normalize_transcript_segments(transcript_segments)
     if normalized_segments:
-        normalized_transcript_text = "\n".join(segment["text"] for segment in normalized_segments)
+        normalized_transcript_text = "\n".join(
+            segment["text"] for segment in normalized_segments if not segment.get("deleted")
+        )
     payload = {
         "ok": True,
         "videoKey": relative_video_key,
@@ -288,6 +334,7 @@ def _normalize_transcript_segments(value: object) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     normalized: list[dict[str, Any]] = []
+    cursor = 0.0
     for item in value:
         if not isinstance(item, dict):
             continue
@@ -300,16 +347,43 @@ def _normalize_transcript_segments(value: object) -> list[dict[str, Any]]:
         deleted = bool(item.get("deleted")) or not text
         if not math.isfinite(start) or not math.isfinite(end):
             continue
-        start = max(0.0, start)
-        segment = {"start": round(start, 3), "end": round(max(start, end), 3), "text": text}
+        source_start = _finite_float(item.get("sourceStart"), start)
+        source_end = _finite_float(item.get("sourceEnd"), end)
+        duration = _finite_float(item.get("durationSeconds"), max(0.0, source_end - source_start))
+        duration = max(0.01, duration)
+        segment = {
+            "start": round(cursor, 3),
+            "end": round(cursor + duration, 3),
+            "text": text,
+            "durationSeconds": round(duration, 3),
+            "sourceStart": round(max(0.0, source_start), 3),
+            "sourceEnd": round(max(source_start, source_end), 3),
+        }
+        cursor += duration
+        chunk_id = str(item.get("chunkId") or "").strip()
+        if chunk_id:
+            segment["chunkId"] = chunk_id
+        source_audio_key = str(item.get("sourceAudioKey") or "").strip()
+        if source_audio_key.startswith("台词音频/"):
+            source_path = (VIRAL_BREAKDOWN_ROOT / source_audio_key).resolve()
+            if _is_within(VIRAL_BREAKDOWN_TRANSCRIPT_AUDIO_DIR, source_path) and source_path.is_file():
+                segment["sourceAudioKey"] = source_audio_key
+                segment["sourceAudioUrl"] = _versioned_viral_breakdown_asset_url(source_path)
         if deleted:
             segment["deleted"] = True
-            segment["text"] = ""
         audio_url = str(item.get("audioUrl") or "").strip()
         if audio_url.startswith("/api/viral-breakdown/transcript-audio/"):
             segment["audioUrl"] = audio_url
         normalized.append(segment)
     return normalized
+
+
+def _finite_float(value: object, fallback: float) -> float:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    return result if math.isfinite(result) else fallback
 
 
 def save_viral_breakdown_script_draft(
@@ -1011,6 +1085,7 @@ def _build_viral_breakdown_item(source_video_path: Path) -> dict[str, Any]:
     relative_video_key = source_video_path.relative_to(VIRAL_BREAKDOWN_ROOT).as_posix()
     transcript_json_path = VIRAL_BREAKDOWN_TRANSCRIPT_DIR / f"{source_video_path.stem}.json"
     transcript_payload = _read_json(transcript_json_path)
+    transcript_payload = _ensure_transcript_audio_chunks(source_video_path, transcript_payload)
     generated_video_path = _find_generated_video_path(source_video_path.stem)
     grid_image_path = _find_latest_grid_image_path(source_video_path.stem)
     frame_dir_path = VIRAL_BREAKDOWN_FRAME_DIR / source_video_path.stem
@@ -1024,6 +1099,9 @@ def _build_viral_breakdown_item(source_video_path: Path) -> dict[str, Any]:
     transcript_text_path = VIRAL_BREAKDOWN_TRANSCRIPT_DIR / f"{source_video_path.stem}.txt"
     if transcript_text_path.is_file():
         related_size_bytes += transcript_text_path.stat().st_size
+    transcript_audio_dir = VIRAL_BREAKDOWN_TRANSCRIPT_AUDIO_DIR / source_video_path.stem
+    if transcript_audio_dir.is_dir():
+        related_size_bytes += _directory_size_bytes(transcript_audio_dir)
     shot_language_analysis = load_viral_breakdown_shot_language(source_video_path)
     shot_language_path = VIRAL_BREAKDOWN_SHOT_LANGUAGE_DIR / f"{source_video_path.stem}.json"
     if shot_language_path.is_file():
@@ -1108,8 +1186,9 @@ def _find_latest_grid_image_path(video_stem: str) -> Path | None:
 
 
 def _versioned_viral_breakdown_asset_url(asset_path: Path) -> str:
-    relative_key = asset_path.relative_to(VIRAL_BREAKDOWN_ROOT).as_posix()
-    return f"/api/viral-breakdown/file?key={relative_key}&v={asset_path.stat().st_mtime_ns}"
+    resolved_path = asset_path.resolve()
+    relative_key = resolved_path.relative_to(VIRAL_BREAKDOWN_ROOT.resolve()).as_posix()
+    return f"/api/viral-breakdown/file?key={relative_key}&v={resolved_path.stat().st_mtime_ns}"
 
 
 def _extract_video_frames(video_path: Path, frame_output_dir: Path, *, interval_seconds: float) -> None:
@@ -1222,23 +1301,6 @@ def _pick_grid_dimensions(frame_count: int, target_ratio_value: float) -> tuple[
     return best_columns, best_rows
 
 
-def _describe_directory(path: Path) -> dict[str, Any]:
-    ensure_viral_breakdown_dirs()
-    file_count = 0
-    total_bytes = 0
-    for source in path.rglob("*"):
-        if not source.is_file():
-            continue
-        file_count += 1
-        total_bytes += source.stat().st_size
-    return {
-        "path": str(path),
-        "fileCount": file_count,
-        "sizeBytes": total_bytes,
-        "sizeLabel": _format_bytes(total_bytes),
-    }
-
-
 def _format_bytes(size: int) -> str:
     units = ["B", "KB", "MB", "GB", "TB"]
     value = float(max(0, int(size or 0)))
@@ -1282,7 +1344,7 @@ def _reset_directory(path: Path) -> None:
 
 def _is_within(root: Path, target: Path) -> bool:
     try:
-        target.relative_to(root)
+        target.resolve().relative_to(root.resolve())
         return True
     except ValueError:
         return False

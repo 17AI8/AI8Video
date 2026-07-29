@@ -35,7 +35,7 @@ class AI8VideoGenerationModeTest(unittest.TestCase):
         self.assertEqual([video.index for video in result], [1, 2, 3])
         self.assertEqual({video.prompt for video in result}, {"统一定稿提示词"})
 
-    def test_smart_split_never_uses_manual_repeat_finalization(self) -> None:
+    def test_confirmed_smart_split_skips_second_prompt_finalization(self) -> None:
         pipeline = object.__new__(AI8VideoPipeline)
         pipeline.llm = lambda _prompt: ""
         videos = [VideoPrompt(index=index, title=f"分集 {index}", prompt="偶然相同") for index in range(1, 4)]
@@ -54,7 +54,7 @@ class AI8VideoGenerationModeTest(unittest.TestCase):
                 patch("ai8video.generation.pipeline.review_final_outputs", side_effect=lambda items, **_kwargs: items):
             result = pipeline._finalize_video_queue(request, videos, "", None)
 
-        self.assertEqual(finalized_counts, [3])
+        self.assertEqual(finalized_counts, [])
         self.assertEqual([video.title for video in result], ["分集 1", "分集 2", "分集 3"])
 
     def test_generation_mode_defaults_to_normal_and_saves_concurrent(self) -> None:
@@ -272,6 +272,7 @@ class AI8VideoGenerationModeTest(unittest.TestCase):
                 ]
 
             def run_planned_request(self, request, videos, **kwargs):
+                captured["confirmed_smart_split_reason"] = request.smart_split_reason
                 captured["videos"] = videos
                 return PipelineResult(
                     request=request,
@@ -304,6 +305,7 @@ class AI8VideoGenerationModeTest(unittest.TestCase):
         self.assertEqual(completed.stage, "completed")
         self.assertIsNone(agent.sessions["smart-split"].awaiting)
         self.assertTrue(captured["smart_split"])
+        self.assertEqual(captured["confirmed_smart_split_reason"], "已确认智能分集方案")
         self.assertEqual(len(captured["videos"]), 2)
 
     def test_smart_split_replan_command_keeps_context_and_locks_requested_count(self) -> None:

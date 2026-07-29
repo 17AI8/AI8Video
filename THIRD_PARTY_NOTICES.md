@@ -21,6 +21,7 @@
 | Systran faster-whisper-base | 运行时按需下载 | MIT | 默认台词识别模型权重 |
 | AISHELL-3 | 可选旧版语音模型数据集 | Apache-2.0 | 兼容用户本机已有的 `vits-icefall-zh-aishell3` 模型 |
 | Electron | `31.x` | MIT | 可选桌面侧车 |
+| Font Awesome Free Desktop | `7.3.1` | CC BY 4.0（SVG 图标）/ SIL OFL-1.1（字体）/ MIT（代码与元数据） | 完整离线图标、字体与元数据资源包；左侧栏使用其中 8 个 Solid SVG 图标 |
 | Source Han Serif SC Bold / Heavy | 当前仓内版本 | SIL OFL-1.1 | 可选本地字幕与花字渲染字体 |
 | electron-builder | `24.x` | MIT | 可选桌面安装包构建 |
 
@@ -39,4 +40,5 @@
 - faster-whisper-base：[Systran/faster-whisper-base](https://huggingface.co/Systran/faster-whisper-base)
 - FFmpeg：[ffmpeg.org](https://ffmpeg.org/)
 - AISHELL-3：[OpenSLR 93](https://www.openslr.org/93/)
+- Font Awesome Free：[FortAwesome/Font-Awesome](https://github.com/FortAwesome/Font-Awesome/tree/7.3.1)
 - Source Han Serif：[adobe-fonts/source-han-serif](https://github.com/adobe-fonts/source-han-serif)

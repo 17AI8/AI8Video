@@ -37,11 +37,21 @@
     });
 
     document.getElementById('progressModalBody')?.addEventListener('click', (event) => {
+      const promptButton = event.target?.closest?.('[data-result-video-prompt]');
+      if (promptButton) {
+        openResultVideoPromptModal(promptButton);
+        return;
+      }
       const button = event.target?.closest?.('[data-retry-generation-video]');
       if (button) retryFailedGenerationVideo(button);
     });
 
     els.messages?.addEventListener('click', (event) => {
+      const promptButton = event.target?.closest?.('[data-result-video-prompt]');
+      if (promptButton) {
+        openResultVideoPromptModal(promptButton);
+        return;
+      }
       const toggle = event.target?.closest?.('[data-agent-step-details-toggle]');
       if (toggle) {
         event.preventDefault();
@@ -57,6 +67,12 @@
       }
       const button = event.target?.closest?.('[data-retry-generation-video]');
       if (button) retryFailedGenerationVideo(button);
+    });
+
+    document.getElementById('resultVideoPromptCloseButton')?.addEventListener('click', closeResultVideoPromptModal);
+    document.getElementById('resultVideoPromptCopyButton')?.addEventListener('click', () => void copyResultVideoPrompt());
+    document.getElementById('resultVideoPromptModal')?.addEventListener('click', (event) => {
+      if (event.target === document.getElementById('resultVideoPromptModal')) closeResultVideoPromptModal();
     });
 
     document.getElementById('hotRadarCloseButton')?.addEventListener('click', closeHotRadarModal);
@@ -82,6 +98,11 @@
     });
 
     document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && state.viralBreakdown.libraryVisible) {
+        event.preventDefault();
+        closeViralBreakdownLibraryModal();
+        return;
+      }
       if (event.key === 'Escape' && !document.getElementById('viralBreakdownModal')?.classList.contains('hidden')) {
         event.preventDefault();
         if (document.querySelector('[data-viral-select="video"]')?.classList.contains('is-open')) {

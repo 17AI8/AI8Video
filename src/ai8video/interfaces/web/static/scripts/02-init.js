@@ -27,6 +27,7 @@
       persistSessions();
       await refreshAuthSettings();
       await refreshVideoModelSettings();
+      await refreshImageHostSettings();
       await refreshAssets();
       await refreshUserGeneratedResults();
       await refreshUserMaterials();
@@ -165,10 +166,18 @@
       closeVideoPreviewModal();
     });
 
+    let videoPreviewBackdropPointerDown = false;
+    els.videoPreviewModal.addEventListener('pointerdown', (event) => {
+      videoPreviewBackdropPointerDown = event.target === els.videoPreviewModal;
+    });
+    els.videoPreviewModal.addEventListener('pointercancel', () => {
+      videoPreviewBackdropPointerDown = false;
+    });
     els.videoPreviewModal.addEventListener('click', (event) => {
-      if (event.target === els.videoPreviewModal) {
+      if (videoPreviewBackdropPointerDown && event.target === els.videoPreviewModal) {
         closeVideoPreviewModal();
       }
+      videoPreviewBackdropPointerDown = false;
     });
 
     els.settingsEntryButton.addEventListener('click', async () => {

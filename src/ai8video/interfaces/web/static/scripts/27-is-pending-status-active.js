@@ -229,10 +229,7 @@
           return;
         }
         if (data.status !== 'pending' && data.generationProgress) {
-          last.payload.pendingStatus = normalizePendingStatusProgress({
-            ...(last.payload.pendingStatus || {}),
-            ...extractPendingStatus(data, sessionId),
-          });
+          last.payload = mergeGenerationStatusPayload(last.payload, data, sessionId);
           if (state.generationProgress?.sessionId === sessionId) {
             clearGenerationProgress();
           }
@@ -250,10 +247,7 @@
           return;
         }
         if (data.status === 'pending') {
-          last.payload.pendingStatus = normalizePendingStatusProgress({
-            ...(last.payload.pendingStatus || {}),
-            ...extractPendingStatus(data, sessionId),
-          });
+          last.payload = mergeGenerationStatusPayload(last.payload, data, sessionId);
           await Promise.allSettled([
             refreshAssets(),
             refreshUserGeneratedResults(),
@@ -299,6 +293,14 @@
     async function forceCancelPendingSession(sessionId, messageIndex = null) {
       const targetSessionId = String(sessionId || '').trim();
       if (!targetSessionId || pendingCancelInflight.has(targetSessionId)) return;
+      const targetSession = state.sessions.find((item) => item.id === targetSessionId);
+      const indexedMessage = Number.isInteger(Number(messageIndex))
+        ? targetSession?.messages?.[Number(messageIndex)]
+        : null;
+      const targetMessage = indexedMessage || [...(targetSession?.messages || [])]
+        .reverse()
+        .find((item) => item?.role === 'assistant' && item?.payload?.pendingStatus);
+      const generationBatchId = extractGenerationBatchId(targetMessage?.payload || {});
       pendingCancelInflight.add(targetSessionId);
       clearPendingPoll(targetSessionId);
       applyCancelledPendingStatus(targetSessionId, {
@@ -314,6 +316,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             sessionId: targetSessionId,
+            generationBatchId,
             reason: '用户强行终止，本地停止等待结果回填',
           }),
         });

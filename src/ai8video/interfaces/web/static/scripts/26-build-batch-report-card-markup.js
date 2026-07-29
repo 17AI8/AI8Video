@@ -431,6 +431,9 @@
       if (data?.statusLabel) {
         pendingStatus.statusLabel = data.statusLabel;
       }
+      if (data?.generationBatchId) {
+        pendingStatus.generationBatchId = String(data.generationBatchId).trim();
+      }
       if (Object.prototype.hasOwnProperty.call(data || {}, 'generationProgress')) {
         pendingStatus.generationProgress = scrubDeletedGenerationProgress(
           data?.generationProgress || null,

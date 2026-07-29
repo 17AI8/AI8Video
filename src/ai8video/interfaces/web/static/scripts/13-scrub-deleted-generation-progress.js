@@ -312,12 +312,20 @@
         stageGrid.querySelector('.video-preview-merge-control')?.remove();
         stageGrid.querySelector('.video-preview-merge-settings')?.remove();
         stageGrid.classList.remove('extension-active');
+        stageGrid.classList.remove('regeneration-active');
         delete stageGrid.dataset.extensionFrameTime;
+        delete stageGrid.dataset.extensionSourceFrameTime;
+        delete stageGrid.dataset.extensionMode;
         setVideoPreviewMainControlsDisabled(false);
         const extendButton = stageGrid.querySelector('[data-video-preview-action="extend-video"]');
         if (extendButton) {
           extendButton.disabled = false;
           setVideoPreviewButtonLabel(extendButton, '延长');
+        }
+        const regenerateButton = stageGrid.querySelector('[data-video-preview-action="regenerate-video"]');
+        if (regenerateButton) {
+          regenerateButton.disabled = false;
+          setVideoPreviewButtonLabel(regenerateButton, '重新生成');
         }
         button.disabled = false;
         await refreshUserGeneratedResults();

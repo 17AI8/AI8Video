@@ -426,6 +426,7 @@
       if (!tabTrigger) return;
       event.preventDefault();
       activateViralBreakdownTab(tabTrigger.getAttribute('data-viral-breakdown-tab'));
+      syncViralBreakdownContextAction();
     });
 
     document.getElementById('viralBreakdownIntervalInput')?.addEventListener('input', (event) => {
@@ -456,33 +457,23 @@
       }
     });
 
-    document.getElementById('viralBreakdownProcessFramesButton')?.addEventListener('click', async () => {
+    document.getElementById('viralBreakdownContextActionButton')?.addEventListener('click', async () => {
+      const tab = getViralBreakdownActiveTab();
       try {
-        await processSelectedViralBreakdownFrames();
+        if (tab === 'grid') await processSelectedViralBreakdownFrames();
+        else if (tab === 'transcript') await transcribeSelectedViralBreakdownVideo();
+        else if (tab === 'shot-language') await analyzeSelectedViralBreakdownShotLanguage();
+        else if (tab === 'script') await guessSelectedViralBreakdownScript({ resumeFrom: 'full' });
       } catch (error) {
         console.error(error);
-        state.viralBreakdown.error = error?.message || String(error);
-        renderViralBreakdownWorkbench();
-      }
-    });
-
-    document.getElementById('viralBreakdownAnalyzeShotLanguageButton')?.addEventListener('click', async () => {
-      try {
-        await analyzeSelectedViralBreakdownShotLanguage();
-      } catch (error) {
-        console.error(error);
-        state.viralBreakdown.notice = '';
-        state.viralBreakdown.error = error?.message || '分析镜头语言失败，请稍后重试。';
-        renderViralBreakdownWorkbench();
-      }
-    });
-
-    document.getElementById('viralBreakdownTranscribeButton')?.addEventListener('click', async () => {
-      try {
-        await transcribeSelectedViralBreakdownVideo();
-      } catch (error) {
-        console.error(error);
-        state.viralBreakdown.error = error?.message || String(error);
+        if (tab === 'shot-language') {
+          state.viralBreakdown.notice = '';
+          state.viralBreakdown.error = error?.message || '分析镜头语言失败，请稍后重试。';
+        } else if (tab === 'script' && !state.viralBreakdown.error) {
+          state.viralBreakdown.error = friendlyViralBreakdownScriptError(error, 'skeleton');
+        } else {
+          state.viralBreakdown.error = error?.message || String(error);
+        }
         renderViralBreakdownWorkbench();
       }
     });
@@ -504,18 +495,6 @@
         console.error(error);
         state.viralBreakdown.notice = '';
         state.viralBreakdown.error = error?.message || String(error);
-        renderViralBreakdownWorkbench();
-      }
-    });
-
-    document.getElementById('viralBreakdownGuessScriptButton')?.addEventListener('click', async () => {
-      try {
-        await guessSelectedViralBreakdownScript({ resumeFrom: 'full' });
-      } catch (error) {
-        console.error(error);
-        if (!state.viralBreakdown.error) {
-          state.viralBreakdown.error = friendlyViralBreakdownScriptError(error, 'skeleton');
-        }
         renderViralBreakdownWorkbench();
       }
     });

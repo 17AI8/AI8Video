@@ -286,6 +286,7 @@ class AI8VideoConversationController:
                 state.awaiting = "smart_split_confirmation"
                 return self._build_smart_split_confirmation_reply(state)
             request = state.draft.to_request()
+            request.smart_split_reason = state.smart_split_reason
             result = self._run_planned_generation_request(
                 request,
                 state.planned_videos,
@@ -320,6 +321,7 @@ class AI8VideoConversationController:
             if not state.planned_videos:
                 raise RuntimeError("智能分集方案已失效，请重新发送原始需求")
             request = state.draft.to_request()
+            request.smart_split_reason = state.smart_split_reason or "已确认智能分集方案"
             result = self._run_planned_generation_request(
                 request,
                 state.planned_videos,

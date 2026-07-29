@@ -469,6 +469,7 @@
 
     function closeViralBreakdownModal() {
       closeViralBreakdownVideoMenu();
+      if (state.viralBreakdown.libraryVisible) closeViralBreakdownLibraryModal();
       document.getElementById('viralBreakdownModal')?.classList.add('hidden');
     }
 
@@ -526,6 +527,7 @@
         'scriptGuessProcessing',
         'scriptTreeProcessing',
         'scriptTreeSaving',
+        'libraryDeleting',
       ].some((key) => !!workbench[key]);
     }
 

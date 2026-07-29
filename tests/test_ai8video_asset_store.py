@@ -20,7 +20,12 @@ class AI8VideoAssetStoreTest(unittest.TestCase):
     def test_append_records_generation_outcome_without_scoring_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             store = JsonlAssetStore(f"{tempdir}/assets.jsonl")
-            request = ParsedRequest(raw_text="生成一条视频", mode="single_video")
+            request = ParsedRequest(
+                raw_text="生成一条视频",
+                mode="single_video",
+                concurrent_generation=False,
+                tail_frame_chaining=True,
+            )
             video = VideoPrompt(index=1, title="单条视频", prompt="视频提示词")
             job = QuickVideoJob(
                 video_index=1,
@@ -41,6 +46,8 @@ class AI8VideoAssetStoreTest(unittest.TestCase):
 
             self.assertEqual(record["generationStatus"], "generated")
             self.assertEqual(record["generationReasons"], [])
+            self.assertFalse(record["request"]["concurrentGeneration"])
+            self.assertTrue(record["request"]["tailFrameChaining"])
             self.assertEqual(set(record).intersection({"score", "decision"}), set())
 
     def test_append_records_generation_batch_and_session_context(self) -> None:
