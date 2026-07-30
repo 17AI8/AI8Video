@@ -203,6 +203,7 @@
       configureVideoTimeline(data?.burnReview?.videoTimeline || {});
       configureTtsTimeline(data?.burnReview?.tts || {});
       syncVideoTimelineDependentEditors(data?.burnReview?.videoTimeline || {});
+      clearTimelineHistory();
       closeBurnTimelinePanels();
       syncBurnConfirmButton({ reviewReady: false });
       setVideoPreviewButtonLabel(button, '已烧录');
@@ -224,6 +225,7 @@
       button.setAttribute('aria-busy', 'true');
       setVideoPreviewButtonLabel(button, '烧录中');
       try {
+        await state.videoPreviewModal?.htmlMotionPersistChain;
         const data = await requestConfirmedBurn(key);
         await applyConfirmedBurn(data, shouldResumePlayback, button);
       } catch (error) {

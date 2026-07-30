@@ -1,0 +1,88 @@
+"""现有 Planner 的类型化 Capability 适配器。"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Callable
+
+from ai8video.agent_runtime.capabilities import AgentRunContext, CapabilitySpec
+from ai8video.core.models import ParsedRequest, VideoPrompt
+
+
+PLANNING_CAPABILITY_NAME = "planner.plan-video-content"
+
+
+@dataclass(frozen=True)
+class PlanningCapabilityInput:
+    request: ParsedRequest
+    target_duration: int
+    task_constraints: str
+    smart_split: bool
+    allow_mock: bool
+    llm: Callable[[str], str] | None
+    trace_session_id: str | None
+
+
+def build_planning_capability(
+    *,
+    infer_count: Callable[..., tuple[int, str]],
+    smart_plan: Callable[..., list[VideoPrompt]],
+    repeat_plan: Callable[..., list[VideoPrompt]],
+    single_plan: Callable[..., list[VideoPrompt]],
+) -> CapabilitySpec[PlanningCapabilityInput, list[VideoPrompt]]:
+    def execute(_context: AgentRunContext, data: PlanningCapabilityInput) -> list[VideoPrompt]:
+        return _execute_planning(data, infer_count, smart_plan, repeat_plan, single_plan)
+
+    return CapabilitySpec(
+        name=PLANNING_CAPABILITY_NAME,
+        agent_id="planner",
+        description="把用户请求转换为可执行的独立视频规划。",
+        handler=execute,
+        input_type=PlanningCapabilityInput,
+        output_type=list,
+        policy_skills=("plan-video-content",),
+        side_effects=False,
+        replay_safe=True,
+        execution_mode="parallel",
+    )
+
+
+def _execute_planning(
+    data: PlanningCapabilityInput,
+    infer_count: Callable[..., tuple[int, str]],
+    smart_plan: Callable[..., list[VideoPrompt]],
+    repeat_plan: Callable[..., list[VideoPrompt]],
+    single_plan: Callable[..., list[VideoPrompt]],
+) -> list[VideoPrompt]:
+    request = data.request
+    video_count = request.video_count
+    if data.smart_split:
+        video_count, request.smart_split_reason = infer_count(
+            request.raw_text,
+            llm=data.llm,
+            duration_seconds=data.target_duration,
+            trace_session_id=data.trace_session_id,
+        )
+        if not video_count:
+            raise ValueError("video_count is required for video planning")
+        return smart_plan(
+            request.raw_text,
+            video_count,
+            request.style_hint,
+            request.core_keywords,
+            task_constraints=data.task_constraints,
+            final_duration_seconds=data.target_duration,
+            llm=data.llm,
+            allow_mock=data.allow_mock,
+            trace_session_id=data.trace_session_id,
+        )
+    if request.mode == "batch_videos":
+        if not video_count:
+            raise ValueError("video_count is required for manual batch generation")
+        return repeat_plan(
+            request.raw_text,
+            video_count,
+            request.style_hint,
+            request.core_keywords,
+        )
+    return single_plan(request.raw_text, request.style_hint, request.core_keywords)

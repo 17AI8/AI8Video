@@ -290,6 +290,57 @@ class AI8VideoHtmlMotionOverlayTest(unittest.TestCase):
         self.assertEqual(result["status"], "preview_failed")
         self.assertEqual(source.read_bytes(), b"base")
 
+    def test_generated_layer_hash_skips_unchanged_confirm_rerender(self) -> None:
+        source = self.root / "result.mp4"
+        source.write_bytes(b"official")
+        review_root = self.root / "reviews"
+
+        def render(candidate: Path) -> dict:
+            candidate.write_bytes(b"preview")
+            (candidate.parent / "overlay.webm").write_bytes(b"generated-overlay")
+            return {
+                "status": "applied",
+                "durationSeconds": 10.0,
+                "motionArtifact": {
+                    "design": {"palette": {"accent": "#fff", "support": "#fff", "text": "#fff"}},
+                    "scenes": [{
+                        "start": 1.0,
+                        "end": 3.0,
+                        "html": '<p id="scene-1-text">第一段</p>',
+                        "css": "",
+                        "zone": "top-left",
+                        "ids": ["scene-1-text"],
+                        "animations": [{
+                            "target": "#scene-1-text",
+                            "kind": "entrance",
+                            "at": 0.0,
+                            "duration": 0.3,
+                            "from": {"opacity": 0},
+                            "to": {"opacity": 1},
+                        }],
+                    }],
+                },
+                "motionMedia": {"width": 720, "height": 1280, "durationSeconds": 10.0},
+                "motionFontFamily": "",
+            }
+
+        with patch.object(html_motion_review, "HTML_MOTION_REVIEW_ROOT", review_root):
+            prepared = html_motion_review.prepare_html_motion_review(source, "video/result.mp4", render)
+            with patch.object(
+                html_motion_review,
+                "render_html_motion_artifact_layer",
+                side_effect=AssertionError("unchanged layer must be reused"),
+            ) as rerender:
+                ensured = html_motion_review.adjust_html_motion_review_timeline(
+                    source,
+                    "video/result.mp4",
+                    prepared["timelineChunks"],
+                )
+
+        self.assertTrue(ensured["renderReused"])
+        self.assertEqual(rerender.call_count, 0)
+        self.assertEqual(source.read_bytes(), b"official")
+
     def test_review_audio_sync_keeps_candidate_video_and_uses_official_audio(self) -> None:
         source = self.root / "result.mp4"
         source.write_bytes(b"official")
@@ -338,11 +389,18 @@ class AI8VideoHtmlMotionOverlayTest(unittest.TestCase):
                         {
                             "start": 1.0,
                             "end": 3.0,
-                            "html": "<p>第一段</p>",
+                            "html": '<p id="scene-1-text">第一段</p>',
                             "css": "",
                             "zone": "top-left",
-                            "ids": [],
-                            "animations": [],
+                            "ids": ["scene-1-text"],
+                            "animations": [{
+                                "target": "#scene-1-text",
+                                "kind": "entrance",
+                                "at": 0.0,
+                                "duration": 0.3,
+                                "from": {"opacity": 0},
+                                "to": {"opacity": 1},
+                            }],
                         }
                     ],
                 },
@@ -369,6 +427,11 @@ class AI8VideoHtmlMotionOverlayTest(unittest.TestCase):
                 side_effect=rerender_layer,
             ) as rerender:
                 adjusted = html_motion_review.adjust_html_motion_review_timeline(
+                    source,
+                    "video/result.mp4",
+                    [{"index": 0, "startSeconds": 4.2}],
+                )
+                reused = html_motion_review.adjust_html_motion_review_timeline(
                     source,
                     "video/result.mp4",
                     [{"index": 0, "startSeconds": 4.2}],
@@ -400,6 +463,8 @@ class AI8VideoHtmlMotionOverlayTest(unittest.TestCase):
         self.assertEqual(adjusted["timelineChunks"][0]["startSeconds"], 4.2)
         self.assertEqual(adjusted["timelineChunks"][0]["endSeconds"], 6.2)
         self.assertEqual(rerender.call_args.args[0]["scenes"][0]["start"], 4.2)
+        self.assertTrue(reused["renderReused"])
+        self.assertEqual(rerender.call_count, 1)
 
     def test_alpha_validation_rejects_nontransparent_layer(self) -> None:
         with patch.object(html_motion_overlay, "probe_media_video_info", return_value={"pixelFormat": "yuv420p"}):

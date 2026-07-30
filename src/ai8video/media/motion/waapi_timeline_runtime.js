@@ -67,7 +67,7 @@
     const delaySeconds = number(item.at, 0) + staggerSeconds * index;
     const animation = node.animate([from, to], {
       duration: Math.max(1, number(item.duration, 0.001) * 1000),
-      delay: Math.max(0, delaySeconds * 1000),
+      delay: delaySeconds * 1000,
       easing: easing(item.to && item.to.ease),
       fill: 'forwards',
       iterations: 1,
@@ -76,7 +76,9 @@
     animation.currentTime = 0;
     return {
       animation,
-      baseDelay: Math.max(0, delaySeconds * 1000),
+      baseDelay: delaySeconds * 1000,
+      kind: String(item.kind || ''),
+      localDelay: number(item.localAt, delaySeconds - number(node.closest('.hf-scene')?.dataset.start, 0)) * 1000,
       sceneIndex: sceneSourceIndex(node.closest('.hf-scene')),
     };
   }
@@ -148,8 +150,11 @@
         ? windows.find((window) => current >= window.start && current < window.end)
         : null;
       if (active) {
-        const original = number(active.originalStart, active.start);
-        record.animation.effect.updateTiming({ delay: record.baseDelay + (active.start - original) * 1000 });
+        const sourceOffset = Math.max(0, number(active.sourceStart, 0) - number(active.originalSourceStart, 0));
+        const delay = record.kind === 'scene-end'
+          ? active.end * 1000
+          : active.start * 1000 + record.localDelay - sourceOffset * 1000;
+        record.animation.effect.updateTiming({ delay });
       }
       record.animation.currentTime = time;
     }
@@ -164,8 +169,10 @@
       const original = number(scene?.dataset.originalStart, number(scene?.dataset.start, 0));
       const start = Math.max(0, number(chunk.startSeconds, original));
       const duration = Math.max(0.1, number(chunk.durationSeconds, number(chunk.endSeconds, start) - start));
+      const sourceStart = number(chunk.sourceStartSeconds, number(scene?.dataset.sourceStart, original));
+      const originalSourceStart = number(chunk.originalSourceStartSeconds, sourceStart);
       const windows = windowsBySource.get(sourceIndex) || [];
-      windows.push({ start, end: start + duration, originalStart: original });
+      windows.push({ start, end: start + duration, originalStart: original, sourceStart, originalSourceStart });
       windowsBySource.set(sourceIndex, windows);
     });
     for (const [sourceIndex, windows] of windowsBySource) {

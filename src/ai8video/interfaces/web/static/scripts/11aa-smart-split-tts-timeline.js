@@ -36,13 +36,19 @@
         if (time - previous >= 0.8 && sourceEnd - time >= 0.8) cuts.push(time);
       });
       const boundaries = [sourceStart, ...cuts, sourceEnd];
+      let remaining = timelineChunkWithRestoreBounds(chunk);
       return boundaries.slice(0, -1).map((start, index) => {
         const end = boundaries[index + 1];
         const startRatio = (start - sourceStart) / sourceDuration;
         const duration = (end - start) / sourceDuration * timelineDuration;
         const startSeconds = timelineStart + startRatio * timelineDuration;
+        const last = index === boundaries.length - 2;
+        const bounds = last
+          ? { first: remaining }
+          : splitTimelineRestoreBounds(remaining, end);
+        remaining = bounds.second || remaining;
         return {
-          ...chunk,
+          ...bounds.first,
           sourceStartSeconds: start,
           sourceEndSeconds: end,
           startSeconds,
@@ -76,13 +82,11 @@
         setTtsTimelineStatus('没有检测到足够明显的音波停顿', 'error');
         return;
       }
+      const historyBefore = captureTimelineHistorySnapshot();
       setTtsScissorMode(false, { render: false, updateStatus: false });
       setTtsSelectedChunkIndex(null);
       state.videoPreviewModal.ttsTimelineChunks = nextChunks;
-      renderTtsTimelineChunks(
-        els.videoPreviewBody?.querySelector('[data-video-preview-tts-chunks]'),
-        nextChunks,
-        Number(state.videoPreviewModal?.ttsTimelineDuration || 0),
-      );
+      recordTimelineHistory('tts', '智能切分配音', historyBefore);
+      renderCurrentTtsTimeline();
       void previewTtsTimeline(userGeneratedKey, `已根据音波停顿智能切为 ${nextChunks.length} 段`);
     }

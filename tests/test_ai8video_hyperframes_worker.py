@@ -19,7 +19,17 @@ FAKE_CLI = """
 const fs = require('fs');
 const args = process.argv.slice(2);
 const mode = process.env.FAKE_HF_MODE || 'success';
+const argsLog = process.env.FAKE_HF_ARGS_LOG || '';
+if (argsLog) fs.appendFileSync(argsLog, `${JSON.stringify(args)}\n`);
 if (args[0] === 'check') {
+  if (mode === 'silent-check') {
+    const releaseFile = process.env.FAKE_HF_RELEASE_FILE || '';
+    const deadline = Date.now() + 2000;
+    while (releaseFile && !fs.existsSync(releaseFile) && Date.now() < deadline) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+    }
+    if (!releaseFile || !fs.existsSync(releaseFile)) process.exit(2);
+  }
   const payload = mode === 'fatal'
     ? {lint: {findings: [{severity: 'error', message: 'bad lint'}]}}
     : mode === 'warning'
@@ -53,15 +63,20 @@ class HyperFramesWorkerTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.tempdir.cleanup()
 
-    def _render(self, mode: str, *, timeout_ms: int = 5000):
+    def _render(self, mode: str, *, timeout_ms: int = 5000, environment=None, stage_callback=None):
         output = self.composition / "overlay.webm"
-        env = {"FAKE_HF_MODE": mode}
+        env = {
+            "FAKE_HF_MODE": mode,
+            "AI8VIDEO_HYPERFRAMES_RENDER_WORKERS": None,
+            **(environment or {}),
+        }
         with _temporary_environment(env):
             return render_with_hyperframes_worker(
                 self.composition,
                 output,
                 cli_path=self.cli,
                 timeout_ms=timeout_ms,
+                stage_callback=stage_callback,
             )
 
     def test_success_emits_render_events_and_output(self) -> None:
@@ -70,6 +85,51 @@ class HyperFramesWorkerTest(unittest.TestCase):
         self.assertTrue(result.output.is_file())
         self.assertGreater(result.output.stat().st_size, 0)
         self.assertIn("completed", [event.get("phase") for event in result.events])
+
+    def test_silent_check_emits_checking_before_cli_output(self) -> None:
+        release_file = self.root / "release-check"
+        stages: list[str] = []
+
+        def stage_callback(phase: str, _event) -> None:  # noqa: ANN001
+            stages.append(phase)
+            if phase == "checking":
+                release_file.write_text("ok", encoding="utf-8")
+
+        result = self._render(
+            "silent-check",
+            environment={"FAKE_HF_RELEASE_FILE": str(release_file)},
+            stage_callback=stage_callback,
+        )
+
+        ordered = list(dict.fromkeys(stages))
+        self.assertTrue(result.output.is_file())
+        self.assertEqual(ordered[:4], ["preparing", "checking", "rendering", "completed"])
+
+    def test_render_workers_are_configurable_and_bounded(self) -> None:
+        args_log = self.root / "args.jsonl"
+
+        self._render(
+            "success",
+            environment={
+                "FAKE_HF_ARGS_LOG": str(args_log),
+                "AI8VIDEO_HYPERFRAMES_RENDER_WORKERS": "4",
+            },
+        )
+        commands = [json.loads(line) for line in args_log.read_text(encoding="utf-8").splitlines()]
+        render_args = next(args for args in commands if args[0] == "render")
+        self.assertEqual(render_args[render_args.index("--workers") + 1], "4")
+
+        args_log.unlink()
+        self._render(
+            "success",
+            environment={
+                "FAKE_HF_ARGS_LOG": str(args_log),
+                "AI8VIDEO_HYPERFRAMES_RENDER_WORKERS": "99",
+            },
+        )
+        commands = [json.loads(line) for line in args_log.read_text(encoding="utf-8").splitlines()]
+        render_args = next(args for args in commands if args[0] == "render")
+        self.assertEqual(render_args[render_args.index("--workers") + 1], "8")
 
     def test_check_fatal_error_does_not_render(self) -> None:
         with self.assertRaises(HyperFramesWorkerError) as context:
@@ -119,7 +179,7 @@ class HyperFramesWorkerTest(unittest.TestCase):
 
 
 class _temporary_environment:
-    def __init__(self, values: dict[str, str]) -> None:
+    def __init__(self, values: dict[str, str | None]) -> None:
         import os
 
         self.os = os
@@ -129,7 +189,10 @@ class _temporary_environment:
     def __enter__(self):
         for key, value in self.values.items():
             self.previous[key] = self.os.environ.get(key)
-            self.os.environ[key] = value
+            if value is None:
+                self.os.environ.pop(key, None)
+            else:
+                self.os.environ[key] = value
 
     def __exit__(self, exc_type, exc, tb):
         for key, value in self.previous.items():

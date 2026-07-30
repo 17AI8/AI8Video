@@ -197,6 +197,24 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("width: fit-content;", rule)
         self.assertIn("max-width: min(100%, 760px);", rule)
 
+    def test_agent_result_thumbnail_is_visually_separated_from_progress_card(self) -> None:
+        source = read_static_source()
+        rule_start = source.index(".message:not(.user) .bubble.agent-run-with-results {")
+        rule_end = source.index("}", rule_start)
+        rule = source[rule_start:rule_end]
+
+        self.assertIn("const pendingThumbnails = renderAgentVideoThumbnails(displayedPending);", source)
+        self.assertIn("${pendingThumbnails}", source)
+        self.assertIn("const hasPendingCard = directChildren.some", source)
+        self.assertIn("const hasAgentVideoResults = directChildren.some", source)
+        self.assertIn("'agent-run-with-results',", source)
+        self.assertIn("directChildren.length === 2 && hasPendingCard && hasAgentVideoResults", source)
+        self.assertIn("display: grid;", rule)
+        self.assertIn("width: fit-content;", rule)
+        self.assertIn("padding: 0;", rule)
+        self.assertIn("background: transparent;", rule)
+        self.assertIn(".bubble.agent-run-with-results > .agent-video-results", source)
+
     def test_historical_completion_guide_is_not_rendered(self) -> None:
         source = read_static_source()
 
@@ -1028,6 +1046,15 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn('video-preview-controls-row', source)
         self.assertNotIn('border-radius: 8px 8px 0 0;', source)
         self.assertNotIn('width: 196px;', source)
+
+    def test_confirm_burn_waits_for_html_motion_timeline_persistence(self) -> None:
+        source = read_static_source()
+
+        self.assertIn("await state.videoPreviewModal?.htmlMotionPersistChain", source)
+        self.assertLess(
+            source.index("await state.videoPreviewModal?.htmlMotionPersistChain"),
+            source.index("const data = await requestConfirmedBurn(key)"),
+        )
 
     def test_html_motion_timeline_chunk_click_seeks_video(self) -> None:
         source = read_static_source()
@@ -6072,6 +6099,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
         self.assertEqual(len(complete), 1)
         self.assertEqual(complete[0]["label"], "完整配音")
+        self.assertEqual(complete[0]["originalSourceEndSeconds"], 10.0)
         self.assertEqual([item["label"] for item in split], ["配音 1", "配音 2"])
         self.assertEqual(single_remaining[0]["label"], "配音 1")
         self.assertEqual(split[1]["startSeconds"], 5)
@@ -6088,6 +6116,17 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 audio_duration_seconds=10,
                 video_duration_seconds=12,
             )
+
+    def test_tts_timeline_keeps_full_audio_restore_bound_past_video_end(self) -> None:
+        chunks = tts_timeline_review.normalize_tts_timeline_chunks(
+            [],
+            audio_duration_seconds=12,
+            video_duration_seconds=8,
+        )
+
+        self.assertEqual(chunks[0]["sourceEndSeconds"], 8.0)
+        self.assertEqual(chunks[0]["originalSourceEndSeconds"], 12.0)
+        self.assertEqual(chunks[0]["label"], "完整配音")
         with self.assertRaisesRegex(ValueError, "不能重叠"):
             tts_timeline_review.normalize_tts_timeline_chunks(
                 [
@@ -6133,6 +6172,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
         self.assertEqual([item["startSeconds"] for item in chunks], [0.0, 3.0])
         self.assertEqual([item["durationSeconds"] for item in chunks], [3.0, 5.0])
+        self.assertEqual(chunks[0]["originalSourceEndSeconds"], 3.0)
         self.assertEqual([item["startSeconds"] for item in remapped], [0.0, 3.0])
         self.assertEqual(
             [(item["sourceStartSeconds"], item["sourceEndSeconds"]) for item in remapped],
@@ -6146,6 +6186,35 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 ],
                 video_duration_seconds=10,
             )
+
+    def test_timeline_left_trim_preserves_restore_start_bounds(self) -> None:
+        video = video_timeline_review.normalize_video_timeline_chunks(
+            [{
+                "sourceStartSeconds": 2,
+                "sourceEndSeconds": 8,
+                "originalSourceStartSeconds": 0,
+                "originalSourceEndSeconds": 10,
+            }],
+            video_duration_seconds=10,
+        )
+        tts = tts_timeline_review.normalize_tts_timeline_chunks(
+            [{
+                "sourceStartSeconds": 2,
+                "sourceEndSeconds": 8,
+                "originalSourceStartSeconds": 0,
+                "originalSourceEndSeconds": 10,
+                "startSeconds": 2,
+            }],
+            audio_duration_seconds=10,
+            video_duration_seconds=12,
+        )
+
+        self.assertEqual(video[0]["startSeconds"], 0.0)
+        self.assertEqual(video[0]["durationSeconds"], 6.0)
+        self.assertEqual(video[0]["originalSourceStartSeconds"], 0.0)
+        self.assertEqual(tts[0]["startSeconds"], 2.0)
+        self.assertEqual(tts[0]["durationSeconds"], 6.0)
+        self.assertEqual(tts[0]["originalSourceStartSeconds"], 0.0)
 
     def test_video_timeline_ffmpeg_command_trims_audio_with_video_chunks(self) -> None:
         command = video_timeline_review._video_timeline_ffmpeg_command(
@@ -6188,6 +6257,30 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("data-video-preview-cut-guide", source)
         self.assertIn("function handleVideoTimelineSpacePlayback", source)
         self.assertIn("function videoOutputTimeToSourceTime(outputSeconds)", source)
+        self.assertIn("function bindTimelineEndTrimHandle", source)
+        self.assertIn("function bindTimelineStartTrimHandle", source)
+        self.assertIn("function timelineFixedContentGeometry", source)
+        self.assertIn("function videoTimelineEditScaleDuration", source)
+        self.assertIn('data-video-preview-timeline-trim-handle="end"', source)
+        self.assertIn('data-video-preview-timeline-trim-handle="start"', source)
+        self.assertIn("originalSourceEndSeconds", source)
+        self.assertIn("--video-preview-tts-waveform-scale", source)
+        self.assertIn("--video-preview-video-content-scale", source)
+        self.assertIn("--video-preview-tts-waveform-offset", source)
+        self.assertIn("--video-preview-video-content-offset", source)
+        self.assertRegex(
+            source,
+            r"\.video-preview-tts-waveform\s*\{[^}]*left: calc\(5px - var\(--video-preview-tts-waveform-offset",
+        )
+        self.assertRegex(
+            source,
+            r"\.video-preview-tts-playhead::after\s*\{[^}]*left: 5px;",
+        )
+        self.assertIn("拖动左右边缘可裁剪或恢复", source)
+        self.assertIn("function bindTtsChunkTrimHandles", source)
+        self.assertIn("function bindVideoChunkTrimHandles", source)
+        self.assertIn("function bindHtmlMotionChunkTrimHandles", source)
+        self.assertIn("finalize: finalizeVideoChunkStartTrim", source)
         self.assertIn("videoOutputTimeToSourceTime(previewTime)", source)
         self.assertIn('data-video-preview-action="regenerate-video"', source)
         self.assertIn("mode === 'replace' ? '重新生成' : '重新截取'", source)
@@ -6198,10 +6291,72 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("let videoPreviewBackdropPointerDown = false;", source)
         self.assertIn("videoPreviewBackdropPointerDown && event.target === els.videoPreviewModal", source)
 
-    def test_result_cards_expose_video_prompt_modal_and_copy_action(self) -> None:
+    def test_static_multi_chunk_restore_and_cut_boundary_regressions(self) -> None:
         source = read_static_source()
 
+        self.assertIn("let remaining = timelineChunkWithRestoreBounds(chunk);", source)
+        self.assertIn("splitTimelineRestoreBounds(remaining, end)", source)
+        self.assertIn("const chunk = chunks.slice().reverse().find(", source)
+        self.assertIn("output >= Number(item.startSeconds || 0)", source)
+
+    def test_static_timeline_history_covers_all_edit_tracks(self) -> None:
+        source = read_static_source()
+
+        self.assertIn('data-video-preview-action="undo-timeline"', source)
+        self.assertIn('data-video-preview-action="redo-timeline"', source)
+        self.assertIn("const TIMELINE_HISTORY_LIMIT = 50;", source)
+        self.assertIn("function recordTimelineHistory(track, label, before)", source)
+        self.assertIn("async function applyTimelineHistory(direction)", source)
+        self.assertIn("recordTimelineHistory('video'", source)
+        self.assertIn("recordTimelineHistory('tts'", source)
+        self.assertIn("recordTimelineHistory('html'", source)
+        self.assertIn("if (key === 'y' || event.shiftKey) redoTimelineHistory();", source)
+        self.assertIn("if (!changed) return setTtsTimelineStatus('配音位置未变化');", source)
+        self.assertIn("if (!changed) return setHtmlMotionTimelineStatus('动效位置未变化');", source)
+        self.assertIn("clearTimelineHistory();\n      closeBurnTimelinePanels();", source)
+
+    def test_static_timeline_ruler_and_snapping_cover_all_tracks(self) -> None:
+        source = read_static_source()
+        script_names = [path.name for path in workbench_script_paths(STATIC_ROOT)]
+
+        self.assertIn("const TIMELINE_SNAP_TOLERANCE_PX = 8;", source)
+        self.assertIn("function timelineBuildSnapPoints(duration, options = {})", source)
+        self.assertIn("function timelineResolveSnap(seconds, lane, duration, event, options = {})", source)
+        self.assertIn("function timelineResolveTrimSnap(sourceSeconds, lane, duration, event, options = {})", source)
+        self.assertIn("function timelineResolveChunkMoveSnap(startSeconds, chunkDuration, lane, duration, event, options = {})", source)
+        self.assertIn("function timelineChunkBoundaryTime(chunk, edge, sourceSeconds)", source)
+        self.assertIn("function timelineChunkSourceAtBoundary(chunk, edge, seconds)", source)
+        self.assertIn("event?.shiftKey", source)
+        self.assertGreaterEqual(source.count("timelineRulerMarkup("), 4)
+        self.assertGreaterEqual(source.count("timelineSnapGuideMarkup()"), 4)
+        self.assertIn("data-video-preview-video-playhead", source)
+        self.assertIn("data-video-preview-tts-playhead", source)
+        self.assertIn("data-video-preview-html-motion-playhead", source)
+        self.assertIn("syncHtmlMotionTimelinePlayhead();", source)
+        self.assertIn("lostpointercapture", source)
+        self.assertIn("timelineInteractionCount", source)
+        self.assertIn(".video-preview-timeline-ruler", source)
+        self.assertIn(".video-preview-timeline-snap-guide", source)
+        self.assertLess(
+            script_names.index("11abb-timeline-ruler-snap.js"),
+            script_names.index("11ac-timeline-history.js"),
+        )
+        self.assertLess(
+            script_names.index("11abc-timeline-drag-snap.js"),
+            script_names.index("11ac-timeline-history.js"),
+        )
+
+    def test_result_cards_expose_video_prompt_modal_and_copy_action(self) -> None:
+        source = read_static_source()
+        result_styles = (STATIC_ROOT / "styles" / "03-results.css").read_text(encoding="utf-8")
+        prompt_button_rule = result_styles.split(".result-video-prompt-button {", 1)[1].split("}", 1)[0]
+
         self.assertIn('class="result-video-prompt-button"', source)
+        self.assertIn("height: 20px;", prompt_button_rule)
+        self.assertIn("display: inline-flex;", prompt_button_rule)
+        self.assertIn("align-items: center;", prompt_button_rule)
+        self.assertIn("justify-content: center;", prompt_button_rule)
+        self.assertIn("padding: 0;", prompt_button_rule)
         self.assertIn('id="resultVideoPromptModal"', source)
         self.assertIn("async function openResultVideoPromptModal(button)", source)
         self.assertIn("/api/generation/video-prompt?sessionId=", source)
@@ -6348,6 +6503,43 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("const delaySeconds = number(item.at, 0) + staggerSeconds * index;", runtime)
         self.assertIn("if (global.__ai8MotionManageSceneVisibility)", runtime)
         self.assertIn("global.__ai8MotionManageSceneVisibility = true;", runtime)
+
+    def test_html_motion_trim_preserves_source_phase_and_restore_bound(self) -> None:
+        artifact = {"scenes": [{
+            "start": 0,
+            "end": 4,
+            "zone": "top-left",
+            "html": '<div id="scene-1-title">第一段</div>',
+            "css": "#hf-scene-1 #scene-1-title{}",
+            "animations": [{
+                "target": "#scene-1-title",
+                "kind": "entrance",
+                "at": 1,
+                "duration": 1,
+                "from": {},
+                "to": {},
+            }],
+            "ids": ["scene-1-title"],
+        }]}
+
+        chunks = html_motion_review._apply_timeline_chunks(
+            artifact,
+            [{
+                "sourceIndex": 0,
+                "sourceStartSeconds": 1,
+                "sourceEndSeconds": 3,
+                "originalSourceStartSeconds": 0,
+                "originalSourceEndSeconds": 4,
+                "startSeconds": 0,
+            }],
+            4,
+        )
+        plan = hyperframes_overlay_renderer._motion_plan(artifact, 4)
+
+        self.assertEqual(chunks[0]["durationSeconds"], 2.0)
+        self.assertEqual(chunks[0]["originalSourceEndSeconds"], 4.0)
+        self.assertEqual(plan["animations"][0]["at"], 0.0)
+        self.assertEqual(plan["animations"][0]["localAt"], 1)
 
     def test_pending_burn_context_rejects_tts_past_cropped_video_end(self) -> None:
         video_state = {"outputDurationSeconds": 8.0}
@@ -6526,6 +6718,10 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             ai8video_web,
             "html_motion_review_status",
             return_value={"reviewReady": True},
+        ), patch.object(
+            ai8video_web,
+            "adjust_html_motion_review_timeline",
+            return_value={"reviewReady": True, "renderReused": True},
         ), patch.object(
             ai8video_web,
             "html_motion_review_base_path",
@@ -6827,6 +7023,10 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             ai8video_web,
             "html_motion_review_status",
             return_value={"reviewReady": True},
+        ), patch.object(
+            ai8video_web,
+            "adjust_html_motion_review_timeline",
+            return_value={"reviewReady": True, "renderReused": True},
         ), patch.object(
             ai8video_web,
             "pending_tts_timeline_review",

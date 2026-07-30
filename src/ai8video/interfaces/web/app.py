@@ -22,6 +22,7 @@ from urllib.parse import unquote, urlsplit
 from bottle import Bottle, HTTPResponse, request, response, run, static_file
 
 from ai8video.agent_skills import discover_agent_skills, list_agent_skill_slots
+from ai8video.agent_runtime.planning_capability import PLANNING_CAPABILITY_NAME
 from ai8video.application.facade import (
     CHAT_BACKEND,
     build_batch_seed_file_payload,
@@ -181,6 +182,7 @@ from ai8video.media.timeline_boundary import (
     ensure_timeline_chunks_within_video,
     timeline_boundary_status,
 )
+from ai8video.media.timeline_contract import TimelineRevisionConflict
 from ai8video.media.video_timeline_review import (
     mark_video_timeline_review_confirmed,
     pending_video_timeline_review,
@@ -2923,7 +2925,12 @@ def _burn_review_payload(video_path: Path, relative_key: str, *, refresh_tts: bo
     }
 
 
-def _prepare_tts_timeline_preview(raw_key: object, chunks: object) -> dict[str, Any]:
+def _prepare_tts_timeline_preview(
+    raw_key: object,
+    chunks: object,
+    *,
+    expected_revision: object = None,
+) -> dict[str, Any]:
     video_path, relative_key = _resolve_user_generated_video_key(raw_key)
     current = _current_tts_timeline_status(video_path, relative_key)
     if current.get("available") is not True:
@@ -2933,6 +2940,7 @@ def _prepare_tts_timeline_preview(raw_key: object, chunks: object) -> dict[str, 
         relative_key,
         Path(str(current["audioPath"])),
         chunks,
+        expected_revision=expected_revision,
         tts_volume=float(current.get("ttsVolume") or 1.0),
     )
     burn_review = _burn_review_payload(video_path, relative_key)
@@ -2944,12 +2952,18 @@ def _prepare_video_timeline_preview(
     chunks: object,
     *,
     reset: bool = False,
+    expected_revision: object = None,
 ) -> dict[str, Any]:
     video_path, relative_key = _resolve_user_generated_video_key(raw_key)
     review = (
         reset_video_timeline_review(video_path, relative_key, include_filmstrip=True)
         if reset
-        else save_video_timeline_review(video_path, relative_key, chunks)
+        else save_video_timeline_review(
+            video_path,
+            relative_key,
+            chunks,
+            expected_revision=expected_revision,
+        )
     )
     burn_review = _burn_review_payload(video_path, relative_key)
     if reset:
@@ -3166,10 +3180,11 @@ def _pending_burn_context(
     html_status = html_motion_review_status(relative_key)
     video_state = pending_video_timeline_review(relative_key, video_path)
     video_duration = float(video_state.get("outputDurationSeconds") or 0)
-    if video_state and html_status.get("reviewReady") is True and isinstance(html_chunks, list) and html_chunks:
-        ensure_timeline_chunks_within_video(video_duration, html_motion_chunks=html_chunks)
-    if html_status.get("reviewReady") is True and isinstance(html_chunks, list) and html_chunks:
-        adjust_html_motion_review_timeline(video_path, relative_key, html_chunks)
+    submitted_html_chunks = html_chunks if isinstance(html_chunks, list) and html_chunks else None
+    if video_state and html_status.get("reviewReady") is True and submitted_html_chunks:
+        ensure_timeline_chunks_within_video(video_duration, html_motion_chunks=submitted_html_chunks)
+    if html_status.get("reviewReady") is True:
+        adjust_html_motion_review_timeline(video_path, relative_key, submitted_html_chunks)
         html_status = html_motion_review_status(relative_key)
     pending_tts_state = pending_tts_timeline_review(relative_key)
     tts_state = pending_tts_state
@@ -4741,17 +4756,27 @@ def _agent_skill_settings_payload() -> dict[str, object]:
     agents: list[dict[str, object]] = []
     total_skills = 0
     enabled_skills = 0
+    active_capabilities = {PLANNING_CAPABILITY_NAME}
     for slot in list_agent_skill_slots():
         defaults = set(slot.default_skills)
         skills = []
         for metadata in metadata_by_agent.get(slot.agent_id, []):
             enabled = metadata.name in defaults
             enabled_skills += int(enabled)
+            runtime_active = bool(metadata.capabilities) and all(
+                name in active_capabilities for name in metadata.capabilities
+            )
             skills.append({
                 "name": metadata.name,
                 "description": metadata.description,
                 "enabled": enabled,
-                "status": "enabled" if enabled else "placeholder",
+                "status": "active" if enabled and runtime_active else "policy" if enabled else "placeholder",
+                "kind": metadata.kind,
+                "version": metadata.version,
+                "license": metadata.license,
+                "source": metadata.source,
+                "capabilities": list(metadata.capabilities),
+                "runtimeActive": runtime_active,
                 "builtIn": True,
                 "removable": False,
             })
@@ -4766,6 +4791,7 @@ def _agent_skill_settings_payload() -> dict[str, object]:
         "totalAgents": len(agents),
         "totalSkills": total_skills,
         "enabledSkills": enabled_skills,
+        "activeCapabilities": sorted(active_capabilities),
     }
 
 
@@ -6072,6 +6098,7 @@ def api_user_generated_video_timeline_preview():
             payload.get("userGeneratedKey"),
             payload.get("chunks"),
             reset=payload.get("reset") is True,
+            expected_revision=payload.get("expectedRevision"),
         )
     except FileNotFoundError:
         response.status = 404
@@ -6096,7 +6123,11 @@ def api_user_generated_tts_timeline_preview():
         response.status = 400
         return {"ok": False, "error": "payload must be an object"}
     try:
-        return _prepare_tts_timeline_preview(payload.get("userGeneratedKey"), payload.get("chunks"))
+        return _prepare_tts_timeline_preview(
+            payload.get("userGeneratedKey"),
+            payload.get("chunks"),
+            expected_revision=payload.get("expectedRevision"),
+        )
     except FileNotFoundError:
         response.status = 404
         return {"ok": False, "error": "视频或配音已删除"}
@@ -6227,7 +6258,14 @@ def api_save_user_generated_html_motion_timeline():
         return {"ok": False, "error": "payload must be an object"}
     try:
         _video_path, relative_key = _resolve_user_generated_video_key(payload.get("userGeneratedKey"))
-        return save_html_motion_review_timeline(relative_key, payload.get("chunks"))
+        return save_html_motion_review_timeline(
+            relative_key,
+            payload.get("chunks"),
+            expected_revision=payload.get("expectedRevision"),
+        )
+    except TimelineRevisionConflict as exc:
+        response.status = 409
+        return {"ok": False, "error": str(exc)}
     except (ValueError, LookupError) as exc:
         response.status = 400
         return {"ok": False, "error": str(exc)}

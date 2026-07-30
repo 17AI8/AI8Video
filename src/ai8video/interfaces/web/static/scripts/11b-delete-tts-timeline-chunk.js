@@ -50,15 +50,13 @@
         setTtsTimelineStatus('至少保留一个配音块，请先使用剪刀切块', 'error');
         return;
       }
+      const historyBefore = captureTimelineHistorySnapshot();
       const removed = chunks[index];
       const remaining = chunks.filter((_, chunkIndex) => chunkIndex !== index);
       state.videoPreviewModal.ttsTimelineChunks = remaining;
       setTtsSelectedChunkIndex(null);
-      renderTtsTimelineChunks(
-        els.videoPreviewBody?.querySelector('[data-video-preview-tts-chunks]'),
-        remaining,
-        Number(state.videoPreviewModal.ttsTimelineDuration || 0),
-      );
+      recordTimelineHistory('tts', `删除配音 ${index + 1}`, historyBefore);
+      renderCurrentTtsTimeline();
       const video = els.videoPreviewBody?.querySelector('video');
       if (video) video.currentTime = Math.max(0, Number(removed.startSeconds || 0));
       syncTtsTimelinePlayhead();

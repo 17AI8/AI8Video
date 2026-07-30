@@ -22,6 +22,12 @@ function errorMessage(error) {
   return textTail(error?.message || error, 320) || error?.name || 'HyperFrames Worker 未知错误';
 }
 
+function renderWorkerCount() {
+  const value = Number(process.env.AI8VIDEO_HYPERFRAMES_RENDER_WORKERS || '');
+  if (!Number.isInteger(value)) return 1;
+  return Math.min(8, Math.max(1, value));
+}
+
 function validateTask(task) {
   const taskId = String(task.taskId || '').trim();
   const rawCompositionDir = String(task.compositionDir || '').trim();
@@ -45,6 +51,7 @@ function validateTask(task) {
     output,
     cliPath,
     timeoutMs: Math.max(1000, Number(task.timeoutMs) || 300000),
+    renderWorkers: renderWorkerCount(),
   };
 }
 
@@ -159,6 +166,7 @@ async function runRender(rawTask) {
   const task = validateTask(rawTask);
   const deadline = Date.now() + task.timeoutMs;
   emit({ taskId: task.taskId, phase: 'preparing', status: 'running', message: '准备 HyperFrames composition' });
+  emit({ taskId: task.taskId, phase: 'checking', status: 'running', message: '正在检查动效布局与时间线' });
   const check = await runCommand(task, 'checking', [
     'check', task.compositionDir, '--json', '--no-contrast', '--at-transitions',
   ], deadline);
@@ -185,7 +193,7 @@ async function runRender(rawTask) {
   emit({ taskId: task.taskId, phase: 'rendering', status: 'running', message: '启动 HyperFrames render' });
   const render = await runCommand(task, 'rendering', [
     'render', task.compositionDir, '--composition', 'index.html', '--format', 'webm',
-    '--output', task.output, '--workers', '1', '--browser-timeout', '45', '--quiet',
+    '--output', task.output, '--workers', String(task.renderWorkers), '--browser-timeout', '45', '--quiet',
   ], deadline);
   if (render.code !== 0 || !fs.existsSync(task.output) || fs.statSync(task.output).size <= 0) {
     throw Object.assign(new Error(`HyperFrames render 失败：${textTail(render.stderr || render.stdout)}`), {

@@ -8,6 +8,12 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from ai8video.agent_runtime import AgentRunContext, CapabilityRegistry
+from ai8video.agent_runtime.planning_capability import (
+    PLANNING_CAPABILITY_NAME,
+    PlanningCapabilityInput,
+    build_planning_capability,
+)
 from ai8video.batch.specialist_agent_observer import record_planner_execution
 from ai8video.generation.video_prompt_planner import (
     LLMCallable,
@@ -103,45 +109,53 @@ class AI8VideoPipeline:
         allow_mock_planning = self.config.dry_run
         task_constraints = self._reference_task_constraints(request)
         target_duration = self._effective_video_duration_seconds(request.duration_seconds)
-        video_count = request.video_count
-        if smart_split:
-            video_count, request.smart_split_reason = infer_smart_video_count_with_ai(
-                request.raw_text,
-                llm=self.llm,
-                duration_seconds=target_duration,
-                trace_session_id=progress_session_id,
-            )
-        if smart_split:
-            if not video_count:
-                raise ValueError("video_count is required for video planning")
-            videos = plan_video_prompts_with_ai(
-                request.raw_text,
-                video_count,
-                request.style_hint,
-                request.core_keywords,
-                task_constraints=task_constraints,
-                final_duration_seconds=target_duration,
-                llm=self.llm,
-                allow_mock=allow_mock_planning,
-                trace_session_id=progress_session_id,
-            )
-        elif request.mode == "batch_videos":
-            if not video_count:
-                raise ValueError("video_count is required for manual batch generation")
-            videos = repeat_single_prompt_to_videos(
-                request.raw_text,
-                video_count,
-                request.style_hint,
-                request.core_keywords,
-            )
-        else:
-            videos = single_prompt_to_video(request.raw_text, request.style_hint, request.core_keywords)
+        capability_input = PlanningCapabilityInput(
+            request=request,
+            target_duration=target_duration,
+            task_constraints=task_constraints,
+            smart_split=smart_split,
+            allow_mock=allow_mock_planning,
+            llm=self.llm,
+            trace_session_id=progress_session_id,
+        )
+        context = AgentRunContext(
+            session_id=str(progress_session_id or ""),
+            trace_id=f"planner:{progress_session_id or 'local'}",
+            cancel_check=(
+                (lambda: is_generation_stopped(progress_session_id))
+                if progress_session_id else None
+            ),
+            event_sink=lambda event: append_prompt_trace(
+                "agent_capability_event",
+                session_id=progress_session_id,
+                payload=event,
+            ),
+        )
+        videos = self._agent_capabilities().execute(
+            PLANNING_CAPABILITY_NAME,
+            context,
+            capability_input,
+        ).value
         record_planner_execution(
             videos,
             session_id=progress_session_id,
             source_stage="planning_output",
         )
         return videos
+
+    def _agent_capabilities(self) -> CapabilityRegistry:
+        registry = getattr(self, "capability_registry", None)
+        if isinstance(registry, CapabilityRegistry):
+            return registry
+        registry = CapabilityRegistry()
+        registry.register(build_planning_capability(
+            infer_count=infer_smart_video_count_with_ai,
+            smart_plan=plan_video_prompts_with_ai,
+            repeat_plan=repeat_single_prompt_to_videos,
+            single_plan=single_prompt_to_video,
+        ))
+        self.capability_registry = registry
+        return registry
 
     def _effective_video_duration_seconds(self, requested: int | None) -> int:
         settings = load_video_model_settings(

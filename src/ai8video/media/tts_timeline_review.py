@@ -11,6 +11,13 @@ from typing import Any
 
 from ai8video.assets.user_files import USER_FILE_ROOT, ensure_user_file_root
 from ai8video.media.ffmpeg_utils import probe_media_duration_seconds, resolve_ffmpeg_bin
+from ai8video.media.timeline_contract import (
+    TIMELINE_SCHEMA_VERSION,
+    ensure_expected_revision,
+    next_timeline_revision,
+    normalize_restore_bounds,
+    timeline_review_lock,
+)
 from ai8video.media.tts_waveform import cached_audio_waveform
 
 
@@ -41,6 +48,8 @@ def tts_timeline_review_status(
     )
     return {
         "ok": True,
+        "schemaVersion": TIMELINE_SCHEMA_VERSION,
+        "revision": 0,
         "available": True,
         "pending": False,
         "reviewReady": False,
@@ -62,6 +71,7 @@ def save_tts_timeline_review(
     audio_path: Path,
     chunks: Any,
     *,
+    expected_revision: Any = None,
     tts_volume: float = 1.0,
     tts_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -73,20 +83,25 @@ def save_tts_timeline_review(
     )
     review_dir = _review_dir(relative_key)
     review_dir.mkdir(parents=True, exist_ok=True)
-    state = {
-        "reviewId": review_dir.name,
-        "relativeKey": relative_key,
-        "audioPath": str(audio_path.resolve()),
-        "audioDurationSeconds": audio_duration,
-        "durationSeconds": video_duration,
-        "ttsVolume": _positive_volume(tts_volume),
-        "timelineChunks": normalized,
-        "ttsResult": dict(tts_result or {}),
-        "pending": True,
-        "preparedAt": datetime.now(timezone.utc).isoformat(),
-        "candidateName": "candidate.mp4",
-    }
-    _write_json(review_dir / "review.json", state)
+    with timeline_review_lock("tts", relative_key):
+        previous = _load_review(relative_key)
+        ensure_expected_revision(previous, expected_revision)
+        state = {
+            "schemaVersion": TIMELINE_SCHEMA_VERSION,
+            "revision": next_timeline_revision(previous),
+            "reviewId": review_dir.name,
+            "relativeKey": relative_key,
+            "audioPath": str(audio_path.resolve()),
+            "audioDurationSeconds": audio_duration,
+            "durationSeconds": video_duration,
+            "ttsVolume": _positive_volume(tts_volume),
+            "timelineChunks": normalized,
+            "ttsResult": dict(tts_result or {}),
+            "pending": True,
+            "preparedAt": datetime.now(timezone.utc).isoformat(),
+            "candidateName": "candidate.mp4",
+        }
+        _write_json(review_dir / "review.json", state)
     return _public_review(state, pending=True)
 
 
@@ -223,7 +238,11 @@ def normalize_tts_timeline_chunks(
 ) -> list[dict[str, Any]]:
     audio_duration = _positive_duration(audio_duration_seconds, "无法读取配音时长")
     video_duration = _positive_duration(video_duration_seconds, "无法读取视频时长")
-    raw_chunks = chunks if isinstance(chunks, list) and chunks else [_default_chunk(audio_duration)]
+    raw_chunks = (
+        chunks
+        if isinstance(chunks, list) and chunks
+        else [_default_chunk(min(audio_duration, video_duration), audio_duration)]
+    )
     if len(raw_chunks) > MAX_TTS_TIMELINE_CHUNKS:
         raise ValueError(f"配音最多切成 {MAX_TTS_TIMELINE_CHUNKS} 块")
     normalized = [_normalize_chunk(item, audio_duration, video_duration) for item in raw_chunks]
@@ -235,7 +254,9 @@ def normalize_tts_timeline_chunks(
         complete = (
             len(normalized) == 1
             and float(item["sourceStartSeconds"]) <= TTS_TIMELINE_TOLERANCE_SECONDS
-            and abs(float(item["sourceEndSeconds"]) - audio_duration) <= TTS_TIMELINE_TOLERANCE_SECONDS
+            and abs(
+                float(item["sourceEndSeconds"]) - min(audio_duration, video_duration)
+            ) <= TTS_TIMELINE_TOLERANCE_SECONDS
         )
         item["label"] = "完整配音" if complete else f"配音 {index + 1}"
     return normalized
@@ -257,12 +278,19 @@ def _normalize_chunk(item: Any, audio_duration: float, video_duration: float) ->
         raise ValueError("每个配音切块至少保留 0.12 秒")
     if start < 0 or start + duration > video_duration + TTS_TIMELINE_TOLERANCE_SECONDS:
         raise ValueError("配音切块超出视频时长")
+    restore_bounds = normalize_restore_bounds(
+        item,
+        visible_start_seconds=source_start,
+        visible_end_seconds=source_end,
+        source_duration_seconds=audio_duration,
+    )
     return {
         "sourceStartSeconds": round(source_start, 3),
         "sourceEndSeconds": round(source_end, 3),
         "startSeconds": round(max(0.0, start), 3),
         "durationSeconds": round(duration, 3),
         "endSeconds": round(start + duration, 3),
+        **restore_bounds.as_payload(),
     }
 
 
@@ -349,13 +377,15 @@ def _media_durations(video_path: Path, audio_path: Path) -> tuple[float, float]:
         raise FileNotFoundError("配音编辑所需的视频或音频不存在")
     video_duration = _positive_duration(probe_media_duration_seconds(video_path), "无法读取视频时长")
     audio_duration = _positive_duration(probe_media_duration_seconds(audio_path), "无法读取配音时长")
-    return round(video_duration, 3), round(min(audio_duration, video_duration), 3)
+    return round(video_duration, 3), round(audio_duration, 3)
 
 
-def _default_chunk(audio_duration: float) -> dict[str, float]:
+def _default_chunk(visible_duration: float, audio_duration: float) -> dict[str, float]:
     return {
         "sourceStartSeconds": 0.0,
-        "sourceEndSeconds": round(audio_duration, 3),
+        "sourceEndSeconds": round(visible_duration, 3),
+        "originalSourceStartSeconds": 0.0,
+        "originalSourceEndSeconds": round(audio_duration, 3),
         "startSeconds": 0.0,
     }
 
@@ -363,6 +393,8 @@ def _default_chunk(audio_duration: float) -> dict[str, float]:
 def _empty_review(relative_key: str) -> dict[str, Any]:
     return {
         "ok": True,
+        "schemaVersion": TIMELINE_SCHEMA_VERSION,
+        "revision": 0,
         "available": False,
         "pending": False,
         "reviewReady": False,
@@ -384,6 +416,8 @@ def _public_review(state: dict[str, Any], *, pending: bool) -> dict[str, Any]:
     waveform = _waveform_payload(str(state.get("relativeKey") or ""), Path(str(state.get("audioPath") or "")))
     return {
         "ok": True,
+        "schemaVersion": int(state.get("schemaVersion") or TIMELINE_SCHEMA_VERSION),
+        "revision": int(state.get("revision") or 0),
         "available": True,
         "pending": pending,
         "reviewReady": pending,

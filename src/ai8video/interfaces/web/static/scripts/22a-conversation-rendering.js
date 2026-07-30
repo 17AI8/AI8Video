@@ -88,6 +88,20 @@
       return wrap;
     }
 
+    function syncAssistantBubbleLayoutClasses(bubble) {
+      const directChildren = Array.from(bubble?.children || []);
+      const hasPendingCard = directChildren.some((element) => element.classList.contains('pending-card'));
+      const hasAgentVideoResults = directChildren.some((element) => element.classList.contains('agent-video-results'));
+      bubble?.classList.toggle(
+        'agent-run-with-results',
+        directChildren.length === 2 && hasPendingCard && hasAgentVideoResults,
+      );
+      bubble?.classList.toggle(
+        'pending-only',
+        directChildren.length === 1 && hasPendingCard,
+      );
+    }
+
     function renderAssistantPayload(payload, context = {}) {
       const blocks = [];
       const isHistoricalMessage = Number(context.messageIndex) < Number(context.messageCount) - 1;
@@ -152,6 +166,7 @@
         const pendingExecutionEvents = renderAgentExecutionEvents(displayedPending, {
           messageIndex: context.messageIndex,
         });
+        const pendingThumbnails = renderAgentVideoThumbnails(displayedPending);
         blocks.push(`
           <div class="mini-card pending-card${staticPending ? ' is-history' : ''}">
             <div class="pending-card-head">
@@ -164,6 +179,7 @@
             ${renderProgressOverview(pendingOverview, pendingStepChain)}
             ${pendingExecutionEvents}
           </div>
+          ${pendingThumbnails}
         `);
       }
       if (payload.meta?.operation === 'batch_run') {
@@ -334,9 +350,8 @@
       );
       const expanded = isAgentStepDetailsExpanded(detailsKey);
       const readOnlyRecovery = pending.readOnlyRecovery || pending.generationProgress?.readOnlyRecovery;
-      const thumbnails = renderAgentVideoThumbnails(pending);
       if (readOnlyRecovery) {
-        return `<div class="agent-step-details is-single"><div class="agent-step-details-latest"><div class="agent-step-detail done"><span class="agent-step-detail-marker" aria-hidden="true"></span><div><strong>历史任务已结束</strong><span>服务重启前的进度仅恢复为只读记录，不会继续生成。</span></div></div></div></div>${thumbnails}`;
+        return '<div class="agent-step-details is-single"><div class="agent-step-details-latest"><div class="agent-step-detail done"><span class="agent-step-detail-marker" aria-hidden="true"></span><div><strong>历史任务已结束</strong><span>服务重启前的进度仅恢复为只读记录，不会继续生成。</span></div></div></div></div>';
       }
       if (!events.length) {
         const steps = buildAgentStepChainModel(pending);
@@ -350,7 +365,7 @@
           ? (isPlanning ? friendlyPlanningSummary(rawStatus) : humanizePublicExecutionStatus(rawStatus))
           : (activeStep?.label || '后台当前阶段');
         const currentDetail = String(activeStep?.detail || '当前步骤进展会持续更新。').trim();
-        return `<div class="agent-step-details is-single"><div class="agent-step-details-latest"><div class="agent-step-detail active"><span class="agent-step-detail-marker" aria-hidden="true"></span><div><strong>${escapeHtml(currentMessage)}</strong><span>${escapeHtml(currentDetail)}</span></div></div></div></div>${thumbnails}`;
+        return `<div class="agent-step-details is-single"><div class="agent-step-details-latest"><div class="agent-step-detail active"><span class="agent-step-detail-marker" aria-hidden="true"></span><div><strong>${escapeHtml(currentMessage)}</strong><span>${escapeHtml(currentDetail)}</span></div></div></div></div>`;
       }
       const latestMarkup = buildAgentStepDetailMarkup(events[0], 0, { activeFirst: true });
       const historyEvents = events.slice(1);
@@ -369,7 +384,6 @@
           ${drawer}
           ${toggle}
         </div>
-        ${thumbnails}
       `;
     }
 

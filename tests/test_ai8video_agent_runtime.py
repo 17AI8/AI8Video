@@ -1,0 +1,115 @@
+from __future__ import annotations
+
+import unittest
+
+from ai8video.agent_runtime import AgentRunContext, CapabilityRegistry, CapabilitySpec
+from ai8video.agent_runtime.planning_capability import (
+    PLANNING_CAPABILITY_NAME,
+    PlanningCapabilityInput,
+    build_planning_capability,
+)
+from ai8video.core.models import ParsedRequest, VideoPrompt
+
+
+class CapabilityRegistryTest(unittest.TestCase):
+    def test_emits_lifecycle_events_and_validates_types(self) -> None:
+        events: list[dict] = []
+        registry = CapabilityRegistry()
+        registry.register(CapabilitySpec(
+            name="test.echo",
+            agent_id="test-agent",
+            description="回显",
+            handler=lambda _context, value: value.upper(),
+            input_type=str,
+            output_type=str,
+        ))
+
+        result = registry.execute(
+            "test.echo",
+            AgentRunContext(session_id="session-1", event_sink=events.append),
+            "hello",
+        )
+
+        self.assertEqual(result.status, "completed")
+        self.assertEqual(result.value, "HELLO")
+        self.assertEqual([item["event"] for item in events], ["capability_start", "capability_end"])
+        with self.assertRaises(TypeError):
+            registry.execute("test.echo", AgentRunContext(), 123)
+
+    def test_cancellation_blocks_handler_before_side_effect(self) -> None:
+        called = False
+
+        def handler(_context, value):
+            nonlocal called
+            called = True
+            return value
+
+        registry = CapabilityRegistry()
+        registry.register(CapabilitySpec(
+            name="test.cancel",
+            agent_id="test-agent",
+            description="取消测试",
+            handler=handler,
+            input_type=str,
+            output_type=str,
+            side_effects=True,
+            replay_safe=False,
+        ))
+
+        with self.assertRaisesRegex(RuntimeError, "已取消"):
+            registry.execute(
+                "test.cancel",
+                AgentRunContext(cancel_check=lambda: True),
+                "payload",
+            )
+        self.assertFalse(called)
+
+    def test_side_effect_capability_cannot_opt_into_parallel_execution(self) -> None:
+        registry = CapabilityRegistry()
+        with self.assertRaisesRegex(ValueError, "必须串行"):
+            registry.register(CapabilitySpec(
+                name="test.unsafe-parallel",
+                agent_id="test-agent",
+                description="非法并行副作用",
+                handler=lambda _context, value: value,
+                input_type=str,
+                output_type=str,
+                side_effects=True,
+                execution_mode="parallel",
+            ))
+
+    def test_planning_capability_preserves_existing_domain_model(self) -> None:
+        request = ParsedRequest(raw_text="生成一条视频", mode="single_video")
+        capability = build_planning_capability(
+            infer_count=lambda *_args, **_kwargs: (1, "unused"),
+            smart_plan=lambda *_args, **_kwargs: [],
+            repeat_plan=lambda *_args, **_kwargs: [],
+            single_plan=lambda *_args, **_kwargs: [
+                VideoPrompt(index=1, title="单条视频", prompt="生成一条视频")
+            ],
+        )
+        registry = CapabilityRegistry()
+        registry.register(capability)
+
+        result = registry.execute(
+            PLANNING_CAPABILITY_NAME,
+            AgentRunContext(session_id="planner-session"),
+            PlanningCapabilityInput(
+                request=request,
+                target_duration=10,
+                task_constraints="",
+                smart_split=False,
+                allow_mock=True,
+                llm=None,
+                trace_session_id="planner-session",
+            ),
+        )
+
+        self.assertEqual(result.value[0].prompt, "生成一条视频")
+        self.assertEqual(capability.policy_skills, ("plan-video-content",))
+        self.assertFalse(capability.side_effects)
+        self.assertEqual(capability.execution_mode, "parallel")
+
+
+if __name__ == "__main__":
+    unittest.main()

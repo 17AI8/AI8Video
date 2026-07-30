@@ -29,7 +29,7 @@
           return;
         }
         const video = els.videoPreviewBody?.querySelector('video');
-        applyBurnReviewToVideoPreview(data?.burnReview || {}, video);
+        applyRegeneratedBurnReview(data?.burnReview || {}, video);
         if (button) {
           setVideoPreviewButtonLabel(button, '预览已生成');
           setTimeout(() => {
@@ -588,7 +588,7 @@
             showHtmlMotionPreview(video, overlay.previewUrl || data.previewUrl || data.videoUrl, overlay);
             syncBurnConfirmButton(data?.burnReview || { reviewReady: true, pendingKinds: ['htmlMotion'] });
           }
-          configureHtmlMotionTimeline(overlay);
+          configureRegeneratedHtmlMotionTimeline(overlay);
           if (confirmButton) confirmButton.disabled = false;
           setHtmlMotionPreviewStatus(buildHtmlMotionSuccessStatus(timing, overlay), 'success');
           return data;

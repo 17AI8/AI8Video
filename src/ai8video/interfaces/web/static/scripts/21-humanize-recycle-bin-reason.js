@@ -447,10 +447,7 @@
             messageCount: session.messages.length,
             activeAwaiting,
           });
-          bubble.classList.toggle(
-            'pending-only',
-            bubble.childElementCount === 1 && bubble.firstElementChild?.classList.contains('pending-card'),
-          );
+          syncAssistantBubbleLayoutClasses(bubble);
         }
         els.messages.appendChild(wrap);
       });

@@ -448,10 +448,7 @@
           video.style.setProperty('--preview-video-aspect', ratioValue);
         }
       }, { once: true });
-      const syncEditingPlayheads = () => {
-        syncTtsTimelinePlayhead();
-        syncVideoTimelinePlayhead();
-      };
+      const syncEditingPlayheads = syncAllTimelinePlayheads;
       video?.addEventListener('timeupdate', syncEditingPlayheads);
       video?.addEventListener('seeking', syncEditingPlayheads);
       bindVideoPreviewBackgroundMusic(video);
@@ -490,9 +487,11 @@
         ttsScissorMode: false,
         ttsSelectedChunkIndex: null,
         ttsTimelineBusy: false,
+        timelineInteractionCount: 0,
         backgroundMusicDrawerOpen: false,
         burnReview: null,
       };
+      initializeTimelineHistory(userGeneratedKey);
       els.videoPreviewModal.classList.remove('hidden');
       renderHtmlMotionPreviewDrawer();
       requestAnimationFrame(() => syncHtmlMotionDrawerWidth());

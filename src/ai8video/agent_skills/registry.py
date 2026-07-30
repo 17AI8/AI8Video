@@ -10,7 +10,16 @@ from typing import Iterable
 
 CATALOG_ROOT = Path(__file__).resolve().parent / "catalog"
 SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-FRONTMATTER_ALLOWED_KEYS = {"name", "description"}
+CAPABILITY_PATTERN = re.compile(r"^[a-z0-9]+(?:[-.][a-z0-9]+)*$")
+FRONTMATTER_ALLOWED_KEYS = {
+    "name",
+    "description",
+    "version",
+    "license",
+    "kind",
+    "capabilities",
+    "source",
+}
 
 
 @dataclass(frozen=True)
@@ -26,6 +35,11 @@ class SkillMetadata:
     name: str
     description: str
     path: Path
+    version: str = "1.0.0"
+    license: str = ""
+    kind: str = "policy"
+    capabilities: tuple[str, ...] = ()
+    source: str = ""
 
 
 @dataclass(frozen=True)
@@ -98,6 +112,8 @@ def load_agent_skill(
     _, instructions = _split_skill_document(document, metadata.path)
     if not instructions:
         raise ValueError(f"Skill 正文为空：{metadata.path}")
+    if "</skill>" in instructions or "</agent-skills>" in instructions:
+        raise ValueError(f"Skill 正文包含保留边界标记：{metadata.path}")
     return LoadedAgentSkill(metadata=metadata, instructions=instructions)
 
 
@@ -174,7 +190,27 @@ def _read_skill_metadata(agent_id: str, skill_path: Path) -> SkillMetadata:
     description = frontmatter.get("description", "").strip()
     if not description:
         raise ValueError(f"Skill 缺少 description：{skill_path}")
-    return SkillMetadata(agent_id, name, description, skill_path.resolve())
+    kind = frontmatter.get("kind", "policy").strip() or "policy"
+    if kind not in {"policy", "workflow"}:
+        raise ValueError(f"Skill kind 不合法：{skill_path}")
+    capabilities = tuple(dict.fromkeys(
+        item.strip()
+        for item in frontmatter.get("capabilities", "").split(",")
+        if item.strip()
+    ))
+    if any(not CAPABILITY_PATTERN.fullmatch(item) for item in capabilities):
+        raise ValueError(f"Skill capabilities 不合法：{skill_path}")
+    return SkillMetadata(
+        agent_id=agent_id,
+        name=name,
+        description=description,
+        path=skill_path.resolve(),
+        version=frontmatter.get("version", "1.0.0").strip() or "1.0.0",
+        license=frontmatter.get("license", "").strip(),
+        kind=kind,
+        capabilities=capabilities,
+        source=frontmatter.get("source", "").strip(),
+    )
 
 
 def _read_frontmatter(path: Path) -> dict[str, str]:

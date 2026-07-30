@@ -22,6 +22,13 @@ from ai8video.media.video_filmstrip import (
     video_filmstrip_payload,
 )
 from ai8video.media.tts_timeline_review import render_tts_timeline_video
+from ai8video.media.timeline_contract import (
+    TIMELINE_SCHEMA_VERSION,
+    ensure_expected_revision,
+    next_timeline_revision,
+    normalize_restore_bounds,
+    timeline_review_lock,
+)
 
 
 VIDEO_TIMELINE_REVIEW_ROOT = (USER_FILE_ROOT / "视频裁剪" / "reviews").resolve()
@@ -59,25 +66,31 @@ def save_video_timeline_review(
     relative_key: str,
     chunks: Any,
     *,
+    expected_revision: Any = None,
     ffmpeg_bin: str | None = None,
 ) -> dict[str, Any]:
     duration = _video_duration(video_path, ffmpeg_bin=ffmpeg_bin)
     normalized = normalize_video_timeline_chunks(chunks, video_duration_seconds=duration)
     review_dir = _review_dir(relative_key)
     review_dir.mkdir(parents=True, exist_ok=True)
-    state = {
-        "reviewId": review_dir.name,
-        "relativeKey": relative_key,
-        "sourcePath": str(video_path.resolve()),
-        "sourceSignature": _file_signature(video_path),
-        "sourceDurationSeconds": duration,
-        "outputDurationSeconds": _output_duration(normalized),
-        "timelineChunks": normalized,
-        "pending": True,
-        "preparedAt": datetime.now(timezone.utc).isoformat(),
-        "candidateName": "candidate.mp4",
-    }
-    _write_json(review_dir / "review.json", state)
+    with timeline_review_lock("video", relative_key):
+        previous = _load_review(relative_key)
+        ensure_expected_revision(previous, expected_revision)
+        state = {
+            "schemaVersion": TIMELINE_SCHEMA_VERSION,
+            "revision": next_timeline_revision(previous),
+            "reviewId": review_dir.name,
+            "relativeKey": relative_key,
+            "sourcePath": str(video_path.resolve()),
+            "sourceSignature": _file_signature(video_path),
+            "sourceDurationSeconds": duration,
+            "outputDurationSeconds": _output_duration(normalized),
+            "timelineChunks": normalized,
+            "pending": True,
+            "preparedAt": datetime.now(timezone.utc).isoformat(),
+            "candidateName": "candidate.mp4",
+        }
+        _write_json(review_dir / "review.json", state)
     return _public_review(state, pending=True)
 
 
@@ -336,10 +349,17 @@ def _normalize_chunk(item: Any, duration: float) -> dict[str, float]:
     chunk_duration = source_end - source_start
     if chunk_duration < MIN_VIDEO_TIMELINE_CHUNK_SECONDS:
         raise ValueError("每个视频片段至少保留 0.12 秒")
+    restore_bounds = normalize_restore_bounds(
+        item,
+        visible_start_seconds=source_start,
+        visible_end_seconds=source_end,
+        source_duration_seconds=duration,
+    )
     return {
         "sourceStartSeconds": round(source_start, 3),
         "sourceEndSeconds": round(source_end, 3),
         "durationSeconds": round(chunk_duration, 3),
+        **restore_bounds.as_payload(),
     }
 
 
@@ -460,6 +480,8 @@ def _default_review(video_path: Path, relative_key: str, duration: float) -> dic
     chunks = normalize_video_timeline_chunks([], video_duration_seconds=duration)
     return {
         "ok": True,
+        "schemaVersion": TIMELINE_SCHEMA_VERSION,
+        "revision": 0,
         "available": True,
         "pending": False,
         "reviewReady": False,
@@ -483,6 +505,8 @@ def _public_review(state: dict[str, Any], *, pending: bool) -> dict[str, Any]:
     output_duration = float(state.get("outputDurationSeconds") or 0)
     return {
         "ok": True,
+        "schemaVersion": int(state.get("schemaVersion") or TIMELINE_SCHEMA_VERSION),
+        "revision": int(state.get("revision") or 0),
         "available": True,
         "pending": pending,
         "reviewReady": pending,

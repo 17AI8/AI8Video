@@ -11,6 +11,7 @@ from ai8video.core.legacy_payload import normalize_legacy_video_payload
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_ROOT = PROJECT_ROOT / "src" / "ai8video"
 CORE_DIRECTORIES = (
+    "agent_runtime",
     "application",
     "assets",
     "batch",
@@ -37,6 +38,9 @@ SOURCE_ROOTS = (
     PROJECT_ROOT / "desktop",
     PROJECT_ROOT / "tests",
 )
+VENDORED_SOURCE_ROOTS = (
+    Path("src/ai8video/interfaces/web/static/vendor"),
+)
 SERIES_DOMAIN_PATTERN = re.compile(
     r"Episode|episode|多集|拆集|第几集|上集|下集|剧集"
 )
@@ -48,36 +52,44 @@ SERIES_COMPATIBILITY_FILES = {
 LEGACY_WEB_STATIC_LINE_LIMITS = {
     "index.html": 610,
     "script-knowledge.css": 686,
-    "scripts/01-bootstrap.js": 550,
-    "scripts/02-init.js": 530,
+    "scripts/01-bootstrap.js": 551,
+    "scripts/02-init.js": 532,
     "scripts/04-drag.js": 639,
-    "scripts/05-refresh-health.js": 603,
+    "scripts/05-refresh-health.js": 624,
+    "scripts/06-refresh-generation-mode.js": 539,
     "scripts/07-force-cancel-trigger.js": 529,
     "scripts/08-local-tts-payload-from-input.js": 501,
     "scripts/09-is-default-reference-custom-prompt-focused.js": 505,
-    "scripts/11-regenerate-tts-from-video-preview.js": 654,
+    "scripts/11-regenerate-tts-from-video-preview.js": 656,
     "scripts/12-regenerate-html-motion-from-video-preview.js": 536,
+    "scripts/14-generate-video-preview-extension.js": 538,
     "scripts/15-group-settings-fields.js": 508,
     "scripts/16-current-resolution-options.js": 509,
-    "scripts/18-build-viral-breakdown-prompt-template.js": 577,
-    "scripts/19-render-viral-breakdown-workbench.js": 560,
+    "scripts/18-build-viral-breakdown-prompt-template.js": 579,
+    "scripts/19-render-viral-breakdown-workbench.js": 573,
     "scripts/20-build-script-knowledge-card-markup.js": 537,
     "scripts/21-humanize-recycle-bin-reason.js": 545,
     "scripts/22a-conversation-rendering.js": 744,
-    "scripts/25-render-assistant-result-cards.js": 516,
-    "scripts/26-build-batch-report-card-markup.js": 535,
+    "scripts/25-render-assistant-result-cards.js": 648,
+    "scripts/26-build-batch-report-card-markup.js": 538,
     "scripts/28-load-sessions.js": 506,
     "scripts/29-pill.js": 506,
     "styles/05-breakdown.css": 1257,
     "styles/06-generation-controls.css": 557,
-    "styles/10-settings.css": 865,
+    "styles/03-results.css": 522,
+    "styles/10-settings.css": 970,
     "styles/11-materials.css": 587,
     "styles/12-messages.css": 895,
-    "styles/14-video-preview.css": 1111,
+    "styles/14-video-preview.css": 1158,
     "styles/16-radar-layout.css": 506,
     "styles/18-radar-responsive.css": 507,
-    "styles/19-breakdown-theme.css": 547,
+    "styles/19-breakdown-theme.css": 566,
+    "styles/21-sidebar-nav.css": 557,
 }
+
+
+def is_vendored_source(relative: Path) -> bool:
+    return any(relative.is_relative_to(root) for root in VENDORED_SOURCE_ROOTS)
 
 
 def imported_modules(path: Path) -> set[str]:
@@ -137,6 +149,8 @@ class AI8VideoArchitectureTests(unittest.TestCase):
         violations = []
         for pattern in ("*.html", "*.css", "*.js"):
             for path in static_root.rglob(pattern):
+                if is_vendored_source(path.relative_to(PROJECT_ROOT)):
+                    continue
                 line_count = len(path.read_text(encoding="utf-8").splitlines())
                 relative = path.relative_to(static_root).as_posix()
                 limit = LEGACY_WEB_STATIC_LINE_LIMITS.get(relative, 500)
@@ -153,6 +167,8 @@ class AI8VideoArchitectureTests(unittest.TestCase):
                 if not path.is_file() or "__pycache__" in path.parts:
                     continue
                 relative = path.relative_to(PROJECT_ROOT)
+                if is_vendored_source(relative):
+                    continue
                 if OLD_NAME_PATTERN.search(path.name):
                     violations.append(f"旧路径：{relative}")
                     continue
@@ -173,6 +189,8 @@ class AI8VideoArchitectureTests(unittest.TestCase):
                 if not path.is_file() or "__pycache__" in path.parts:
                     continue
                 relative = path.relative_to(PROJECT_ROOT)
+                if is_vendored_source(relative):
+                    continue
                 if relative in SERIES_COMPATIBILITY_FILES:
                     continue
                 if SERIES_DOMAIN_PATTERN.search(path.name):

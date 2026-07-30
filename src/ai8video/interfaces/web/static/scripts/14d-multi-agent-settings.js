@@ -34,12 +34,13 @@
         key: 'planner',
         label: 'Planner',
         mark: 'P',
-        status: '已接入',
+        status: 'Capability 已接入',
         tone: 'live',
         description: '负责智能分集与视频任务规划。',
         responsibilities: [
           '理解全文并判断合理的分集数量与内容边界',
           '为每集生成独立主题、提示词与可追踪规划结果',
+          '通过类型化 Capability 执行并记录 start、end、error 事件',
         ],
         boundary: '只负责内容规划与智能分集，不提交视频模型、不审核成片、不归档结果。',
       },
@@ -237,7 +238,7 @@
         .filter(Boolean);
       return `
         <div class="multi-agent-overview">
-          <p class="multi-agent-lede">意图路由、运行态、智能分集与知识入库已闭环；媒体审核仍为影子模式。</p>
+          <p class="multi-agent-lede">Planner 已按 Skill 策略层 + Capability 执行层运行；Python 会话和任务账本继续保持唯一真值，媒体审核仍为影子模式。</p>
           <ol class="multi-agent-flow">
             ${roles.map((role, index) => `
               <li>
@@ -277,6 +278,7 @@
                 <div>
                   <code>${escapeHtml(skill.name || '')}</code>
                   <p>${escapeHtml(skill.description || '暂无说明')}</p>
+                  <small>${escapeHtml(skill.runtimeActive ? '执行能力已绑定' : '仅策略指令')}${skill.version ? ` · v${escapeHtml(skill.version)}` : ''}</small>
                 </div>
                 ${skill.builtIn ? '<span title="内置 Skill 不可删除">内置</span>' : ''}
               </li>

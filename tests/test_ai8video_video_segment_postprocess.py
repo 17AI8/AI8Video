@@ -58,7 +58,7 @@ class AI8VideoVideoSegmentPostprocessTests(unittest.TestCase):
             self.assertEqual(command[command.index("-c:a") + 1], "aac")
             self.assertEqual(result["endSeconds"], 4.25)
 
-    def test_concat_videos_uses_quality_encoding_only_when_copy_fails(self) -> None:
+    def test_concat_videos_always_uses_normalized_quality_encoding(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             root = Path(tempdir)
             segment1 = root / "segment1.mp4"
@@ -68,10 +68,8 @@ class AI8VideoVideoSegmentPostprocessTests(unittest.TestCase):
             segment2.write_bytes(b"segment2")
             commands: list[list[str]] = []
 
-            def fake_run(cmd: list[str], message: str) -> None:
+            def fake_run(cmd: list[str], _message: str) -> None:
                 commands.append(cmd)
-                if len(commands) == 1:
-                    raise RuntimeError(message)
                 output.write_bytes(b"merged")
 
             with patch.object(video_segment_postprocess, "_run_ffmpeg", side_effect=fake_run):
@@ -81,12 +79,15 @@ class AI8VideoVideoSegmentPostprocessTests(unittest.TestCase):
                     ffmpeg_bin="ffmpeg-test",
                 )
 
-            self.assertEqual(result["method"], "reencode")
-            self.assertEqual(commands[0][commands[0].index("-c") + 1], "copy")
-            self.assertEqual(commands[1][commands[1].index("-c:v") + 1], "libx264")
-            self.assertEqual(commands[1][commands[1].index("-preset") + 1], "veryfast")
-            self.assertEqual(commands[1][commands[1].index("-crf") + 1], "16")
-            self.assertEqual(commands[1][commands[1].index("-pix_fmt") + 1], "yuv420p")
+            self.assertEqual(result["method"], "filter-reencode")
+            self.assertEqual(len(commands), 1)
+            command = commands[0]
+            self.assertIn("-filter_complex", command)
+            self.assertIn("aresample=48000", command[command.index("-filter_complex") + 1])
+            self.assertEqual(command[command.index("-c:v") + 1], "libx264")
+            self.assertEqual(command[command.index("-preset") + 1], "veryfast")
+            self.assertEqual(command[command.index("-crf") + 1], "16")
+            self.assertEqual(command[command.index("-pix_fmt") + 1], "yuv420p")
             self.assertEqual(result["videoEncoding"]["crf"], "16")
 
 

@@ -88,6 +88,7 @@ def _safe_stroke_width(value: Any) -> float:
 def build_motion_manifest(artifact: dict[str, Any], media: dict[str, Any]) -> dict[str, Any]:
     assertions: list[dict[str, Any]] = []
     for scene in artifact["scenes"]:
+        source_offset = _scene_source_offset(scene)
         entrance = next(
             (item for item in scene["animations"] if item["kind"] == "entrance"),
             None,
@@ -101,7 +102,10 @@ def build_motion_manifest(artifact: dict[str, Any], media: dict[str, Any]) -> di
         assertions.append({
             "kind": "appearsBy",
             "selector": selector,
-            "bySec": round(scene["start"] + entrance["at"] + entrance["duration"], 3),
+            "bySec": round(max(
+                float(scene["start"]),
+                float(scene["start"]) + entrance["at"] + entrance["duration"] - source_offset,
+            ), 3),
         })
         assertions.extend(
             {"kind": "staysInFrame", "selector": f"#{identifier}"}
@@ -113,13 +117,16 @@ def build_motion_manifest(artifact: dict[str, Any], media: dict[str, Any]) -> di
 def _scene_markup(scene: dict[str, Any], index: int, *, fixed: bool = False) -> str:
     scene_duration = scene["end"] - scene["start"]
     source_index = int(scene.get("_timelineSourceIndex", index))
+    source_start = float(scene.get("_timelineSourceStartSeconds", scene["start"]))
+    source_end = float(scene.get("_timelineSourceEndSeconds", scene["end"]))
     zone_class = f"hf-zone zone-{html.escape(scene['zone'])}"
     if fixed:
         zone_class += " hf-fixed-zone"
     return (
         f'<section id="hf-scene-{index + 1}" class="hf-scene clip" '
         f'data-timeline-source-index="{source_index}" data-start="{scene["start"]:.3f}" '
-        f'data-duration="{scene_duration:.3f}" data-track-index="{index + 1}">'
+        f'data-duration="{scene_duration:.3f}" data-source-start="{source_start:.3f}" '
+        f'data-source-end="{source_end:.3f}" data-track-index="{index + 1}">'
         f'<div class="{zone_class}">{scene["html"]}</div></section>'
     )
 
@@ -127,11 +134,13 @@ def _scene_markup(scene: dict[str, Any], index: int, *, fixed: bool = False) -> 
 def _motion_plan(artifact: dict[str, Any], duration: float) -> dict[str, Any]:
     animations: list[dict[str, Any]] = []
     for scene in artifact["scenes"]:
+        source_offset = _scene_source_offset(scene)
         for animation in scene["animations"]:
             animations.append({
                 "target": animation["target"],
                 "kind": animation["kind"],
-                "at": round(scene["start"] + animation["at"], 3),
+                "at": round(scene["start"] + animation["at"] - source_offset, 3),
+                "localAt": round(animation["at"], 3),
                 "duration": animation["duration"],
                 "from": animation["from"],
                 "to": animation["to"],
@@ -141,11 +150,18 @@ def _motion_plan(artifact: dict[str, Any], duration: float) -> dict[str, Any]:
                 "target": target,
                 "kind": "scene-end",
                 "at": round(scene["end"], 3),
+                "localAt": round(scene["end"] - scene["start"], 3),
                 "duration": 0.001,
                 "from": {},
                 "to": {"autoAlpha": 0.0, "ease": "linear"},
             })
     return {"runtime": "waapi-v1", "duration": duration, "animations": animations}
+
+
+def _scene_source_offset(scene: dict[str, Any]) -> float:
+    source_start = float(scene.get("_timelineSourceStartSeconds", scene.get("start") or 0.0))
+    original_start = float(scene.get("_timelineOriginalSourceStartSeconds", source_start))
+    return max(0.0, source_start - original_start)
 
 
 def _safe_json(value: dict[str, Any]) -> str:

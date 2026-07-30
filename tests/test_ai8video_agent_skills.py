@@ -54,6 +54,10 @@ class AgentSkillRegistryTests(unittest.TestCase):
             metadata = discover_agent_skills("planner")
 
         self.assertEqual([item.name for item in metadata], ["plan-video-content"])
+        self.assertEqual(metadata[0].version, "2.0.0")
+        self.assertEqual(metadata[0].kind, "policy")
+        self.assertEqual(metadata[0].capabilities, ("planner.plan-video-content",))
+        self.assertIn("drama-skills", metadata[0].source)
 
     def test_default_skill_is_injected_but_placeholder_remains_inactive(self) -> None:
         prompt = apply_agent_skills("planner", "原始任务")

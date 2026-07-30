@@ -230,6 +230,30 @@
     .agent-video-results .result-notify-strip { margin-top: 0; }
     .agent-video-results .result-notify-meta { display: none; }
 
+    .message:not(.user) .bubble.agent-run-with-results {
+      display: grid;
+      justify-items: start;
+      width: fit-content;
+      max-width: min(100%, 760px);
+      gap: 10px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    .bubble.agent-run-with-results > .pending-card {
+      width: fit-content;
+      max-width: 100%;
+    }
+
+    .bubble.agent-run-with-results > .agent-video-results,
+    .bubble.agent-run-with-results > .agent-video-results .result-notify-strip {
+      width: fit-content;
+      max-width: 100%;
+      margin-top: 0;
+    }
+
 
     .agent-step-detail {
       position: relative;

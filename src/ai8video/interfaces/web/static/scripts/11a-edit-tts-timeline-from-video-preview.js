@@ -8,55 +8,6 @@
       return state.videoPreviewModal?.ttsScissorMode === true;
     }
 
-    function timelineSecondsAtPointer(event, lane, duration) {
-      const bounds = lane?.getBoundingClientRect();
-      if (!bounds || bounds.width <= 0 || duration <= 0) return 0;
-      const ratio = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
-      return Math.round(ratio * duration * 1000) / 1000;
-    }
-
-    function bindTimelineScissorGuide(lane, duration, enabled) {
-      const guide = lane?.querySelector('[data-video-preview-cut-guide]');
-      if (!lane || !guide || !enabled || duration <= 0) return;
-      const update = (event) => {
-        const seconds = timelineSecondsAtPointer(event, lane, duration);
-        guide.style.left = `${seconds / duration * 100}%`;
-        guide.dataset.timeLabel = `${seconds.toFixed(2)}s`;
-        guide.hidden = false;
-      };
-      lane.addEventListener('pointermove', update);
-      lane.addEventListener('pointerleave', () => { guide.hidden = true; });
-    }
-
-    function bindTimelinePlayheadDrag(playhead, lane, duration, kind) {
-      if (!playhead || !lane || duration <= 0) return;
-      playhead.addEventListener('pointerdown', (event) => {
-        const video = els.videoPreviewBody?.querySelector('video');
-        if (!video || event.button !== 0) return;
-        event.preventDefault();
-        const resume = !video.paused;
-        video.pause();
-        playhead.setPointerCapture(event.pointerId);
-        const seek = (pointerEvent) => {
-          video.currentTime = Math.min(Number(video.duration || duration), timelineSecondsAtPointer(pointerEvent, lane, duration));
-          if (kind === 'tts') setTtsSelectedChunkIndex(null);
-          if (kind === 'video') setVideoSelectedChunkIndex(null);
-          syncTtsTimelinePlayhead();
-          syncVideoTimelinePlayhead();
-        };
-        const finish = () => {
-          playhead.removeEventListener('pointermove', seek);
-          playhead.removeEventListener('pointerup', finish);
-          playhead.removeEventListener('pointercancel', finish);
-          if (resume) video.play().catch(() => {});
-        };
-        seek(event);
-        playhead.addEventListener('pointermove', seek);
-        playhead.addEventListener('pointerup', finish);
-        playhead.addEventListener('pointercancel', finish);
-      });
-    }
-
     function setTtsScissorMode(active, options = {}) {
       const panel = els.videoPreviewBody?.querySelector('[data-video-preview-tts-timeline]');
       const button = panel?.querySelector('[data-video-preview-action="toggle-tts-scissors"]');
@@ -202,7 +153,9 @@
       const durationLabel = panel?.querySelector('[data-video-preview-tts-duration]');
       const status = panel?.querySelector('[data-video-preview-tts-status]');
       const track = panel?.querySelector('[data-video-preview-tts-chunks]');
-      const chunks = Array.isArray(data?.timelineChunks) ? data.timelineChunks.map((item) => ({ ...item })) : [];
+      const chunks = Array.isArray(data?.timelineChunks)
+        ? data.timelineChunks.map((item) => timelineChunkWithRestoreBounds(item))
+        : [];
       const waveformPeaks = Array.isArray(data?.waveformPeaks)
         ? data.waveformPeaks.map((value) => Math.min(1, Math.max(0, Number(value) || 0)))
         : [];
@@ -211,6 +164,7 @@
         setTtsScissorMode(false, { render: false, updateStatus: false });
         setTtsSelectedChunkIndex(null);
         if (state.videoPreviewModal) state.videoPreviewModal.ttsWaveformPeaks = [];
+        if (state.videoPreviewModal) state.videoPreviewModal.ttsTimelineRevision = 0;
         if (panel) {
           panel.classList.remove('is-open');
           panel.setAttribute('aria-hidden', 'true');
@@ -220,6 +174,7 @@
       }
       const duration = Math.max(0, Number(data?.durationSeconds || 0));
       state.videoPreviewModal.ttsTimelineChunks = chunks;
+      state.videoPreviewModal.ttsTimelineRevision = Number(data?.revision || 0);
       state.videoPreviewModal.ttsTimelineDuration = duration;
       state.videoPreviewModal.ttsAudioDuration = Math.max(0, Number(data?.audioDurationSeconds || 0));
       state.videoPreviewModal.ttsWaveformPeaks = waveformPeaks;
@@ -237,8 +192,11 @@
 
     function buildTtsWaveformPath(peaks, chunk, audioDuration) {
       if (!Array.isArray(peaks) || peaks.length < 2 || audioDuration <= 0) return '';
-      const sourceStart = Math.max(0, Number(chunk.sourceStartSeconds || 0));
-      const sourceEnd = Math.max(sourceStart, Number(chunk.sourceEndSeconds || sourceStart));
+      const sourceStart = Math.max(0, Number(chunk.originalSourceStartSeconds ?? chunk.sourceStartSeconds ?? 0));
+      const sourceEnd = Math.max(
+        sourceStart,
+        Number(chunk.originalSourceEndSeconds ?? chunk.sourceEndSeconds ?? sourceStart),
+      );
       const startIndex = Math.min(peaks.length - 1, Math.floor(sourceStart / audioDuration * peaks.length));
       const endIndex = Math.max(startIndex + 1, Math.min(peaks.length, Math.ceil(sourceEnd / audioDuration * peaks.length)));
       const section = peaks.slice(startIndex, endIndex);
@@ -264,25 +222,25 @@
       const selectedIndex = currentTtsSelectedChunkIndex();
       const markup = chunks.map((chunk, index) => {
         const start = Math.max(0, Number(chunk.startSeconds || 0));
-        const width = Math.max(1.5, Number(chunk.durationSeconds || 0.1) / duration * 100);
-        const left = start / duration * 100;
+        const geometry = timelineFixedContentGeometry(chunk, duration);
         const label = chunk.label || `配音 ${index + 1}`;
         const actionLabel = scissorMode
           ? `剪刀工具：点击${label}中的位置切块`
-          : `选择并跳转到${label}，${start.toFixed(1)}秒；可左右拖动调整`;
+          : `选择并跳转到${label}，${start.toFixed(1)}秒；拖动整体可移动，拖动左右边缘可裁剪或恢复`;
         const selected = index === selectedIndex;
         const waveformPath = buildTtsWaveformPath(waveformPeaks, chunk, audioDuration);
         const waveform = waveformPath
           ? `<svg class="video-preview-tts-waveform" viewBox="0 0 1000 40" preserveAspectRatio="none" aria-hidden="true" focusable="false"><line x1="0" y1="20" x2="1000" y2="20"></line><path d="${waveformPath}"></path></svg>`
           : '<span class="video-preview-tts-waveform-empty" aria-hidden="true"></span>';
-        return `<button type="button" class="video-preview-tts-chunk${selected ? ' is-selected' : ''}" data-video-preview-tts-chunk data-chunk-index="${index}" data-boundary-base-title="${escapeHtml(actionLabel)}" aria-label="${escapeHtml(actionLabel)}" aria-pressed="${selected ? 'true' : 'false'}" title="${escapeHtml(actionLabel)}" style="left:${left}%;width:${Math.min(width, 100 - left)}%">${waveform}<span class="video-preview-tts-chunk-meta"><span>${escapeHtml(label)}</span><small>${start.toFixed(1)}s</small></span></button>`;
+        return `<button type="button" class="video-preview-tts-chunk${selected ? ' is-selected' : ''}" data-video-preview-tts-chunk data-chunk-index="${index}" data-boundary-base-title="${escapeHtml(actionLabel)}" aria-label="${escapeHtml(actionLabel)}" aria-pressed="${selected ? 'true' : 'false'}" title="${escapeHtml(actionLabel)}" style="left:${geometry.left}%;width:${geometry.width}%;--video-preview-tts-waveform-scale:${geometry.contentScale}%;--video-preview-tts-waveform-offset:${geometry.contentOffset}%">${waveform}<span class="video-preview-tts-chunk-meta"><span>${escapeHtml(label)}</span><small>${start.toFixed(1)}s</small></span>${timelineTrimHandleMarkup(label)}</button>`;
       }).join('');
       const boundary = timelineBoundaryDetails();
-      track.innerHTML = `<div class="video-preview-tts-chunk-lane">${timelineOverflowZoneMarkup(duration, boundary.ttsOverflowIndexes, boundary)}<span class="video-preview-timeline-cut-guide" data-video-preview-cut-guide hidden></span><span class="video-preview-tts-playhead" data-video-preview-tts-playhead title="拖动播放头"></span>${markup}</div>`;
+      track.innerHTML = `${timelineRulerMarkup(duration)}<div class="video-preview-tts-chunk-lane">${timelineOverflowZoneMarkup(duration, boundary.ttsOverflowIndexes, boundary)}<span class="video-preview-timeline-cut-guide" data-video-preview-cut-guide hidden></span>${timelineSnapGuideMarkup()}<span class="video-preview-tts-playhead" data-video-preview-tts-playhead aria-label="配音时间轴播放头" title="拖动播放头；按住 Shift 临时关闭吸附"></span>${markup}</div>`;
       const lane = track.querySelector('.video-preview-tts-chunk-lane');
       bindTimelineScissorGuide(lane, duration, scissorMode);
       bindTimelinePlayheadDrag(track.querySelector('[data-video-preview-tts-playhead]'), lane, duration, 'tts');
       track.querySelectorAll('[data-video-preview-tts-chunk]').forEach((element) => {
+        bindTtsChunkTrimHandles(element, duration);
         element.addEventListener('pointerdown', (event) => {
           if (!isTtsScissorMode()) beginTtsChunkDrag(event, element, duration);
         });
@@ -315,7 +273,9 @@
       const playhead = els.videoPreviewBody?.querySelector('[data-video-preview-tts-playhead]');
       const duration = Number(state.videoPreviewModal?.ttsTimelineDuration || video?.duration || 0);
       if (!video || !playhead || duration <= 0) return;
-      playhead.style.left = `${Math.min(100, Math.max(0, Number(video.currentTime || 0) / duration * 100))}%`;
+      const current = Math.min(duration, Math.max(0, Number(video.currentTime || 0)));
+      playhead.style.left = `${current / duration * 100}%`;
+      playhead.setAttribute('aria-valuenow', current.toFixed(3));
     }
 
     function splitTtsTimelineAtTime(userGeneratedKey, currentTime) {
@@ -332,16 +292,18 @@
         return;
       }
       const chunk = chunks[index];
+      const historyBefore = captureTimelineHistorySnapshot();
       const offset = current - Number(chunk.startSeconds || 0);
       const sourceSplit = Number(chunk.sourceStartSeconds || 0) + offset;
+      const bounds = splitTimelineRestoreBounds(chunk, sourceSplit);
       const first = {
-        ...chunk,
+        ...bounds.first,
         sourceEndSeconds: sourceSplit,
         durationSeconds: offset,
         endSeconds: current,
       };
       const second = {
-        ...chunk,
+        ...bounds.second,
         sourceStartSeconds: sourceSplit,
         startSeconds: current,
         durationSeconds: Number(chunk.sourceEndSeconds || 0) - sourceSplit,
@@ -349,11 +311,8 @@
       };
       setTtsSelectedChunkIndex(null);
       state.videoPreviewModal.ttsTimelineChunks = [...chunks.slice(0, index), first, second, ...chunks.slice(index + 1)];
-      renderTtsTimelineChunks(
-        els.videoPreviewBody?.querySelector('[data-video-preview-tts-chunks]'),
-        state.videoPreviewModal.ttsTimelineChunks,
-        Number(state.videoPreviewModal.ttsTimelineDuration || 0),
-      );
+      recordTimelineHistory('tts', `切分配音 ${index + 1}`, historyBefore);
+      renderCurrentTtsTimeline();
       void previewTtsTimeline(userGeneratedKey, `已在 ${current.toFixed(1)} 秒切块`);
     }
 
@@ -376,22 +335,27 @@
 
     function resetTtsTimeline(userGeneratedKey) {
       const audioDuration = Number(state.videoPreviewModal?.ttsAudioDuration || 0);
+      const visibleDuration = Math.min(
+        audioDuration,
+        Number(state.videoPreviewModal?.ttsTimelineDuration || audioDuration),
+      );
       if (audioDuration <= 0) return;
+      const historyBefore = captureTimelineHistorySnapshot();
       setTtsSelectedChunkIndex(null);
       state.videoPreviewModal.ttsTimelineChunks = [{
         index: 0,
         label: '完整配音',
         sourceStartSeconds: 0,
-        sourceEndSeconds: audioDuration,
+        sourceEndSeconds: visibleDuration,
+        originalSourceStartSeconds: 0,
+        originalSourceEndSeconds: audioDuration,
         startSeconds: 0,
-        durationSeconds: audioDuration,
-        endSeconds: audioDuration,
+        durationSeconds: visibleDuration,
+        endSeconds: visibleDuration,
       }];
-      renderTtsTimelineChunks(
-        els.videoPreviewBody?.querySelector('[data-video-preview-tts-chunks]'),
-        state.videoPreviewModal.ttsTimelineChunks,
-        Number(state.videoPreviewModal.ttsTimelineDuration || 0),
-      );
+      const changed = recordTimelineHistory('tts', '恢复完整配音', historyBefore);
+      renderCurrentTtsTimeline();
+      if (!changed) return setTtsTimelineStatus('当前已经是完整配音');
       void previewTtsTimeline(userGeneratedKey, '已恢复为完整配音');
     }
 
@@ -430,52 +394,6 @@
       }
     }
 
-    function beginTtsChunkDrag(event, element, duration) {
-      const index = Number(element.dataset.chunkIndex);
-      const chunks = state.videoPreviewModal?.ttsTimelineChunks || [];
-      const item = chunks[index];
-      const lane = element.closest('.video-preview-tts-chunk-lane');
-      if (!item || !lane || element.disabled || isTtsScissorMode() || state.videoPreviewModal?.ttsTimelineBusy) return;
-      setTtsSelectedChunkIndex(index);
-      event.preventDefault();
-      element.setPointerCapture(event.pointerId);
-      const originX = event.clientX;
-      const originStart = Number(item.startSeconds || 0);
-      const previous = chunks[index - 1];
-      const next = chunks[index + 1];
-      const minStart = previous ? Number(previous.startSeconds) + Number(previous.durationSeconds) : 0;
-      const maxStart = (next ? Number(next.startSeconds) : duration) - Number(item.durationSeconds || 0);
-      let dragged = false;
-      const move = (moveEvent) => {
-        const deltaX = moveEvent.clientX - originX;
-        if (!dragged && Math.abs(deltaX) < 3) return;
-        dragged = true;
-        const delta = deltaX / Math.max(1, lane.clientWidth) * duration;
-        item.startSeconds = Math.round(Math.min(Math.max(originStart + delta, minStart), Math.max(minStart, maxStart)) * 1000) / 1000;
-        item.endSeconds = item.startSeconds + Number(item.durationSeconds || 0);
-        element.style.left = `${item.startSeconds / duration * 100}%`;
-        element.querySelector('small').textContent = `${item.startSeconds.toFixed(1)}s`;
-        const video = els.videoPreviewBody?.querySelector('video');
-        if (video) video.currentTime = item.startSeconds;
-        syncTtsTimelinePlayhead();
-        syncTimelineBoundaryUi();
-      };
-      const end = (endEvent) => {
-        element.removeEventListener('pointermove', move);
-        element.removeEventListener('pointerup', end);
-        element.removeEventListener('pointercancel', end);
-        if (endEvent.type === 'pointercancel') return;
-        if (!dragged) {
-          seekVideoPreviewToTtsChunk(index);
-          return;
-        }
-        void previewTtsTimeline(currentVideoPreviewUserGeneratedKey(), `配音 ${index + 1} 已移动到 ${item.startSeconds.toFixed(1)} 秒`);
-      };
-      element.addEventListener('pointermove', move);
-      element.addEventListener('pointerup', end);
-      element.addEventListener('pointercancel', end);
-    }
-
     function setTtsTimelineStatus(message, tone = '') {
       const status = els.videoPreviewBody?.querySelector('[data-video-preview-tts-status]');
       if (!status) return;
@@ -486,8 +404,9 @@
 
     async function previewTtsTimeline(userGeneratedKey, successMessage) {
       const key = String(userGeneratedKey || '').trim();
-      if (!key || state.videoPreviewModal?.ttsTimelineBusy) return;
+      if (!key || state.videoPreviewModal?.ttsTimelineBusy) return false;
       if (state.videoPreviewModal) state.videoPreviewModal.ttsTimelineBusy = true;
+      syncTimelineHistoryButtons();
       const chunks = state.videoPreviewModal?.ttsTimelineChunks || [];
       const controls = els.videoPreviewBody?.querySelectorAll('[data-video-preview-tts-editor-action]') || [];
       controls.forEach((button) => { button.disabled = true; });
@@ -496,18 +415,25 @@
         const res = await fetch('/api/user-generated-results/tts-timeline-preview', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userGeneratedKey: key, chunks }),
+          body: JSON.stringify({
+            userGeneratedKey: key,
+            chunks,
+            expectedRevision: Number(state.videoPreviewModal?.ttsTimelineRevision || 0),
+          }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data?.ok === false) throw buildRequestError(data);
         const video = els.videoPreviewBody?.querySelector('video');
         applyBurnReviewToVideoPreview(data.burnReview || {}, video);
         setTtsTimelineStatus(`${successMessage}，等待确认烧录`, 'success');
+        return true;
       } catch (error) {
         setTtsTimelineStatus(error?.message || '配音时间轴预览生成失败', 'error');
+        return false;
       } finally {
         if (state.videoPreviewModal) state.videoPreviewModal.ttsTimelineBusy = false;
         controls.forEach((button) => { button.disabled = false; });
         syncTtsDeleteButton();
+        syncTimelineHistoryButtons();
       }
     }

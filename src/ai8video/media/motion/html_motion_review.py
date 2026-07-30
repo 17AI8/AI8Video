@@ -1,22 +1,33 @@
 from __future__ import annotations
 
 import hashlib
-import html
 import json
-import copy
-import math
 import os
-import re
 import shutil
 import subprocess
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
 from ai8video.media.ffmpeg_utils import probe_media_video_info, resolve_ffmpeg_bin
 from ai8video.media.motion.html_motion_overlay import render_html_motion_artifact_layer
+from ai8video.media.motion.html_motion_render_cache import (
+    build_html_motion_render_plan,
+    layer_matches_render_plan, render_metadata, sync_live_preview_font,
+)
+from ai8video.media.motion.html_motion_timeline import (
+    apply_timeline_chunks as _apply_timeline_chunks,
+    timeline_chunks as _timeline_chunks,
+)
 from ai8video.media.motion.hyperframes_overlay_renderer import build_composition_html
 from ai8video.media.motion.hyperframes_runtime import WAAPI_RUNTIME_SOURCE
+from ai8video.media.timeline_contract import (
+    TIMELINE_SCHEMA_VERSION,
+    ensure_expected_revision,
+    next_timeline_revision,
+    timeline_review_lock,
+)
 from ai8video.media.video_text_overlay import selected_video_text_overlay_font_path
 from ai8video.assets.user_files import USER_FILE_ROOT, ensure_user_file_root
 
@@ -65,7 +76,7 @@ def prepare_html_motion_review(
     if isinstance(composition_html, str) and composition_html.strip():
         (review_dir / "composition.html").write_text(composition_html, encoding="utf-8")
         shutil.copy2(WAAPI_RUNTIME_SOURCE, review_dir / "waapi-timeline-runtime.js")
-        _copy_live_preview_font(review_dir, font_family)
+        sync_live_preview_font(review_dir, font_family)
     else:
         (review_dir / "composition.html").unlink(missing_ok=True)
     if isinstance(artifact, dict) and isinstance(motion_media, dict):
@@ -80,6 +91,8 @@ def prepare_html_motion_review(
     review_id = review_dir.name
     prepared_at = datetime.now(timezone.utc).isoformat()
     payload = {
+        "schemaVersion": TIMELINE_SCHEMA_VERSION,
+        "revision": 1,
         "reviewId": review_id,
         "relativeKey": relative_key,
         "candidateName": candidate.name,
@@ -88,6 +101,9 @@ def prepare_html_motion_review(
         "fontFamily": font_family,
         "timelineChunks": chunks,
     }
+    if isinstance(artifact, dict) and isinstance(motion_media, dict) and layer.is_file():
+        plan = build_html_motion_render_plan(artifact, motion_media, font_family)
+        payload.update(render_metadata(plan, layer))
     _write_json(review_dir / "review.json", payload)
     return {
         **result,
@@ -95,22 +111,14 @@ def prepare_html_motion_review(
         "reason": "HTML 动效预览已生成，等待确认烧录",
         "reviewReady": True,
         "reviewId": review_id,
+        "schemaVersion": TIMELINE_SCHEMA_VERSION,
+        "revision": 1,
         "preparedAt": prepared_at,
         "previewUrl": f"/api/user-generated-results/html-motion-preview/{review_id}",
         "livePreviewUrl": f"/api/user-generated-results/html-motion-live/{review_id}/composition.html",
         "timelineChunks": chunks,
-        "timelineAdjustable": bool(layer.is_file() and chunks),
+        "timelineAdjustable": bool(chunks),
     }
-
-
-def _copy_live_preview_font(review_dir: Path, font_family: str) -> None:
-    for name in ("motion-font.otf", "flower-font.otf"):
-        (review_dir / name).unlink(missing_ok=True)
-    source = selected_video_text_overlay_font_path()
-    if source is None or not source.is_file() or not font_family:
-        return
-    target_name = "flower-font.otf" if font_family == "AI8VideoFlower" else "motion-font.otf"
-    shutil.copy2(source, review_dir / target_name)
 
 
 def confirm_html_motion_review(video_path: Path, relative_key: str) -> dict[str, Any]:
@@ -181,8 +189,11 @@ def html_motion_review_status(relative_key: str) -> dict[str, Any]:
         and (review_dir / "composition.html").is_file()
         and (review_dir / "waapi-timeline-runtime.js").is_file()
     )
+    current_chunks = _timeline_chunks(artifact, original_artifact) if available else []
     return {
         "ok": True,
+        "schemaVersion": int(payload.get("schemaVersion") or TIMELINE_SCHEMA_VERSION),
+        "revision": int(payload.get("revision") or 0),
         "reviewReady": ready,
         "reviewId": review_dir.name if available else "",
         "reviewConfirmed": bool(available and payload.get("confirmedAt")),
@@ -196,11 +207,10 @@ def html_motion_review_status(relative_key: str) -> dict[str, Any]:
         ),
         "preparedAt": payload.get("preparedAt") if available else None,
         "durationSeconds": _review_duration(payload) if available else 0.0,
-        "timelineChunks": payload.get("timelineChunks", []) if available else [],
+        "timelineChunks": current_chunks,
         "originalTimelineChunks": _timeline_chunks(original_artifact) if available else [],
         "timelineAdjustable": bool(
             available
-            and (review_dir / "overlay.webm").is_file()
             and (review_dir / "artifact.json").is_file()
             and payload.get("timelineChunks")
         ),
@@ -219,33 +229,51 @@ def html_motion_review_base_path(video_path: Path, relative_key: str) -> Path:
     return base
 
 
-def save_html_motion_review_timeline(relative_key: str, chunks: Any) -> dict[str, Any]:
+def save_html_motion_review_timeline(
+    relative_key: str,
+    chunks: Any,
+    *,
+    expected_revision: Any = None,
+) -> dict[str, Any]:
     review_dir = _review_dir(relative_key)
-    payload = _load_json(review_dir / "review.json")
-    artifact_path = review_dir / "artifact.json"
-    original_artifact_path = review_dir / "artifact.original.json"
-    media = _load_json(review_dir / "media.json")
-    if payload.get("relativeKey") != relative_key:
-        raise LookupError("请先重新生成 HTML 动效预览")
-    if not original_artifact_path.is_file() or not media:
-        raise LookupError("HTML 动效编辑源不存在")
-    artifact = _load_json(original_artifact_path)
-    duration = float(media.get("durationSeconds") or 0.0)
-    normalized = _apply_timeline_chunks(artifact, chunks, duration)
-    composition = build_composition_html(
-        artifact,
-        media,
-        font_family=str(payload.get("fontFamily") or ""),
-    )
-    artifact_path.write_text(json.dumps(artifact, ensure_ascii=False, indent=2), encoding="utf-8")
-    (review_dir / "composition.html").write_text(composition, encoding="utf-8")
-    shutil.copy2(WAAPI_RUNTIME_SOURCE, review_dir / "waapi-timeline-runtime.js")
-    payload["timelineChunks"] = normalized
-    payload.pop("confirmedAt", None)
-    payload["timelineAdjustedAt"] = datetime.now(timezone.utc).isoformat()
-    _write_json(review_dir / "review.json", payload)
+    with timeline_review_lock("html-motion", relative_key):
+        payload = _load_json(review_dir / "review.json")
+        artifact_path = review_dir / "artifact.json"
+        original_artifact_path = review_dir / "artifact.original.json"
+        media = _load_json(review_dir / "media.json")
+        if payload.get("relativeKey") != relative_key:
+            raise LookupError("请先重新生成 HTML 动效预览")
+        ensure_expected_revision(payload, expected_revision)
+        if not original_artifact_path.is_file() or not media:
+            raise LookupError("HTML 动效编辑源不存在")
+        artifact = _load_json(original_artifact_path)
+        duration = float(media.get("durationSeconds") or 0.0)
+        normalized = _apply_timeline_chunks(artifact, chunks, duration)
+        composition = build_composition_html(
+            artifact,
+            media,
+            font_family=str(payload.get("fontFamily") or ""),
+        )
+        _write_json(artifact_path, artifact)
+        (review_dir / "composition.html").write_text(composition, encoding="utf-8")
+        shutil.copy2(WAAPI_RUNTIME_SOURCE, review_dir / "waapi-timeline-runtime.js")
+        payload["timelineChunks"] = normalized
+        payload["schemaVersion"] = TIMELINE_SCHEMA_VERSION
+        payload["revision"] = next_timeline_revision(payload)
+        payload.pop("confirmedAt", None)
+        for key in (
+            "renderedHash",
+            "renderedAt",
+            "renderedOverlayBytes",
+            "renderedOverlaySha256",
+        ):
+            payload.pop(key, None)
+        payload["timelineAdjustedAt"] = datetime.now(timezone.utc).isoformat()
+        _write_json(review_dir / "review.json", payload)
     return {
         "ok": True,
+        "schemaVersion": TIMELINE_SCHEMA_VERSION,
+        "revision": int(payload.get("revision") or 0),
         "reviewReady": True,
         "reviewId": review_dir.name,
         "livePreviewUrl": f"/api/user-generated-results/html-motion-live/{review_dir.name}/composition.html",
@@ -262,6 +290,7 @@ def adjust_html_motion_review_timeline(
     *,
     ffmpeg_bin: str | None = None,
 ) -> dict[str, Any]:
+    del ffmpeg_bin
     source = video_path.resolve()
     review_dir = _review_dir(relative_key)
     payload = _load_json(review_dir / "review.json")
@@ -272,37 +301,53 @@ def adjust_html_motion_review_timeline(
     media_path = review_dir / "media.json"
     if payload.get("relativeKey") != relative_key or not base.is_file() or not artifact_path.is_file():
         raise LookupError("请先重新生成 HTML 动效预览")
-    if not original_artifact_path.is_file():
-        shutil.copy2(artifact_path, original_artifact_path)
-    artifact = _load_json(original_artifact_path)
     media = _load_json(media_path) or _review_media(payload, base)
+    artifact = _load_json(artifact_path)
     duration = float(media.get("durationSeconds") or 0.0)
-    normalized = _apply_timeline_chunks(artifact, chunks, duration)
-    temporary_layer = review_dir / "overlay.timeline.webm"
-    temporary_layer.unlink(missing_ok=True)
-    try:
-        composition_html, _manifest = render_html_motion_artifact_layer(
-            artifact,
-            media,
-            temporary_layer,
-            font_family=str(payload.get("fontFamily") or ""),
-        )
-        temporary_layer.replace(layer)
-        artifact_path.write_text(json.dumps(artifact, ensure_ascii=False, indent=2), encoding="utf-8")
-        (review_dir / "composition.html").write_text(composition_html, encoding="utf-8")
-    finally:
-        temporary_layer.unlink(missing_ok=True)
+    timeline_changed = isinstance(chunks, list) and bool(chunks)
+    if timeline_changed:
+        if not original_artifact_path.is_file():
+            shutil.copy2(artifact_path, original_artifact_path)
+        artifact = _load_json(original_artifact_path)
+        normalized = _apply_timeline_chunks(artifact, chunks, duration)
+    else:
+        normalized = _timeline_chunks(artifact)
+    if not normalized:
+        raise ValueError("chunk 时间轴数据不完整")
+    font_family = str(payload.get("fontFamily") or "")
+    plan = build_html_motion_render_plan(artifact, media, font_family)
+    render_reused = layer_matches_render_plan(payload, layer, plan)
+    if not render_reused:
+        temporary_layer = review_dir / f"overlay.{uuid.uuid4().hex[:10]}.rendering.webm"
+        try:
+            render_html_motion_artifact_layer(
+                artifact,
+                media,
+                temporary_layer,
+                font_family=font_family,
+            )
+            temporary_layer.replace(layer)
+        finally:
+            temporary_layer.unlink(missing_ok=True)
+        payload.update(render_metadata(plan, layer))
+    _write_json(artifact_path, artifact)
+    (review_dir / "composition.html").write_text(plan.composition_html, encoding="utf-8")
+    shutil.copy2(WAAPI_RUNTIME_SOURCE, review_dir / "waapi-timeline-runtime.js")
     payload["timelineChunks"] = normalized
-    payload["timelineAdjustedAt"] = datetime.now(timezone.utc).isoformat()
+    if timeline_changed:
+        payload["timelineAdjustedAt"] = datetime.now(timezone.utc).isoformat()
     _write_json(review_dir / "review.json", payload)
     return {
         "ok": True,
+        "schemaVersion": int(payload.get("schemaVersion") or TIMELINE_SCHEMA_VERSION),
+        "revision": int(payload.get("revision") or 0),
         "reviewReady": True,
         "reviewId": review_dir.name,
         "previewUrl": f"/api/user-generated-results/html-motion-preview/{review_dir.name}",
         "durationSeconds": duration,
         "timelineChunks": normalized,
         "timelineAdjustable": True,
+        "renderReused": render_reused,
     }
 
 
@@ -415,12 +460,9 @@ def _review_dir(relative_key: str) -> Path:
 
 
 def _review_duration(payload: dict[str, Any]) -> float:
-    render_result = payload.get("renderResult")
-    if not isinstance(render_result, dict):
-        return 0.0
     try:
-        return max(0.0, float(render_result.get("durationSeconds") or 0.0))
-    except (TypeError, ValueError):
+        return max(0.0, float((payload.get("renderResult") or {}).get("durationSeconds") or 0.0))
+    except (AttributeError, TypeError, ValueError):
         return 0.0
 
 
@@ -432,91 +474,6 @@ def _review_media(payload: dict[str, Any], base: Path) -> dict[str, Any]:
         if duration > 0:
             media["durationSeconds"] = duration
     return media
-
-
-def _timeline_chunks(artifact: Any) -> list[dict[str, Any]]:
-    scenes = artifact.get("scenes") if isinstance(artifact, dict) else None
-    if not isinstance(scenes, list):
-        return []
-    chunks = []
-    for index, scene in enumerate(scenes):
-        if not isinstance(scene, dict):
-            continue
-        start = float(scene.get("start") or 0.0)
-        end = float(scene.get("end") or start)
-        text = html.unescape(re.sub(r"<[^>]+>", " ", str(scene.get("html") or "")))
-        label = re.sub(r"\s+", " ", text).strip()[:32] or f"Chunk {index + 1}"
-        chunks.append({
-            "index": index,
-            "sourceIndex": int(scene.get("_timelineSourceIndex", index)),
-            "startSeconds": round(start, 3),
-            "endSeconds": round(end, 3),
-            "durationSeconds": round(max(0.1, end - start), 3),
-            "label": label,
-        })
-    return chunks
-
-
-def _apply_timeline_chunks(artifact: dict[str, Any], value: Any, duration: float) -> list[dict[str, Any]]:
-    scenes = artifact.get("scenes")
-    if not isinstance(scenes, list) or not scenes or not isinstance(value, list) or not value:
-        raise ValueError("chunk 时间轴数据不完整")
-    rebuilt = []
-    for target_index, item in enumerate(value):
-        if not isinstance(item, dict):
-            raise ValueError("chunk 时间轴数据不合法")
-        try:
-            source_index = int(item.get("sourceIndex", item.get("index", target_index)))
-            start = float(item.get("startSeconds"))
-        except (TypeError, ValueError) as exc:
-            raise ValueError("chunk 时间轴数据不合法") from exc
-        if source_index < 0 or source_index >= len(scenes):
-            raise ValueError("chunk 来源片段不存在")
-        raw_duration = item.get("durationSeconds")
-        if raw_duration is None:
-            raw_end = item.get("endSeconds")
-            source_scene = scenes[source_index]
-            if raw_end is not None:
-                raw_duration = float(raw_end) - start
-            elif isinstance(source_scene, dict):
-                raw_duration = float(source_scene.get("end")) - float(source_scene.get("start"))
-        try:
-            chunk_duration = float(raw_duration)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("chunk 时间轴数据不合法") from exc
-        if not math.isfinite(start) or not math.isfinite(chunk_duration) or chunk_duration <= 0:
-            raise ValueError("chunk 时间范围不合法")
-        chunk_duration = min(max(0.1, chunk_duration), duration)
-        start = min(max(0.0, start), max(0.0, duration - chunk_duration))
-        scene = copy.deepcopy(scenes[source_index])
-        if not isinstance(scene, dict):
-            raise ValueError("chunk 来源片段不合法")
-        _reindex_scene_references(scene, source_index + 1, target_index + 1)
-        scene["start"] = round(start, 3)
-        scene["end"] = round(start + chunk_duration, 3)
-        scene["_timelineSourceIndex"] = source_index
-        rebuilt.append(scene)
-    artifact["scenes"] = rebuilt
-    return _timeline_chunks(artifact)
-
-
-def _reindex_scene_references(scene: dict[str, Any], source_number: int, target_number: int) -> None:
-    if source_number == target_number:
-        return
-    source_id = f"scene-{source_number}-"
-    target_id = f"scene-{target_number}-"
-    source_wrapper = f"#hf-scene-{source_number}"
-    target_wrapper = f"#hf-scene-{target_number}"
-
-    def replace(value: Any) -> Any:
-        return value.replace(source_wrapper, target_wrapper).replace(source_id, target_id) if isinstance(value, str) else value
-
-    scene["html"] = replace(scene.get("html"))
-    scene["css"] = replace(scene.get("css"))
-    scene["ids"] = [replace(value) for value in scene.get("ids", [])]
-    for animation in scene.get("animations", []):
-        if isinstance(animation, dict):
-            animation["target"] = replace(animation.get("target"))
 
 
 def _assert_within_review_root(path: Path) -> None:

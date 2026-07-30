@@ -243,9 +243,9 @@
       top: 7px;
       left: 7px;
       z-index: 4;
-      width: 24px;
-      height: 24px;
-      padding: 0 0 5px;
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 24px; height: 20px;
+      padding: 0;
       border: 1px solid rgba(55, 79, 130, 0.18);
       border-radius: 7px;
       background: rgba(255, 255, 255, 0.94);

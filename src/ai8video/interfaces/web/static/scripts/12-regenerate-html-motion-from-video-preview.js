@@ -63,7 +63,7 @@
           showHtmlMotionPreview(video, overlay.previewUrl || data.videoUrl, overlay);
           syncBurnConfirmButton(data?.burnReview || { reviewReady: true, pendingKinds: ['htmlMotion'] });
         }
-        configureHtmlMotionTimeline(overlay);
+        configureRegeneratedHtmlMotionTimeline(overlay);
         if (confirmButton) confirmButton.disabled = false;
         setHtmlMotionPreviewStatus('动效预览已生成，统一确认烧录后才会替换正式视频', 'success');
         if (button) setVideoPreviewButtonLabel(button, '预览已生成');

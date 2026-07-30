@@ -901,10 +901,9 @@
     .video-preview-tts-waveform {
       position: absolute;
       z-index: 1;
-      right: 5px;
       bottom: 3px;
-      left: 5px;
-      width: calc(100% - 10px);
+      left: calc(5px - var(--video-preview-tts-waveform-offset, 0%));
+      width: calc(var(--video-preview-tts-waveform-scale, 100%) - 10px);
       height: 32px;
       color: rgba(209, 250, 229, 0.72);
       pointer-events: none;
@@ -922,9 +921,9 @@
 
     .video-preview-tts-waveform-empty {
       position: absolute;
-      right: 7px;
       bottom: 18px;
-      left: 7px;
+      left: calc(7px - var(--video-preview-tts-waveform-offset, 0%));
+      width: calc(var(--video-preview-tts-waveform-scale, 100%) - 14px);
       height: 1px;
       background: rgba(236, 253, 245, 0.3);
       pointer-events: none;

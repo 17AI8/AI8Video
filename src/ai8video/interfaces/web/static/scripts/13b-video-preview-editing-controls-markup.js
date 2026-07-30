@@ -18,6 +18,8 @@
             </div>
             <span class="video-preview-timeline-duration" data-video-preview-video-duration>0.0 秒</span>
             <div class="video-preview-tts-timeline-actions">
+              <button type="button" class="video-preview-button video-preview-tts-tool-button" data-video-preview-action="undo-timeline" data-icon="undo" aria-label="没有可撤销的时间轴编辑" title="没有可撤销的时间轴编辑" disabled>${videoPreviewIconSvg('undo')}</button>
+              <button type="button" class="video-preview-button video-preview-tts-tool-button" data-video-preview-action="redo-timeline" data-icon="redo" aria-label="没有可重做的时间轴编辑" title="没有可重做的时间轴编辑" disabled>${videoPreviewIconSvg('redo')}</button>
               <button type="button" class="video-preview-button" data-video-preview-action="toggle-background-music" aria-expanded="false">背景音乐</button>
               <button type="button" class="video-preview-button video-preview-tts-tool-button" data-video-preview-video-editor-action data-video-preview-action="toggle-video-seek" data-icon="pointer" aria-label="定位工具" aria-pressed="false" title="开启定位工具">${videoPreviewIconSvg('pointer')}</button>
               <button type="button" class="video-preview-button video-preview-tts-tool-button" data-video-preview-video-editor-action data-video-preview-action="toggle-video-scissors" data-icon="scissors" aria-label="剪刀工具" aria-pressed="false" title="开启剪刀工具">${videoPreviewIconSvg('scissors')}</button>
