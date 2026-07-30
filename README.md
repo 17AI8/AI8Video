@@ -541,7 +541,7 @@ npm ci
 npm run dist:mac
 ```
 
-`.github/workflows/desktop-release.yml` 支持手动运行；推送 `v*` 标签时会自动生成 macOS ARM64 DMG 与 Windows x64 EXE，并附加到对应 GitHub Release。工作流会在 `desktop/electron` 工作目录内安装依赖和执行打包，确保不同系统及 npm 版本都能稳定读取已纳入版本控制的 `package-lock.json`。普通代码推送不会触发大型打包任务，避免无意义消耗构建时长和制品存储。
+`.github/workflows/desktop-release.yml` 支持手动运行；推送 `v*` 注解标签时会自动生成 macOS ARM64 DMG 与 Windows x64 EXE，并附加到对应 GitHub Release。Release 正文直接采用标签中的模块化更新说明，不再只生成空泛的提交链接。工作流会在 `desktop/electron` 工作目录内安装依赖和执行打包，确保不同系统及 npm 版本都能稳定读取已纳入版本控制的 `package-lock.json`。普通代码推送不会触发大型打包任务，避免无意义消耗构建时长和制品存储。
 
 正式桌面版本请从 [GitHub Releases](https://github.com/17AI8/AI8Video/releases) 下载；Actions 手动运行产生的临时制品主要用于构建验证，正式交付以对应版本标签下的 DMG / EXE 为准。
 
