@@ -1,0 +1,110 @@
+name: 桌面安装包
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS ARM64 DMG
+            os: macos-latest
+            target: mac
+            artifact: ai8video-macos-arm64
+            package_glob: desktop/electron/dist/*.dmg
+          - label: Windows x64 EXE
+            os: windows-latest
+            target: win
+            artifact: ai8video-windows-x64
+            package_glob: desktop/electron/dist/*.exe
+
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v7
+
+      - name: 准备 Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: 准备 Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/electron/package-lock.json
+
+      - name: 安装 Python 构建依赖
+        run: python -m pip install ".[ai8video]" "pyinstaller==6.21.0"
+
+      - name: 安装 HyperFrames 运行时
+        run: npm ci
+
+      - name: 冻结 Python 后端
+        run: >-
+          python -m PyInstaller
+          --noconfirm
+          --clean
+          --distpath build/frozen
+          --workpath build/pyinstaller
+          desktop/runtime/ai8video_backend.spec
+
+      - name: 暂存独立桌面运行时
+        run: >-
+          python desktop/runtime/stage_release.py
+          --backend-dir build/frozen/ai8video-backend
+          --target desktop/electron/runtime
+
+      - name: 暂存 HyperFrames Node 依赖
+        run: >-
+          node desktop/runtime/stage_node_runtime.mjs
+          node_modules
+          desktop/electron/runtime/node_modules
+
+      - name: 安装 Electron 构建依赖
+        run: npm ci --prefix desktop/electron
+
+      - name: 生成安装包
+        run: npm --prefix desktop/electron run dist:${{ matrix.target }}
+
+      - name: 上传安装包
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.package_glob }}
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: 发布 GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下载安装包
+        uses: actions/download-artifact@v8
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: 创建或更新 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" release-artifacts/* --clobber

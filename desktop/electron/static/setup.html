@@ -139,8 +139,8 @@
 <body>
   <section class="panel">
     <h1>AI8video Electron 客户端</h1>
-    <div class="sub">Electron 只负责桌面壳。聊天、生成和资产管理仍然复用本地 AI8video 项目目录里的工作台服务。</div>
-    <div class="form">
+    <div class="sub" id="description">开发态 Electron 会复用本地 AI8video 项目目录里的工作台服务。</div>
+    <div class="form" id="developmentForm">
       <label class="field">
         <span class="label">Python 解释器</span>
         <div class="row">
@@ -173,6 +173,9 @@
     const pickProjectDirButton = document.getElementById('pickProjectDir');
     const startButton = document.getElementById('startButton');
     const statusEl = document.getElementById('status');
+    const descriptionEl = document.getElementById('description');
+    const developmentForm = document.getElementById('developmentForm');
+    let packagedMode = false;
 
     function setStatus(message, kind = '') {
       statusEl.textContent = message || '';
@@ -182,6 +185,13 @@
     async function hydrateConfig() {
       try {
         const config = await window.ai8VideoElectron.getConfig();
+        packagedMode = Boolean(config.packaged);
+        if (packagedMode) {
+          developmentForm.hidden = true;
+          descriptionEl.textContent = `安装包已内置独立运行时，数据保存在 ${config.runtimeHome || '应用数据目录'}。`;
+          startButton.textContent = '重试启动';
+          if (!config.runtimeAvailable) setStatus('安装包中的内置运行时不完整，请重新下载安装。', 'error');
+        }
         pythonInput.value = config.pythonPath || config.detectedPythonPath || '';
         projectInput.value = config.projectDir || config.detectedProjectDir || '';
       } catch (error) {
@@ -206,10 +216,11 @@
       startButton.disabled = true;
       setStatus('正在连接本地工作台...');
       try {
-        const result = await window.ai8VideoElectron.startBackend({
+        const settings = packagedMode ? {} : {
           pythonPath: pythonInput.value.trim(),
           projectDir: projectInput.value.trim(),
-        });
+        };
+        const result = await window.ai8VideoElectron.startBackend(settings);
         setStatus(`已连接 ${result.url}`, 'success');
       } catch (error) {
         setStatus(`启动失败：${error.message || error}`, 'error');

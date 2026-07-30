@@ -15,6 +15,7 @@ node_modules/
 desktop/electron/.asar-stage/
 desktop/electron/.asar-stage-clean/
 desktop/electron/dist/
+desktop/electron/runtime/
 
 # Editors and operating systems
 .vscode/

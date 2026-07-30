@@ -29,7 +29,7 @@ from ai8video.media.video_text_overlay import selected_video_text_overlay_font_p
 
 HTML_MOTION_DIR = (USER_FILE_ROOT / "HTML动效").resolve()
 HTML_MOTION_SETTINGS_PATH = HTML_MOTION_DIR / "settings.json"
-HYPERFRAMES_VERSION = "0.7.59"
+HYPERFRAMES_VERSION = "0.7.84"
 HTML_MOTION_TOTAL_TIMEOUT_SECONDS = 300
 HTML_MOTION_LLM_TIMEOUT_SECONDS = 20
 HTML_MOTION_LLM_CONCURRENCY = 1
@@ -659,11 +659,13 @@ def _is_hyperframes_error_line(line: str) -> bool:
 
 
 def _hyperframes_cli_path() -> Path | None:
+    configured = str(os.getenv("AI8VIDEO_HYPERFRAMES_CLI") or "").strip()
     candidates = (
+        Path(configured) if configured else None,
         PROJECT_ROOT / "node_modules" / "hyperframes" / "dist" / "cli.js",
         PROJECT_ROOT / "node_modules" / ".bin" / "hyperframes",
     )
-    return next((candidate for candidate in candidates if candidate.is_file()), None)
+    return next((candidate for candidate in candidates if candidate is not None and candidate.is_file()), None)
 
 
 def _node_source_path() -> str | None:

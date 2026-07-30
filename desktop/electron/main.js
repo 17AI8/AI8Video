@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const http = require('node:http');
 const net = require('node:net');
@@ -38,11 +39,14 @@ function resolveAppIcon() {
 }
 
 function settingsPath() {
-  return path.join(app.getPath('home'), SETTINGS_BASENAME);
+  return path.join(app.getPath('userData'), 'settings.json');
 }
 
-function legacySettingsPath() {
-  return path.join(app.getPath('home'), LEGACY_SETTINGS_BASENAME);
+function legacySettingsPaths() {
+  return [
+    path.join(app.getPath('home'), SETTINGS_BASENAME),
+    path.join(app.getPath('home'), LEGACY_SETTINGS_BASENAME),
+  ];
 }
 
 function normalizeSettings(raw = {}) {
@@ -58,18 +62,22 @@ function normalizeSettings(raw = {}) {
 function loadSettings() {
   const current = readSettingsFile(settingsPath());
   if (current) return current;
-  const legacy = readSettingsFile(legacySettingsPath());
-  if (!legacy) return normalizeSettings();
-  try {
-    saveSettings(legacy);
-  } catch {
-    // 迁移写入失败不影响本次继续使用旧设置。
+  for (const legacyPath of legacySettingsPaths()) {
+    const legacy = readSettingsFile(legacyPath);
+    if (!legacy) continue;
+    try {
+      saveSettings(legacy);
+    } catch {
+      // 迁移写入失败不影响本次继续使用旧设置。
+    }
+    return legacy;
   }
-  return legacy;
+  return normalizeSettings();
 }
 
 function saveSettings(rawSettings) {
   const settings = normalizeSettings(rawSettings);
+  fs.mkdirSync(path.dirname(settingsPath()), { recursive: true });
   fs.writeFileSync(settingsPath(), JSON.stringify(settings, null, 2), 'utf8');
   return settings;
 }
@@ -89,6 +97,32 @@ function productEnvironmentValue(name) {
     ? `${LEGACY_ENV_PREFIX}${name.slice('AI8VIDEO_'.length)}`
     : name;
   return String(process.env[legacyName] || '').trim();
+}
+
+function packagedRuntimeRoot() {
+  return app.isPackaged ? path.join(process.resourcesPath, 'runtime') : '';
+}
+
+function packagedBackendPath() {
+  const executable = process.platform === 'win32' ? 'ai8video-backend.exe' : 'ai8video-backend';
+  return path.join(packagedRuntimeRoot(), 'backend', executable);
+}
+
+function packagedHyperframesCliPath() {
+  return path.join(packagedRuntimeRoot(), 'node_modules', 'hyperframes', 'dist', 'cli.js');
+}
+
+function packagedMediaPath(executable) {
+  const suffix = process.platform === 'win32' ? '.exe' : '';
+  return path.join(packagedRuntimeRoot(), 'media', `${executable}${suffix}`);
+}
+
+function runtimeWorkspacePath() {
+  return path.join(app.getPath('userData'), 'workspace');
+}
+
+function runtimeInstanceId() {
+  return crypto.createHash('sha256').update(app.getPath('userData')).digest('hex').slice(0, 24);
 }
 
 function candidateProjectDirs(explicit = '') {
@@ -141,7 +175,7 @@ function findCertifiBundle(projectDir) {
   return '';
 }
 
-function backendEnvironment(projectDir) {
+function developmentBackendEnvironment(projectDir) {
   const env = { ...process.env, PYTHONUNBUFFERED: '1' };
   const sourceRoot = path.join(projectDir, 'src');
   env.PYTHONPATH = [sourceRoot, env.PYTHONPATH].filter(Boolean).join(path.delimiter);
@@ -153,15 +187,49 @@ function backendEnvironment(projectDir) {
   return env;
 }
 
+function packagedBackendEnvironment() {
+  const workspace = runtimeWorkspacePath();
+  const env = {
+    ...process.env,
+    PYTHONUNBUFFERED: '1',
+    AI8VIDEO_HOME: workspace,
+    AI8VIDEO_DISABLE_MYKEY: '1',
+    AI8VIDEO_RUNTIME_MODE: 'desktop',
+    AI8VIDEO_RUNTIME_INSTANCE: runtimeInstanceId(),
+    AI8VIDEO_NODE_BIN: process.execPath,
+    ELECTRON_RUN_AS_NODE: '1',
+  };
+  fs.mkdirSync(workspace, { recursive: true });
+  const hyperframesCli = packagedHyperframesCliPath();
+  if (fs.existsSync(hyperframesCli)) env.AI8VIDEO_HYPERFRAMES_CLI = hyperframesCli;
+  const ffmpeg = packagedMediaPath('ffmpeg');
+  const ffprobe = packagedMediaPath('ffprobe');
+  if (fs.existsSync(ffmpeg)) env.AI8VIDEO_FFMPEG_BIN = ffmpeg;
+  if (fs.existsSync(ffprobe)) env.AI8VIDEO_FFPROBE_BIN = ffprobe;
+  return env;
+}
+
 function localWorkbenchUrl(port) {
   return `http://127.0.0.1:${port}/`;
 }
 
-function checkHealth(port) {
+function checkHealth(port, expectedInstance = '') {
   return new Promise((resolve) => {
     const request = http.get(`${localWorkbenchUrl(port).replace(/\/$/, '')}${HEALTH_PATH}`, (response) => {
-      response.resume();
-      resolve((response.statusCode || 0) >= 200 && (response.statusCode || 0) < 300);
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => {
+        if (body.length < 16384) body += chunk;
+      });
+      response.on('end', () => {
+        const healthy = (response.statusCode || 0) >= 200 && (response.statusCode || 0) < 300;
+        if (!healthy || !expectedInstance) return resolve(healthy);
+        try {
+          return resolve(JSON.parse(body).runtimeInstance === expectedInstance);
+        } catch {
+          return resolve(false);
+        }
+      });
     });
     request.setTimeout(1200, () => request.destroy());
     request.on('error', () => resolve(false));
@@ -177,13 +245,13 @@ function canBindPort(port) {
   });
 }
 
-async function findHealthyBackend(preferredPort = 0) {
+async function findHealthyBackend(preferredPort = 0, expectedInstance = '') {
   const ports = preferredPort > 0 ? [preferredPort] : [];
   for (let port = DEFAULT_PORT_START; port <= DEFAULT_PORT_END; port += 1) {
     if (!ports.includes(port)) ports.push(port);
   }
   for (const port of ports) {
-    if (await checkHealth(port)) return { port, url: localWorkbenchUrl(port) };
+    if (await checkHealth(port, expectedInstance)) return { port, url: localWorkbenchUrl(port) };
   }
   return null;
 }
@@ -195,10 +263,10 @@ async function findAvailablePort() {
   throw new Error(`没有找到可用端口，请检查 ${DEFAULT_PORT_START}-${DEFAULT_PORT_END}。`);
 }
 
-async function waitForBackend(port, timeoutMs = 30000) {
+async function waitForBackend(port, expectedInstance = '', timeoutMs = 30000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (await checkHealth(port)) return true;
+    if (await checkHealth(port, expectedInstance)) return true;
     await new Promise((resolve) => setTimeout(resolve, 350));
   }
   return false;
@@ -215,12 +283,12 @@ function stopManagedBackend() {
   managedBackendPort = 0;
 }
 
-function spawnBackend(projectDir, pythonPath, port) {
-  const child = spawn(pythonPath, ['-m', 'ai8video.interfaces.web.app', '--port', String(port)], {
-    cwd: projectDir,
-    env: backendEnvironment(projectDir),
+function spawnManagedBackend(command, args, options, port) {
+  const child = spawn(command, args, {
+    ...options,
     stdio: 'ignore',
     detached: false,
+    windowsHide: true,
   });
   child.once('exit', () => {
     if (managedBackendChild === child) {
@@ -232,16 +300,46 @@ function spawnBackend(projectDir, pythonPath, port) {
   managedBackendPort = port;
 }
 
+function spawnDevelopmentBackend(projectDir, pythonPath, port) {
+  spawnManagedBackend(
+    pythonPath,
+    ['-m', 'ai8video.interfaces.web.app', '--port', String(port)],
+    { cwd: projectDir, env: developmentBackendEnvironment(projectDir) },
+    port,
+  );
+}
+
+function spawnPackagedBackend(port) {
+  const executable = packagedBackendPath();
+  if (!fs.existsSync(executable)) throw new Error(`安装包缺少内置运行时：${executable}`);
+  spawnManagedBackend(
+    executable,
+    ['--port', String(port)],
+    { cwd: runtimeWorkspacePath(), env: packagedBackendEnvironment() },
+    port,
+  );
+}
+
 async function ensureBackend(rawSettings = {}) {
   const settings = normalizeSettings({ ...loadSettings(), ...rawSettings });
-  const healthy = await findHealthyBackend(settings.lastPort);
+  const expectedInstance = app.isPackaged ? runtimeInstanceId() : '';
+  const healthy = await findHealthyBackend(settings.lastPort, expectedInstance);
   if (healthy) return persistBackendSettings(settings, healthy, true);
+  if (app.isPackaged) {
+    const port = await findAvailablePort();
+    spawnPackagedBackend(port);
+    if (!await waitForBackend(port, expectedInstance)) {
+      stopManagedBackend();
+      throw new Error(`内置运行时在 30 秒内没有准备好，目标端口 ${port}。`);
+    }
+    return persistBackendSettings(normalizeSettings(), { port, url: localWorkbenchUrl(port) }, false);
+  }
   const projectDir = resolveProjectDir(settings.projectDir);
   if (!projectDir) throw new Error('没有找到 AI8video 项目目录，请先选择项目目录。');
   const pythonPath = resolvePythonPath(projectDir, settings.pythonPath);
   if (!pythonPath) throw new Error('没有找到可用的 Python 解释器，请先选择 Python。');
   const port = await findAvailablePort();
-  spawnBackend(projectDir, pythonPath, port);
+  spawnDevelopmentBackend(projectDir, pythonPath, port);
   if (!await waitForBackend(port)) {
     stopManagedBackend();
     throw new Error(`本地服务在 30 秒内没有准备好，目标端口 ${port}。`);
@@ -324,7 +422,10 @@ async function showLocalPage(fileName, query = {}) {
 async function bootClient(rawSettings = {}) {
   if (bootInFlight) return bootInFlight;
   bootInFlight = (async () => {
-    await showLocalPage('loading.html', { message: '正在启动 AI8video 本地工作台...' });
+    const message = app.isPackaged
+      ? '正在启动 AI8video 内置运行时...'
+      : '正在启动 AI8video 开发工作台...';
+    await showLocalPage('loading.html', { message });
     try {
       const result = await ensureBackend(rawSettings);
       await mainWindow?.loadURL(result.url);
@@ -356,9 +457,19 @@ function buildMenu() {
 
 ipcMain.handle('desktop:get-config', () => {
   const settings = loadSettings();
+  if (app.isPackaged) {
+    return {
+      ...settings,
+      packaged: true,
+      runtimeHome: runtimeWorkspacePath(),
+      runtimeAvailable: fs.existsSync(packagedBackendPath()),
+      managedBackendPort,
+    };
+  }
   const projectDir = resolveProjectDir(settings.projectDir);
   return {
     ...settings,
+    packaged: false,
     detectedProjectDir: projectDir,
     detectedPythonPath: resolvePythonPath(projectDir, settings.pythonPath),
     managedBackendPort,

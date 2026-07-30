@@ -1,18 +1,20 @@
 {
   "name": "ai8video-electron",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "AI8video Electron 客户端",
+  "author": "17AI8",
+  "license": "MIT",
   "private": true,
   "main": "main.js",
   "scripts": {
     "dev": "electron .",
     "start": "electron .",
-    "dist:mac": "electron-builder --mac dmg",
-    "dist:win": "electron-builder --win nsis"
+    "dist:mac": "node ../runtime/verify_release_runtime.mjs && electron-builder --mac dmg --publish never && node ../runtime/verify_packaged_runtime.mjs dist",
+    "dist:win": "node ../runtime/verify_release_runtime.mjs && electron-builder --win nsis --publish never && node ../runtime/verify_packaged_runtime.mjs dist"
   },
   "devDependencies": {
-    "electron": "^31.0.0",
-    "electron-builder": "^24.13.3"
+    "electron": "43.2.0",
+    "electron-builder": "26.15.3"
   },
   "build": {
     "appId": "com.ai8.video.electron",
@@ -21,11 +23,29 @@
     "directories": {
       "output": "dist"
     },
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "files": [
       "main.js",
       "preload.js",
       "icons/**/*",
       "static/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "runtime",
+        "to": "runtime",
+        "filter": [
+          "**/*",
+          "!node_modules{,/**/*}"
+        ]
+      },
+      {
+        "from": "runtime/node_modules",
+        "to": "runtime/node_modules",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "mac": {
       "target": [

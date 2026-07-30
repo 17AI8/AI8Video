@@ -58,7 +58,7 @@ class AI8VideoHtmlMotionOverlayTest(unittest.TestCase):
         with patch.object(html_motion_overlay, "ensure_user_file_root", return_value=self.root), patch.object(
             html_motion_overlay,
             "html_motion_runtime_status",
-            return_value={"ready": False, "renderer": "hyperframes", "rendererVersion": "0.7.59", "reason": "未安装"},
+            return_value={"ready": False, "renderer": "hyperframes", "rendererVersion": "0.7.84", "reason": "未安装"},
         ):
             payload = update_html_motion_overlay(enabled=True)
             status = html_motion_overlay_status()
@@ -157,7 +157,7 @@ class AI8VideoHtmlMotionOverlayTest(unittest.TestCase):
         with patch.object(
             html_motion_overlay,
             "html_motion_runtime_status",
-            return_value={"ready": False, "renderer": "hyperframes", "rendererVersion": "0.7.59", "reason": "依赖未安装"},
+            return_value={"ready": False, "renderer": "hyperframes", "rendererVersion": "0.7.84", "reason": "依赖未安装"},
         ):
             result = apply_html_motion_overlay(
                 source,
@@ -179,7 +179,7 @@ class AI8VideoHtmlMotionOverlayTest(unittest.TestCase):
         with patch.object(
             html_motion_overlay,
             "html_motion_runtime_status",
-            return_value={"ready": True, "renderer": "hyperframes", "rendererVersion": "0.7.59", "reason": ""},
+            return_value={"ready": True, "renderer": "hyperframes", "rendererVersion": "0.7.84", "reason": ""},
         ), patch.object(
             html_motion_overlay,
             "_probe_video_info",

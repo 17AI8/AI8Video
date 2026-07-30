@@ -6,7 +6,7 @@
 
 | 组件 | 锁定或支持版本 | 许可证 | 用途 |
 |---|---:|---|---|
-| HyperFrames | `0.7.59` | Apache-2.0 | HTML 动效检查与渲染 |
+| HyperFrames | `0.7.84` | Apache-2.0 | HTML 动效检查与渲染 |
 | adm-zip | `0.6.0` | MIT | HyperFrames 间接依赖的安全覆盖版本 |
 | sharp / libvips | HyperFrames 间接依赖 | Apache-2.0 / LGPL-3.0-or-later | 图像处理与跨平台二进制运行时 |
 | Bottle | `>=0.12` | MIT | 本地 HTTP 服务 |
@@ -20,10 +20,11 @@
 | PyAV / FFmpeg libraries | `>=11`（faster-whisper 间接依赖） | BSD-3-Clause / LGPL-3.0-or-later | 音视频解码；PyPI wheel 会携带 FFmpeg 动态库 |
 | Systran faster-whisper-base | 运行时按需下载 | MIT | 默认台词识别模型权重 |
 | AISHELL-3 | 可选旧版语音模型数据集 | Apache-2.0 | 兼容用户本机已有的 `vits-icefall-zh-aishell3` 模型 |
-| Electron | `31.x` | MIT | 可选桌面侧车 |
-| Font Awesome Free Desktop | `7.3.1` | CC BY 4.0（SVG 图标）/ SIL OFL-1.1（字体）/ MIT（代码与元数据） | 完整离线图标、字体与元数据资源包；左侧栏使用其中 8 个 Solid SVG 图标 |
+| Electron | `43.2.0` | MIT | 桌面客户端运行时 |
+| Font Awesome Free Desktop | `7.3.1` | CC BY 4.0（SVG 图标）/ MIT（许可证文本） | 仅分发界面实际引用的 16 个 Solid SVG 图标与许可证 |
 | Source Han Serif SC Bold / Heavy | 当前仓内版本 | SIL OFL-1.1 | 可选本地字幕与花字渲染字体 |
-| electron-builder | `24.x` | MIT | 可选桌面安装包构建 |
+| PyInstaller | `6.21.0` | GPL-2.0-or-later，带 Bootloader Exception | 将 Python 后端冻结为桌面发行运行时 |
+| electron-builder | `26.15.3` | MIT | DMG 与 NSIS 安装包构建 |
 
 项目调用 FFmpeg 与 FFprobe 处理媒体，但仓库不分发其二进制。本机应安装符合部署要求的 FFmpeg 构建；当前 macOS 本地开发运行时使用关闭 `GPL` 和 `nonfree` 的 LGPL 2.1-or-later 构建。
 

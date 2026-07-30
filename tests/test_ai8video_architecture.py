@@ -41,6 +41,11 @@ SOURCE_ROOTS = (
 VENDORED_SOURCE_ROOTS = (
     Path("src/ai8video/interfaces/web/static/vendor"),
 )
+GENERATED_SOURCE_ROOTS = (
+    Path("desktop/electron/dist"),
+    Path("desktop/electron/node_modules"),
+    Path("desktop/electron/runtime"),
+)
 SERIES_DOMAIN_PATTERN = re.compile(
     r"Episode|episode|多集|拆集|第几集|上集|下集|剧集"
 )
@@ -90,6 +95,10 @@ LEGACY_WEB_STATIC_LINE_LIMITS = {
 
 def is_vendored_source(relative: Path) -> bool:
     return any(relative.is_relative_to(root) for root in VENDORED_SOURCE_ROOTS)
+
+
+def is_generated_source(relative: Path) -> bool:
+    return any(relative.is_relative_to(root) for root in GENERATED_SOURCE_ROOTS)
 
 
 def imported_modules(path: Path) -> set[str]:
@@ -167,7 +176,7 @@ class AI8VideoArchitectureTests(unittest.TestCase):
                 if not path.is_file() or "__pycache__" in path.parts:
                     continue
                 relative = path.relative_to(PROJECT_ROOT)
-                if is_vendored_source(relative):
+                if is_vendored_source(relative) or is_generated_source(relative):
                     continue
                 if OLD_NAME_PATTERN.search(path.name):
                     violations.append(f"旧路径：{relative}")
@@ -189,7 +198,7 @@ class AI8VideoArchitectureTests(unittest.TestCase):
                 if not path.is_file() or "__pycache__" in path.parts:
                     continue
                 relative = path.relative_to(PROJECT_ROOT)
-                if is_vendored_source(relative):
+                if is_vendored_source(relative) or is_generated_source(relative):
                     continue
                 if relative in SERIES_COMPATIBILITY_FILES:
                     continue

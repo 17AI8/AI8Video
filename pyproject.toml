@@ -40,5 +40,8 @@ ai8video = [
     "media/motion/*.js",
 ]
 
+[tool.setuptools.exclude-package-data]
+"*" = [".DS_Store", "**/.DS_Store"]
+
 [project.scripts]
 ai8video = "ai8video.interfaces.cli:main"

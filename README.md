@@ -458,7 +458,8 @@ AI8Video/
 │   ├── radar/          # 热点聚合与摘要
 │   └── assets/         # 素材、结果、归档和回收站
 ├── tests/              # 60+ 个 unittest 测试文件
-├── desktop/electron/   # 可选 Electron 桌面壳
+├── desktop/electron/   # Electron 客户端与安装包配置
+├── desktop/runtime/    # 冻结后端、运行时暂存与发布校验脚本
 ├── 用户字体/           # 内置字体与授权材料
 ├── start_ai8video_web.sh
 ├── 双击启动.command
@@ -504,22 +505,51 @@ python -m unittest discover -s tests
 
 ## Electron 与部署边界
 
-Electron 位于 `desktop/electron/`，负责承载桌面窗口并发现或启动本地 Python Web 服务。短视频业务仍由项目目录中的 Python Runtime 执行。
+项目同时保留两条互不干扰的运行通道：
+
+| 通道 | 面向对象 | 运行方式 | 更新方式 |
+|---|---|---|---|
+| Dev 网页 | 开发者 | 从当前源码和 `.venv` 启动本地 Web 服务，可边改边调试 | 正常 `git pull` 后重新启动 Dev |
+| Electron 安装包 | 普通用户 | 使用安装包内置的冻结 Python 后端与 HyperFrames 运行时，不依赖源码目录 | 下载新版本 DMG / EXE 覆盖安装 |
+
+两条通道可以在同一台电脑上共存。Electron 会为安装态生成独立实例标识和用户数据目录，不会误连正在开发的 Dev 服务；开发源码也不会被“冻结”，仍可随时拉取、修改和调试。
+
+开发运行：
 
 ```bash
 cd desktop/electron
-npm install
+npm ci
 npm run dev
-npm run dist:mac
-npm run dist:win
 ```
+
+本地构建安装包前，需要先冻结 Python 后端并暂存发行运行时：
+
+```bash
+python -m pip install ".[ai8video]" "pyinstaller==6.21.0"
+npm ci
+python -m PyInstaller --noconfirm --clean \
+  --distpath build/frozen \
+  --workpath build/pyinstaller \
+  desktop/runtime/ai8video_backend.spec
+python desktop/runtime/stage_release.py \
+  --backend-dir build/frozen/ai8video-backend \
+  --target desktop/electron/runtime
+node desktop/runtime/stage_node_runtime.mjs \
+  node_modules desktop/electron/runtime/node_modules
+npm ci --prefix desktop/electron
+npm --prefix desktop/electron run dist:mac
+```
+
+`.github/workflows/desktop-release.yml` 支持手动运行；推送 `v*` 标签时会自动生成 macOS ARM64 DMG 与 Windows x64 EXE，并附加到对应 GitHub Release。普通代码推送不会触发大型打包任务，避免无意义消耗构建时长和制品存储。
 
 当前边界：
 
 - Web 服务固定监听 `127.0.0.1`；
+- 安装包内置 Python 后端、Web 静态资源、HyperFrames 和两款授权中文字体，不包含项目源码与本地密钥；
+- FFmpeg / FFprobe 仍使用用户系统中可用的外部运行时；
+- macOS 与 Windows 安装包目前未配置开发者证书签名，系统可能显示来源确认提示；
 - 项目未提供官方 Docker、Compose、Kubernetes 或生产服务器部署方案；
-- 当前 Web 层没有面向公网的认证和 TLS，不应直接反向代理到公网；
-- Electron DMG/NSIS 是桌面启动壳，不包含完整 Python 服务、项目源码和媒体依赖。
+- 当前 Web 层没有面向公网的认证和 TLS，不应直接反向代理到公网。
 
 ## 安全说明
 

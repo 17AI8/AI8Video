@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -25,6 +26,14 @@ from ai8video.media.video_text_overlay import video_text_overlay_runtime_status
 from ai8video.integrations.video_model_settings import load_video_model_settings
 
 CHAT_BACKEND = "ai8video-runtime"
+
+
+def _runtime_mode() -> str:
+    return str(os.getenv("AI8VIDEO_RUNTIME_MODE") or "dev").strip().lower() or "dev"
+
+
+def _runtime_instance() -> str:
+    return str(os.getenv("AI8VIDEO_RUNTIME_INSTANCE") or "").strip()[:128]
 
 
 class AI8VideoRuntime:
@@ -58,6 +67,8 @@ class AI8VideoRuntime:
         return {
             "ok": True,
             "chatBackend": CHAT_BACKEND,
+            "runtimeMode": _runtime_mode(),
+            "runtimeInstance": _runtime_instance(),
             "dryRun": self.config.dry_run,
             "videoGenerationProvider": "direct-video-model",
             "videoModelSettings": video_model_settings.public_dict(),
