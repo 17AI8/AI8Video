@@ -131,7 +131,10 @@
         const res = await fetch('/api/background-music/select', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: itemId }),
+          body: JSON.stringify({
+            id: itemId,
+            userGeneratedKey: currentVideoPreviewUserGeneratedKey(),
+          }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.ok) {
@@ -164,7 +167,11 @@
       renderBackgroundMusicButton();
       renderBackgroundMusicDrawer();
       try {
-        const res = await fetch('/api/background-music/clear', { method: 'POST' });
+        const res = await fetch('/api/background-music/clear', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userGeneratedKey: currentVideoPreviewUserGeneratedKey() }),
+        });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.ok) {
           throw new Error(data.error || '背景音乐取消失败');
@@ -201,7 +208,10 @@
         const res = await fetch('/api/background-music/volume', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ volume: percent }),
+          body: JSON.stringify({
+            volume: percent,
+            userGeneratedKey: currentVideoPreviewUserGeneratedKey(),
+          }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.ok) {

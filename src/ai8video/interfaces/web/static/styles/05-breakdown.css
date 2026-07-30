@@ -597,6 +597,8 @@
       max-height: none;
       overflow: visible;
       padding-right: 2px;
+      align-content: start;
+      grid-auto-rows: max-content;
     }
 
     .viral-breakdown-script-guess-editor {

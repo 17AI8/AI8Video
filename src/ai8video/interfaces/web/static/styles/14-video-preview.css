@@ -86,6 +86,37 @@
       box-shadow: none;
     }
 
+    #videoPreviewModal .modal-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    #videoPreviewModal .modal-title strong {
+      margin-bottom: 0;
+    }
+
+    #videoPreviewModal .video-preview-header-status {
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: rgba(47, 91, 190, 0.1);
+      color: #2f5bbe;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+
+    #videoPreviewModal .video-preview-header-status[data-tone="success"] {
+      background: rgba(28, 128, 82, 0.1);
+      color: #187047;
+    }
+
+    #videoPreviewModal .video-preview-header-status[data-tone="error"] {
+      background: rgba(190, 48, 48, 0.1);
+      color: #a52d2d;
+    }
+
     #videoPreviewBody .video-preview-extend-actions .video-preview-button {
       position: static;
       gap: 6px;
@@ -103,6 +134,13 @@
 
     #videoPreviewBody .video-preview-extend-actions .video-preview-button + .video-preview-button {
       border-left: 1px solid rgba(255, 255, 255, 0.16);
+      padding-inline: 10px;
+    }
+
+    #videoPreviewBody .video-preview-extend-actions .video-preview-regenerate-button,
+    #videoPreviewBody .video-preview-extend-actions .video-preview-extend-button {
+      width: 92px;
+      justify-content: center;
       padding-inline: 10px;
     }
 
@@ -268,6 +306,27 @@
       stroke-width: 1.8;
       stroke-linecap: round;
       stroke-linejoin: round;
+    }
+
+    .video-preview-fontawesome-icon {
+      background: currentColor;
+      stroke: none;
+      mask-position: center;
+      mask-repeat: no-repeat;
+      mask-size: contain;
+      -webkit-mask-position: center;
+      -webkit-mask-repeat: no-repeat;
+      -webkit-mask-size: contain;
+    }
+
+    .video-preview-fontawesome-icon.is-regenerate {
+      mask-image: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/arrows-rotate.svg");
+      -webkit-mask-image: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/arrows-rotate.svg");
+    }
+
+    .video-preview-fontawesome-icon.is-extend {
+      mask-image: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/arrow-right-long.svg");
+      -webkit-mask-image: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/arrow-right-long.svg");
     }
 
     .video-preview-button.is-spinning .video-preview-button-icon {
@@ -1044,6 +1103,20 @@
       position: relative;
       height: 44px;
       min-width: 100%;
+      cursor: crosshair;
+      outline: none;
+      user-select: none;
+    }
+
+    .video-preview-html-motion-marquee,
+    .video-preview-tts-marquee {
+      position: absolute;
+      z-index: 20;
+      border: 1px solid rgba(196, 181, 253, 0.95);
+      border-radius: 5px;
+      background: rgba(139, 92, 246, 0.2);
+      box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.12);
+      pointer-events: none;
     }
 
     .video-preview-html-motion-chunk {

@@ -21,11 +21,13 @@ from ai8video.assets.user_generated_results import ensure_user_generated_result_
 from ai8video.assets.user_generated_previews import generate_preview_for_video
 from ai8video.assets.user_recycle_bin import save_failed_video_task
 from ai8video.media.background_music import (
+    background_music_track_status,
     background_music_volume,
     file_meta,
     mix_background_music,
     preserve_original_audio_enabled,
 )
+from ai8video.media.background_music_track import hidden_bgm_track_metadata, save_hidden_bgm_base
 from ai8video.generation.business_prompt import sanitize_internal_fidelity_notes
 from ai8video.media.local_tts import attach_local_tts_to_video, extract_dialogue_text, prepare_narration_text
 from ai8video.media.video_encoding import append_video_postprocess_encoding_args
@@ -231,6 +233,7 @@ class VideoAssetArchiver:
                     video=video,
                     job=job,
                     progress_session_id=progress_session_id,
+                    background_track_target=(result_root, result_video_key),
                 )
             except Exception as exc:
                 save_failed_video_task(
@@ -249,6 +252,7 @@ class VideoAssetArchiver:
                 video=video,
                 job=job,
                 progress_session_id=progress_session_id,
+                background_track_target=(result_root, result_video_key),
             )
 
         cover_name = Path(self._build_cover_key(job, video)).name
@@ -367,6 +371,9 @@ class VideoAssetArchiver:
         progress_session_id: str | None = None,
     ) -> ArchivedAsset:
         self.local_root.mkdir(parents=True, exist_ok=True)
+        result_root = ensure_user_generated_result_dir()
+        video_name = Path(self._build_video_key(job, video)).name
+        result_video_key = self._result_video_key(video, video_name)
         video_temp, video_meta = self._download_to_tempfile(job.video_url, suffix=".mp4")
         video_temp_path = Path(video_temp)
         try:
@@ -376,6 +383,7 @@ class VideoAssetArchiver:
                 video=video,
                 job=job,
                 progress_session_id=progress_session_id,
+                background_track_target=(result_root, result_video_key),
             )
         except Exception as exc:
             save_failed_video_task(
@@ -386,9 +394,6 @@ class VideoAssetArchiver:
                 meta={"sourceStorageKey": job.storage_key},
             )
             raise
-        result_root = ensure_user_generated_result_dir()
-        video_name = Path(self._build_video_key(job, video)).name
-        result_video_key = self._result_video_key(video, video_name)
         result_video = result_root / result_video_key
         result_video.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(video_temp_path), result_video)
@@ -680,6 +685,7 @@ class VideoAssetArchiver:
         video: VideoPrompt | None = None,
         job: QuickVideoJob | None = None,
         progress_session_id: str | None = None,
+        background_track_target: tuple[Path, str] | None = None,
     ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
         target = Path(video_path)
         start_trim_result = trim_video_start(target)
@@ -704,6 +710,12 @@ class VideoAssetArchiver:
             and local_tts_result.get("status") == "mixed"
             and local_tts_result.get("originalAudio") == "replaced"
         )
+        music_status = background_music_track_status()
+        background_track = {}
+        if music_status.get("enabled") is True and background_track_target:
+            result_root, relative_key = background_track_target
+            base_path = save_hidden_bgm_base(target, result_root, relative_key)
+            background_track = hidden_bgm_track_metadata(base_path, music_status)
         background_music_result = mix_background_music(
             target,
             preserve_original_audio_override=True if tts_replaced_audio else None,
@@ -717,6 +729,7 @@ class VideoAssetArchiver:
             "textOverlay": text_overlay_result,
             "localTts": local_tts_result,
             "backgroundMusic": background_music_result,
+            "backgroundMusicTrack": background_track,
         }
 
     def _upload_file_to_s3(self, client, file_path: str, key: str, content_type: str | None = None) -> None:

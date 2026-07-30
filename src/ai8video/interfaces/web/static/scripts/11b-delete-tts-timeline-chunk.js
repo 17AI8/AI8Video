@@ -1,65 +1,90 @@
     function currentTtsSelectedChunkIndex() {
-      const index = state.videoPreviewModal?.ttsSelectedChunkIndex;
-      return Number.isInteger(index) ? index : null;
+      return currentTtsSelectedChunkIndexes()[0] ?? null;
+    }
+
+    function currentTtsSelectedChunkIndexes() {
+      const chunks = state.videoPreviewModal?.ttsTimelineChunks || [];
+      const stored = state.videoPreviewModal?.ttsSelectedChunkIndexes;
+      const fallback = state.videoPreviewModal?.ttsSelectedChunkIndex;
+      const values = Array.isArray(stored) ? stored : (Number.isInteger(fallback) ? [fallback] : []);
+      return [...new Set(values)]
+        .filter((index) => Number.isInteger(index) && index >= 0 && index < chunks.length)
+        .sort((left, right) => left - right);
     }
 
     function syncTtsDeleteButton() {
       const button = els.videoPreviewBody?.querySelector('[data-video-preview-action="delete-selected-tts-chunk"]');
       if (!button) return;
       const chunks = state.videoPreviewModal?.ttsTimelineChunks || [];
-      const selectedIndex = currentTtsSelectedChunkIndex();
-      const selected = selectedIndex !== null && selectedIndex >= 0 && selectedIndex < chunks.length;
+      const selectedIndexes = currentTtsSelectedChunkIndexes();
+      const selected = selectedIndexes.length > 0;
       const busy = state.videoPreviewModal?.ttsTimelineBusy === true;
       button.disabled = busy || isTtsScissorMode() || chunks.length <= 1 || !selected;
       button.title = busy
         ? '正在生成配音预览'
         : isTtsScissorMode()
         ? '关闭剪刀工具后再选择要删除的配音块'
-        : chunks.length <= 1
-        ? '至少保留一个配音块，请先使用剪刀切块'
+        : selectedIndexes.length >= chunks.length
+        ? '至少保留一个配音块'
         : selected
-        ? `删除${chunks[selectedIndex]?.label || `配音 ${selectedIndex + 1}`}`
+        ? `删除所选 ${selectedIndexes.length} 个配音块`
         : '请先点击选择一个配音块';
     }
 
     function setTtsSelectedChunkIndex(index, exclusive = true) {
+      setTtsSelectedChunkIndexes(Number.isInteger(index) ? [index] : [], exclusive);
+    }
+
+    function setTtsSelectedChunkIndexes(indexes, exclusive = true) {
       const chunks = state.videoPreviewModal?.ttsTimelineChunks || [];
-      const selected = Number.isInteger(index) && index >= 0 && index < chunks.length ? index : null;
-      if (selected !== null && exclusive) {
+      const selected = [...new Set(Array.isArray(indexes) ? indexes : [])]
+        .filter((index) => Number.isInteger(index) && index >= 0 && index < chunks.length)
+        .sort((left, right) => left - right);
+      if (selected.length && exclusive) {
         setVideoSelectedChunkIndex(null, false);
         setHtmlMotionSelectedChunkIndex(null, false);
       }
-      if (state.videoPreviewModal) state.videoPreviewModal.ttsSelectedChunkIndex = selected;
+      if (state.videoPreviewModal) {
+        state.videoPreviewModal.ttsSelectedChunkIndexes = selected;
+        state.videoPreviewModal.ttsSelectedChunkIndex = selected[0] ?? null;
+      }
+      const selectedSet = new Set(selected);
       els.videoPreviewBody?.querySelectorAll('[data-video-preview-tts-chunk]').forEach((element) => {
-        const active = Number(element.dataset.chunkIndex) === selected;
+        const active = selectedSet.has(Number(element.dataset.chunkIndex));
         element.classList.toggle('is-selected', active);
         element.setAttribute('aria-pressed', active ? 'true' : 'false');
       });
       syncTtsDeleteButton();
     }
 
+    function toggleTtsChunkSelection(index) {
+      const selected = new Set(currentTtsSelectedChunkIndexes());
+      if (selected.has(index)) selected.delete(index); else selected.add(index);
+      setTtsSelectedChunkIndexes([...selected]);
+    }
+
     function deleteSelectedTtsChunk(userGeneratedKey) {
       if (state.videoPreviewModal?.ttsTimelineBusy || isTtsScissorMode()) return;
       const chunks = state.videoPreviewModal?.ttsTimelineChunks || [];
-      const index = currentTtsSelectedChunkIndex();
-      if (index === null || !chunks[index]) {
+      const selectedIndexes = currentTtsSelectedChunkIndexes();
+      if (!selectedIndexes.length) {
         setTtsTimelineStatus('请先点击选择要删除的配音块', 'error');
         return;
       }
-      if (chunks.length <= 1) {
-        setTtsTimelineStatus('至少保留一个配音块，请先使用剪刀切块', 'error');
+      if (selectedIndexes.length >= chunks.length) {
+        setTtsTimelineStatus('至少保留一个配音块', 'error');
         return;
       }
       const historyBefore = captureTimelineHistorySnapshot();
-      const removed = chunks[index];
-      const remaining = chunks.filter((_, chunkIndex) => chunkIndex !== index);
+      const selectedSet = new Set(selectedIndexes);
+      const removed = chunks[selectedIndexes[0]];
+      const remaining = chunks.filter((_, chunkIndex) => !selectedSet.has(chunkIndex));
       state.videoPreviewModal.ttsTimelineChunks = remaining;
       setTtsSelectedChunkIndex(null);
-      recordTimelineHistory('tts', `删除配音 ${index + 1}`, historyBefore);
+      recordTimelineHistory('tts', `删除 ${selectedIndexes.length} 个配音块`, historyBefore);
       renderCurrentTtsTimeline();
       const video = els.videoPreviewBody?.querySelector('video');
       if (video) video.currentTime = Math.max(0, Number(removed.startSeconds || 0));
       syncTtsTimelinePlayhead();
-      const label = removed.label || `配音 ${index + 1}`;
-      void previewTtsTimeline(userGeneratedKey, `${label}已删除，原位置保留静音`);
+      void previewTtsTimeline(userGeneratedKey, `已删除 ${selectedIndexes.length} 个配音块，原位置保留静音`);
     }

@@ -4,20 +4,44 @@
       const item = chunks[index];
       const lane = element.closest('.video-preview-tts-chunk-lane');
       if (event.button !== 0 || !item || !lane || element.disabled || isTtsScissorMode() || timelineHistoryBusy()) return;
-      setTtsSelectedChunkIndex(index);
+      delete element.dataset.suppressTtsClick;
+      const currentSelection = currentTtsSelectedChunkIndexes();
+      if (!currentSelection.includes(index)) setTtsSelectedChunkIndex(index);
+      const selectedIndexes = currentTtsSelectedChunkIndexes();
+      const selectedSet = new Set(selectedIndexes);
+      const selectedItems = selectedIndexes.map((selectedIndex) => ({
+        index: selectedIndex,
+        item: chunks[selectedIndex],
+        originStart: Number(chunks[selectedIndex]?.startSeconds || 0),
+      })).filter((entry) => entry.item);
       event.preventDefault();
       element.setPointerCapture(event.pointerId);
       timelineBeginPointerInteraction();
       const originX = event.clientX;
       const originStart = Number(item.startSeconds || 0);
       const historyBefore = captureTimelineHistorySnapshot();
-      const previous = chunks[index - 1];
-      const next = chunks[index + 1];
-      const minStart = previous ? Number(previous.startSeconds) + Number(previous.durationSeconds) : 0;
-      const maxStart = (next ? Number(next.startSeconds) : duration) - Number(item.durationSeconds || 0);
+      let minimumDelta = -Math.min(...selectedItems.map((entry) => entry.originStart));
+      let maximumDelta = duration - Math.max(...selectedItems.map((entry) => (
+        entry.originStart + Number(entry.item.durationSeconds || 0)
+      )));
+      selectedItems.forEach((entry) => {
+        const originEnd = entry.originStart + Number(entry.item.durationSeconds || 0);
+        const previousEnd = chunks.reduce((latest, chunk, chunkIndex) => {
+          if (selectedSet.has(chunkIndex)) return latest;
+          const end = Number(chunk.startSeconds || 0) + Number(chunk.durationSeconds || 0);
+          return end <= entry.originStart ? Math.max(latest, end) : latest;
+        }, 0);
+        const nextStart = chunks.reduce((earliest, chunk, chunkIndex) => {
+          if (selectedSet.has(chunkIndex)) return earliest;
+          const start = Number(chunk.startSeconds || 0);
+          return start >= originEnd ? Math.min(earliest, start) : earliest;
+        }, duration);
+        minimumDelta = Math.max(minimumDelta, previousEnd - entry.originStart);
+        maximumDelta = Math.min(maximumDelta, nextStart - originEnd);
+      });
       const snapPoints = timelineBuildSnapPoints(duration, {
         excludeTrack: 'tts',
-        excludeIndex: index,
+        excludeIndexes: selectedIndexes,
         playheadSeconds: timelineCurrentPlayheadSeconds(),
       });
       let dragged = false;
@@ -32,12 +56,17 @@
           lane,
           duration,
           moveEvent,
-          { minimum: minStart, maximum: maxStart, points: snapPoints },
+          { minimum: originStart + minimumDelta, maximum: originStart + maximumDelta, points: snapPoints },
         );
-        item.startSeconds = resolved.startSeconds;
-        item.endSeconds = timelineRoundSeconds(item.startSeconds + Number(item.durationSeconds || 0));
-        element.style.left = `${item.startSeconds / duration * 100}%`;
-        element.querySelector('small').textContent = `${item.startSeconds.toFixed(1)}s`;
+        const resolvedDelta = resolved.startSeconds - originStart;
+        selectedItems.forEach((entry) => {
+          entry.item.startSeconds = timelineRoundSeconds(entry.originStart + resolvedDelta);
+          entry.item.endSeconds = timelineRoundSeconds(entry.item.startSeconds + Number(entry.item.durationSeconds || 0));
+          const chunkElement = lane.querySelector(`[data-video-preview-tts-chunk][data-chunk-index="${entry.index}"]`);
+          if (!chunkElement) return;
+          chunkElement.style.left = `${entry.item.startSeconds / duration * 100}%`;
+          chunkElement.querySelector('small').textContent = `${entry.item.startSeconds.toFixed(1)}s`;
+        });
         timelineSyncSnapGuide(lane, duration, resolved.snap);
         const video = els.videoPreviewBody?.querySelector('video');
         if (video) {
@@ -48,18 +77,25 @@
         syncHtmlMotionTimelinePlayhead();
         syncTimelineBoundaryUi();
       };
+      let ended = false;
       const end = (endEvent) => {
+        if (ended) return;
+        ended = true;
         element.removeEventListener('pointermove', move);
         element.removeEventListener('pointerup', end);
         element.removeEventListener('pointercancel', end);
         element.removeEventListener('lostpointercapture', end);
+        if (endEvent.type !== 'lostpointercapture' && element.hasPointerCapture?.(event.pointerId)) {
+          element.releasePointerCapture(event.pointerId);
+        }
         timelineClearSnapGuide(lane);
         timelineEndPointerInteraction();
         if (endEvent.type !== 'pointerup') {
-          item.startSeconds = originStart;
-          item.endSeconds = timelineRoundSeconds(originStart + Number(item.durationSeconds || 0));
-          element.style.left = `${originStart / duration * 100}%`;
-          element.querySelector('small').textContent = `${originStart.toFixed(1)}s`;
+          selectedItems.forEach((entry) => {
+            entry.item.startSeconds = entry.originStart;
+            entry.item.endSeconds = timelineRoundSeconds(entry.originStart + Number(entry.item.durationSeconds || 0));
+          });
+          renderCurrentTtsTimeline();
           const video = els.videoPreviewBody?.querySelector('video');
           if (video) video.currentTime = originStart;
           syncTtsTimelinePlayhead();
@@ -72,11 +108,12 @@
           seekVideoPreviewToTtsChunk(index);
           return;
         }
-        const changed = recordTimelineHistory('tts', `移动配音 ${index + 1}`, historyBefore);
+        element.dataset.suppressTtsClick = 'true';
+        const changed = recordTimelineHistory('tts', `移动 ${selectedItems.length} 个配音块`, historyBefore);
         if (!changed) return setTtsTimelineStatus('配音位置未变化');
         void previewTtsTimeline(
           currentVideoPreviewUserGeneratedKey(),
-          `配音 ${index + 1} 已移动到 ${item.startSeconds.toFixed(1)} 秒`,
+          `已移动 ${selectedItems.length} 个配音块`,
         );
       };
       element.addEventListener('pointermove', move);
@@ -87,20 +124,31 @@
 
     function beginHtmlMotionChunkDrag(event, element, duration) {
       const index = Number(element.dataset.chunkIndex);
-      const item = state.videoPreviewModal?.htmlMotionTimelineChunks?.[index];
+      const chunks = state.videoPreviewModal?.htmlMotionTimelineChunks || [];
+      const item = chunks[index];
       const lane = element.closest('.video-preview-html-motion-chunk-lane');
       if (event.button !== 0 || !item || !lane || element.disabled || isHtmlMotionScissorMode() || timelineHistoryBusy()) return;
-      setHtmlMotionSelectedChunkIndex(index);
+      const currentSelection = currentHtmlMotionSelectedChunkIndexes();
+      if (!currentSelection.includes(index)) setHtmlMotionSelectedChunkIndex(index);
+      const selectedIndexes = currentHtmlMotionSelectedChunkIndexes();
+      const selectedItems = selectedIndexes.map((selectedIndex) => ({
+        index: selectedIndex,
+        item: chunks[selectedIndex],
+        originStart: Number(chunks[selectedIndex]?.startSeconds || 0),
+      })).filter((entry) => entry.item);
       event.preventDefault();
       element.setPointerCapture(event.pointerId);
       timelineBeginPointerInteraction();
       const originX = event.clientX;
       const originStart = Number(item.startSeconds || 0);
       const historyBefore = captureTimelineHistorySnapshot();
-      const maxStart = Math.max(0, duration - Number(item.durationSeconds || 0.1));
+      const minimumDelta = -Math.min(...selectedItems.map((entry) => entry.originStart));
+      const maximumDelta = Math.max(0, duration - Math.max(...selectedItems.map((entry) => (
+        entry.originStart + Number(entry.item.durationSeconds || 0.1)
+      ))));
       const snapPoints = timelineBuildSnapPoints(duration, {
         excludeTrack: 'html',
-        excludeIndex: index,
+        excludeIndexes: selectedIndexes,
         playheadSeconds: timelineCurrentPlayheadSeconds(),
       });
       let dragged = false;
@@ -115,12 +163,17 @@
           lane,
           duration,
           moveEvent,
-          { minimum: 0, maximum: maxStart, points: snapPoints },
+          { minimum: originStart + minimumDelta, maximum: originStart + maximumDelta, points: snapPoints },
         );
-        item.startSeconds = resolved.startSeconds;
-        item.endSeconds = timelineRoundSeconds(item.startSeconds + Number(item.durationSeconds || 0.1));
-        element.style.left = `${item.startSeconds / duration * 100}%`;
-        element.querySelector('small').textContent = `${item.startSeconds.toFixed(1)}s`;
+        const resolvedDelta = resolved.startSeconds - originStart;
+        selectedItems.forEach((entry) => {
+          entry.item.startSeconds = timelineRoundSeconds(entry.originStart + resolvedDelta);
+          entry.item.endSeconds = timelineRoundSeconds(entry.item.startSeconds + Number(entry.item.durationSeconds || 0.1));
+          const chunkElement = lane.querySelector(`[data-video-preview-html-motion-chunk][data-chunk-index="${entry.index}"]`);
+          if (!chunkElement) return;
+          chunkElement.style.left = `${entry.item.startSeconds / duration * 100}%`;
+          chunkElement.querySelector('small').textContent = `${entry.item.startSeconds.toFixed(1)}s`;
+        });
         timelineSyncSnapGuide(lane, duration, resolved.snap);
         const video = els.videoPreviewBody?.querySelector('video');
         if (video) {
@@ -138,10 +191,11 @@
         timelineClearSnapGuide(lane);
         timelineEndPointerInteraction();
         if (endEvent.type !== 'pointerup') {
-          item.startSeconds = originStart;
-          item.endSeconds = timelineRoundSeconds(originStart + Number(item.durationSeconds || 0.1));
-          element.style.left = `${originStart / duration * 100}%`;
-          element.querySelector('small').textContent = `${originStart.toFixed(1)}s`;
+          selectedItems.forEach((entry) => {
+            entry.item.startSeconds = entry.originStart;
+            entry.item.endSeconds = timelineRoundSeconds(entry.originStart + Number(entry.item.durationSeconds || 0.1));
+          });
+          renderCurrentHtmlMotionTimeline();
           const video = els.videoPreviewBody?.querySelector('video');
           if (video) video.currentTime = originStart;
           syncLiveHtmlMotionPreview(video);
@@ -152,9 +206,9 @@
         }
         if (!dragged) seekVideoPreviewToHtmlMotionChunk(index);
         else {
-          const changed = recordTimelineHistory('html', `移动动效 ${index + 1}`, historyBefore);
+          const changed = recordTimelineHistory('html', `移动 ${selectedItems.length} 个动效片段`, historyBefore);
           if (!changed) return setHtmlMotionTimelineStatus('动效位置未变化');
-          commitLocalHtmlMotionTimeline(`动效 ${index + 1} 已移动到 ${item.startSeconds.toFixed(1)} 秒`);
+          commitLocalHtmlMotionTimeline(`已移动 ${selectedItems.length} 个动效片段`);
         }
       };
       element.addEventListener('pointermove', move);

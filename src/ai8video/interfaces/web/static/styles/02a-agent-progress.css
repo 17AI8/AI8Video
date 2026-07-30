@@ -240,6 +240,8 @@
       border: 0;
       background: transparent;
       box-shadow: none;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
     }
 
     .bubble.agent-run-with-results > .pending-card {

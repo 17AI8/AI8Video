@@ -8,14 +8,21 @@
     }
 
     #resultModal .button-secondary {
-      height: 40px;
-      min-height: 40px;
+      height: 36px;
+      min-height: 36px;
+      padding-inline: 14px;
+      border: 1px solid rgba(77, 116, 255, 0.28);
+      background: rgba(255, 255, 255, 0.72);
     }
 
     #resultModal .material-actions {
       margin-left: auto;
       flex: 0 0 auto;
       flex-wrap: nowrap;
+      align-items: center;
+      gap: 6px;
+      padding: 0;
+      background: transparent;
     }
 
     #resultModal .result-batch-merge-group {
@@ -41,6 +48,7 @@
     #resultModal .result-notify-card.is-batch-selected {
       outline: 2px solid #4d74ff;
       outline-offset: 2px;
+      border-radius: 12px;
     }
 
     #resultModal .result-batch-merge-select {
@@ -94,7 +102,8 @@
     #resultModalBody {
       min-height: 0;
       overflow: auto;
-      padding-right: 4px;
+      padding: 4px;
+      box-sizing: border-box;
     }
 
     #systemPromptModal .material-modal-panel {

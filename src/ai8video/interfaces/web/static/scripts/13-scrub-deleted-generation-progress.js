@@ -428,9 +428,10 @@
       status.textContent = text ? `当前延续视频提示词，${text.length} 字` : '当前没有延续视频提示词';
     }
 
-    async function postVideoPrompt(userGeneratedKey, text) {
+    async function postVideoPrompt(userGeneratedKey, text, source = '') {
       const payload = { userGeneratedKey };
       if (text !== undefined) payload.text = text;
+      if (source) payload.source = source;
       const res = await fetch('/api/user-generated-results/video-prompt', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       });

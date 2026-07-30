@@ -33,8 +33,7 @@
     }
 
     function currentHtmlMotionSelectedChunkIndex() {
-      const index = state.videoPreviewModal?.htmlMotionSelectedChunkIndex;
-      return Number.isInteger(index) ? index : null;
+      return currentHtmlMotionSelectedChunkIndexes()[0] ?? null;
     }
 
     function isHtmlMotionScissorMode() {
@@ -52,39 +51,24 @@
     function htmlMotionTimelineDefaultStatus() {
       return state.videoPreviewModal?.htmlMotionTimelineDirty
         ? '已修改，等待确认烧录'
-        : '可切块、删除或拖动';
+        : '可框选、批量拖动或删除';
     }
 
     function setHtmlMotionSelectedChunkIndex(index, exclusive = true) {
-      const chunks = state.videoPreviewModal?.htmlMotionTimelineChunks || [];
-      const selected = Number.isInteger(index) && index >= 0 && index < chunks.length ? index : null;
-      if (selected !== null && exclusive) {
-        setVideoSelectedChunkIndex(null, false);
-        setTtsSelectedChunkIndex(null, false);
-      }
-      if (state.videoPreviewModal) state.videoPreviewModal.htmlMotionSelectedChunkIndex = selected;
-      htmlMotionTimelinePanel()?.querySelectorAll('[data-video-preview-html-motion-chunk]').forEach((element) => {
-        const active = Number(element.dataset.chunkIndex) === selected;
-        element.classList.toggle('is-selected', active);
-        element.setAttribute('aria-pressed', active ? 'true' : 'false');
-      });
-      syncHtmlMotionDeleteButton();
+      setHtmlMotionSelectedChunkIndexes(Number.isInteger(index) ? [index] : [], exclusive);
     }
 
     function syncHtmlMotionDeleteButton() {
       const button = htmlMotionTimelinePanel()?.querySelector('[data-video-preview-action="delete-selected-html-motion-chunk"]');
       if (!button) return;
       const chunks = state.videoPreviewModal?.htmlMotionTimelineChunks || [];
-      const index = currentHtmlMotionSelectedChunkIndex();
-      const selected = index !== null && index >= 0 && index < chunks.length;
-      button.disabled = isHtmlMotionScissorMode() || chunks.length <= 1 || !selected;
+      const selected = currentHtmlMotionSelectedChunkIndexes();
+      button.disabled = isHtmlMotionScissorMode() || !selected.length;
       button.title = isHtmlMotionScissorMode()
         ? '关闭剪刀工具后再选择要删除的动效片段'
-        : chunks.length <= 1
-        ? '至少保留一个动效片段，请先使用剪刀切块'
-        : selected
-        ? `删除${chunks[index]?.label || `动效 ${index + 1}`}`
-        : '请先点击选择一个动效片段';
+        : selected.length
+        ? `删除所选 ${selected.length} 个动效片段${selected.length === chunks.length ? '并移除该轴' : ''}`
+        : '请先点击或框选动效片段';
     }
 
     function setHtmlMotionScissorMode(active, options = {}) {
@@ -124,6 +108,7 @@
       state.videoPreviewModal.htmlMotionLivePreviewUrl = '';
       state.videoPreviewModal.htmlMotionTimelineDirty = false;
       state.videoPreviewModal.htmlMotionSelectedChunkIndex = null;
+      state.videoPreviewModal.htmlMotionSelectedChunkIndexes = [];
       setHtmlMotionScissorMode(false, { render: false, updateStatus: false });
     }
 
@@ -153,6 +138,7 @@
         state.videoPreviewModal.htmlMotionTimelineChunks = cloneHtmlMotionTimelineChunks(incoming);
         state.videoPreviewModal.htmlMotionTimelineDirty = false;
         state.videoPreviewModal.htmlMotionSelectedChunkIndex = null;
+        state.videoPreviewModal.htmlMotionSelectedChunkIndexes = [];
       } else if (!state.videoPreviewModal.htmlMotionTimelineDirty) {
         state.videoPreviewModal.htmlMotionTimelineChunks = cloneHtmlMotionTimelineChunks(incoming);
       }
@@ -191,7 +177,7 @@
 
     function renderHtmlMotionTimelineChunks(track, chunks, duration) {
       if (!track || duration <= 0) return;
-      const selectedIndex = currentHtmlMotionSelectedChunkIndex();
+      const selectedIndexes = new Set(currentHtmlMotionSelectedChunkIndexes());
       const scissorMode = isHtmlMotionScissorMode();
       const markup = chunks.map((chunk, index) => {
         const start = Math.max(0, Number(chunk.startSeconds || 0));
@@ -201,11 +187,13 @@
         const action = scissorMode
           ? `剪刀工具：点击${label}中的位置切块`
           : `选择并跳转到${label}，${start.toFixed(1)}秒；拖动整体可移动，拖动左右边缘可裁剪或恢复`;
-        return `<button type="button" class="video-preview-html-motion-chunk${index === selectedIndex ? ' is-selected' : ''}" data-video-preview-html-motion-chunk data-chunk-index="${index}" data-full-label="${escapeHtml(label)}" data-boundary-base-title="${escapeHtml(action)}" aria-label="${escapeHtml(action)}" aria-pressed="${index === selectedIndex ? 'true' : 'false'}" title="${escapeHtml(action)}" style="left:${left}%;width:${Math.min(width, 100 - left)}%;top:${1 + index % 2 * 22}px"><span>${escapeHtml(label)}</span><small>${start.toFixed(1)}s</small>${timelineTrimHandleMarkup(label)}</button>`;
+        const selected = selectedIndexes.has(index);
+        return `<button type="button" class="video-preview-html-motion-chunk${selected ? ' is-selected' : ''}" data-video-preview-html-motion-chunk data-chunk-index="${index}" data-full-label="${escapeHtml(label)}" data-boundary-base-title="${escapeHtml(action)}" aria-label="${escapeHtml(action)}" aria-pressed="${selected ? 'true' : 'false'}" title="${escapeHtml(action)}" style="left:${left}%;width:${Math.min(width, 100 - left)}%;top:${1 + index % 2 * 22}px"><span>${escapeHtml(label)}</span><small>${start.toFixed(1)}s</small>${timelineTrimHandleMarkup(label)}</button>`;
       }).join('');
       const boundary = timelineBoundaryDetails();
-      track.innerHTML = `${timelineRulerMarkup(duration)}<div class="video-preview-html-motion-chunk-lane">${timelineOverflowZoneMarkup(duration, boundary.htmlMotionOverflowIndexes, boundary)}<span class="video-preview-timeline-cut-guide" data-video-preview-cut-guide hidden></span>${timelineSnapGuideMarkup()}<span class="video-preview-tts-playhead" data-video-preview-html-motion-playhead aria-label="HTML 动效时间轴播放头" title="拖动播放头；按住 Shift 临时关闭吸附"></span>${markup}</div>`;
+      track.innerHTML = `${timelineRulerMarkup(duration)}<div class="video-preview-html-motion-chunk-lane" tabindex="0"><span class="video-preview-html-motion-marquee" data-video-preview-html-motion-marquee hidden></span>${timelineOverflowZoneMarkup(duration, boundary.htmlMotionOverflowIndexes, boundary)}<span class="video-preview-timeline-cut-guide" data-video-preview-cut-guide hidden></span>${timelineSnapGuideMarkup()}<span class="video-preview-tts-playhead" data-video-preview-html-motion-playhead aria-label="HTML 动效时间轴播放头" title="拖动播放头；按住 Shift 临时关闭吸附"></span>${markup}</div>`;
       const lane = track.querySelector('.video-preview-html-motion-chunk-lane');
+      bindHtmlMotionMarqueeSelection(lane);
       bindTimelineScissorGuide(lane, duration, scissorMode);
       bindTimelinePlayheadDrag(
         track.querySelector('[data-video-preview-html-motion-playhead]'),
@@ -216,6 +204,7 @@
       track.querySelectorAll('[data-video-preview-html-motion-chunk]').forEach((element) => {
         bindHtmlMotionChunkTrimHandles(element, duration);
         element.addEventListener('pointerdown', (event) => {
+          if (event.shiftKey || event.metaKey || event.ctrlKey) return;
           if (!isHtmlMotionScissorMode()) beginHtmlMotionChunkDrag(event, element, duration);
         });
         element.addEventListener('click', (event) => handleHtmlMotionChunkClick(event, element, duration));
@@ -229,6 +218,10 @@
       if (isHtmlMotionScissorMode()) {
         if (event.detail === 0) splitHtmlMotionTimelineAtPlayhead();
         else splitHtmlMotionTimelineAtPointer(event, element, duration);
+        return;
+      }
+      if (event.shiftKey || event.metaKey || event.ctrlKey) {
+        toggleHtmlMotionChunkSelection(Number(element.dataset.chunkIndex));
         return;
       }
       if (event.detail === 0) seekVideoPreviewToHtmlMotionChunk(Number(element.dataset.chunkIndex));
@@ -342,26 +335,32 @@
       splitHtmlMotionTimelineAtTime(current);
     }
 
-    function deleteSelectedHtmlMotionChunk() {
+    async function deleteSelectedHtmlMotionChunk() {
       if (isHtmlMotionScissorMode()) return;
       const chunks = state.videoPreviewModal?.htmlMotionTimelineChunks || [];
-      const index = currentHtmlMotionSelectedChunkIndex();
-      if (index === null || !chunks[index]) {
-        setHtmlMotionTimelineStatus('请先点击选择要删除的动效片段', 'error');
+      const selected = currentHtmlMotionSelectedChunkIndexes();
+      if (!selected.length) {
+        setHtmlMotionTimelineStatus('请先点击或框选要删除的动效片段', 'error');
         return;
       }
-      if (chunks.length <= 1) {
-        setHtmlMotionTimelineStatus('至少保留一个动效片段，请先使用剪刀切块', 'error');
+      if (selected.length === chunks.length) {
+        setHtmlMotionTimelineStatus('正在删除 HTML 动效轴...', 'working');
+        try {
+          await deleteHtmlMotionTimelineTrack();
+        } catch (error) {
+          setHtmlMotionTimelineStatus(error?.message || '删除 HTML 动效轴失败', 'error');
+        }
         return;
       }
       const historyBefore = captureTimelineHistorySnapshot();
-      const removed = chunks[index];
-      state.videoPreviewModal.htmlMotionTimelineChunks = chunks.filter((_, position) => position !== index);
+      const selectedSet = new Set(selected);
+      const removed = selected.map((index) => chunks[index]).filter(Boolean);
+      state.videoPreviewModal.htmlMotionTimelineChunks = chunks.filter((_, position) => !selectedSet.has(position));
       setHtmlMotionSelectedChunkIndex(null);
       const video = els.videoPreviewBody?.querySelector('video');
-      if (video) video.currentTime = Math.max(0, Number(removed.startSeconds || 0));
-      recordTimelineHistory('html', `删除动效 ${index + 1}`, historyBefore);
-      commitLocalHtmlMotionTimeline(`${removed.label || `动效 ${index + 1}`}已删除`);
+      if (video) video.currentTime = Math.max(0, Number(removed[0]?.startSeconds || 0));
+      recordTimelineHistory('html', `删除 ${removed.length} 个动效片段`, historyBefore);
+      commitLocalHtmlMotionTimeline(`已删除 ${removed.length} 个动效片段`);
     }
 
     function resetHtmlMotionTimeline() {

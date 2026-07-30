@@ -178,10 +178,10 @@
       state.videoPreviewModal.ttsTimelineDuration = duration;
       state.videoPreviewModal.ttsAudioDuration = Math.max(0, Number(data?.audioDurationSeconds || 0));
       state.videoPreviewModal.ttsWaveformPeaks = waveformPeaks;
-      const selectedIndex = currentTtsSelectedChunkIndex();
-      state.videoPreviewModal.ttsSelectedChunkIndex = (
-        selectedIndex !== null && selectedIndex < chunks.length ? selectedIndex : null
-      );
+      const selectedIndexes = currentTtsSelectedChunkIndexes()
+        .filter((index) => index < chunks.length);
+      state.videoPreviewModal.ttsSelectedChunkIndexes = selectedIndexes;
+      state.videoPreviewModal.ttsSelectedChunkIndex = selectedIndexes[0] ?? null;
       if (durationLabel) durationLabel.textContent = `${duration.toFixed(1)} 秒`;
       if (status) {
         setTtsTimelineStatus(ttsTimelineDefaultStatus(data));
@@ -219,7 +219,7 @@
       const waveformPeaks = state.videoPreviewModal?.ttsWaveformPeaks || [];
       const audioDuration = Number(state.videoPreviewModal?.ttsAudioDuration || 0);
       const scissorMode = isTtsScissorMode();
-      const selectedIndex = currentTtsSelectedChunkIndex();
+      const selectedIndexes = new Set(currentTtsSelectedChunkIndexes());
       const markup = chunks.map((chunk, index) => {
         const start = Math.max(0, Number(chunk.startSeconds || 0));
         const geometry = timelineFixedContentGeometry(chunk, duration);
@@ -227,7 +227,7 @@
         const actionLabel = scissorMode
           ? `剪刀工具：点击${label}中的位置切块`
           : `选择并跳转到${label}，${start.toFixed(1)}秒；拖动整体可移动，拖动左右边缘可裁剪或恢复`;
-        const selected = index === selectedIndex;
+        const selected = selectedIndexes.has(index);
         const waveformPath = buildTtsWaveformPath(waveformPeaks, chunk, audioDuration);
         const waveform = waveformPath
           ? `<svg class="video-preview-tts-waveform" viewBox="0 0 1000 40" preserveAspectRatio="none" aria-hidden="true" focusable="false"><line x1="0" y1="20" x2="1000" y2="20"></line><path d="${waveformPath}"></path></svg>`
@@ -235,13 +235,19 @@
         return `<button type="button" class="video-preview-tts-chunk${selected ? ' is-selected' : ''}" data-video-preview-tts-chunk data-chunk-index="${index}" data-boundary-base-title="${escapeHtml(actionLabel)}" aria-label="${escapeHtml(actionLabel)}" aria-pressed="${selected ? 'true' : 'false'}" title="${escapeHtml(actionLabel)}" style="left:${geometry.left}%;width:${geometry.width}%;--video-preview-tts-waveform-scale:${geometry.contentScale}%;--video-preview-tts-waveform-offset:${geometry.contentOffset}%">${waveform}<span class="video-preview-tts-chunk-meta"><span>${escapeHtml(label)}</span><small>${start.toFixed(1)}s</small></span>${timelineTrimHandleMarkup(label)}</button>`;
       }).join('');
       const boundary = timelineBoundaryDetails();
-      track.innerHTML = `${timelineRulerMarkup(duration)}<div class="video-preview-tts-chunk-lane">${timelineOverflowZoneMarkup(duration, boundary.ttsOverflowIndexes, boundary)}<span class="video-preview-timeline-cut-guide" data-video-preview-cut-guide hidden></span>${timelineSnapGuideMarkup()}<span class="video-preview-tts-playhead" data-video-preview-tts-playhead aria-label="配音时间轴播放头" title="拖动播放头；按住 Shift 临时关闭吸附"></span>${markup}</div>`;
+      track.innerHTML = `${timelineRulerMarkup(duration)}<div class="video-preview-tts-chunk-lane" tabindex="0">${timelineOverflowZoneMarkup(duration, boundary.ttsOverflowIndexes, boundary)}<span class="video-preview-tts-marquee" data-video-preview-tts-marquee hidden></span><span class="video-preview-timeline-cut-guide" data-video-preview-cut-guide hidden></span>${timelineSnapGuideMarkup()}<span class="video-preview-tts-playhead" data-video-preview-tts-playhead aria-label="配音时间轴播放头" title="拖动播放头；按住 Shift 临时关闭吸附"></span>${markup}</div>`;
       const lane = track.querySelector('.video-preview-tts-chunk-lane');
       bindTimelineScissorGuide(lane, duration, scissorMode);
+      bindTtsMarqueeSelection(lane);
       bindTimelinePlayheadDrag(track.querySelector('[data-video-preview-tts-playhead]'), lane, duration, 'tts');
       track.querySelectorAll('[data-video-preview-tts-chunk]').forEach((element) => {
         bindTtsChunkTrimHandles(element, duration);
         element.addEventListener('pointerdown', (event) => {
+          if ((event.shiftKey || event.metaKey || event.ctrlKey) && !isTtsScissorMode()) {
+            event.preventDefault();
+            toggleTtsChunkSelection(Number(element.dataset.chunkIndex));
+            return;
+          }
           if (!isTtsScissorMode()) beginTtsChunkDrag(event, element, duration);
         });
         element.addEventListener('click', (event) => {
@@ -250,7 +256,10 @@
             else splitTtsTimelineAtPointer(event, element, duration);
             return;
           }
-          if (event.detail !== 0) return;
+          if (element.dataset.suppressTtsClick === 'true') {
+            delete element.dataset.suppressTtsClick;
+            return;
+          }
           seekVideoPreviewToTtsChunk(Number(element.dataset.chunkIndex));
         });
       });

@@ -113,6 +113,12 @@ def background_music_status() -> dict[str, Any]:
     }
 
 
+def background_music_track_status() -> dict[str, Any]:
+    status = background_music_status()
+    selected_path = _selected_background_music_path()
+    return {**status, "path": str(selected_path) if selected_path else ""}
+
+
 def resolve_background_music_preview(item_id: str) -> Path:
     ensure_background_music_dir()
     _sync_background_music_items_from_folder()

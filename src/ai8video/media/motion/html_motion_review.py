@@ -217,6 +217,15 @@ def html_motion_review_status(relative_key: str) -> dict[str, Any]:
     }
 
 
+def delete_html_motion_review(relative_key: str) -> dict[str, Any]:
+    review_dir = _review_dir(relative_key)
+    with timeline_review_lock("html-motion", relative_key):
+        if review_dir.exists():
+            _assert_within_review_root(review_dir)
+            shutil.rmtree(review_dir)
+    return {"ok": True, "reviewReady": False, "timelineAdjustable": False, "timelineChunks": []}
+
+
 def html_motion_review_layer_path(relative_key: str) -> Path:
     return _review_dir(relative_key) / "overlay.webm"
 

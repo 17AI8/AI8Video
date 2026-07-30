@@ -59,6 +59,7 @@ from ai8video.generation.business_prompt import (
 )
 from ai8video.media.background_music import (
     background_music_status,
+    background_music_track_status,
     clear_background_music_selection,
     ensure_background_music_dir,
     mix_background_music,
@@ -67,6 +68,13 @@ from ai8video.media.background_music import (
     select_background_music,
     update_background_music_volume,
     update_preserve_original_audio,
+)
+from ai8video.media.background_music_track import (
+    hidden_bgm_base_path,
+    save_hidden_bgm_base,
+    merge_hidden_bgm_tracks,
+    track_duration,
+    track_source,
 )
 from ai8video.assets.default_reference_image import (
     clear_default_reference_image,
@@ -114,6 +122,7 @@ from ai8video.media.motion.html_motion_overlay import (
 from ai8video.media.motion.html_motion_review import (
     HTML_MOTION_REVIEW_ROOT,
     adjust_html_motion_review_timeline,
+    delete_html_motion_review,
     finalize_html_motion_review,
     html_motion_review_base_path,
     html_motion_review_layer_path,
@@ -125,6 +134,7 @@ from ai8video.media.motion.html_motion_review import (
     save_html_motion_review_timeline,
     sync_html_motion_review_audio,
 )
+from ai8video.media.motion.html_motion_merge import html_motion_merge_source, merge_html_motion_reviews
 from ai8video.media.motion.html_motion_tasks import html_motion_task_service
 from ai8video.media.narration_review import (
     narration_char_limit,
@@ -177,6 +187,7 @@ from ai8video.media.tts_mp3_export import (
 )
 from ai8video.media.video_segment_postprocess import extract_tail_frame
 from ai8video.media.tts_timeline_review import (
+    TTS_TIMELINE_REVIEW_ROOT,
     mark_tts_timeline_review_confirmed,
     pending_tts_timeline_review,
     render_tts_timeline_candidate,
@@ -194,6 +205,7 @@ from ai8video.media.timeline_boundary import (
 )
 from ai8video.media.timeline_contract import TimelineRevisionConflict
 from ai8video.media.video_timeline_review import (
+    VIDEO_TIMELINE_REVIEW_ROOT,
     mark_video_timeline_review_confirmed,
     pending_video_timeline_review,
     render_video_timeline_candidate,
@@ -205,6 +217,11 @@ from ai8video.media.video_timeline_review import (
     save_video_timeline_review,
     video_timeline_candidate_needs_render,
     video_timeline_review_status,
+)
+from ai8video.media.merged_preview_tracks import (
+    merge_tts_audio,
+    merged_tts_chunks,
+    merged_video_chunks,
 )
 from ai8video.media.video_merge_mode import (
     load_video_merge_mode,
@@ -1081,7 +1098,9 @@ def api_background_music_select():
     payload = request.json or {}
     item_id = str(payload.get("id") or "").strip() if isinstance(payload, dict) else ""
     try:
-        return select_background_music(item_id)
+        result = select_background_music(item_id)
+        _replace_user_generated_background_music_track(payload.get("userGeneratedKey"), background_music_track_status())
+        return result
     except (RuntimeError, ValueError) as exc:
         response.status = 400
         return {"ok": False, "error": str(exc)}
@@ -1103,7 +1122,11 @@ def api_background_music_preview(item_id: str):
 def api_background_music_clear():
     if request.method == "OPTIONS":
         return HTTPResponse(status=204)
-    return clear_background_music_selection()
+    payload = request.json or {}
+    result = clear_background_music_selection()
+    if isinstance(payload, dict):
+        _replace_user_generated_background_music_track(payload.get("userGeneratedKey"), background_music_track_status())
+    return result
 
 
 @app.route("/api/background-music/volume", method=["POST", "OPTIONS"])
@@ -1114,7 +1137,9 @@ def api_background_music_volume():
     if not isinstance(payload, dict):
         response.status = 400
         return {"ok": False, "error": "payload must be an object"}
-    return update_background_music_volume(payload.get("volume"))
+    result = update_background_music_volume(payload.get("volume"))
+    _replace_user_generated_background_music_track(payload.get("userGeneratedKey"), background_music_track_status())
+    return result
 
 
 @app.route("/api/background-music/original-audio", method=["POST", "OPTIONS"])
@@ -2400,7 +2425,7 @@ def _tts_narration_text_payload_for_user_generated_video(raw_key: object) -> dic
         "ok": True,
         "userGeneratedKey": relative_key,
         "text": narration_text,
-        "textChars": len(narration_text),
+        "textChars": narration_spoken_char_count(narration_text),
         "manual": bool(
             isinstance(record.get("generationMeta") if record else None, dict)
             and "userTtsNarrationText" in record.get("generationMeta", {})
@@ -2420,7 +2445,7 @@ def _save_tts_narration_text_for_user_generated_video(raw_key: object, raw_text:
         "ok": True,
         "userGeneratedKey": relative_key,
         "text": prepared,
-        "textChars": len(prepared),
+        "textChars": narration_spoken_char_count(prepared),
         "deleted": not bool(prepared),
     }
 
@@ -2430,9 +2455,8 @@ def _save_merged_narration_metadata(
     source_key: str,
     text: str,
     source_keys: list[str] | None = None,
+    background_music_track: dict[str, Any] | None = None,
 ) -> None:
-    if not text:
-        return
     metadata_path = restored_result_metadata_path(ensure_user_generated_result_dir(), relative_key)
     payload = {
         "schema": "merged-result-v1",
@@ -2443,6 +2467,7 @@ def _save_merged_narration_metadata(
             "userTtsNarrationText": text,
             "batchMergedSourceKeys": list(source_keys or [source_key]),
         },
+        "backgroundMusicTrack": background_music_track or {},
     }
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = metadata_path.with_name(f".{metadata_path.name}.tmp")
@@ -2515,10 +2540,13 @@ def _batch_merge_source_artifacts(root: Path, resolved_items: list[tuple[Path, s
     for video_path, relative_key in resolved_items:
         preview_key = find_preview_key(root, relative_key)
         cover_key = _find_user_generated_cover_key(root, relative_key)
+        track = _background_music_track_for_user_generated_video(relative_key, video_path)
+        track_base = Path(str(track.get("baseVideoPath") or ""))
         result_artifacts = [
             video_path,
             *(root / key for key in (preview_key, cover_key) if key),
             restored_result_metadata_path(root, relative_key),
+            track_base,
         ]
         for candidate in result_artifacts:
             _append_batch_merge_artifact(artifacts, candidate, root)
@@ -2554,6 +2582,63 @@ def _remove_batch_merged_asset_records(source_keys: list[str]) -> tuple[int, int
     )
 
 
+def _background_music_track_for_user_generated_video(relative_key: str, video_path: Path) -> dict[str, Any]:
+    restored = load_restored_result_metadata(ensure_user_generated_result_dir(), relative_key)
+    asset = _asset_record_for_user_generated_key(relative_key, video_path)
+    record = _merge_user_generated_records(restored, asset)
+    direct = record.get("backgroundMusicTrack") if isinstance(record, dict) else None
+    if isinstance(direct, dict) and direct:
+        return direct
+    archive_meta = record.get("archiveMeta") if isinstance(record, dict) else None
+    track = archive_meta.get("backgroundMusicTrack") if isinstance(archive_meta, dict) else None
+    if isinstance(track, dict) and track:
+        return track
+    music = archive_meta.get("backgroundMusic") if isinstance(archive_meta, dict) else None
+    if isinstance(music, dict) and music.get("enabled") is True and music.get("status") == "mixed":
+        return {"legacyBakedMusic": True}
+    return {}
+
+
+def _replace_user_generated_background_music_track(raw_key: object, music: dict[str, Any]) -> None:
+    if not str(raw_key or "").strip():
+        return
+    video_path, relative_key = _resolve_user_generated_video_key(raw_key)
+    root = ensure_user_generated_result_dir()
+    metadata_path = restored_result_metadata_path(root, relative_key)
+    payload = load_restored_result_metadata(root, relative_key) or {
+        "schema": "restored-result-v1",
+        "userGeneratedKey": relative_key,
+    }
+    existing = _background_music_track_for_user_generated_video(relative_key, video_path)
+    base_path = Path(str(existing.get("baseVideoPath") or hidden_bgm_base_path(root, relative_key)))
+    duration = track_duration(base_path if base_path.is_file() else video_path)
+    segments = []
+    if music.get("enabled") is True and str(music.get("path") or ""):
+        segments.append({
+            "musicPath": str(music["path"]),
+            "musicName": str(music.get("name") or ""),
+            "volume": float(music.get("volume") or 0),
+            "startSeconds": 0.0,
+            "durationSeconds": round(duration, 3),
+            "sourceOffsetSeconds": 0.0,
+        })
+    payload["backgroundMusicTrack"] = {
+        "schema": "hidden-bgm-track-v1",
+        "hidden": True,
+        "baseVideoPath": str(base_path),
+        "segments": segments,
+    }
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = metadata_path.with_name(f".{metadata_path.name}.tmp")
+    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(metadata_path)
+
+
+def _reject_legacy_baked_music(tracks: list[dict[str, Any]]) -> None:
+    if any(track.get("legacyBakedMusic") is True for track in tracks):
+        raise ValueError("所选旧视频缺少独立背景音乐轨道，无法安全合并，请重新生成后再合并")
+
+
 def _prepare_batch_merge_context(raw_keys: object) -> dict[str, Any]:
     source_keys = [str(key or "").strip() for key in raw_keys] if isinstance(raw_keys, list) else []
     source_keys = list(dict.fromkeys(key for key in source_keys if key))
@@ -2568,6 +2653,11 @@ def _prepare_batch_merge_context(raw_keys: object) -> dict[str, Any]:
     first_key = resolved_items[0][1]
     first_visual_key = find_preview_key(root, first_key) or _find_user_generated_cover_key(root, first_key)
     narrations = [_tts_narration_text_for_user_generated_video(key, path)[0] for path, key in resolved_items]
+    tracks = [_background_music_track_for_user_generated_video(key, path) for path, key in resolved_items]
+    _reject_legacy_baked_music(tracks)
+    merge_sources = [track_source(track, path) for (path, _), track in zip(resolved_items, tracks)]
+    durations = [track_duration(path) for path in merge_sources]
+    tts_statuses = [_current_tts_timeline_status(path, key) for path, key in resolved_items]
     return {
         "root": root,
         "target": target,
@@ -2576,10 +2666,19 @@ def _prepare_batch_merge_context(raw_keys: object) -> dict[str, Any]:
         "firstKey": first_key,
         "firstVisualKey": first_visual_key,
         "narration": "\n".join(text for text in narrations if text),
+        "tracks": tracks,
+        "mergeSources": merge_sources,
+        "durations": durations,
+        "ttsStatuses": tts_statuses,
+        "ttsChunks": merged_tts_chunks(tts_statuses, durations),
+        "htmlSources": [html_motion_merge_source(key) for _, key in resolved_items],
     }
 
 
-def _install_batch_merge_result(context: dict[str, Any], work: Path, candidate: Path, visual_copy: Path) -> int:
+def _install_batch_merge_result(
+    context: dict[str, Any], work: Path, candidate: Path, visual_copy: Path,
+    merged_base: Path, merged_tts: Path,
+) -> int:
     root, target = context["root"], context["target"]
     staged: list[tuple[Path, Path]] = []
     created: list[Path] = []
@@ -2590,6 +2689,12 @@ def _install_batch_merge_result(context: dict[str, Any], work: Path, candidate: 
         shutil.move(str(candidate), str(target))
         created.append(target)
         relative_key = target.relative_to(root).as_posix()
+        review_id = hashlib.sha256(relative_key.encode("utf-8")).hexdigest()[:32]
+        base_target = hidden_bgm_base_path(root, relative_key)
+        if merged_base.is_file():
+            base_target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(merged_base), str(base_target))
+            created.append(base_target)
         preview_target = root / "preview" / f"{target.stem}.jpg"
         if visual_copy.is_file():
             preview_target.parent.mkdir(parents=True, exist_ok=True)
@@ -2599,18 +2704,41 @@ def _install_batch_merge_result(context: dict[str, Any], work: Path, candidate: 
             if not preview.get("ok"):
                 raise RuntimeError("合并视频预览图生成失败")
         created.append(preview_target)
+        created.append(VIDEO_TIMELINE_REVIEW_ROOT / review_id)
+        save_video_timeline_review(target, relative_key, merged_video_chunks(context["durations"]))
+        if merged_tts.is_file() and context["ttsChunks"]:
+            tts_target = local_tts_output_dir() / f"{target.stem}-merged-preview.m4a"
+            tts_target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(merged_tts), str(tts_target))
+            created.append(tts_target)
+            created.append(TTS_TIMELINE_REVIEW_ROOT / review_id)
+            save_tts_timeline_review(target, relative_key, tts_target, context["ttsChunks"], tts_volume=1.0)
+        created.append(HTML_MOTION_REVIEW_ROOT / review_id)
+        html_review = merge_html_motion_reviews(
+            context["htmlSources"], relative_key, base_target, context["videoOffsets"], context["durations"],
+        )
+        if html_review.get("reviewReady") is not True:
+            created.remove(HTML_MOTION_REVIEW_ROOT / review_id)
         _save_merged_narration_metadata(
             relative_key,
             context["firstKey"],
             context["narration"],
             context["sourceKeys"],
+            {
+                "schema": "hidden-bgm-track-v1",
+                "hidden": True,
+                "baseVideoPath": str(base_target),
+                "segments": context.get("mergedBgm", {}).get("segments", []),
+            },
         )
         created.append(restored_result_metadata_path(root, relative_key))
         removed_records, _ = _remove_batch_merged_asset_records(context["sourceKeys"])
         return removed_records
     except Exception:
         for path in reversed(created):
-            if path.is_file():
+            if path.is_dir():
+                shutil.rmtree(path)
+            elif path.is_file():
                 path.unlink()
         _restore_batch_merge_sources(staged)
         raise
@@ -2624,12 +2752,25 @@ def _batch_merge_user_generated_videos(raw_keys: object) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="batch-merge-", dir=temp_root) as tempdir:
         work = Path(tempdir)
         candidate = work / "merged.mp4"
-        merge_result = concat_videos([item[0] for item in items], candidate)
+        merged_base = work / "merged-base.mp4"
+        merged_tts = work / "merged-tts.m4a"
+        merge_result = concat_videos(context["mergeSources"], candidate)
+        shutil.copy2(candidate, merged_base)
+        context["mergedBgm"] = merge_hidden_bgm_tracks(candidate, context["tracks"], context["durations"])
+        merge_tts_audio(context["ttsStatuses"], merged_tts)
+        offsets = []
+        cursor = 0.0
+        for duration in context["durations"]:
+            offsets.append(cursor)
+            cursor += duration
+        context["videoOffsets"] = offsets
         visual_copy = work / "first-preview.jpg"
         first_visual = root / context["firstVisualKey"] if context["firstVisualKey"] else None
         if first_visual and first_visual.suffix.lower() in {".jpg", ".jpeg"}:
             shutil.copy2(first_visual, visual_copy)
-        removed_records = _install_batch_merge_result(context, work, candidate, visual_copy)
+        removed_records = _install_batch_merge_result(
+            context, work, candidate, visual_copy, merged_base, merged_tts,
+        )
     relative_key = target.relative_to(root).as_posix()
     return {
         "ok": True,
@@ -2715,10 +2856,10 @@ def _polish_tts_narration_text(
     result = {
         "ok": True,
         "text": polished,
-        "textChars": len(polished),
+        "textChars": narration_spoken_char_count(polished),
         "knowledge": knowledge["meta"],
     }
-    append_prompt_trace("tts_narration_polish_complete", payload={"textChars": len(polished), "knowledge": knowledge["meta"]})
+    append_prompt_trace("tts_narration_polish_complete", payload={"textChars": narration_spoken_char_count(polished), "knowledge": knowledge["meta"]})
     return result
 
 
@@ -2727,7 +2868,8 @@ def _expand_tts_narration_text(
     duration_seconds: object = None,
     progress: object = None,
 ) -> dict:
-    text = prepare_narration_text(str(raw_text or ""))
+    source_text = str(raw_text or "").strip()
+    text = prepare_narration_text(source_text)
     if not text:
         raise LookupError("台词已删除")
     config = AI8VideoConfig.from_env()
@@ -2742,17 +2884,20 @@ def _expand_tts_narration_text(
         raise RuntimeError("文本/视频规划模型没有配置完整，不能 AI 扩写")
     duration = _required_tts_transform_duration(duration_seconds)
     char_limit = narration_char_limit(duration)
+    current_chars = narration_spoken_char_count(source_text)
+    target_chars = min(char_limit, current_chars + 10)
     _emit_tts_transform_progress(progress, "rewrite", "正在调用模型扩写台词")
     prompt = f"""请扩写下面这段短视频 TTS 口播台词。
 
 当前视频时长：{duration:.2f} 秒。扩写后的台词必须适合在该时长内自然说完，不得为了达到倍数而超过可用口播时长。
+当前台词：{current_chars} 字。本次目标：约 {target_chars} 字；后续每次扩写都会基于最新台词继续增加约 10 字。
 
 要求：
 1. 只输出扩写后的台词正文，不要解释，不要标题，不要 Markdown。
 2. 保留原意、核心卖点和信息顺序。
 3. 更适合中文口播，短句、顺口、有节奏。
 4. 可以补充承接句、情绪递进和口播节奏，但不要新增品牌、日期、事实或承诺。
-5. 只在时长容量允许时扩写，最多 {char_limit} 个有效字符；原文已接近或超过上限时，改为压缩和优化表达。
+5. 优先扩写到约 {target_chars} 字，允许上下浮动 2 字；最多 {char_limit} 个有效字符。原文已接近或超过上限时，保持上限并优化表达。
 
 原台词：
 {text}
@@ -2771,10 +2916,11 @@ def _expand_tts_narration_text(
     result = {
         "ok": True,
         "text": expanded,
-        "textChars": len(expanded),
+        "textChars": narration_spoken_char_count(expanded),
+        "targetChars": target_chars,
         "knowledge": knowledge["meta"],
     }
-    append_prompt_trace("tts_narration_expand_complete", payload={"textChars": len(expanded), "knowledge": knowledge["meta"]})
+    append_prompt_trace("tts_narration_expand_complete", payload={"textChars": narration_spoken_char_count(expanded), "knowledge": knowledge["meta"]})
     return result
 
 
@@ -3379,9 +3525,9 @@ def _render_confirmed_tts_layer(
     tts_output: Path,
     tts_state: dict[str, Any],
     video_state: dict[str, Any],
-) -> dict[str, Any]:
+) -> None:
     if not tts_state:
-        return {"enabled": False, "status": "unchanged"}
+        return
     render_tts_timeline_video(
         working,
         Path(str(tts_state["audioPath"])),
@@ -3391,6 +3537,17 @@ def _render_confirmed_tts_layer(
         tts_volume=float(tts_state.get("ttsVolume") or 1.0),
     )
     tts_output.replace(working)
+
+
+def _confirmed_burn_source(video_path: Path, relative_key: str, html_pending: bool) -> Path:
+    if html_pending:
+        return html_motion_review_base_path(video_path, relative_key)
+    base = hidden_bgm_base_path(ensure_user_generated_result_dir(), relative_key)
+    return base if base.is_file() else video_path
+
+
+def _mix_confirmed_background_music(working: Path, relative_key: str) -> dict[str, Any]:
+    save_hidden_bgm_base(working, ensure_user_generated_result_dir(), relative_key)
     result = mix_background_music(
         working,
         preserve_original_audio_override=True,
@@ -3414,14 +3571,14 @@ def _render_confirmed_burn(
     working.unlink(missing_ok=True)
     tts_output.unlink(missing_ok=True)
     try:
-        visual_source = html_motion_review_base_path(video_path, relative_key) if html_pending else video_path
+        visual_source = _confirmed_burn_source(video_path, relative_key, html_pending)
         _render_confirmed_video_layer(
             visual_source,
             working,
             video_state,
             preserve_source_audio=not bool(tts_state),
         )
-        background_music_result = _render_confirmed_tts_layer(working, tts_output, tts_state, video_state)
+        _render_confirmed_tts_layer(working, tts_output, tts_state, video_state)
         if html_pending:
             composite_transparent_layer(
                 working,
@@ -3429,6 +3586,7 @@ def _render_confirmed_burn(
                 probe_media_video_info(working),
                 resolve_ffmpeg_bin(),
             )
+        background_music_result = _mix_confirmed_background_music(working, relative_key)
         os.replace(working, video_path)
     except Exception:
         working.unlink(missing_ok=True)
@@ -5716,14 +5874,15 @@ def api_repair_user_generated_extension_frame():
         if frame_path != source_frame_path:
             _write_extension_frame_variant_status(frame_path, "repairing")
         references = _resolve_frame_repair_references(payload.get("referencePaths"))
-        if not references:
-            raise ValueError("请至少选择一张参考图后再修图")
+        custom_prompt = str(payload.get("customPrompt") or "").strip()
+        if not custom_prompt:
+            raise ValueError("请先填写修图提示词")
         output_path = Path(
             ReferenceImagePreprocessor(AI8VideoConfig.from_env()).repair_frame_with_references(
                 str(frame_path),
                 references,
                 max_concurrency=4 if payload.get("batch") else None,
-                custom_prompt=str(payload.get("customPrompt") or ""),
+                custom_prompt=custom_prompt,
             )
         )
         if not output_path.is_file():
@@ -5807,6 +5966,18 @@ def api_user_generated_video_prompt():
         raw_key = payload.get("userGeneratedKey")
         if "text" in payload:
             return _save_extension_video_prompt_for_user_generated_video(raw_key, payload.get("text"))
+        if str(payload.get("source") or "").strip() == "original":
+            video_path, relative_key = _resolve_user_generated_video_key(raw_key)
+            prompt, _record, prompt_source = _video_prompt_for_user_generated_video(relative_key, video_path)
+            if not prompt:
+                raise LookupError("原视频提示词已删除，无法重新生成")
+            return {
+                "ok": True,
+                "userGeneratedKey": relative_key,
+                "text": prompt,
+                "textChars": len(prompt),
+                "source": prompt_source,
+            }
         prompt, relative_key = _extension_video_prompt_for_user_generated_video(raw_key)
         return {"ok": True, "userGeneratedKey": relative_key, "text": prompt, "textChars": len(prompt), "source": "extensionVideoPrompt"}
     except FileNotFoundError as exc:
@@ -6422,6 +6593,22 @@ def api_save_user_generated_html_motion_timeline():
         return {"ok": False, "error": "视频或 HTML 动效预览已删除"}
     except RuntimeError as exc:
         response.status = 500
+        return {"ok": False, "error": str(exc)}
+
+
+@app.route("/api/user-generated-results/delete-html-motion-review", method=["POST", "OPTIONS"])
+def api_delete_user_generated_html_motion_review():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    if not isinstance(payload, dict):
+        response.status = 400
+        return {"ok": False, "error": "payload must be an object"}
+    try:
+        _video_path, relative_key = _resolve_user_generated_video_key(payload.get("userGeneratedKey"))
+        return delete_html_motion_review(relative_key)
+    except (ValueError, LookupError) as exc:
+        response.status = 400
         return {"ok": False, "error": str(exc)}
 
 

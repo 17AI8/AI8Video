@@ -10,6 +10,15 @@
       return phase === 'working' ? '合并中' : phase === 'pending' ? '待生成' : '合并';
     }
 
+    function setVideoPreviewHeaderStatus(message = '', tone = '') {
+      const status = els.videoPreviewStatus;
+      if (!status) return;
+      const text = String(message || '').trim();
+      status.textContent = text;
+      status.hidden = !text;
+      status.dataset.tone = text ? String(tone || 'info') : '';
+    }
+
     function videoPreviewExtensionMergeMarkup(mode, savedState = null) {
       if (mode === 'replace') {
         return `<div class="video-preview-merge-control video-preview-replace-control">
@@ -101,11 +110,15 @@
       if (!key || !stageGrid || !video || button?.disabled) return;
       const mode = options.mode === 'replace' || savedState?.mode === 'replace' ? 'replace' : 'extend';
       button.disabled = true;
-      setVideoPreviewButtonLabel(button, mode === 'replace' ? '截取首帧中' : '截取画面中');
+      setVideoPreviewHeaderStatus(mode === 'replace' ? '正在准备重新生成' : '正在准备延长视频');
       try {
         video.pause();
         if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
           throw new Error('当前视频画面尚未加载完成，请稍后再试');
+        }
+        if (mode === 'replace' && !savedState) {
+          const sourcePrompt = await postVideoPrompt(key, undefined, 'original');
+          updateVideoPreviewExtensionState(key, { videoPrompt: String(sourcePrompt.text || '').trim() });
         }
         const previewTime = mode === 'replace'
           ? 0
@@ -154,7 +167,7 @@
         stageGrid.dataset.extensionFrameUrl = String(frameAsset.frameUrl || '');
         if (savedState?.batchMode && Array.isArray(savedState.batchFrames)) {
           applyVideoPreviewExtensionBatchStage(stageGrid, savedState.batchFrames, true);
-          void hydrateVideoPreviewExtensionBatchVideos(stageGrid);
+          void resumeVideoPreviewExtensionBatchPolling(stageGrid);
         }
         state.videoPreviewModal = { ...(state.videoPreviewModal || {}), frameRepairPrompt: String(savedState?.frameRepairPrompt || '') };
         renderVideoPreviewFrameRepairActions();
@@ -197,10 +210,12 @@
         syncMergeTip();
         saveState();
         syncVideoPreviewMergeAvailability();
-        setVideoPreviewButtonLabel(button, mode === 'replace' ? '重新生成' : '重新截取');
+        setVideoPreviewButtonLabel(button, mode === 'replace' ? '重新生成' : '延长');
+        setVideoPreviewHeaderStatus('');
         button.disabled = false;
       } catch (error) {
         setVideoPreviewButtonLabel(button, mode === 'replace' ? '重新生成' : '延长');
+        setVideoPreviewHeaderStatus(error?.message || '操作准备失败', 'error');
         button.disabled = false;
         if (savedState) console.warn('恢复视频延长状态失败', error);
         else window.alert(error?.message || '截取视频画面失败');
@@ -235,8 +250,9 @@
       const activeButton = stageGrid.querySelector(`[data-video-preview-action="${action}"]`);
       if (activeButton) {
         activeButton.disabled = true;
-        setVideoPreviewButtonLabel(activeButton, mode === 'replace' ? '已生成替换视频' : '已生成延长视频');
+        setVideoPreviewButtonLabel(activeButton, mode === 'replace' ? '重新生成' : '延长');
       }
+      setVideoPreviewHeaderStatus(mode === 'replace' ? '已生成替换视频' : '已生成延长视频', 'success');
       const leftKey = String(stageGrid.dataset.leftVideoKey || '').trim();
       const existing = loadVideoPreviewExtensionStates()[leftKey] || {};
       persistVideoPreviewExtensionState(leftKey, {
@@ -307,13 +323,14 @@
       const hasPlaylistNav = playlist.length > 1;
       els.videoPreviewTitle.textContent = title;
       els.videoPreviewSub.textContent = hasPlaylistNav ? `当前页面播放 · ${playlistIndex + 1}/${playlist.length}` : '当前页面播放';
+      setVideoPreviewHeaderStatus('');
       els.videoPreviewBody.innerHTML = `
         <button type="button" class="video-preview-nav-button prev" data-video-preview-action="previous" ${hasPlaylistNav ? '' : 'disabled'}>上一个</button>
         <div class="video-preview-stage-grid" data-left-video-key="${escapeHtml(userGeneratedKey)}">
           <div class="video-preview-stage">
             <video class="video-preview-large" controls autoplay playsinline preload="metadata" ${cover ? `poster="${escapeHtml(cover)}"` : ''} src="${escapeHtml(src)}"></video>
             <span class="video-preview-extend-actions">
-              <button type="button" class="video-preview-button video-preview-regenerate-button" data-video-preview-action="regenerate-video" data-icon="sparkles" data-video-user-generated-key="${escapeHtml(userGeneratedKey)}" ${userGeneratedKey ? '' : 'disabled'}>${videoPreviewButtonInnerHtml('sparkles', '重新生成')}</button>
+              <button type="button" class="video-preview-button video-preview-regenerate-button" data-video-preview-action="regenerate-video" data-icon="regenerate" data-video-user-generated-key="${escapeHtml(userGeneratedKey)}" ${userGeneratedKey ? '' : 'disabled'}>${videoPreviewButtonInnerHtml('regenerate', '重新生成')}</button>
               <button type="button" class="video-preview-button video-preview-extend-button" data-video-preview-action="extend-video" data-icon="extend" data-video-user-generated-key="${escapeHtml(userGeneratedKey)}" ${userGeneratedKey ? '' : 'disabled'}>${videoPreviewButtonInnerHtml('extend', '延长')}</button>
               <button type="button" class="video-preview-button video-preview-extension-close-button" data-video-preview-action="delete-extension" data-icon="trash" aria-label="删除右侧延长内容">${videoPreviewButtonInnerHtml('trash', '')}</button>
             </span>

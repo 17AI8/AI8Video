@@ -114,6 +114,33 @@
       playhead.setAttribute('tabindex', '0');
       playhead.setAttribute('aria-valuemin', '0');
       playhead.setAttribute('aria-valuemax', Number(maxSeconds || duration).toFixed(3));
+      const seekAtClick = (event) => {
+        const interactive = event.target.closest?.(
+          '[data-video-preview-html-motion-chunk], [data-video-preview-tts-chunk], '
+          + '[data-video-preview-video-chunk], [data-video-preview-html-motion-playhead], '
+          + '[data-video-preview-tts-playhead], [data-video-preview-video-playhead], '
+          + '[data-video-preview-timeline-trim-handle]',
+        );
+        if (interactive || lane.dataset.timelineIgnoreClick === 'true') {
+          delete lane.dataset.timelineIgnoreClick;
+          return;
+        }
+        const video = els.videoPreviewBody?.querySelector('video');
+        if (!video) return;
+        const limit = Math.min(
+          Number.isFinite(video.duration) ? Number(video.duration) : Number(maxSeconds || duration),
+          Math.max(0, Number(maxSeconds || duration)),
+        );
+        video.pause();
+        video.currentTime = Math.min(limit, timelineSecondsAtPointer(event, lane, duration));
+        if (kind === 'tts') setTtsSelectedChunkIndex(null);
+        if (kind === 'video') setVideoSelectedChunkIndex(null);
+        if (kind === 'html') setHtmlMotionSelectedChunkIndex(null);
+        syncTtsTimelinePlayhead();
+        syncVideoTimelinePlayhead();
+        syncHtmlMotionTimelinePlayhead();
+      };
+      lane.parentElement?.querySelector('[data-video-preview-timeline-ruler]')?.addEventListener('click', seekAtClick);
       playhead.addEventListener('pointerdown', (event) => {
         const video = els.videoPreviewBody?.querySelector('video');
         if (!video || event.button !== 0) return;

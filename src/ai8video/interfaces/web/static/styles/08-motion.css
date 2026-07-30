@@ -1,51 +1,79 @@
 
     .html-motion-safe-zone-setting {
       width: 100%;
-      min-height: 34px;
+      min-height: 38px;
       display: flex;
       margin-top: 2px;
+      padding: 3px;
       overflow: hidden;
-      border: 1px solid rgba(37, 99, 235, 0.22);
-      border-radius: 8px;
-      background: rgba(238, 245, 255, 0.66);
+      border: 1px solid rgba(37, 99, 235, 0.2);
+      border-radius: 11px;
+      background: linear-gradient(135deg, rgba(239, 246, 255, 0.96), rgba(238, 242, 255, 0.88));
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
     }
 
     .html-motion-safe-zone-setting .html-motion-safe-zone-actions {
       width: 100%;
+      gap: 3px;
+      border-radius: 8px;
     }
 
     .html-motion-safe-zone-button {
       min-width: 0;
       flex: 1 1 auto;
       border: 0;
-      border-right: 1px solid rgba(37, 99, 235, 0.14);
+      border-radius: 8px;
       background: transparent;
       color: var(--brand);
       font-size: 12px;
       font-weight: 900;
       cursor: pointer;
       white-space: nowrap;
+      transition: color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+    }
+
+    .html-motion-safe-zone-button:hover {
+      background: rgba(255, 255, 255, 0.78);
+      color: var(--accent-blue);
     }
 
     .html-motion-safe-zone-button.active {
-      background: rgba(37, 99, 235, 0.12);
+      background: rgba(255, 255, 255, 0.94);
       color: var(--accent-blue);
+      box-shadow: 0 2px 7px rgba(37, 99, 235, 0.14);
     }
 
     .html-motion-safe-zone-save {
       flex: 0 0 auto;
-      padding: 0 10px;
+      min-width: 58px;
+      padding: 0 13px;
       border: 0;
-      background: rgba(37, 99, 235, 0.12);
-      color: var(--accent-blue);
+      border-radius: 8px;
+      background: linear-gradient(135deg, #3b82f6, #6366f1);
+      color: #fff;
       font-size: 12px;
       font-weight: 900;
       cursor: pointer;
+      box-shadow: 0 4px 10px rgba(59, 130, 246, 0.24);
+      transition: filter 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+    }
+
+    .html-motion-safe-zone-save:hover:not(:disabled) {
+      filter: brightness(1.06);
+      box-shadow: 0 6px 14px rgba(59, 130, 246, 0.3);
+      transform: translateY(-1px);
+    }
+
+    .html-motion-safe-zone-save:active:not(:disabled) {
+      box-shadow: 0 2px 6px rgba(59, 130, 246, 0.22);
+      transform: translateY(0);
     }
 
     .html-motion-safe-zone-save:disabled {
-      opacity: 0.55;
+      filter: saturate(0.45);
+      opacity: 0.58;
       cursor: not-allowed;
+      box-shadow: none;
     }
 
     .flower-text-watermark-file-input,

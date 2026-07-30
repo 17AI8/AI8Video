@@ -238,29 +238,23 @@ class ReferenceImagePreprocessor:
             raise ReferenceImagePreprocessError("请先在设置中补齐图片模型后再修图。")
         sources = [str(frame_source or "").strip(), *[str(item or "").strip() for item in reference_sources]]
         sources = [item for item in sources if item]
-        if len(sources) < 2:
-            raise ReferenceImagePreprocessError("请至少选择一张参考图后再修图。")
+        has_references = len(sources) > 1
         user_requirement = custom_prompt.strip()[:2000]
-        if user_requirement:
-            prompt = (
-                "第一张输入图是视频截图，始终是唯一的主修图对象与输出画面基底。"
-                "后续输入图是用户选定的参考图；在执行用户补充要求时，"
-                "参考图可与截图一起参与人物、服装、场景、色彩和细节的取舍。"
-                "严格根据用户补充要求，在这张截图上完成一张自然、连贯的修图结果，"
-                "不得将输出变成参考图的独立复刻。"
-                "可以按要求调整人物、服装、场景、动作或构图，但要保留视频画面比例。"
-                "只输出一张完整、无文字、无水印的单帧画面，不要生成拼图、分屏或对比图。"
-                f"\n用户补充要求：{user_requirement}"
-            )
-        else:
-            prompt = (
-                "第一张输入图是视频截图，始终是唯一的主修图对象与输出画面基底；"
-                "后续输入图是用户选定的参考图。"
-                "在没有额外修改要求时，以截图为略高优先级的画面基础，"
-                "并自然融合参考图的人物、服装、场景、色彩与细节。"
-                "保留视频画面比例，只输出一张自然、完整、无文字、无水印的单帧画面，"
-                "不要生成拼图、分屏或对比图。"
-            )
+        if not user_requirement:
+            raise ReferenceImagePreprocessError("请先填写修图提示词。")
+        reference_guidance = (
+            "后续输入图是用户选定的可选参考图；可与截图一起参与人物、服装、场景、色彩和细节的取舍。"
+            if has_references else "没有额外参考图，只根据用户要求修改第一张视频截图。"
+        )
+        prompt = (
+            "第一张输入图是视频截图，始终是唯一的主修图对象与输出画面基底。"
+            f"{reference_guidance}"
+            "严格根据用户补充要求，在这张截图上完成一张自然、连贯的修图结果，"
+            "不得将输出变成参考图的独立复刻。"
+            "可以按要求调整人物、服装、场景、动作或构图，但要保留视频画面比例。"
+            "只输出一张完整、无文字、无水印的单帧画面，不要生成拼图、分屏或对比图。"
+            f"\n用户补充要求：{user_requirement}"
+        )
         output_source, _ = self._generate_images_to_image(
             sources[:5], prompt, max_concurrency=max_concurrency,
         )

@@ -405,7 +405,6 @@
       pointer: '<path d="m5 3 14 8-6.5 2.2L10 20 5 3z"/>',
       scissors: '<circle cx="6" cy="7" r="3"/><path d="M8.7 8.3 19 14"/><path d="m8.7 15.7 10.8-6.2"/><circle cx="6" cy="17" r="3"/>',
       chevron: '<path d="m6 9 6 6 6-6"/>',
-      extend: '<g transform="rotate(-45 12 12)"><path d="M12 12c-2-2.67-4-4-6-4a4 4 0 1 0 0 8c2 0 4-1.33 6-4Zm0 0c2 2.67 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.33-6 4Z"/></g>',
       sparkles: '<path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/><path d="m5.6 5.6 2.1 2.1"/><path d="m16.3 16.3 2.1 2.1"/><path d="m16.3 5.6-2.1 2.1"/><path d="m5.6 16.3 2.1-2.1"/><circle cx="12" cy="12" r="2.2"/>',
       check: '<path d="M20 7 9.5 17.5 4 12"/>',
       undo: '<path d="M9 7H4V2"/><path d="M4 7c2-3 5-4 8-4a8 8 0 1 1 0 16h-2"/>',
@@ -414,6 +413,9 @@
     };
 
     function videoPreviewIconSvg(iconKey) {
+      if (iconKey === 'regenerate' || iconKey === 'extend') {
+        return `<span class="video-preview-button-icon video-preview-fontawesome-icon is-${iconKey}" aria-hidden="true"></span>`;
+      }
       const paths = VIDEO_PREVIEW_ICONS[iconKey] || '';
       return `<svg class="video-preview-button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths}</svg>`;
     }

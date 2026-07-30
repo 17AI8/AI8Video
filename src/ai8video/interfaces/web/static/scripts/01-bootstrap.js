@@ -473,6 +473,7 @@
       videoPreviewModal: document.getElementById('videoPreviewModal'),
       videoPreviewTitle: document.getElementById('videoPreviewTitle'),
       videoPreviewSub: document.getElementById('videoPreviewSub'),
+      videoPreviewStatus: document.getElementById('videoPreviewStatus'),
       videoPreviewBody: document.getElementById('videoPreviewBody'),
       videoPreviewCloseButton: document.getElementById('videoPreviewCloseButton'),
       settingsModal: document.getElementById('settingsModal'),

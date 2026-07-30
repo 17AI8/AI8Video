@@ -29,19 +29,41 @@
       right: 7px;
       bottom: 7px;
       display: grid;
-      width: 22px;
-      height: 22px;
+      width: 24px;
+      height: 24px;
       place-items: center;
+      padding: 0;
       border: 2px solid rgba(255, 255, 255, 0.9);
-      border-radius: 5px;
-      background: rgba(15, 28, 43, 0.72);
+      border-radius: 7px;
+      background: rgba(10, 20, 36, 0.84);
       color: #fff;
-      font-size: 14px;
-      font-weight: 900;
+      line-height: 1;
       cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.34);
     }
 
-    .video-preview-extension-variant.selected .video-preview-extension-variant-select { border-color: #5b7cff; background: #4f6dff; }
+    .video-preview-extension-variant-select span {
+      display: block;
+      width: 14px;
+      height: 14px;
+      background: currentColor;
+      opacity: 0;
+      transform: scale(0.72);
+      transition: opacity 140ms ease, transform 140ms ease;
+      mask: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/check.svg") center / contain no-repeat;
+      -webkit-mask: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/check.svg") center / contain no-repeat;
+    }
+
+    .video-preview-extension-variant.selected .video-preview-extension-variant-select {
+      border-color: #fff;
+      background: #4f6dff;
+      box-shadow: 0 0 0 2px rgba(79, 109, 255, 0.5), 0 3px 10px rgba(20, 35, 92, 0.42);
+    }
+
+    .video-preview-extension-variant.selected .video-preview-extension-variant-select span {
+      opacity: 1;
+      transform: scale(1);
+    }
 
     .video-preview-extension-variant.has-video .video-preview-extension-variant-select {
       top: 7px;
@@ -68,9 +90,10 @@
 
     .video-preview-extension-variant-status {
       position: absolute;
-      left: 7px;
-      right: 7px;
-      bottom: 8px;
+      top: calc(50% + 22px);
+      left: 50%;
+      width: calc(100% - 14px);
+      transform: translateX(-50%);
       overflow: hidden;
       padding: 3px 6px;
       border-radius: 999px;

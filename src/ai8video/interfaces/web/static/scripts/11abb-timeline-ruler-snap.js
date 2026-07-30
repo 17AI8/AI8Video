@@ -83,6 +83,7 @@
       const total = Math.max(0, Number(duration || 0));
       const maxSeconds = Math.min(total, Math.max(0, Number(options.maxSeconds ?? total)));
       const points = new Map();
+      const excludedIndexes = new Set(Array.isArray(options.excludeIndexes) ? options.excludeIndexes : []);
       const add = (seconds, kind) => {
         const value = timelineRoundSeconds(seconds);
         if (!Number.isFinite(value) || value < 0 || value > maxSeconds + TIMELINE_SNAP_EPSILON_SECONDS) return;
@@ -105,7 +106,7 @@
         ['html', modal?.htmlMotionTimelineChunks],
       ].forEach(([track, chunks]) => {
         (Array.isArray(chunks) ? chunks : []).forEach((chunk, index) => {
-          if (track === options.excludeTrack && index === options.excludeIndex) return;
+          if (track === options.excludeTrack && (index === options.excludeIndex || excludedIndexes.has(index))) return;
           const start = Number(chunk.startSeconds || 0);
           const end = Number(chunk.endSeconds ?? start + Number(chunk.durationSeconds || 0));
           add(start, 'chunk-edge');

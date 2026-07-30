@@ -25,7 +25,7 @@
         : (frame.frameUrl ? `<img src="${escapeHtml(frame.frameUrl)}" alt="批量截帧">` : '<span>等待截图</span>');
       return `<div class="video-preview-extension-variant${frame.selected ? ' selected' : ''}${hasVideo ? ' has-video' : ''}" data-extension-frame-key="${escapeHtml(frame.frameKey || '')}">
         ${media}
-        <button type="button" class="video-preview-extension-variant-select" data-extension-batch-select="${index}" aria-label="选择第 ${index + 1} 张" aria-pressed="${frame.selected ? 'true' : 'false'}"${busy ? ' disabled' : ''}>${frame.selected ? '✓' : ''}</button>
+        <button type="button" class="video-preview-extension-variant-select" data-extension-batch-select="${index}" aria-label="选择第 ${index + 1} 张" aria-pressed="${frame.selected ? 'true' : 'false'}"${busy ? ' disabled' : ''}><span aria-hidden="true"></span></button>
       </div>`;
     }
 
@@ -44,13 +44,14 @@
       return Array.from({ length: 4 }, () => ({ frameKey, frameUrl }));
     }
 
+    function isPendingBatchVideoFrame(frame) {
+      return Boolean(frame?.videoSessionId && !frame?.videoUrl && frame?.status !== 'failed');
+    }
+
     function restoreVideoPreviewExtensionBatchFrames(frames) {
-      return frames.map((frame) => {
-        if (frame?.status === 'repairing' || frame?.status === 'video-generating') {
-          return { ...frame, status: 'completed', progressLabel: '' };
-        }
-        return frame;
-      });
+      return frames.map((frame) => isPendingBatchVideoFrame(frame)
+        ? { ...frame, status: 'video-generating', progressLabel: frame.progressLabel || '视频生成中' }
+        : { ...frame });
     }
 
     function applyVideoPreviewExtensionBatchStage(stageGrid, frames, restore = false) {
@@ -81,11 +82,13 @@
     function persistVideoPreviewExtensionBatchState(stageGrid) {
       const key = String(stageGrid?.dataset.leftVideoKey || '').trim();
       if (!key) return;
+      const batchMode = isVideoPreviewExtensionBatchMode(stageGrid);
       persistVideoPreviewExtensionState(key, {
         ...(loadVideoPreviewExtensionStates()[key] || {}),
         active: true,
-        batchMode: isVideoPreviewExtensionBatchMode(stageGrid),
+        batchMode,
         batchFrames: readVideoPreviewExtensionBatchFrames(stageGrid),
+        ...(batchMode ? { rightVideoKey: '', rightVideoUrl: '' } : {}),
       });
     }
 
@@ -93,15 +96,22 @@
       const frameKey = String(stageGrid?.dataset.extensionFrameKey || '').trim();
       if (!frameKey || !isVideoPreviewExtensionBatchMode(stageGrid)) return;
       try {
-        const selectedKey = readVideoPreviewExtensionBatchFrames(stageGrid).find((frame) => frame.selected)?.frameKey;
+        const selectedIndex = readVideoPreviewExtensionBatchFrames(stageGrid).findIndex((frame) => frame.selected);
         const res = await fetch('/api/user-generated-results/extension-frame/batch-status', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ frameKey }),
         });
         const data = await res.json().catch(() => ({}));
         if (!isVideoPreviewExtensionBatchMode(stageGrid) || !res.ok || !data.ok || !Array.isArray(data.frames)) return;
-        applyVideoPreviewExtensionBatchStage(stageGrid, data.frames.map((frame) => ({
-          ...frame, selected: frame.frameKey === selectedKey,
-        })));
+        const currentFrames = readVideoPreviewExtensionBatchFrames(stageGrid);
+        applyVideoPreviewExtensionBatchStage(stageGrid, data.frames.map((frame, index) => {
+          const current = currentFrames[index] || {};
+          return {
+            ...current,
+            ...frame,
+            status: current.status === 'repairing' ? frame.status : current.status,
+            selected: selectedIndex >= 0 && index === selectedIndex,
+          };
+        }));
         persistVideoPreviewExtensionBatchState(stageGrid);
       } catch (_) {
         // 状态查询失败时保留本地已知状态，不把结果误标为失败。
@@ -162,11 +172,58 @@
     function batchVideoProgressLabel(payload) {
       const item = Array.isArray(payload?.generationProgress?.items) ? payload.generationProgress.items[0] : null;
       if (!item) return '';
-      const status = typeof formatGenerationProgressStatus === 'function'
+      const rawStatus = typeof formatGenerationProgressStatus === 'function'
         ? formatGenerationProgressStatus(item)
         : String(item.statusLabel || item.status || '视频生成中');
+      const statusMap = { queued: '排队中', pending: '等待提交', submitted: '已提交', running: '生成中', processing: '处理中', polling: '查询结果中', archiving: '归档中' };
+      const status = String(rawStatus || '').replace(/\b(queued|pending|submitted|running|processing|polling|archiving)\b/gi, (value) => statusMap[value.toLowerCase()] || value);
       const percent = typeof generationProgressPercent === 'function' ? generationProgressPercent(item) : 0;
-      return `${status}${percent ? ` · ${percent}%` : ''}`;
+      return `${status}${percent && !/\d+(?:\.\d+)?%/.test(status) ? ` · ${percent}%` : ''}`;
+    }
+
+    function batchVideoProgressStatus(payload) {
+      const item = Array.isArray(payload?.generationProgress?.items) ? payload.generationProgress.items[0] : null;
+      return String(item?.status || '').toLowerCase();
+    }
+
+    async function refreshResumedBatchVideoProgress(stageGrid) {
+      const frames = readVideoPreviewExtensionBatchFrames(stageGrid);
+      await Promise.all(frames.map(async (frame, index) => {
+        if (!isPendingBatchVideoFrame(frame)) return;
+        try {
+          const params = new URLSearchParams({ sessionId: frame.videoSessionId, videoCount: '1' });
+          const res = await fetch(`/api/chat-status?${params.toString()}`);
+          const payload = await res.json().catch(() => ({}));
+          const status = res.ok ? batchVideoProgressStatus(payload) : '';
+          if (['failed', 'cancelled', 'canceled'].includes(status)) {
+            updateVideoPreviewExtensionBatchFrame(stageGrid, index, { status: 'failed', progressLabel: '' });
+            setVideoPreviewBatchVariantFailure(stageGrid, index, batchVideoProgressLabel(payload) || '生成失败');
+            return;
+          }
+          const label = res.ok ? batchVideoProgressLabel(payload) : '';
+          if (label) {
+            setVideoPreviewBatchVariantLoading(stageGrid, index, true, label);
+            updateVideoPreviewExtensionBatchFrame(stageGrid, index, { progressLabel: label });
+          }
+        } catch (_) {
+          // 临时查询失败时保留任务状态，下一轮继续恢复。
+        }
+      }));
+    }
+
+    async function resumeVideoPreviewExtensionBatchPolling(stageGrid) {
+      while (isVideoPreviewExtensionBatchMode(stageGrid)) {
+        await hydrateVideoPreviewExtensionBatchStatus(stageGrid);
+        await hydrateVideoPreviewExtensionBatchVideos(stageGrid);
+        await refreshResumedBatchVideoProgress(stageGrid);
+        const frames = readVideoPreviewExtensionBatchFrames(stageGrid);
+        if (!frames.some((frame) => frame.status === 'repairing' || isPendingBatchVideoFrame(frame))) break;
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+      if (isVideoPreviewExtensionBatchMode(stageGrid)) {
+        stageGrid.dataset.extensionBatchBusy = 'false';
+        syncVideoPreviewExtensionBatchControls(stageGrid);
+      }
     }
 
     async function pollVideoPreviewBatchVariantProgress(stageGrid, index, sessionId, signal) {
@@ -255,7 +312,7 @@
       const frames = readVideoPreviewExtensionBatchFrames(stageGrid);
       const referencePaths = frameRepairReferencePaths();
       const customPrompt = String(state.videoPreviewModal?.frameRepairPrompt || '').trim();
-      if (!frames.length || !referencePaths.length || button.disabled) return;
+      if (!frames.length || !customPrompt || button.disabled) return;
       button.disabled = true;
       button.textContent = '四份修图中';
       const pendingFrames = frames.map((frame) => ({ ...frame, status: 'repairing' }));

@@ -164,15 +164,24 @@
       background: linear-gradient(90deg, #4f6dff, #8b5cf6);
     }
 
+    html {
+      scrollbar-color: #8b5cf6 rgba(139, 92, 246, 0.08);
+    }
+
     ::-webkit-scrollbar-thumb {
       border-radius: 999px;
       border: 2px solid transparent;
-      background: linear-gradient(180deg, rgba(79, 109, 255, 0.62) 0%, rgba(139, 92, 246, 0.62) 100%);
+      background: linear-gradient(180deg, #b794f6 0%, #8b5cf6 52%, #6d28d9 100%);
+      background-clip: content-box;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: linear-gradient(180deg, #c4b5fd 0%, #9333ea 52%, #5b21b6 100%);
       background-clip: content-box;
     }
 
     ::-webkit-scrollbar-track {
-      background: rgba(255, 255, 255, 0.3);
+      background: rgba(139, 92, 246, 0.08);
     }
 
     body > .shell > .sidebar {

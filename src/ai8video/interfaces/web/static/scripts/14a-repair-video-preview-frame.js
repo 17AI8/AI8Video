@@ -11,6 +11,7 @@
       actionBar.querySelector('.video-preview-frame-repair-actions')?.remove();
       const selected = frameRepairReferencePaths();
       const customPrompt = String(state.videoPreviewModal?.frameRepairPrompt || '');
+      const busy = isVideoPreviewExtensionBatchBusy(stageGrid);
       const images = Array.isArray(state.userMaterials?.images) ? state.userMaterials.images : [];
       const items = images.length
         ? images.map((item) => {
@@ -26,7 +27,7 @@
           <div class="video-preview-split-button" role="group" aria-label="截图修图">
             <button type="button" class="video-preview-button" data-frame-repair-prompt>提示词</button>
             <button type="button" class="video-preview-button" data-frame-repair-toggle>参考图${selected.length ? ` · ${selected.length}` : ''}</button>
-            <button type="button" class="video-preview-button" data-frame-repair-start ${selected.length ? '' : 'disabled'}>开始修图</button>
+            <button type="button" class="video-preview-button" data-frame-repair-start ${customPrompt.trim() && !busy ? '' : 'disabled'}>${busy ? '视频生成中' : '开始修图'}</button>
           </div>
           <div class="video-preview-frame-repair-prompt-drawer hidden">
             <textarea data-frame-repair-prompt-input placeholder="补充修图要求，例如：将人物服装改为商务正装。">${escapeHtml(customPrompt)}</textarea>
@@ -42,7 +43,7 @@
       const frameKey = String(stageGrid?.dataset.extensionFrameKey || '').trim();
       const referencePaths = frameRepairReferencePaths();
       const customPrompt = String(state.videoPreviewModal?.frameRepairPrompt || '').trim();
-      if (!frameKey || !referencePaths.length || button.disabled) return;
+      if (!frameKey || !customPrompt || button.disabled) return;
       button.disabled = true;
       button.textContent = '修图中';
       try {

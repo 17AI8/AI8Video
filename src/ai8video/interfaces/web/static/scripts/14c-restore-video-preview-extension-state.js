@@ -12,6 +12,7 @@
       const renderSavedFrame = async () => {
         video.pause();
         await prepareVideoExtensionPreview(userGeneratedKey, button, savedState);
+        if (savedState.batchMode === true) return;
         if (restoredVideoUrl) {
           setVideoPreviewExtensionVideo(restoredVideoUrl, restoredVideoKey);
           return;

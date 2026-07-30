@@ -32,7 +32,10 @@ from ai8video.media import tts_timeline_review
 from ai8video.media import timeline_boundary
 from ai8video.media import tts_waveform
 from ai8video.media import video_timeline_review
+from ai8video.media.background_music_track import build_hidden_bgm_timeline
+from ai8video.media.merged_preview_tracks import merged_tts_chunks, merged_video_chunks
 from ai8video.media.motion import html_motion_review
+from ai8video.media.motion import html_motion_merge
 from ai8video.media.motion import hyperframes_overlay_renderer
 
 
@@ -444,6 +447,23 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("/api/user-generated-results/video-prompt/continue", source)
         self.assertIn("/api/user-generated-results/extension-video/generate", source)
         self.assertIn("async function prepareVideoExtensionPreview(userGeneratedKey, button, savedState = null, options = {})", source)
+        self.assertIn("if (mode === 'replace' && !savedState)", source)
+        self.assertIn("postVideoPrompt(key, undefined, 'original')", source)
+        self.assertIn("data-icon=\"regenerate\"", source)
+        self.assertIn(".video-preview-regenerate-button", source)
+        self.assertIn("width: 92px", source)
+        self.assertIn("#resultModalBody", source)
+        self.assertIn("padding: 4px", source)
+        self.assertIn("height: 36px", source)
+        self.assertIn("border: 1px solid rgba(77, 116, 255, 0.28)", source)
+        self.assertIn("#resultModal .result-notify-card.is-batch-selected", source)
+        self.assertIn("border-radius: 12px", source)
+        self.assertIn('id="videoPreviewStatus"', source)
+        self.assertIn("function setVideoPreviewHeaderStatus(message = '', tone = '')", source)
+        self.assertIn("'已生成替换视频' : '已生成延长视频'", source)
+        self.assertNotIn("setVideoPreviewButtonLabel(activeButton, mode === 'replace' ? '已生成替换视频'", source)
+        self.assertIn("fontawesome-free-7.3.1-desktop/svgs-full/solid/arrows-rotate.svg", source)
+        self.assertIn("fontawesome-free-7.3.1-desktop/svgs-full/solid/arrow-right-long.svg", source)
         self.assertIn("VIDEO_PREVIEW_EXTENSION_STORAGE_KEY", source)
         self.assertIn("async function saveVideoPreviewExtensionFrame(userGeneratedKey, frameTime)", source)
         self.assertIn("fetch('/api/user-generated-results/extension-frame'", source)
@@ -453,7 +473,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("videoOutputTimeToSourceTime(previewTime)", source)
         self.assertIn("alt=\"${mode === 'replace' ? '原视频首帧' : '已确认截图'}\"", source)
         self.assertIn("video.pause()", source)
-        self.assertIn("mode === 'replace' ? '重新生成' : '重新截取'", source)
+        self.assertIn("mode === 'replace' ? '重新生成' : '延长'", source)
         self.assertIn(".video-preview-merge-control", source)
         self.assertIn("data-video-preview-merge disabled>待生成", source)
         self.assertIn("function videoPreviewExtensionActionLabel(mode, phase = 'ready')", source)
@@ -1074,6 +1094,99 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn('function handleHtmlMotionChunkClick(event, element, duration)', source)
         self.assertIn('splitHtmlMotionTimelineAtPointer(event, element, duration)', source)
         self.assertNotIn('剪刀可切块；关闭剪刀后', source)
+
+    def test_html_motion_timeline_supports_marquee_and_batch_actions(self) -> None:
+        source = read_static_source()
+
+        self.assertIn('function bindHtmlMotionMarqueeSelection(lane)', source)
+        self.assertIn('data-video-preview-html-motion-marquee', source)
+        self.assertIn('function currentHtmlMotionSelectedChunkIndexes()', source)
+        self.assertIn('excludeIndexes: selectedIndexes', source)
+        self.assertIn('已移动 ${selectedItems.length} 个动效片段', source)
+
+    def test_tts_timeline_supports_marquee_and_batch_selection(self) -> None:
+        source = read_static_source()
+
+        self.assertIn('function bindTtsMarqueeSelection(lane)', source)
+        self.assertIn('data-video-preview-tts-marquee', source)
+        self.assertIn('function currentTtsSelectedChunkIndexes()', source)
+        self.assertIn('setTtsSelectedChunkIndexes([...initial, ...hits])', source)
+        self.assertIn('删除 ${selectedIndexes.length} 个配音块', source)
+        self.assertIn('excludeIndexes: selectedIndexes', source)
+        self.assertIn('已移动 ${selectedItems.length} 个配音块', source)
+        self.assertIn('const selectedIndexes = new Set(currentTtsSelectedChunkIndexes());', source)
+        self.assertIn('state.videoPreviewModal.ttsSelectedChunkIndexes = selectedIndexes;', source)
+        self.assertIn("lane.addEventListener('click', (event) => {", source)
+        self.assertIn("lane.addEventListener('lostpointercapture', end);", source)
+        self.assertIn('delete element.dataset.suppressTtsClick;', source)
+        self.assertIn("'/api/user-generated-results/delete-html-motion-review'", source)
+        self.assertIn('selected.length === chunks.length', source)
+
+    def test_timeline_ruler_click_moves_shared_playhead(self) -> None:
+        source = read_static_source()
+
+        self.assertIn("querySelector('[data-video-preview-timeline-ruler]')?.addEventListener('click', seekAtClick)", source)
+        self.assertIn('timelineSecondsAtPointer(event, lane, duration)', source)
+        self.assertIn('syncVideoTimelinePlayhead();', source)
+        self.assertIn('syncTtsTimelinePlayhead();', source)
+        self.assertIn('syncHtmlMotionTimelinePlayhead();', source)
+        self.assertIn("if (element.dataset.suppressTtsClick === 'true')", source)
+        self.assertIn("element.dataset.suppressTtsClick = 'true';", source)
+
+    def test_frame_repair_requires_prompt_but_not_optional_reference_image(self) -> None:
+        source = read_static_source()
+
+        self.assertIn("data-frame-repair-start ${customPrompt.trim() && !busy ? '' : 'disabled'}", source)
+        self.assertIn("${busy ? '视频生成中' : '开始修图'}", source)
+        self.assertIn('if (!frameKey || !customPrompt || button.disabled) return;', source)
+        self.assertIn('if (!frames.length || !customPrompt || button.disabled) return;', source)
+        self.assertNotIn('if (!frameKey || !referencePaths.length || button.disabled) return;', source)
+        self.assertIn("queued: '排队中'", source)
+        self.assertIn("percent && !/\\d+(?:\\.\\d+)?%/.test(status)", source)
+
+    def test_extension_batch_status_sits_below_center_spinner(self) -> None:
+        source = read_static_source()
+
+        self.assertIn('top: calc(50% + 22px);', source)
+        self.assertIn('transform: translateX(-50%);', source)
+
+    def test_extension_batch_refresh_resumes_existing_polling(self) -> None:
+        source = read_static_source()
+
+        self.assertIn('function resumeVideoPreviewExtensionBatchPolling(stageGrid)', source)
+        self.assertIn('void resumeVideoPreviewExtensionBatchPolling(stageGrid);', source)
+        self.assertIn('if (!isPendingBatchVideoFrame(frame)) return;', source)
+        self.assertNotIn("return { ...frame, status: 'completed', progressLabel: '' };", source)
+
+    def test_extension_batch_restore_never_mounts_stale_single_video(self) -> None:
+        source = read_static_source()
+
+        self.assertIn("...(batchMode ? { rightVideoKey: '', rightVideoUrl: '' } : {}),", source)
+        self.assertIn('if (savedState.batchMode === true) return;', source)
+
+    def test_extension_batch_restore_recovers_lost_pending_status(self) -> None:
+        source = read_static_source()
+
+        self.assertIn('function isPendingBatchVideoFrame(frame)', source)
+        self.assertIn("frame?.videoSessionId && !frame?.videoUrl && frame?.status !== 'failed'", source)
+        self.assertIn("{ ...frame, status: 'video-generating', progressLabel: frame.progressLabel || '视频生成中' }", source)
+
+    def test_replace_action_does_not_cover_batch_checkbox(self) -> None:
+        source = read_static_source()
+
+        self.assertIn('.video-preview-merge-control.video-preview-replace-control', source)
+        self.assertIn('left: calc(50% - 28px);', source)
+
+    def test_batch_refresh_preserves_only_explicit_selection(self) -> None:
+        source = read_static_source()
+
+        self.assertIn('const selectedIndex = readVideoPreviewExtensionBatchFrames(stageGrid).findIndex((frame) => frame.selected);', source)
+        self.assertIn('selected: selectedIndex >= 0 && index === selectedIndex,', source)
+        self.assertNotIn('selected: frame.frameKey === selectedKey,', source)
+        self.assertIn('fontawesome-free-7.3.1-desktop/svgs-full/solid/check.svg', source)
+        self.assertIn('padding: 0;', source)
+        self.assertIn('width: 14px;', source)
+        self.assertIn('height: 14px;', source)
 
     def test_html_motion_timeline_drawer_animates_open_and_closed(self) -> None:
         source = read_static_source()
@@ -2693,7 +2806,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         )
 
         request_backup = ai8video_web.request
-        ai8video_web.request = SimpleNamespace(method="POST")
+        ai8video_web.request = SimpleNamespace(method="POST", json={})
         try:
             body = ai8video_web.api_background_music_clear()
         finally:
@@ -5590,13 +5703,35 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 ai8video_web._polish_tts_narration_text("旧台词。")
 
     def test_expand_tts_narration_uses_text_model(self) -> None:
+        prompts: list[str] = []
         responses = iter(("扩写后的新台词，节奏更完整。", '{"passes":true,"issues":[],"approved_text":"扩写后的新台词，节奏更完整。"}'))
-        with patch.object(ai8video_web, "build_openai_compat_llm", return_value=lambda prompt: next(responses)) as build_llm:
+        with patch.object(ai8video_web, "build_openai_compat_llm", return_value=lambda prompt: prompts.append(prompt) or next(responses)) as build_llm:
             body = ai8video_web._expand_tts_narration_text("旧台词。", 10)
 
         self.assertTrue(body["ok"])
         self.assertEqual(body["text"], "扩写后的新台词，节奏更完整")
+        self.assertEqual(body["targetChars"], 13)
+        self.assertIn("当前台词：3 字。本次目标：约 13 字", prompts[0])
         self.assertEqual(build_llm.call_count, 2)
+
+    def test_expand_tts_narration_targets_ten_more_chars_each_time(self) -> None:
+        prompts: list[str] = []
+        text = "这是一段刚好三十个字左右的当前台词内容用于验证连续扩写目标。"
+        responses = iter((text + "继续补充内容。", json.dumps({"passes": True, "issues": [], "approved_text": text + "继续补充内容。"}, ensure_ascii=False)))
+        with patch.object(ai8video_web, "build_openai_compat_llm", return_value=lambda prompt: prompts.append(prompt) or next(responses)):
+            body = ai8video_web._expand_tts_narration_text(text, 20)
+
+        current_chars = ai8video_web.narration_spoken_char_count(text)
+        self.assertEqual(body["targetChars"], current_chars + 10)
+        self.assertIn(f"当前台词：{current_chars} 字。本次目标：约 {current_chars + 10} 字", prompts[0])
+
+    def test_tts_character_counts_ignore_punctuation(self) -> None:
+        responses = iter(("你好，世界！", '{"passes":true,"issues":[],"approved_text":"你好，世界！"}'))
+        with patch.object(ai8video_web, "build_openai_compat_llm", return_value=lambda prompt: next(responses)):
+            body = ai8video_web._expand_tts_narration_text("你好，世界！", 10)
+
+        self.assertEqual(body["textChars"], 4)
+        self.assertEqual(body["targetChars"], 14)
 
     def test_tts_transform_reviewer_rejects_text_over_duration_limit(self) -> None:
         long_text = "这是明显超过十秒自然口播容量的台词" * 8
@@ -5719,6 +5854,14 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             ai8video_web,
             "_tts_narration_text_for_user_generated_video",
             side_effect=lambda key, path: (path.stem, {}),
+        ), patch.object(
+            ai8video_web,
+            "save_video_timeline_review",
+            return_value={"ok": True},
+        ), patch.object(
+            ai8video_web,
+            "merge_html_motion_reviews",
+            return_value={"ok": True, "reviewReady": False},
         ):
             body = ai8video_web._batch_merge_user_generated_videos(["video/second.mp4", "video/first.mp4"])
 
@@ -5738,6 +5881,86 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         merged = result_root / body["userGeneratedKey"]
         self.assertEqual(merged.read_bytes(), b"merged")
         self.assertEqual((result_root / body["previewKey"]).read_bytes(), b"second-preview")
+
+    def test_hidden_bgm_timeline_continues_same_music_and_resets_different_music(self) -> None:
+        first_music = self.root / "first.mp3"
+        second_music = self.root / "second.mp3"
+        first_music.write_bytes(b"first")
+        second_music.write_bytes(b"second")
+        tracks = [
+            {"musicPath": str(first_music), "musicName": "first", "volume": 0.3},
+            {"musicPath": str(first_music), "musicName": "first", "volume": 0.3},
+            {"musicPath": str(second_music), "musicName": "second", "volume": 0.4},
+        ]
+
+        timeline = build_hidden_bgm_timeline(tracks, [8.0, 7.0, 6.0])
+
+        self.assertEqual([item["startSeconds"] for item in timeline], [0.0, 8.0, 15.0])
+        self.assertEqual([item["sourceOffsetSeconds"] for item in timeline], [0.0, 8.0, 0.0])
+
+    def test_replaced_bgm_track_uses_one_full_duration_segment(self) -> None:
+        result_root = self.root / "用户生成结果"
+        video = result_root / "video" / "merged.mp4"
+        music = self.root / "music.mp3"
+        video.parent.mkdir(parents=True)
+        video.write_bytes(b"video")
+        music.write_bytes(b"music")
+        with patch.object(ai8video_web, "ensure_user_generated_result_dir", return_value=result_root), patch.object(
+            ai8video_web, "track_duration", return_value=24.5,
+        ):
+            ai8video_web._replace_user_generated_background_music_track(
+                "video/merged.mp4",
+                {"enabled": True, "path": str(music), "name": "new.mp3", "volume": 0.4},
+            )
+
+        metadata = json.loads(
+            (result_root / ".restored-meta" / "video" / "merged.mp4.json").read_text(encoding="utf-8")
+        )
+        segments = metadata["backgroundMusicTrack"]["segments"]
+        self.assertEqual(len(segments), 1)
+        self.assertEqual(segments[0]["startSeconds"], 0.0)
+        self.assertEqual(segments[0]["durationSeconds"], 24.5)
+
+    def test_batch_merge_rejects_legacy_baked_background_music(self) -> None:
+        with self.assertRaisesRegex(ValueError, "缺少独立背景音乐轨道"):
+            ai8video_web._reject_legacy_baked_music([{"legacyBakedMusic": True}, {}])
+
+    def test_merged_preview_tracks_shift_each_source_to_merged_timeline(self) -> None:
+        video_chunks = merged_video_chunks([8.0, 7.0])
+        statuses = [
+            {"audioDurationSeconds": 8.5, "timelineChunks": [
+                {"sourceStartSeconds": 1.0, "sourceEndSeconds": 3.0, "startSeconds": 0.5},
+            ]},
+            {"audioDurationSeconds": 7.5, "timelineChunks": [
+                {"sourceStartSeconds": 0.0, "sourceEndSeconds": 2.0, "startSeconds": 1.0},
+            ]},
+        ]
+
+        tts_chunks = merged_tts_chunks(statuses, [8.0, 7.0])
+
+        self.assertEqual(video_chunks, [
+            {"sourceStartSeconds": 0.0, "sourceEndSeconds": 8.0},
+            {"sourceStartSeconds": 8.0, "sourceEndSeconds": 15.0},
+        ])
+        self.assertEqual(tts_chunks[1]["sourceStartSeconds"], 8.5)
+        self.assertEqual(tts_chunks[1]["startSeconds"], 9.0)
+
+    def test_merged_html_motion_offsets_scenes_and_renames_dom_ids(self) -> None:
+        artifact = {"scenes": [{
+            "start": 1.0,
+            "end": 2.5,
+            "ids": ["scene-title"],
+            "html": '<div id="scene-title"></div>',
+            "css": "#scene-title{opacity:1}",
+            "animations": [{"target": "#scene-title"}],
+        }]}
+
+        scenes = html_motion_merge._offset_scenes(artifact, 1, 8.0)
+
+        self.assertEqual(scenes[0]["start"], 9.0)
+        self.assertEqual(scenes[0]["end"], 10.5)
+        self.assertIn("m2-1-scene-title", scenes[0]["html"])
+        self.assertEqual(scenes[0]["animations"][0]["target"], "#m2-1-scene-title")
 
     def test_batch_merge_restores_sources_when_install_fails(self) -> None:
         result_root = self.root / "用户生成结果"
@@ -5773,6 +5996,14 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             ai8video_web,
             "_tts_narration_text_for_user_generated_video",
             return_value=("", {}),
+        ), patch.object(
+            ai8video_web,
+            "save_video_timeline_review",
+            return_value={"ok": True},
+        ), patch.object(
+            ai8video_web,
+            "merge_html_motion_reviews",
+            return_value={"ok": True, "reviewReady": False},
         ), patch.object(
             ai8video_web,
             "generate_preview_for_video",
@@ -6313,7 +6544,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("finalize: finalizeVideoChunkStartTrim", source)
         self.assertIn("videoOutputTimeToSourceTime(previewTime)", source)
         self.assertIn('data-video-preview-action="regenerate-video"', source)
-        self.assertIn("mode === 'replace' ? '重新生成' : '重新截取'", source)
+        self.assertIn("videoPreviewButtonInnerHtml('regenerate', '重新生成')", source)
         self.assertIn("videoPreviewExtensionMergeMarkup(mode, savedState)", source)
         self.assertIn("'/api/user-generated-results/replace'", source)
         self.assertIn("if (data?.needsLoad === true) return;", source)

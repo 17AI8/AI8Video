@@ -434,6 +434,10 @@
       box-shadow: none;
     }
 
+    .video-preview-merge-control.video-preview-replace-control {
+      left: calc(50% - 28px);
+    }
+
     .video-preview-merge-control button {
       min-width: 76px;
       min-height: 32px;
