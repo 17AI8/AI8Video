@@ -90,6 +90,15 @@ from ai8video.generation.generation_mode import (
     generation_mode_status,
     update_generation_mode,
 )
+from ai8video.generation.manual_tail_frame_gate import (
+    continue_manual_tail_frame,
+    refresh_manual_tail_frame,
+    resolve_manual_tail_frame_preview,
+)
+from ai8video.generation.recovered_tail_frame_resume import (
+    refresh_recovered_tail_frame_resume,
+    take_recovered_tail_frame_resume,
+)
 from ai8video.media.motion.html_motion_overlay import (
     HTML_MOTION_DIR,
     apply_html_motion_overlay,
@@ -142,6 +151,7 @@ from ai8video.generation.generation_progress import (
     settle_stale_first_frame_progress,
     start_generation_progress,
     stop_unsubmitted_generation_progress,
+    update_manual_tail_frame_preview,
 )
 from ai8video.generation.generation_task_runner import GenerationTask
 from ai8video.generation.tail_frame_chaining import append_tail_frame_chain_prompt
@@ -1319,10 +1329,148 @@ def api_generation_mode():
         "smart_split": bool(payload.get("smartSplit")),
         "confirm_smart_split": bool(payload.get("confirmSmartSplit")),
         "tail_frame_chaining": bool(payload.get("tailFrameChaining")),
+        "tail_frame_chaining_mode": str(payload.get("tailFrameChainingMode") or "auto"),
     }
     if "manualVideoCount" in payload:
         values["manual_video_count"] = payload.get("manualVideoCount")
     return update_generation_mode(**values)
+
+
+@app.route("/api/tail-frame-chain/continue", method=["POST", "OPTIONS"])
+def api_tail_frame_chain_continue():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    try:
+        return continue_manual_tail_frame(
+            str(payload.get("sessionId") or "").strip(),
+            str(payload.get("generationBatchId") or "").strip(),
+            int(payload.get("videoIndex") or 0),
+        )
+    except LookupError:
+        try:
+            return _start_recovered_tail_frame_resume(payload)
+        except (ValueError, LookupError) as exc:
+            response.status = 409
+            return {"ok": False, "error": str(exc)}
+
+
+@app.route("/api/tail-frame-chain/refresh", method=["POST", "OPTIONS"])
+def api_tail_frame_chain_refresh():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    try:
+        result = refresh_manual_tail_frame(
+            str(payload.get("sessionId") or "").strip(),
+            str(payload.get("generationBatchId") or "").strip(),
+            int(payload.get("videoIndex") or 0),
+        )
+    except LookupError:
+        try:
+            config = AI8VideoConfig.from_env()
+            result = refresh_recovered_tail_frame_resume(
+                str(payload.get("sessionId") or "").strip(),
+                str(payload.get("generationBatchId") or "").strip(),
+                int(payload.get("videoIndex") or 0),
+                JsonlAssetStore(config.asset_store_path).read_all(),
+            )
+        except (ValueError, LookupError) as exc:
+            response.status = 409
+            return {"ok": False, "error": str(exc)}
+        except (FileNotFoundError, RuntimeError) as exc:
+            response.status = 400
+            return {"ok": False, "error": str(exc)}
+    if isinstance(result, dict) and result.get("ok"):
+        update_manual_tail_frame_preview(
+            result.get("sessionId"),
+            int(result.get("videoIndex") or 0),
+            str(result.get("tailFramePreviewUrl") or ""),
+        )
+    return result
+
+
+def _start_recovered_tail_frame_resume(payload: dict) -> dict:
+    session_id = str(payload.get("sessionId") or "").strip()
+    source_batch_id = str(payload.get("generationBatchId") or "").strip()
+    video_index = int(payload.get("videoIndex") or 0)
+    checkpoint = take_recovered_tail_frame_resume(session_id, source_batch_id, video_index)
+    batch_id = create_generation_batch_id(session_id)
+    clear_generation_progress(session_id)
+    claim_generation_batch(session_id, batch_id)
+    start_generation_progress(session_id, checkpoint.videos, generation_batch_id=batch_id)
+    context = {"checkpoint": checkpoint, "sessionId": session_id}
+    task = start_external_generation_task(
+        session_id, batch_id, _run_recovered_tail_frame_resume_task, args=(context,)
+    )
+    record_generation_execution(
+        session_id=session_id,
+        generation_batch_id=batch_id,
+        task_type="recovered_tail_frame_resume",
+        execution_state="queued",
+        request_snapshot={"sourceBatchId": source_batch_id, "videoIndex": video_index},
+    )
+    response.status = 202
+    return {
+        "ok": True,
+        "status": "pending",
+        "generationBatchId": batch_id,
+        "videoIndex": video_index,
+        "workerId": task.worker_id,
+        "recoveredResume": True,
+    }
+
+
+def _run_recovered_tail_frame_resume_task(task: GenerationTask, context: dict[str, Any]) -> None:
+    session_id = str(context["sessionId"])
+    checkpoint = context["checkpoint"]
+    batch_token = set_current_generation_batch_id(task.generation_batch_id)
+    session_token = set_current_generation_session_id(session_id)
+    try:
+        record_generation_execution(
+            session_id=session_id,
+            generation_batch_id=task.generation_batch_id,
+            task_type="recovered_tail_frame_resume",
+            execution_state="running",
+            worker_id=task.worker_id,
+        )
+        result = AI8VideoPipeline().run_planned_request(
+            checkpoint.request, checkpoint.videos, progress_session_id=session_id
+        )
+        record_generation_execution(
+            session_id=session_id,
+            generation_batch_id=task.generation_batch_id,
+            task_type="recovered_tail_frame_resume",
+            execution_state="completed",
+            worker_id=task.worker_id,
+            result_snapshot=result.to_dict(),
+        )
+    except Exception as exc:
+        fail_generation_progress(session_id, exc)
+        record_generation_execution(
+            session_id=session_id,
+            generation_batch_id=task.generation_batch_id,
+            task_type="recovered_tail_frame_resume",
+            execution_state="failed",
+            worker_id=task.worker_id,
+            error=exc,
+        )
+    finally:
+        reset_current_generation_session_id(session_token)
+        reset_current_generation_batch_id(batch_token)
+
+
+@app.route("/tail-frame-previews/<generation_batch_id>/<filename>", method=["GET", "OPTIONS"])
+def manual_tail_frame_preview(generation_batch_id: str, filename: str):
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    try:
+        target = resolve_manual_tail_frame_preview(generation_batch_id, filename)
+    except FileNotFoundError as exc:
+        response.status = 404
+        return {"ok": False, "error": str(exc)}
+    response.set_header("Cache-Control", "no-store")
+    return static_file(target.name, root=str(target.parent))
 
 
 @app.route("/api/html-motion-overlay", method=["GET", "POST", "OPTIONS"])
@@ -7040,6 +7188,11 @@ def api_retry_failed_generation():
             "videoIndex": video.index,
         }
     except (ValueError, RuntimeError) as exc:
+        if str(exc) == "未找到当前会话的视频失败记录，无法重试":
+            try:
+                return _start_recovered_tail_frame_resume(payload)
+            except (ValueError, LookupError):
+                pass
         if retry_batch_id:
             fail_generation_progress(session_id, exc)
             record_generation_execution(
@@ -7171,6 +7324,9 @@ def _build_retry_inputs(
             bool(settings.get("tailFrameChaining"))
             if tail_frame_chaining is None
             else tail_frame_chaining
+        ),
+        tail_frame_chaining_mode=(
+            "manual" if settings.get("tailFrameChainingMode") == "manual" else "auto"
         ),
         html_motion_overlay_enabled=bool(settings.get("htmlMotionOverlayEnabled")),
     )
@@ -7900,7 +8056,7 @@ def _refresh_generation_progress_summary(body: dict) -> None:
     if not isinstance(items, list):
         return
     running_statuses = {"submitting", "preparing_first_frame", "submitted", "polling", "archiving", "planning"}
-    waiting_statuses = {"pending_submission", "planning"}
+    waiting_statuses = {"pending_submission", "planning", "awaiting_tail_frame_continue"}
     progress["submittedCount"] = sum(1 for item in items if isinstance(item, dict) and _has_video_submission(item))
     progress["runningCount"] = sum(
         1 for item in items
@@ -7936,6 +8092,18 @@ def _refresh_generation_progress_summary(body: dict) -> None:
     failed_count = int(progress.get("failedCount") or 0)
     deleted_count = int(progress.get("deletedCount") or 0)
     skipped_count = int(progress.get("skippedCount") or 0)
+    manual_wait_count = sum(
+        1
+        for item in items
+        if isinstance(item, dict)
+        and str(item.get("status") or "").strip() == "awaiting_tail_frame_continue"
+    )
+    if manual_wait_count:
+        progress["status"] = "active"
+        body["status"] = "pending"
+        body["phase"] = "awaiting_tail_frame_continue"
+        body["statusLabel"] = "尾帧已就绪，等待点击继续"
+        return
     if running_count:
         progress["status"] = "active"
         body["status"] = "pending"

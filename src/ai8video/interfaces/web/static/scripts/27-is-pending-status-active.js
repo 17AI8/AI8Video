@@ -20,10 +20,12 @@
 
     function isSessionPending(session) {
       const last = session?.messages?.at?.(-1);
-      if (!(last && last.role === 'assistant' && isPendingPayload(last.payload))) return false;
+      if (!(last && last.role === 'assistant')) return false;
       if (isConversationContinuationClosed(last.payload)) return false;
-      if (last.payload?.pendingStatus && !isPendingStatusActive(last.payload.pendingStatus)) return false;
-      return true;
+      if (last.payload?.pendingStatus) {
+        return isPendingStatusActive(last.payload.pendingStatus);
+      }
+      return isPendingPayload(last.payload);
     }
 
     function isTerminalPendingPayloadAwaitingReply(payload) {
@@ -39,6 +41,15 @@
     function isSessionAwaitingTerminalReply(session) {
       const last = session?.messages?.at?.(-1);
       return !!(last && last.role === 'assistant' && isTerminalPendingPayloadAwaitingReply(last.payload));
+    }
+
+    function isSessionRecoverableTailFrameFailure(session) {
+      const last = session?.messages?.at?.(-1);
+      const items = last?.payload?.pendingStatus?.generationProgress?.items;
+      if (!Array.isArray(items)) return false;
+      return items.some((item) => (
+        String(item?.error || item?.statusLabel || '').includes('前序视频提交失败')
+      ));
     }
 
     function isSessionCollecting(session) {
@@ -89,9 +100,12 @@
     function ensurePendingPolls() {
       const activePendingIds = new Set();
       state.sessions.forEach((session) => {
-        if (!isSessionPending(session) && !isSessionAwaitingTerminalReply(session)) return;
+        const recoverableTailFrame = isSessionRecoverableTailFrameFailure(session);
+        if (!isSessionPending(session) && !isSessionAwaitingTerminalReply(session) && !recoverableTailFrame) return;
         activePendingIds.add(session.id);
         if (!pendingPollTimers.has(session.id) && !pendingPollInflight.has(session.id)) {
+          if (recoverableTailFrame && tailFrameRecoveryPollAttempted.has(session.id)) return;
+          if (recoverableTailFrame) tailFrameRecoveryPollAttempted.add(session.id);
           schedulePendingPoll(session.id, 1200);
         }
       });
@@ -131,8 +145,7 @@
       collectingSyncSeen.set(sessionId, signature);
       collectingSyncInflight.add(sessionId);
       try {
-        const res = await fetch(buildChatStatusUrl(sessionId, session));
-        const data = await res.json();
+        const { res, data } = await fetchChatStatusWithBatchFallback(sessionId, session);
         if (!res.ok) {
           throw new Error(data.error || '状态查询失败');
         }
@@ -188,14 +201,17 @@
     async function pollPendingSession(sessionId) {
       if (pendingPollInflight.has(sessionId)) return;
       const session = state.sessions.find((item) => item.id === sessionId);
-      if (!isSessionPending(session) && !isSessionAwaitingTerminalReply(session)) {
+      if (
+        !isSessionPending(session)
+        && !isSessionAwaitingTerminalReply(session)
+        && !isSessionRecoverableTailFrameFailure(session)
+      ) {
         clearPendingPoll(sessionId);
         return;
       }
       pendingPollInflight.add(sessionId);
       try {
-        const res = await fetch(buildChatStatusUrl(sessionId, session));
-        const data = await res.json();
+        const { res, data } = await fetchChatStatusWithBatchFallback(sessionId, session);
         if (!res.ok) {
           throw new Error(data.error || '状态查询失败');
         }
@@ -205,7 +221,11 @@
           clearPendingPoll(sessionId);
           return;
         }
-        if (!isSessionPending(targetSession) && !isSessionAwaitingTerminalReply(targetSession)) {
+        if (
+          !isSessionPending(targetSession)
+          && !isSessionAwaitingTerminalReply(targetSession)
+          && !isSessionRecoverableTailFrameFailure(targetSession)
+        ) {
           clearPendingPoll(sessionId);
           return;
         }
@@ -427,12 +447,25 @@
 	      };
     }
 
-    function buildChatStatusUrl(sessionId, session) {
+    async function fetchChatStatusWithBatchFallback(sessionId, session, options = {}) {
+      const preferLatestBatch = options.preferLatestBatch === true;
+      let res = await fetch(buildChatStatusUrl(sessionId, session, {
+        omitGenerationBatchId: preferLatestBatch,
+      }));
+      let data = await res.json().catch(() => ({}));
+      if (!preferLatestBatch && !res.ok && data?.phase === 'unknown_generation_batch') {
+        res = await fetch(buildChatStatusUrl(sessionId, session, { omitGenerationBatchId: true }));
+        data = await res.json().catch(() => ({}));
+      }
+      return { res, data };
+    }
+
+    function buildChatStatusUrl(sessionId, session, options = {}) {
       const params = new URLSearchParams({ sessionId });
       const pendingPayload = session?.messages?.at?.(-1)?.payload || {};
       const pendingStatus = pendingPayload?.pendingStatus || {};
       const generationBatchId = extractGenerationBatchId(pendingPayload);
-      if (generationBatchId) {
+      if (generationBatchId && options.omitGenerationBatchId !== true) {
         params.set('generationBatchId', generationBatchId);
       }
       const videoCount = Number(

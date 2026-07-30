@@ -44,6 +44,10 @@
       }
       const button = event.target?.closest?.('[data-retry-generation-video]');
       if (button) retryFailedGenerationVideo(button);
+      const continueButton = event.target?.closest?.('[data-tail-frame-continue]');
+      if (continueButton) handleManualTailFrameAction(continueButton, 'continue');
+      const refreshButton = event.target?.closest?.('[data-tail-frame-refresh]');
+      if (refreshButton) handleManualTailFrameAction(refreshButton, 'refresh');
     });
 
     els.messages?.addEventListener('click', (event) => {
@@ -67,6 +71,10 @@
       }
       const button = event.target?.closest?.('[data-retry-generation-video]');
       if (button) retryFailedGenerationVideo(button);
+      const continueButton = event.target?.closest?.('[data-tail-frame-continue]');
+      if (continueButton) handleManualTailFrameAction(continueButton, 'continue');
+      const refreshButton = event.target?.closest?.('[data-tail-frame-refresh]');
+      if (refreshButton) handleManualTailFrameAction(refreshButton, 'refresh');
     });
 
     document.getElementById('resultVideoPromptCloseButton')?.addEventListener('click', closeResultVideoPromptModal);
@@ -271,7 +279,8 @@
       const data = await res.json();
       state.userGeneratedResults = data.items || [];
       await refreshRecycleBin();
-      if (scrubMissingUserGeneratedProgressFromSessions()) {
+      const restored = restoreSucceededProgressFromUserResults();
+      if (scrubMissingUserGeneratedProgressFromSessions() || restored) {
         persistSessions();
       }
     }

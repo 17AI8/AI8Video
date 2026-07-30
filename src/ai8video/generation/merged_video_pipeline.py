@@ -254,11 +254,13 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
                     if request.tail_frame_chaining and position < len(ordered_videos) - 1:
                         if not tail_frame_chain_result_succeeded(result[0], result[1], result[2]):
                             break
-                        active_request = build_next_tail_frame_request(
-                            active_request,
-                            result[0],
-                            result[2],
-                            Path(tail_dir) / f"video-{video.index}-tail.png",
+                        active_request = self._prepare_next_tail_frame_request(
+                            active_request=active_request,
+                            previous_job=result[0],
+                            previous_archive=result[2],
+                            next_video=ordered_videos[position + 1],
+                            progress_session_id=progress_session_id,
+                            automatic_output_path=Path(tail_dir) / f"video-{video.index}-tail.png",
                         )
 
         jobs = [item[0] for item in results]

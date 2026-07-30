@@ -347,6 +347,59 @@ def mark_job_succeeded(session_id: str | None, job: QuickVideoJob, asset_record:
     )
 
 
+def mark_manual_tail_frame_waiting(
+    session_id: str | None,
+    video: VideoPrompt,
+    *,
+    generation_batch_id: str,
+    preview_url: str,
+) -> None:
+    _update_item(
+        session_id,
+        video.index,
+        {
+            "title": video.title or f"视频 {video.index}",
+            "videoPrompt": video.prompt,
+            "status": "awaiting_tail_frame_continue",
+            "statusLabel": "尾帧已传入，等待继续",
+            "generationBatchId": generation_batch_id,
+            "tailFramePreviewUrl": preview_url,
+            "_clearProviderState": True,
+        },
+    )
+
+
+def mark_manual_tail_frame_preparing(session_id: str | None, video: VideoPrompt) -> None:
+    _update_item(
+        session_id,
+        video.index,
+        {
+            "title": video.title or f"视频 {video.index}",
+            "videoPrompt": video.prompt,
+            "status": "preparing_tail_frame",
+            "statusLabel": "正在提取上一条视频尾帧",
+            "jobId": None,
+            "_clearProviderState": True,
+        },
+    )
+
+
+def update_manual_tail_frame_preview(
+    session_id: str | None,
+    video_index: int,
+    preview_url: str,
+) -> None:
+    _update_item(
+        session_id,
+        video_index,
+        {
+            "status": "awaiting_tail_frame_continue",
+            "statusLabel": "尾帧已刷新，等待继续",
+            "tailFramePreviewUrl": preview_url,
+        },
+    )
+
+
 def mark_job_failed(
     session_id: str | None,
     video_index: int,
@@ -1274,7 +1327,9 @@ def _update_segment_status(
 
 def _with_counts(progress: dict[str, Any]) -> dict[str, Any]:
     items = progress.get("items") or []
-    running_statuses = {"submitting", "preparing_first_frame", "submitted", "polling", "archiving"}
+    running_statuses = {
+        "submitting", "preparing_first_frame", "preparing_tail_frame", "submitted", "polling", "archiving"
+    }
     progress["submittedCount"] = sum(1 for item in items if _has_video_submission(item))
     progress["runningCount"] = sum(1 for item in items if item.get("status") in running_statuses)
     progress["postProcessingCount"] = sum(1 for item in items if item.get("status") == "archiving")

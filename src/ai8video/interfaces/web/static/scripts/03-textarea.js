@@ -30,10 +30,12 @@
     els.smartSplitDrawer?.addEventListener('change', async (event) => {
       const confirmToggle = event.target.closest('[data-smart-split-confirm-toggle]');
       const tailFrameToggle = event.target.closest('[data-tail-frame-chaining-toggle]');
-      if (!confirmToggle && !tailFrameToggle) return;
+      const tailFrameMode = event.target.closest('[data-tail-frame-chaining-mode]');
+      if (!confirmToggle && !tailFrameToggle && !tailFrameMode) return;
       await saveGenerationMode({
         confirmSmartSplit: confirmToggle ? !!confirmToggle.checked : !!state.generationMode.confirmSmartSplit,
         tailFrameChaining: tailFrameToggle ? !!tailFrameToggle.checked : !!state.generationMode.tailFrameChaining,
+        tailFrameChainingMode: tailFrameMode ? tailFrameMode.value : state.generationMode.tailFrameChainingMode,
       });
     });
 

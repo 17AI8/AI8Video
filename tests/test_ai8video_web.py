@@ -1236,6 +1236,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             smart_split=False,
             confirm_smart_split=False,
             tail_frame_chaining=False,
+            tail_frame_chaining_mode="auto",
         )
         self.assertTrue(body["ok"])
         self.assertTrue(body["concurrentGeneration"])
@@ -5020,7 +5021,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("const hasAgentProgress = !!renderedPendingStatus?.generationProgress;", html)
         self.assertIn("if (payload.meta?.operation === 'pending' || hasAgentProgress)", html)
         self.assertIn("if (isGeneratedResult && summary && !hasAgentProgress)", html)
-        self.assertIn("const submittingCount = countStatuses(new Set(['preparing_first_frame', 'submitting']));", html)
+        self.assertIn("const submittingCount = countStatuses(new Set(['preparing_first_frame', 'preparing_tail_frame', 'submitting']));", html)
         self.assertIn("const generatingCount = countStatuses(new Set(['submitted', 'polling']));", html)
         self.assertIn("status === 'polling' && Number.isFinite(Number(event?.providerProgress))", html)
         self.assertIn("index === 0 && !['succeeded', 'completed'].includes(status)", html)
@@ -5058,12 +5059,12 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("operation: 'pending', continuationClosed: false", html)
         self.assertIn("last.payload.generationBatchId = generationBatchId;", html)
         self.assertIn("schedulePendingPoll(sessionId, 200);", html)
-        self.assertIn("async function reconcilePendingSessionAfterReload(session)", html)
-        self.assertIn("if (isPendingPayload(last.payload) && !isConversationContinuationClosed(last.payload))", html)
+        self.assertIn("async function reconcilePendingSessionAfterReload(session, targetMessage = null, statusMessage = null)", html)
+        self.assertIn("&& !isConversationContinuationClosed(message.payload)", html)
         self.assertIn("function mergeGenerationProgressSnapshot(previousProgress = {}, nextProgress = {})", html)
         self.assertIn("function mergeGenerationStatusPayload(payload = {}, data = {}, sessionId = '')", html)
         self.assertIn("continuationClosed: true", html)
-        self.assertIn("last.payload = mergeGenerationStatusPayload(last.payload, data, sessionId);", html)
+        self.assertIn("messageToUpdate.payload = mergeGenerationStatusPayload(messageToUpdate.payload, data, sessionId);", html)
         self.assertIn("pendingStatus.generationBatchId = String(data.generationBatchId).trim();", html)
         self.assertIn("tailFrameChaining: !!state.generationMode?.tailFrameChaining", html)
         self.assertLess(
@@ -6187,6 +6188,35 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 video_duration_seconds=10,
             )
 
+    def test_video_timeline_save_discards_stale_revision_before_conflict_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            root = Path(tempdir)
+            video_path = root / "source.mp4"
+            video_path.write_bytes(b"current-video")
+            relative_key = "batch/source.mp4"
+            review_root = root / "reviews"
+            review_dir = review_root / hashlib.sha256(relative_key.encode("utf-8")).hexdigest()[:32]
+            review_dir.mkdir(parents=True)
+            (review_dir / "review.json").write_text(json.dumps({
+                "revision": 4,
+                "pending": True,
+                "relativeKey": relative_key,
+                "sourceSignature": {"path": str(video_path), "sizeBytes": 1, "mtimeNs": 1},
+            }), encoding="utf-8")
+
+            with patch.object(video_timeline_review, "VIDEO_TIMELINE_REVIEW_ROOT", review_root), patch.object(
+                video_timeline_review, "_video_duration", return_value=8.0,
+            ):
+                review = video_timeline_review.save_video_timeline_review(
+                    video_path,
+                    relative_key,
+                    [{"sourceStartSeconds": 0, "sourceEndSeconds": 6.6}],
+                    expected_revision=0,
+                )
+
+            self.assertEqual(review["revision"], 1)
+            self.assertEqual(review["outputDurationSeconds"], 6.6)
+
     def test_timeline_left_trim_preserves_restore_start_bounds(self) -> None:
         video = video_timeline_review.normalize_video_timeline_chunks(
             [{
@@ -6287,6 +6317,9 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("videoPreviewExtensionMergeMarkup(mode, savedState)", source)
         self.assertIn("'/api/user-generated-results/replace'", source)
         self.assertIn("if (data?.needsLoad === true) return;", source)
+        self.assertIn("configureVideoTimeline(data.videoTimeline || {});", source)
+        self.assertIn("refreshVideoTimelineRevision(key)", source)
+        self.assertIn("requestVideoTimelinePreview(key, requestedChunks, options)", source)
         self.assertNotIn("state.videoPreviewModal.videoTimelineOutputDuration = 0;", source)
         self.assertIn("let videoPreviewBackdropPointerDown = false;", source)
         self.assertIn("videoPreviewBackdropPointerDown && event.target === els.videoPreviewModal", source)
@@ -7313,6 +7346,23 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn(".result-notify-play.terminal-placeholder[aria-hidden=\"true\"] span::before", html)
         self.assertIn(".result-notify-play.processing-placeholder[aria-hidden=\"true\"] span", html)
         self.assertIn("animation: none;", html)
+        self.assertIn("data-tail-frame-chaining-mode", html)
+        self.assertIn("awaiting_tail_frame_continue", html)
+        self.assertIn("data-tail-frame-continue", html)
+        self.assertIn("data-tail-frame-refresh", html)
+        self.assertIn("/api/tail-frame-chain/", html)
+        self.assertIn("function isSessionRecoverableTailFrameFailure(session)", html)
+        self.assertIn("tailFrameRecoveryPollAttempted", html)
+        self.assertEqual(html.count("${renderGenerationRetryButton(item)}"), 1)
+        self.assertIn("button.textContent = originalText;", html)
+        self.assertIn("preview.src = data.tailFramePreviewUrl;", html)
+        self.assertIn("manualTailFrameWait ? '等待继续' : '提交生成'", html)
+        self.assertIn("时间轴仍在被其他操作更新，请稍后再试", html)
+        self.assertIn("function fetchChatStatusWithBatchFallback(sessionId, session, options = {})", html)
+        self.assertIn("function restoreSucceededProgressFromUserResults()", html)
+        self.assertIn("data?.phase === 'unknown_generation_batch'", html)
+        self.assertIn("omitGenerationBatchId: true", html)
+        self.assertIn("尾帧已准备完成，点击继续后才会提交下一条视频。", html)
         self.assertIn("status: 'deleted'", html)
         self.assertIn("deletedCount: items.filter((item) => item?.status === 'deleted').length", html)
         self.assertIn("function scrubMissingUserGeneratedProgressFromSessions()", html)
@@ -7335,6 +7385,23 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertNotIn("已生成，文件已删除或未落盘", html)
         self.assertNotIn("deleted-placeholder", html)
         self.assertNotIn('<div class="result-notify-failed-mark" aria-hidden="true">×</div>', html)
+
+    def test_manual_tail_frame_wait_keeps_chat_status_pending(self) -> None:
+        body = {
+            "status": "pending",
+            "generationProgress": {
+                "items": [
+                    {"videoIndex": 1, "status": "succeeded"},
+                    {"videoIndex": 2, "status": "awaiting_tail_frame_continue"},
+                ]
+            },
+        }
+
+        ai8video_web._refresh_generation_progress_summary(body)
+
+        self.assertEqual(body["status"], "pending")
+        self.assertEqual(body["phase"], "awaiting_tail_frame_continue")
+        self.assertEqual(body["generationProgress"]["waitingCount"], 1)
 
     def test_static_brand_uses_project_png_assets(self) -> None:
         from PIL import Image

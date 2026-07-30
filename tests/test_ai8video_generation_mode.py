@@ -8,7 +8,8 @@ from unittest.mock import patch
 from ai8video.generation import generation_mode
 from ai8video.generation.pipeline import AI8VideoPipeline
 from ai8video.application.conversation_controller import AI8VideoConversationController
-from ai8video.core.models import VideoPrompt, ParsedRequest, PipelineResult, QuickVideoJob
+from ai8video.core.models import ArchivedAsset, VideoPrompt, ParsedRequest, PipelineResult, QuickVideoJob
+from ai8video.generation import manual_tail_frame_gate
 from ai8video.generation.tail_frame_chaining import (
     TAIL_FRAME_CHAIN_PROMPT_SUFFIX,
     append_tail_frame_chain_prompt,
@@ -86,6 +87,58 @@ class AI8VideoGenerationModeTest(unittest.TestCase):
                 self.assertTrue(status["tailFrameChaining"])
                 self.assertFalse(status["concurrentGeneration"])
                 self.assertTrue(generation_mode.default_tail_frame_chaining_enabled())
+
+                status = generation_mode.update_generation_mode(
+                    concurrent_generation=False,
+                    smart_split=True,
+                    tail_frame_chaining=True,
+                    tail_frame_chaining_mode="manual",
+                )
+                self.assertEqual(status["tailFrameChainingMode"], "manual")
+                self.assertEqual(generation_mode.default_tail_frame_chaining_mode(), "manual")
+
+    def test_manual_tail_frame_gate_refreshes_before_continue(self) -> None:
+        request = ParsedRequest(
+            raw_text="串联生成",
+            mode="batch_videos",
+            tail_frame_chaining=True,
+            tail_frame_chaining_mode="manual",
+        )
+        job = QuickVideoJob(video_index=1, job_id="job-1", status="succeeded")
+        archive = ArchivedAsset(
+            video_index=1,
+            job_id="job-1",
+            backend="local",
+            status="archived",
+            local_path="/tmp/video-1.mp4",
+        )
+        with tempfile.TemporaryDirectory() as tempdir, \
+                patch.object(manual_tail_frame_gate, "MANUAL_TAIL_FRAME_DIR", Path(tempdir)), \
+                patch.object(
+                    manual_tail_frame_gate,
+                    "build_next_tail_frame_request",
+                    side_effect=lambda current, *_args: ParsedRequest(
+                        **{**current.__dict__, "reference_image": "refreshed-tail.png"}
+                    ),
+                ) as build_request:
+            gate = manual_tail_frame_gate.create_manual_tail_frame_gate(
+                session_id="session-1",
+                generation_batch_id="batch-1",
+                video_index=2,
+                request=request,
+                previous_job=job,
+                previous_archive=archive,
+            )
+            refreshed = manual_tail_frame_gate.refresh_manual_tail_frame("session-1", "batch-1", 2)
+            continued = manual_tail_frame_gate.continue_manual_tail_frame("session-1", "batch-1", 2)
+            result = manual_tail_frame_gate.wait_for_manual_tail_frame_gate(
+                gate, cancel_check=lambda: None
+            )
+
+        self.assertEqual(build_request.call_count, 2)
+        self.assertTrue(refreshed["ok"])
+        self.assertTrue(continued["ok"])
+        self.assertEqual(result.reference_image, "refreshed-tail.png")
 
     def test_tail_frame_chain_prompt_requires_subject_facing_camera(self) -> None:
         video = VideoPrompt(index=1, title="第一条", prompt="主体走进仓库。")

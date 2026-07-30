@@ -85,6 +85,7 @@ class JsonlAssetStore:
                 "preset": request.preset,
                 "concurrentGeneration": request.concurrent_generation,
                 "tailFrameChaining": request.tail_frame_chaining,
+                "tailFrameChainingMode": request.tail_frame_chaining_mode,
                 "htmlMotionOverlayEnabled": request.html_motion_overlay_enabled,
             },
             "firstFrame": None if first_frame is None else first_frame.__dict__,

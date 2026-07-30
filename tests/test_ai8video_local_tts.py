@@ -315,6 +315,17 @@ class AI8VideoLocalTtsTest(unittest.TestCase):
         self.assertNotIn("音效", text)
         self.assertNotIn("最后一秒", text)
 
+    def test_prepare_narration_text_supports_quoted_speech_after_voiceover_cue(self) -> None:
+        prompt = (
+            "2-10s: 切固定中景，人物面对镜头。口播略带催促语气。"
+            "“每天固定筛选三五十个同行刚上架的爆品，逐个测品。别偷懒，测就完了。”"
+            "说完右手轻敲桌面。"
+        )
+
+        text = local_tts.prepare_narration_text(prompt)
+
+        self.assertEqual(text, "每天固定筛选三五十个同行刚上架的爆品，逐个测品。别偷懒，测就完了")
+
     def test_attach_local_tts_replaces_original_audio_when_disabled(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             env_backup = os.environ.get("AI8VIDEO_LOCAL_TTS_DIR")

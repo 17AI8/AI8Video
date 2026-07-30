@@ -350,6 +350,45 @@
       renderVideoTimelineChunks();
     }
 
+    async function refreshVideoTimelineReview(userGeneratedKey) {
+      const res = await fetch('/api/user-generated-results/video-timeline-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userGeneratedKey }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.ok === false) throw buildRequestError(data);
+      configureVideoTimeline(data.videoTimeline || {});
+      return data.videoTimeline || {};
+    }
+
+    async function refreshVideoTimelineRevision(userGeneratedKey) {
+      const res = await fetch('/api/user-generated-results/video-timeline-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userGeneratedKey }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.ok === false) throw buildRequestError(data);
+      const revision = Number(data?.videoTimeline?.revision || 0);
+      if (state.videoPreviewModal) state.videoPreviewModal.videoTimelineRevision = revision;
+      return revision;
+    }
+
+    async function requestVideoTimelinePreview(key, chunks, options = {}) {
+      const res = await fetch('/api/user-generated-results/video-timeline-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userGeneratedKey: key,
+          chunks,
+          reset: options.reset === true,
+          expectedRevision: Number(state.videoPreviewModal?.videoTimelineRevision || 0),
+        }),
+      });
+      return { res, data: await res.json().catch(() => ({})) };
+    }
+
     async function toggleVideoTimelineEditor(userGeneratedKey, button) {
       const panel = videoTimelinePanel();
       if (!panel) return;
@@ -358,14 +397,7 @@
         setVideoPreviewButtonLabel(button, '正在渲染…');
         setVideoTimelineStatus('正在生成胶片缩略图', 'working');
         try {
-          const res = await fetch('/api/user-generated-results/video-timeline-review', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userGeneratedKey }),
-          });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok || data?.ok === false) throw buildRequestError(data);
-          configureVideoTimeline(data.videoTimeline || {});
+          await refreshVideoTimelineReview(userGeneratedKey);
         } catch (error) {
           setVideoTimelineStatus(error?.message || '读取视频片段失败', 'error');
           return;
@@ -440,26 +472,28 @@
     async function previewVideoTimeline(userGeneratedKey, successMessage, options = {}) {
       const key = String(userGeneratedKey || '').trim();
       if (!key || state.videoPreviewModal?.videoTimelineBusy) return false;
+      const requestedChunks = cloneTimelineHistoryChunks(state.videoPreviewModal?.videoTimelineChunks || []);
       state.videoPreviewModal.videoTimelineBusy = true;
       syncTimelineHistoryButtons();
       const controls = videoTimelinePanel()?.querySelectorAll('[data-video-preview-video-editor-action]') || [];
       controls.forEach((button) => { button.disabled = true; });
       setVideoTimelineStatus(options.reset ? '正在恢复完整视频预览' : '正在生成裁剪预览', 'working');
       try {
-        const res = await fetch('/api/user-generated-results/video-timeline-preview', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userGeneratedKey: key,
-            chunks: state.videoPreviewModal?.videoTimelineChunks || [],
-            reset: options.reset === true,
-            expectedRevision: Number(state.videoPreviewModal?.videoTimelineRevision || 0),
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
+        let { res, data } = await requestVideoTimelinePreview(key, requestedChunks, options);
+        if (res.status === 409) {
+          await refreshVideoTimelineRevision(key);
+          ({ res, data } = await requestVideoTimelinePreview(key, requestedChunks, options));
+          if (res.status === 409) {
+            await refreshVideoTimelineReview(key);
+            setVideoTimelineStatus('时间轴仍在被其他操作更新，请稍后再试', 'error');
+            return false;
+          }
+        }
         if (!res.ok || data?.ok === false) throw buildRequestError(data);
         setVideoSelectedChunkIndex(null);
         applyBurnReviewToVideoPreview(data.burnReview || {}, els.videoPreviewBody?.querySelector('video'));
+        // 综合烧录预览可能因独立 TTS 仍携带旧的视频分段；保存结果才是本次编辑的权威状态。
+        configureVideoTimeline(data.videoTimeline || {});
         if (options.reset && data?.burnReview?.reviewReady !== true) restoreOfficialVideoPreview();
         setVideoTimelineStatus(options.reset ? successMessage : `${successMessage}，等待确认烧录`, 'success');
         return true;

@@ -75,6 +75,8 @@ def save_video_timeline_review(
     review_dir.mkdir(parents=True, exist_ok=True)
     with timeline_review_lock("video", relative_key):
         previous = _load_review(relative_key)
+        if not _pending_state_is_valid(previous, relative_key, video_path):
+            previous = {}
         ensure_expected_revision(previous, expected_revision)
         state = {
             "schemaVersion": TIMELINE_SCHEMA_VERSION,

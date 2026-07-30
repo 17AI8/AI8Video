@@ -268,6 +268,7 @@
         jobStatus: item?.jobStatus || '',
         providerStatus: item?.providerStatus || '',
         generationBatchId: item?.generationBatchId || '',
+        tailFramePreviewUrl: item?.tailFramePreviewUrl || '',
         segmentStatus: Array.isArray(item?.segmentStatus) ? item.segmentStatus : [],
         percent: generationProgressPercent(item),
         pending: !historicalSnapshot && (postProcessing || !isTerminalProgressStatus(status)),
@@ -317,6 +318,42 @@
       const isFailed = status === 'failed' || stage === '生成失败';
       const isDeletedOrMissing = status === 'deleted' || (status === 'succeeded' && !item?.hasLocalAsset);
       const ratioLabel = buildResultRatioLabel(item);
+      if (status === 'preparing_tail_frame') {
+        return `
+          <div class="result-notify-card ${resultNotifyRatioClass(item)}">
+            <div class="result-notify-preview">
+              ${renderResultVideoPromptButton(item, index)}
+              <div class="result-notify-play waiting-placeholder" aria-hidden="true"><span></span></div>
+              <div class="result-notify-progress"><span style="--progress-width: 0%"></span></div>
+            </div>
+            <div class="result-notify-meta">
+              <div class="result-notify-title">${renderHoverScrollText(title)}</div>
+              <div class="result-notify-sub">正在准备尾帧，尚未提交生成</div>
+            </div>
+          </div>
+        `;
+      }
+      if (status === 'awaiting_tail_frame_continue') {
+        const previewUrl = String(item?.tailFramePreviewUrl || '').trim();
+        const generationBatchId = String(item?.generationBatchId || '').trim();
+        return `
+          <div class="result-notify-card manual-tail-frame ${resultNotifyRatioClass(item)}">
+            <div class="result-notify-preview">
+              ${renderResultVideoPromptButton(item, index)}
+              ${previewUrl ? `<img alt="${escapeHtml(title)}的尾帧参考图" src="${escapeHtml(previewUrl)}">` : ''}
+              <div class="manual-tail-frame-actions">
+                <button type="button" data-tail-frame-continue="${item.videoIndex}" data-generation-batch-id="${escapeHtml(generationBatchId)}">继续</button>
+                <button type="button" class="secondary" data-tail-frame-refresh="${item.videoIndex}" data-generation-batch-id="${escapeHtml(generationBatchId)}">刷新尾帧</button>
+              </div>
+              <div class="result-notify-progress"><span style="--progress-width: 0%"></span></div>
+            </div>
+            <div class="result-notify-meta">
+              <div class="result-notify-title">${renderHoverScrollText(title)}</div>
+              <div class="result-notify-sub">尾帧已传入，等待继续</div>
+            </div>
+          </div>
+        `;
+      }
       if (isDeletedOrMissing) {
         return `
           <div class="result-notify-card deleted ${resultNotifyRatioClass(item)}" title="已生成，文件已删除">
@@ -348,7 +385,6 @@
           <div class="result-notify-card failed ${resultNotifyRatioClass(item)}">
             <div class="result-notify-preview" title="${escapeHtml(tooltipReason)}">
               ${renderResultVideoPromptButton(item, index)}
-              ${renderGenerationRetryButton(item)}
               <div class="result-notify-failed-mark reason">${escapeHtml(badgeReason)}</div>
               <div class="result-notify-progress"><span style="--progress-width: 100%"></span></div>
             </div>
@@ -420,6 +456,38 @@
       const generationBatchId = String(item?.generationBatchId || '').trim();
       if (videoIndex < 1) return '';
       return `<button type="button" class="result-notify-retry-button" data-retry-generation-video="${videoIndex}" data-generation-batch-id="${escapeHtml(generationBatchId)}" title="复用现有方案，必要时重新生成首帧">重试</button>`;
+    }
+
+    async function handleManualTailFrameAction(button, action) {
+      const videoIndex = Number(button?.getAttribute(`data-tail-frame-${action}`) || 0);
+      const generationBatchId = String(button?.getAttribute('data-generation-batch-id') || '').trim();
+      const sessionId = String(state.activeId || '').trim();
+      if (!sessionId || !generationBatchId || videoIndex < 1 || button.disabled) return;
+      button.disabled = true;
+      const originalText = button.textContent;
+      button.textContent = action === 'continue' ? '启动中' : '刷新中';
+      try {
+        const res = await fetch(`/api/tail-frame-chain/${action}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, generationBatchId, videoIndex }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.ok === false) throw new Error(data?.error || '尾帧操作失败');
+        if (action === 'continue' && data?.generationBatchId) {
+          persistGenerationRetryPendingState(sessionId, videoIndex, data.generationBatchId);
+        } else {
+          const preview = button.closest('.result-notify-preview')?.querySelector('img');
+          if (preview && data?.tailFramePreviewUrl) preview.src = data.tailFramePreviewUrl;
+          button.disabled = false;
+          button.textContent = originalText;
+          schedulePendingPoll(sessionId, 100);
+        }
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = originalText;
+        window.alert(error?.message || String(error));
+      }
     }
 
     function resultVideoPrompt(item = {}, fallbackIndex = 0) {

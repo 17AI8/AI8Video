@@ -36,6 +36,7 @@ from ai8video.generation.generation_mode import (
     default_smart_split_confirmation_enabled,
     default_smart_split_enabled,
     default_tail_frame_chaining_enabled,
+    default_tail_frame_chaining_mode,
 )
 from ai8video.media.motion.html_motion_overlay import default_html_motion_overlay_enabled
 from ai8video.batch.daily_batch_runner import DailyBatchRunner
@@ -106,6 +107,7 @@ class AI8VideoConversationController:
         state.draft.mode = "batch_videos" if len(planned) > 1 else "single_video"
         state.draft.raw_text = "已恢复的智能分集规划，按已确认的视频提示词继续生成。"
         state.draft.tail_frame_chaining = default_tail_frame_chaining_enabled()
+        state.draft.tail_frame_chaining_mode = default_tail_frame_chaining_mode()
         state.draft.concurrent_generation = default_concurrent_generation_enabled()
         state.draft.html_motion_overlay_enabled = default_html_motion_overlay_enabled()
         state.awaiting = "smart_split_confirmation"
@@ -1190,6 +1192,8 @@ class AI8VideoConversationController:
             state.draft.tail_frame_chaining = False
         elif state.draft.tail_frame_chaining is None:
             state.draft.tail_frame_chaining = default_tail_frame_chaining_enabled()
+        if state.draft.tail_frame_chaining_mode is None:
+            state.draft.tail_frame_chaining_mode = default_tail_frame_chaining_mode()
         if state.draft.tail_frame_chaining:
             state.draft.concurrent_generation = False
 

@@ -29,6 +29,7 @@ from ai8video.generation.generation_progress import (
     record_generation_execution,
 )
 from ai8video.generation.generation_task_runner import GenerationTask, GenerationTaskRunner
+from ai8video.generation.recovered_tail_frame_resume import prepare_recovered_tail_frame_resume
 from ai8video.integrations.direct_video_model_client import AI8VideoModelClient
 from ai8video.application.runtime import (
     CHAT_BACKEND,
@@ -765,10 +766,79 @@ def _recover_chat_status_from_ledger(session_id: str, generation_batch_id: str |
         "statelessProgress": True,
         "stalePending": True,
     }
+    try:
+        checkpoint = prepare_recovered_tail_frame_resume(
+            session_id=session_id,
+            source_batch_id=recovered_generation_batch_id,
+            progress=recovered_progress,
+            asset_records=JsonlAssetStore(AI8VideoConfig.from_env().asset_store_path).read_all(),
+        )
+    except (FileNotFoundError, LookupError, RuntimeError, ValueError):
+        checkpoint = None
+    if checkpoint is not None:
+        for item in recovered_progress["items"]:
+            video_index = int(item.get("videoIndex") or 0)
+            if video_index == checkpoint.next_video_index:
+                item.update(
+                    status="awaiting_tail_frame_continue",
+                    statusLabel="检测到中间产物，等待继续",
+                    error="",
+                    tailFramePreviewUrl=checkpoint.preview_url(),
+                    generationBatchId=recovered_generation_batch_id,
+                )
+                item.pop("historicalSnapshot", None)
+            elif video_index > checkpoint.next_video_index:
+                item.update(
+                    status="pending_submission",
+                    statusLabel="等待前序视频",
+                    error="",
+                    jobId=None,
+                    providerProgress=0,
+                    percent=0,
+                    generationBatchId=recovered_generation_batch_id,
+                )
+                item.pop("historicalSnapshot", None)
+        recovered_progress["events"] = _recovered_manual_wait_events(
+            recovered_progress.get("events"), checkpoint.next_video_index
+        )
+        recovered_progress.update(
+            status="active",
+            readOnlyRecovery=False,
+            willResumeGeneration=True,
+            statelessProgress=False,
+        )
+        _with_generation_progress_counts(recovered_progress)
+        body.update(
+            status="pending",
+            phase="awaiting_tail_frame_continue",
+            statusLabel="检测到可继续的中间产物，已切换为手动传尾帧",
+            readOnlyRecovery=False,
+            willResumeGeneration=True,
+            statelessProgress=False,
+            stalePending=False,
+        )
     result_reconciliation = _build_result_reconciliation(recovered_progress)
     if isinstance(result_reconciliation, dict):
         body["resultReconciliation"] = result_reconciliation
     return body
+
+
+def _recovered_manual_wait_events(events: Any, next_video_index: int) -> list[dict[str, Any]]:
+    retained = [
+        dict(event)
+        for event in events or []
+        if isinstance(event, dict)
+        and int(event.get("videoIndex") or 0) < next_video_index
+    ]
+    retained.append({
+        "at": datetime.now().isoformat(timespec="seconds"),
+        "kind": "awaiting_tail_frame_continue",
+        "status": "awaiting_tail_frame_continue",
+        "title": "后台任务",
+        "videoIndex": next_video_index,
+        "message": "尾帧已恢复，等待用户点击继续",
+    })
+    return retained
 
 
 def _build_result_reconciliation(
@@ -930,7 +1000,8 @@ def _with_generation_progress_counts(progress: dict) -> dict:
     progress["submittedCount"] = sum(1 for item in items if _has_video_submission(item))
     progress["runningCount"] = sum(1 for item in items if item.get("status") in running_statuses)
     progress["postProcessingCount"] = sum(1 for item in items if item.get("status") == "archiving")
-    progress["waitingCount"] = sum(1 for item in items if item.get("status") == "pending_submission")
+    waiting_statuses = {"pending_submission", "awaiting_tail_frame_continue"}
+    progress["waitingCount"] = sum(1 for item in items if item.get("status") in waiting_statuses)
     progress["succeededCount"] = sum(1 for item in items if item.get("status") == "succeeded")
     progress["failedCount"] = sum(1 for item in items if item.get("status") == "failed")
     progress["skippedCount"] = sum(1 for item in items if item.get("status") == "skipped")

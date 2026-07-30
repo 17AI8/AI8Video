@@ -42,7 +42,14 @@ from ai8video.generation.generation_progress import (
     mark_job_submitting,
     mark_job_submitted,
     mark_job_succeeded,
+    mark_manual_tail_frame_preparing,
+    mark_manual_tail_frame_waiting,
     start_generation_progress,
+)
+from ai8video.generation.generation_batch_context import get_current_generation_batch_id
+from ai8video.generation.manual_tail_frame_gate import (
+    create_manual_tail_frame_gate,
+    wait_for_manual_tail_frame_gate,
 )
 from ai8video.integrations.llm_provider import build_openai_compat_llm
 from ai8video.knowledge.script_knowledge_rerank import build_script_rerank_llm
@@ -399,11 +406,13 @@ class AI8VideoPipeline:
                             completed_job.error or archive.error or "前序视频生成未成功，传尾帧串联已停止",
                         )
                         break
-                    active_request = build_next_tail_frame_request(
-                        active_request,
-                        completed_job,
-                        archive,
-                        Path(tail_dir.name) / f"video-{final_video.index}-tail.png",
+                    active_request = self._prepare_next_tail_frame_request(
+                        active_request=active_request,
+                        previous_job=completed_job,
+                        previous_archive=archive,
+                        next_video=finalized_video_queue[position + 1],
+                        progress_session_id=progress_session_id,
+                        automatic_output_path=Path(tail_dir.name) / f"video-{final_video.index}-tail.png",
                     )
         finally:
             if tail_dir is not None:
@@ -421,6 +430,50 @@ class AI8VideoPipeline:
             asset_records=asset_records,
             dry_run=self.config.dry_run,
         )
+
+    def _prepare_next_tail_frame_request(
+        self,
+        *,
+        active_request: ParsedRequest,
+        previous_job: QuickVideoJob,
+        previous_archive: ArchivedAsset,
+        next_video: VideoPrompt,
+        progress_session_id: str | None,
+        automatic_output_path: Path,
+    ) -> ParsedRequest:
+        if active_request.tail_frame_chaining_mode != "manual":
+            return build_next_tail_frame_request(
+                active_request, previous_job, previous_archive, automatic_output_path
+            )
+        session_id = str(progress_session_id or "").strip()
+        batch_id = str(get_current_generation_batch_id() or "").strip()
+        if not session_id or not batch_id:
+            raise RuntimeError("手动传尾帧无法建立等待检查点")
+        mark_manual_tail_frame_preparing(session_id, next_video)
+        gate = create_manual_tail_frame_gate(
+            session_id=session_id,
+            generation_batch_id=batch_id,
+            video_index=next_video.index,
+            request=active_request,
+            previous_job=previous_job,
+            previous_archive=previous_archive,
+        )
+        preview_url = (
+            f"/tail-frame-previews/{batch_id}/{gate.output_path.name}"
+            f"?v={gate.output_path.stat().st_mtime_ns}"
+        )
+        mark_manual_tail_frame_waiting(
+            session_id, next_video, generation_batch_id=batch_id, preview_url=preview_url
+        )
+        return wait_for_manual_tail_frame_gate(
+            gate,
+            cancel_check=lambda: self._raise_if_manual_tail_frame_cancelled(session_id),
+        )
+
+    @staticmethod
+    def _raise_if_manual_tail_frame_cancelled(session_id: str) -> None:
+        if is_generation_stopped(session_id):
+            raise GenerationCancelled(generation_stop_reason(session_id))
 
     def _run_videos_concurrently(
         self,
@@ -551,7 +604,7 @@ class AI8VideoPipeline:
         custom_constraints = AI8VideoPipeline._custom_input_task_constraints(request.raw_text)
         if custom_constraints:
             blocks.append(custom_constraints)
-        return "\n".join(block for block in blocks if block.strip()) or None
+        return "\n".join(block for block in blocks if block and block.strip()) or None
 
     @staticmethod
     def _custom_input_task_constraints(raw_text: str) -> str | None:

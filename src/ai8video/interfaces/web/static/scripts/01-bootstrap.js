@@ -408,6 +408,7 @@
     const scriptKnowledgeTypewriterLines = new Map();
     const pendingPollTimers = new Map();
     const pendingPollInflight = new Set();
+    const tailFrameRecoveryPollAttempted = new Set();
     const pendingCancelInflight = new Set();
     const collectingSyncTimers = new Map();
     const collectingSyncInflight = new Set();

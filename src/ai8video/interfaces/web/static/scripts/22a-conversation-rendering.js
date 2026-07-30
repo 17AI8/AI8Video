@@ -148,14 +148,19 @@
         const pendingProgress = buildPendingProgressFromRecentResults(displayedPending);
         const pendingOverview = buildProgressOverview({ videos: pendingProgress.videos, isActive: !staticPending });
         const pendingActive = !historicalPending && isPendingStatusActive(pending);
+        const manualTailFrameWait = pending.phase === 'awaiting_tail_frame_continue';
         const pendingTitle = historicalPending
           ? '历史任务进度快照'
-          : (pendingActive ? '后台继续执行中' : getPendingStatusLabel(pending));
+          : (manualTailFrameWait
+            ? '等待手动继续'
+            : (pendingActive ? '后台继续执行中' : getPendingStatusLabel(pending)));
         const elapsed = pending.elapsedSeconds > 0 ? `已等待 ${pending.elapsedSeconds} 秒` : '已进入后台继续执行';
         const pendingLine = historicalPending
           ? '这是较早消息的进度记录，不再显示为执行中。'
           : (pendingActive
-          ? `${elapsed}，结果会自动回填到当前对话。`
+          ? (manualTailFrameWait
+            ? '上一条尾帧已准备完成，点击“继续”后才会提交下一条视频。'
+            : `${elapsed}，结果会自动回填到当前对话。`)
           : buildTerminalPendingLine(pendingProgress, pending));
         const pendingCancel = pendingActive
           ? renderForceCancelButton(pending.sessionId || context.sessionId || state.activeId, {

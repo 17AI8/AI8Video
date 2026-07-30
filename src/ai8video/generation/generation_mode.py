@@ -22,6 +22,7 @@ def generation_mode_status() -> dict[str, Any]:
         "manualVideoCount": _normalize_manual_video_count(data.get("manualVideoCount")),
         "confirmSmartSplit": bool(data.get("confirmSmartSplit")),
         "tailFrameChaining": bool(data.get("tailFrameChaining")),
+        "tailFrameChainingMode": _normalize_tail_frame_chaining_mode(data.get("tailFrameChainingMode")),
     }
 
 
@@ -46,12 +47,17 @@ def default_tail_frame_chaining_enabled() -> bool:
     return bool(_read_settings().get("tailFrameChaining"))
 
 
+def default_tail_frame_chaining_mode() -> str:
+    return _normalize_tail_frame_chaining_mode(_read_settings().get("tailFrameChainingMode"))
+
+
 def update_generation_mode(
     *,
     concurrent_generation: bool,
     smart_split: bool = False,
     confirm_smart_split: bool = False,
     tail_frame_chaining: bool = False,
+    tail_frame_chaining_mode: str = "auto",
     manual_video_count: int = DEFAULT_MANUAL_VIDEO_COUNT,
 ) -> dict[str, Any]:
     chained = bool(tail_frame_chaining)
@@ -62,6 +68,7 @@ def update_generation_mode(
             "manualVideoCount": _normalize_manual_video_count(manual_video_count),
             "confirmSmartSplit": bool(confirm_smart_split),
             "tailFrameChaining": chained,
+            "tailFrameChainingMode": _normalize_tail_frame_chaining_mode(tail_frame_chaining_mode),
         }
     )
     return generation_mode_status()
@@ -73,6 +80,10 @@ def _normalize_manual_video_count(value: Any) -> int:
     except (TypeError, ValueError):
         count = DEFAULT_MANUAL_VIDEO_COUNT
     return max(1, min(MAX_MANUAL_VIDEO_COUNT, count))
+
+
+def _normalize_tail_frame_chaining_mode(value: Any) -> str:
+    return "manual" if str(value or "").strip().lower() == "manual" else "auto"
 
 
 def _read_settings() -> dict[str, Any]:

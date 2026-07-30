@@ -84,6 +84,9 @@ DIALOGUE_FIELD_RE = re.compile(
     r"(?:台词\s*/\s*口播|台词|口播|旁白|解说|画外音)"
     r"\s*(?:[（(][^）)\n]{0,30}[）)])?\s*[：:]\s*"
 )
+DIALOGUE_CUE_QUOTE_RE = re.compile(
+    r"(?:口播|旁白|解说|画外音)[^“”\"\n]{0,50}[“\"]([^”\"\n]+)[”\"]"
+)
 SHOT_BOUNDARY_RE = re.compile(
     r"(?:镜头[一二三四五六七八九十百\d]+|第?\d+[集格段镜]?)\s*(?:[（(]|[：:、.\s-])"
 )
@@ -420,6 +423,11 @@ def extract_dialogue_text(text: str) -> str:
             continue
         matches = list(DIALOGUE_FIELD_RE.finditer(line_text))
         if not matches:
+            pieces.extend(
+                match.group(1).strip()
+                for match in DIALOGUE_CUE_QUOTE_RE.finditer(line_text)
+                if match.group(1).strip()
+            )
             continue
         for index, match in enumerate(matches):
             start = match.end()

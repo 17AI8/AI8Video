@@ -131,7 +131,7 @@
       flex-direction: column;
       gap: 6px;
       min-width: 0;
-      background: linear-gradient(90deg, transparent 9px, #94a3b8 9px, #94a3b8 10px, transparent 10px);
+      background: none;
     }
 
     .agent-step-details-latest {
@@ -266,6 +266,29 @@
       font-size: 11px;
       line-height: 1.55;
     }
+
+    .agent-step-detail::before {
+      position: absolute;
+      z-index: 0;
+      top: -6px;
+      bottom: -6px;
+      left: 9px;
+      width: 1px;
+      background: #94a3b8;
+      content: "";
+    }
+
+    .agent-step-details-latest .agent-step-detail::before {
+      top: 8px;
+      bottom: -10px;
+    }
+
+    .agent-step-details:not(.is-expanded) .agent-step-details-latest .agent-step-detail::before {
+      display: none;
+    }
+
+    .agent-step-details-history .agent-step-detail:first-child::before { top: -10px; }
+    .agent-step-details-history .agent-step-detail:last-child::before { bottom: 8px; }
 
     .agent-step-detail:not(:first-child)::after { display: none; }
 

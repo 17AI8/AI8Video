@@ -19,6 +19,7 @@ class ParsedRequest:
     preset: str = "custom"
     concurrent_generation: bool = False
     tail_frame_chaining: bool = False
+    tail_frame_chaining_mode: str = "auto"
     html_motion_overlay_enabled: bool = False
     reference_image_transform_options: dict[str, bool] | None = None
     smart_split_reason: str | None = None
@@ -41,6 +42,7 @@ class ConversationDraft:
     preset: str = "custom"
     concurrent_generation: bool | None = None
     tail_frame_chaining: bool | None = None
+    tail_frame_chaining_mode: str | None = None
     html_motion_overlay_enabled: bool | None = None
     reference_image_transform_options: dict[str, bool] | None = None
 
@@ -66,6 +68,9 @@ class ConversationDraft:
             preset=self.preset,
             concurrent_generation=bool(self.concurrent_generation),
             tail_frame_chaining=bool(self.tail_frame_chaining),
+            tail_frame_chaining_mode=(
+                "manual" if self.tail_frame_chaining_mode == "manual" else "auto"
+            ),
             html_motion_overlay_enabled=bool(self.html_motion_overlay_enabled),
             reference_image_transform_options=(
                 self.reference_image_transform_options
@@ -91,6 +96,7 @@ class ConversationDraft:
             "preset": self.preset,
             "concurrentGeneration": self.concurrent_generation,
             "tailFrameChaining": self.tail_frame_chaining,
+            "tailFrameChainingMode": self.tail_frame_chaining_mode,
             "htmlMotionOverlayEnabled": self.html_motion_overlay_enabled,
             "referenceImageTransformOptions": self.reference_image_transform_options,
         }

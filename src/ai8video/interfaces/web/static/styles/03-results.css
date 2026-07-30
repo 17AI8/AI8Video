@@ -183,7 +183,7 @@
       width: 16px;
       height: 16px;
       border: 0;
-      animation: none;
+      animation: waitingHourglassTurn 4s ease-in-out infinite;
       background: #7180a6;
       mask: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/hourglass-half.svg") center / contain no-repeat;
       -webkit-mask: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/hourglass-half.svg") center / contain no-repeat;
@@ -199,6 +199,41 @@
       background: linear-gradient(180deg, #fff1f0, #ffe2de);
       border-color: rgba(220, 80, 60, 0.28);
       box-shadow: none;
+    }
+
+    .manual-tail-frame-actions {
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      display: grid;
+      place-content: center;
+      gap: 5px;
+      padding: 8px;
+      background: linear-gradient(180deg, rgba(7, 17, 34, 0.12), rgba(7, 17, 34, 0.64));
+    }
+
+    .manual-tail-frame-actions button {
+      min-width: 64px;
+      min-height: 27px;
+      padding: 0 10px;
+      border: 0;
+      border-radius: 7px;
+      background: #4d74ff;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 900;
+      cursor: pointer;
+      box-shadow: 0 5px 14px rgba(35, 69, 181, 0.3);
+    }
+
+    .manual-tail-frame-actions button.secondary {
+      background: rgba(255, 255, 255, 0.94);
+      color: #294c9d;
+    }
+
+    .manual-tail-frame-actions button:disabled {
+      cursor: wait;
+      opacity: 0.7;
     }
 
     .result-notify-card.deleted .result-notify-preview::after {
@@ -320,6 +355,15 @@
 
     @keyframes pendingSpin {
       to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @keyframes waitingHourglassTurn {
+      0%, 70% {
+        transform: rotate(0deg);
+      }
+      90%, 100% {
         transform: rotate(360deg);
       }
     }

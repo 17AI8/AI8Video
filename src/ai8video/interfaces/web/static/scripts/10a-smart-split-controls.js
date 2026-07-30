@@ -44,6 +44,18 @@
               <span>传尾帧模式</span>
               <input type="checkbox" data-tail-frame-chaining-toggle ${mode.tailFrameChaining ? 'checked' : ''} ${saving ? 'disabled' : ''}>
             </label>
+            ${mode.tailFrameChaining ? `
+              <div class="tail-frame-chaining-mode" role="group" aria-label="传尾帧生成方式">
+                <label class="tail-frame-chaining-mode-option">
+                  <input type="radio" name="tail-frame-chaining-mode" value="auto" data-tail-frame-chaining-mode ${mode.tailFrameChainingMode !== 'manual' ? 'checked' : ''} ${saving ? 'disabled' : ''}>
+                  <span>自动</span>
+                </label>
+                <label class="tail-frame-chaining-mode-option">
+                  <input type="radio" name="tail-frame-chaining-mode" value="manual" data-tail-frame-chaining-mode ${mode.tailFrameChainingMode === 'manual' ? 'checked' : ''} ${saving ? 'disabled' : ''}>
+                  <span>手动</span>
+                </label>
+              </div>
+            ` : ''}
             <div class="generation-mode-note">开启后串联生成，上一条成片尾帧会作为下一条参考图；连续性更强，但速度更慢。</div>
           `}
         </div>

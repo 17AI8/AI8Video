@@ -455,6 +455,42 @@
       flex: 0 0 auto;
     }
 
+    .tail-frame-chaining-mode {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 4px;
+      padding: 3px;
+      border: 1px solid rgba(37, 99, 235, 0.16);
+      border-radius: 8px;
+      background: rgba(238, 245, 255, 0.58);
+    }
+
+    .tail-frame-chaining-mode-option {
+      cursor: pointer;
+    }
+
+    .tail-frame-chaining-mode-option input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .tail-frame-chaining-mode-option span {
+      display: grid;
+      min-height: 28px;
+      place-items: center;
+      border-radius: 6px;
+      color: #45618e;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .tail-frame-chaining-mode-option input:checked + span {
+      background: #2563eb;
+      color: #fff;
+      box-shadow: 0 4px 10px rgba(37, 99, 235, 0.18);
+    }
+
     .split-mode-switch {
       display: inline-flex;
       align-items: stretch;

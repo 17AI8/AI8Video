@@ -715,6 +715,34 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
         self.assertFalse(status["generationProgress"]["willResumeGeneration"])
         self.assertFalse(memory_session_created)
 
+    def test_recovered_manual_wait_resets_all_downstream_failure_cards(self) -> None:
+        progress = {
+            "items": [
+                {"videoIndex": 1, "status": "succeeded"},
+                {"videoIndex": 2, "status": "failed", "error": "旧失败"},
+                {"videoIndex": 3, "status": "skipped", "error": "前序视频提交失败，本批次已停止"},
+            ]
+        }
+        checkpoint = SimpleNamespace(next_video_index=2, preview_url=lambda: "/preview.png")
+        with patch.object(
+            ai8video_chat_service,
+            "get_generation_ledger_snapshot",
+            return_value={"generationBatchId": "batch-1", "progress": progress},
+        ), patch.object(
+            ai8video_chat_service,
+            "prepare_recovered_tail_frame_resume",
+            return_value=checkpoint,
+        ), patch.object(JsonlAssetStore, "read_all", return_value=[]):
+            status = ai8video_chat_service._recover_chat_status_from_ledger("session-1", "batch-1")
+
+        items = status["generationProgress"]["items"]
+        self.assertEqual(items[1]["status"], "awaiting_tail_frame_continue")
+        self.assertEqual(items[1]["error"], "")
+        self.assertEqual(items[2]["status"], "pending_submission")
+        self.assertEqual(items[2]["statusLabel"], "等待前序视频")
+        self.assertEqual(items[2]["error"], "")
+        self.assertEqual(status["generationProgress"]["waitingCount"], 2)
+
     def test_get_chat_status_rejects_unknown_ledger_batch_without_memory_session(self) -> None:
         session_id = "session-status-ledger-unknown-batch"
 

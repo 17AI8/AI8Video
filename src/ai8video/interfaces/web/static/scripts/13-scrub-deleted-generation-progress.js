@@ -484,3 +484,41 @@
         return false;
       }
     }
+    function restoreSucceededProgressFromUserResults() {
+      const results = Array.isArray(state.userGeneratedResults) ? state.userGeneratedResults : [];
+      const bySessionVideo = new Map(results.map((result) => [
+        `${String(result?.sessionId || '').trim()}:${Number(result?.videoIndex || 0)}`,
+        result,
+      ]));
+      let changed = false;
+      (state.sessions || []).forEach((session) => {
+        (session?.messages || []).forEach((message) => {
+          const progress = message?.payload?.pendingStatus?.generationProgress;
+          if (!Array.isArray(progress?.items)) return;
+          progress.items = progress.items.map((item) => {
+            const result = bySessionVideo.get(`${session.id}:${Number(item?.videoIndex || 0)}`);
+            if (!result || String(item?.status || '').trim() === 'succeeded') return item;
+            changed = true;
+            return {
+              ...item,
+              status: 'succeeded',
+              statusLabel: '已生成',
+              providerStatus: 'succeeded',
+              providerProgress: 100,
+              jobId: result.jobId || item.jobId || null,
+              videoUrl: result.videoUrl || item.videoUrl || '',
+              userGeneratedKey: result.userGeneratedKey || item.userGeneratedKey || '',
+              userGeneratedPreviewKey: result.userGeneratedPreviewKey || item.userGeneratedPreviewKey || '',
+              userGeneratedCoverKey: result.userGeneratedCoverKey || item.userGeneratedCoverKey || '',
+              assetRecord: result,
+              hasLocalAsset: true,
+              error: '',
+            };
+          });
+          if (changed) {
+            message.payload.pendingStatus = normalizePendingStatusProgress(message.payload.pendingStatus);
+          }
+        });
+      });
+      return changed;
+    }

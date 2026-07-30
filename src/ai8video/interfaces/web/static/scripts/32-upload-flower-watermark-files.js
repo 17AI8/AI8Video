@@ -315,6 +315,7 @@
         manualVideoCount: Math.max(1, Math.min(12, Number(changes.manualVideoCount ?? previous.manualVideoCount ?? 2))),
         confirmSmartSplit: !!(changes.confirmSmartSplit ?? previous.confirmSmartSplit),
         tailFrameChaining: !!(changes.tailFrameChaining ?? previous.tailFrameChaining),
+        tailFrameChainingMode: (changes.tailFrameChainingMode ?? previous.tailFrameChainingMode) === 'manual' ? 'manual' : 'auto',
       };
       nextMode.smartSplit = nextMode.splitMode === 'smart';
       if (nextMode.tailFrameChaining) nextMode.concurrentGeneration = false;
@@ -346,6 +347,7 @@
           manualVideoCount: Math.max(1, Math.min(12, Number(data.manualVideoCount || 2))),
           confirmSmartSplit: !!data.confirmSmartSplit,
           tailFrameChaining: !!data.tailFrameChaining,
+          tailFrameChainingMode: data.tailFrameChainingMode === 'manual' ? 'manual' : 'auto',
           saving: false,
           error: '',
         };

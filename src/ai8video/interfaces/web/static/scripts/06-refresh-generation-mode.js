@@ -9,6 +9,7 @@
         manualVideoCount: Math.max(1, Math.min(12, Number(data?.manualVideoCount || 2))),
         confirmSmartSplit: !!data?.confirmSmartSplit,
         tailFrameChaining: !!data?.tailFrameChaining,
+        tailFrameChainingMode: data?.tailFrameChainingMode === 'manual' ? 'manual' : 'auto',
         saving: false,
         error: data?.error || '',
       };
@@ -266,7 +267,7 @@
         }
       }
       const submittedStatuses = new Set(['submitted', 'polling', 'archiving', 'succeeded', 'failed']);
-      const runningStatuses = new Set(['submitting', 'preparing_first_frame', 'submitted', 'polling', 'archiving']);
+      const runningStatuses = new Set(['submitting', 'preparing_first_frame', 'preparing_tail_frame', 'submitted', 'polling', 'archiving', 'awaiting_tail_frame_continue']);
       const countStatus = (statuses) => items.filter((item) => statuses.has(String(item?.status || '').trim())).length;
       return {
         ...pendingStatus,
@@ -277,7 +278,7 @@
           submittedCount: countStatus(submittedStatuses),
           runningCount: countStatus(runningStatuses),
           postProcessingCount: countStatus(new Set(['archiving'])),
-          waitingCount: countStatus(new Set(['pending_submission'])),
+          waitingCount: countStatus(new Set(['pending_submission', 'awaiting_tail_frame_continue'])),
           succeededCount: countStatus(new Set(['succeeded'])),
           failedCount: countStatus(new Set(['failed'])),
           skippedCount: countStatus(new Set(['skipped', 'cancelled', 'canceled'])),
@@ -396,12 +397,20 @@
       let changed = false;
       for (const session of sessions) {
         const last = session?.messages?.at?.(-1);
-        if (!last || last.role !== 'assistant') continue;
-        if (isPendingPayload(last.payload) && !isConversationContinuationClosed(last.payload)) {
-          const recovered = await reconcilePendingSessionAfterReload(session);
+        const pendingMessage = [...(session?.messages || [])].reverse().find((message) => (
+          message?.role === 'assistant'
+          && (message?.payload?.pendingStatus || extractGenerationBatchId(message?.payload))
+          && !isConversationContinuationClosed(message.payload)
+        ));
+        if (pendingMessage) {
+          const targetMessage = [...(session?.messages || [])].reverse().find((message) => (
+            message?.role === 'assistant' && message?.payload
+          )) || pendingMessage;
+          const recovered = await reconcilePendingSessionAfterReload(session, targetMessage, pendingMessage);
           if (recovered) changed = true;
           continue;
         }
+        if (!last || last.role !== 'assistant') continue;
         if (!isStoredTransportFailureMessage(last.error)) continue;
         const recovered = await tryRecoverSessionAfterTransportFailure(
           session,
@@ -412,15 +421,21 @@
       return changed;
     }
 
-    async function reconcilePendingSessionAfterReload(session) {
+    async function reconcilePendingSessionAfterReload(session, targetMessage = null, statusMessage = null) {
       const sessionId = String(session?.id || '').trim();
-      const last = session?.messages?.at?.(-1);
-      if (!sessionId || !last?.payload?.pendingStatus) return false;
+      const messageToUpdate = targetMessage || session?.messages?.at?.(-1);
+      const messageForStatus = statusMessage || messageToUpdate;
+      if (!sessionId || !messageToUpdate?.payload) return false;
       try {
-        const res = await fetch(buildChatStatusUrl(sessionId, session));
-        const data = await res.json().catch(() => ({}));
+        const statusSession = {
+          ...session,
+          messages: [messageForStatus],
+        };
+        const { res, data } = await fetchChatStatusWithBatchFallback(sessionId, statusSession, {
+          preferLatestBatch: true,
+        });
         if (!res.ok || !data?.generationProgress) return false;
-        last.payload = mergeGenerationStatusPayload(last.payload, data, sessionId);
+        messageToUpdate.payload = mergeGenerationStatusPayload(messageToUpdate.payload, data, sessionId);
         return true;
       } catch (error) {
         console.error(error);
@@ -433,8 +448,7 @@
       const last = session?.messages?.at?.(-1);
       if (!sessionId || !last || last.role !== 'assistant') return false;
       try {
-        const res = await fetch(buildChatStatusUrl(sessionId, session));
-        const data = await res.json().catch(() => ({}));
+        const { res, data } = await fetchChatStatusWithBatchFallback(sessionId, session);
         if (!res.ok || !data || typeof data !== 'object') return false;
         if (data.status !== 'pending' && data.reply) {
           delete last.error;
@@ -474,8 +488,7 @@
         let res;
         let data;
         try {
-          res = await fetch(buildChatStatusUrl(sessionId, session));
-          data = await res.json();
+          ({ res, data } = await fetchChatStatusWithBatchFallback(sessionId, session));
         } catch (error) {
           console.error(error);
           continue;
