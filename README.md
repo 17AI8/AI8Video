@@ -536,11 +536,12 @@ python desktop/runtime/stage_release.py \
   --target desktop/electron/runtime
 node desktop/runtime/stage_node_runtime.mjs \
   node_modules desktop/electron/runtime/node_modules
-npm ci --prefix desktop/electron
-npm --prefix desktop/electron run dist:mac
+cd desktop/electron
+npm ci
+npm run dist:mac
 ```
 
-`.github/workflows/desktop-release.yml` 支持手动运行；推送 `v*` 标签时会自动生成 macOS ARM64 DMG 与 Windows x64 EXE，并附加到对应 GitHub Release。普通代码推送不会触发大型打包任务，避免无意义消耗构建时长和制品存储。
+`.github/workflows/desktop-release.yml` 支持手动运行；推送 `v*` 标签时会自动生成 macOS ARM64 DMG 与 Windows x64 EXE，并附加到对应 GitHub Release。工作流会在 `desktop/electron` 工作目录内安装依赖和执行打包，确保不同系统及 npm 版本都能稳定读取对应 lockfile。普通代码推送不会触发大型打包任务，避免无意义消耗构建时长和制品存储。
 
 当前边界：
 

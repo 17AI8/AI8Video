@@ -74,10 +74,12 @@ jobs:
           desktop/electron/runtime/node_modules
 
       - name: 安装 Electron 构建依赖
-        run: npm ci --prefix desktop/electron
+        working-directory: desktop/electron
+        run: npm ci
 
       - name: 生成安装包
-        run: npm --prefix desktop/electron run dist:${{ matrix.target }}
+        working-directory: desktop/electron
+        run: npm run dist:${{ matrix.target }}
 
       - name: 上传安装包
         uses: actions/upload-artifact@v7
