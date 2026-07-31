@@ -1135,12 +1135,36 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         source = read_static_source()
 
         self.assertIn("querySelector('[data-video-preview-timeline-ruler]')?.addEventListener('click', seekAtClick)", source)
+        self.assertRegex(
+            source,
+            r"\.video-preview-timeline-ruler\s*\{[^}]*cursor: pointer;[^}]*pointer-events: auto;",
+        )
         self.assertIn('timelineSecondsAtPointer(event, lane, duration)', source)
         self.assertIn('syncVideoTimelinePlayhead();', source)
         self.assertIn('syncTtsTimelinePlayhead();', source)
         self.assertIn('syncHtmlMotionTimelinePlayhead();', source)
         self.assertIn("if (element.dataset.suppressTtsClick === 'true')", source)
         self.assertIn("element.dataset.suppressTtsClick = 'true';", source)
+
+    def test_timeline_playhead_updates_smoothly_during_video_playback(self) -> None:
+        source = read_static_source()
+
+        self.assertIn('function bindSmoothTimelinePlayheadSync(video)', source)
+        self.assertIn('animationFrameId = requestAnimationFrame(updateDuringPlayback);', source)
+        self.assertIn('if (animationFrameId) cancelAnimationFrame(animationFrameId);', source)
+        self.assertIn("video.addEventListener('play', startAnimation);", source)
+        self.assertIn("video.addEventListener('pause', stopAnimation);", source)
+        self.assertIn("video.addEventListener('timeupdate', syncAllTimelinePlayheads);", source)
+        self.assertIn('bindSmoothTimelinePlayheadSync(video);', source)
+
+    def test_html_motion_chunks_do_not_show_redundant_start_seconds(self) -> None:
+        source = read_static_source()
+
+        self.assertNotIn(
+            '<small>${start.toFixed(1)}s</small>${timelineTrimHandleMarkup(label)}',
+            source,
+        )
+        self.assertNotIn('.video-preview-html-motion-chunk > small', source)
 
     def test_frame_repair_requires_prompt_but_not_optional_reference_image(self) -> None:
         source = read_static_source()

@@ -358,13 +358,15 @@
     }
 
     .video-preview-button.primary {
-      border-color: rgba(159, 243, 203, 0.5);
-      background: rgba(15, 159, 98, 0.3);
+      border-color: rgba(159, 243, 203, 0.72);
+      background: transparent;
       color: #f2fff9;
+      transition: background-color 180ms ease, border-color 180ms ease;
     }
 
     .video-preview-button.primary:hover {
-      background: rgba(15, 159, 98, 0.45);
+      border-color: rgba(159, 243, 203, 0.92);
+      background: rgba(15, 159, 98, 0.34);
     }
 
     .video-preview-button:disabled {
@@ -732,7 +734,7 @@
     .video-preview-tts-timeline.is-open {
       max-height: 250px;
       margin-bottom: 0;
-      padding: 6px 8px;
+      padding: 6px 8px 2px;
       visibility: visible;
       border-width: 1px;
       opacity: 1;
@@ -877,7 +879,7 @@
     .video-preview-tts-playhead {
       position: absolute;
       z-index: 4;
-      top: -3px;
+      top: -10px;
       bottom: -3px;
       width: 12px;
       transform: translateX(-6px);
@@ -900,7 +902,7 @@
     .video-preview-tts-playhead::before {
       position: absolute;
       z-index: 1;
-      top: -2px;
+      top: -4px;
       left: 2px;
       width: 8px;
       height: 8px;
@@ -1061,13 +1063,27 @@
     .video-preview-html-motion-timeline.is-open {
       max-height: 220px;
       margin-bottom: 0;
-      padding: 6px 8px;
+      padding: 6px 8px 2px;
       visibility: visible;
       border-width: 1px;
       opacity: 1;
       transform: translateY(0);
       pointer-events: auto;
       transition-delay: 0s;
+    }
+
+    .video-preview-video-timeline.is-open:has(~ .video-preview-tts-timeline.is-open),
+    .video-preview-video-timeline.is-open:has(~ .video-preview-html-motion-timeline.is-open),
+    .video-preview-tts-timeline:not(.video-preview-video-timeline).is-open:has(~ .video-preview-html-motion-timeline.is-open) {
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+
+    .video-preview-video-timeline.is-open ~ .video-preview-tts-timeline.is-open,
+    .video-preview-video-timeline.is-open ~ .video-preview-html-motion-timeline.is-open,
+    .video-preview-tts-timeline:not(.video-preview-video-timeline).is-open ~ .video-preview-html-motion-timeline.is-open {
+      border-top-left-radius: 0;
+      border-top-right-radius: 0;
     }
 
     .video-preview-html-motion-timeline[hidden] {
@@ -1152,18 +1168,6 @@
       overflow: hidden;
       text-overflow: clip;
       white-space: nowrap;
-    }
-
-    .video-preview-html-motion-chunk > small {
-      flex: 0 0 auto;
-      margin-left: 5px;
-      white-space: nowrap;
-    }
-
-    @container (max-width: 88px) {
-      .video-preview-html-motion-chunk > small {
-        display: none;
-      }
     }
 
     .video-preview-html-motion-chunk:active {

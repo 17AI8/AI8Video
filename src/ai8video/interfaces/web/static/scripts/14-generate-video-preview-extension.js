@@ -464,9 +464,7 @@
           video.style.setProperty('--preview-video-aspect', ratioValue);
         }
       }, { once: true });
-      const syncEditingPlayheads = syncAllTimelinePlayheads;
-      video?.addEventListener('timeupdate', syncEditingPlayheads);
-      video?.addEventListener('seeking', syncEditingPlayheads);
+      bindSmoothTimelinePlayheadSync(video);
       bindVideoPreviewBackgroundMusic(video);
       if (video) video.dataset.officialSrc = src;
       state.videoPreviewModal = {

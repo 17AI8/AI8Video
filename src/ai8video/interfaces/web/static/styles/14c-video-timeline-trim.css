@@ -79,7 +79,8 @@
       margin: 0 2px 2px;
       overflow: hidden;
       color: rgba(236, 246, 255, 0.62);
-      pointer-events: none;
+      cursor: pointer;
+      pointer-events: auto;
       user-select: none;
     }
 

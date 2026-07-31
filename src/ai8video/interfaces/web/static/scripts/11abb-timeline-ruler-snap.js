@@ -259,3 +259,35 @@
       syncVideoTimelinePlayhead();
       syncHtmlMotionTimelinePlayhead();
     }
+
+    function bindSmoothTimelinePlayheadSync(video) {
+      if (!video) return;
+      let animationFrameId = 0;
+
+      const stopAnimation = () => {
+        if (animationFrameId) cancelAnimationFrame(animationFrameId);
+        animationFrameId = 0;
+        syncAllTimelinePlayheads();
+      };
+      const updateDuringPlayback = () => {
+        syncAllTimelinePlayheads();
+        if (video.paused || video.ended || !video.isConnected) {
+          animationFrameId = 0;
+          return;
+        }
+        animationFrameId = requestAnimationFrame(updateDuringPlayback);
+      };
+      const startAnimation = () => {
+        if (animationFrameId) return;
+        updateDuringPlayback();
+      };
+
+      video.addEventListener('play', startAnimation);
+      video.addEventListener('pause', stopAnimation);
+      video.addEventListener('ended', stopAnimation);
+      video.addEventListener('seeking', syncAllTimelinePlayheads);
+      video.addEventListener('seeked', syncAllTimelinePlayheads);
+      video.addEventListener('timeupdate', syncAllTimelinePlayheads);
+      syncAllTimelinePlayheads();
+      if (!video.paused && !video.ended) startAnimation();
+    }
