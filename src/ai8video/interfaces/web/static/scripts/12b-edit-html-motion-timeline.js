@@ -189,13 +189,14 @@
       const markup = chunks.map((chunk, index) => {
         const start = Math.max(0, Number(chunk.startSeconds || 0));
         const label = chunk.label || `动效 ${index + 1}`;
+        const compactLabel = Array.from(label.replace(/\s+/g, ''))[0] || '';
         const left = start / duration * 100;
         const width = Math.max(0.1, Number(chunk.durationSeconds || 0.1)) / duration * 100;
         const action = scissorMode
           ? `剪刀工具：点击${label}中的位置切块`
           : `选择${label}，起点 ${start.toFixed(1)}秒；拖动整体可移动，拖动左右边缘可裁剪或恢复`;
         const selected = selectedIndexes.has(index);
-        return `<button type="button" class="video-preview-html-motion-chunk${selected ? ' is-selected' : ''}" data-video-preview-html-motion-chunk data-chunk-index="${index}" data-full-label="${escapeHtml(label)}" data-boundary-base-title="${escapeHtml(action)}" aria-label="${escapeHtml(action)}" aria-pressed="${selected ? 'true' : 'false'}" title="${escapeHtml(action)}" style="left:${left}%;width:${Math.min(width, 100 - left)}%;top:${1 + index % 2 * 22}px"><span>${escapeHtml(label)}</span><small>${start.toFixed(1)}s</small>${timelineTrimHandleMarkup(label)}</button>`;
+        return `<button type="button" class="video-preview-html-motion-chunk${selected ? ' is-selected' : ''}" data-video-preview-html-motion-chunk data-chunk-index="${index}" data-full-label="${escapeHtml(label)}" data-boundary-base-title="${escapeHtml(action)}" aria-label="${escapeHtml(action)}" aria-pressed="${selected ? 'true' : 'false'}" title="${escapeHtml(action)}" style="left:${left}%;width:${Math.min(width, 100 - left)}%;top:${1 + index % 2 * 22}px"><span data-compact-label="${escapeHtml(compactLabel)}">${escapeHtml(label)}</span><small>${start.toFixed(1)}s</small>${timelineTrimHandleMarkup(label)}</button>`;
       }).join('');
       const boundary = timelineBoundaryDetails();
       track.innerHTML = `${timelineRulerMarkup(duration)}<div class="video-preview-html-motion-chunk-lane" tabindex="0"><span class="video-preview-html-motion-marquee" data-video-preview-html-motion-marquee hidden></span>${timelineOverflowZoneMarkup(duration, boundary.htmlMotionOverflowIndexes, boundary)}<span class="video-preview-timeline-cut-guide" data-video-preview-cut-guide hidden></span>${timelineSnapGuideMarkup()}<span class="video-preview-tts-playhead" data-video-preview-html-motion-playhead aria-label="HTML 动效时间轴播放头" title="拖动播放头；按住 Shift 临时关闭吸附"></span>${markup}</div>`;

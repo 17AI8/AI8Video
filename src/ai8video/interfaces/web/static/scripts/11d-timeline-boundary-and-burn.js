@@ -158,54 +158,10 @@
       return data;
     }
 
-    function updateConfirmedBurnVideo(data, shouldResumePlayback) {
-      const video = els.videoPreviewBody?.querySelector('video');
-      video?.closest('.video-preview-stage')
-        ?.querySelector('[data-video-preview-html-motion-live]')
-        ?.remove();
-      if (!video) return;
-      const officialSrc = String(video.dataset.officialSrc || data.videoUrl || '').split('?')[0];
-      video.src = `${officialSrc}?burn=${Date.now()}`;
-      video.load();
-      if (shouldResumePlayback) video.play().catch(() => {});
-      else video.pause();
-    }
-
-    function closeBurnTimelinePanels() {
-      const selectors = [
-        '[data-video-preview-video-timeline]',
-        '[data-video-preview-tts-timeline]',
-        '[data-video-preview-html-motion-timeline]',
-      ];
-      selectors.forEach((selector) => {
-        const panel = els.videoPreviewBody?.querySelector(selector);
-        panel?.classList.remove('is-open');
-        if (panel) {
-          panel.hidden = true;
-          panel.setAttribute('aria-hidden', 'true');
-        }
-      });
-      els.videoPreviewBody?.querySelector('[data-video-preview-action="edit-video-timeline"]')
-        ?.setAttribute('aria-expanded', 'false');
-    }
-
-    async function applyConfirmedBurn(data, shouldResumePlayback, button) {
-      setTtsScissorMode(false, { render: false, updateStatus: false });
-      setTtsSelectedChunkIndex(null);
-      setVideoSeekMode(false, { updateStatus: false });
-      setVideoScissorMode(false, { render: false, updateStatus: false });
-      setVideoSelectedChunkIndex(null);
-      updateConfirmedBurnVideo(data, shouldResumePlayback);
+    async function applyConfirmedBurn(data, button) {
       await refreshUserGeneratedResults();
       renderResultModal();
       renderStatus();
-      configureHtmlMotionTimeline({ timelineAdjustable: false });
-      configureVideoTimeline(data?.burnReview?.videoTimeline || {});
-      configureTtsTimeline(data?.burnReview?.tts || {});
-      syncVideoTimelineDependentEditors(data?.burnReview?.videoTimeline || {});
-      clearTimelineHistory();
-      closeBurnTimelinePanels();
-      syncBurnConfirmButton({ reviewReady: false });
       setVideoPreviewButtonLabel(button, '已烧录');
       setTimeout(() => setVideoPreviewButtonLabel(button, '确认烧录'), 1400);
     }
@@ -218,8 +174,6 @@
         window.alert(timelineBoundaryReason(boundary));
         return;
       }
-      const currentVideo = els.videoPreviewBody?.querySelector('video');
-      const shouldResumePlayback = Boolean(currentVideo && !currentVideo.paused);
       button.disabled = true;
       button.classList.add('is-spinning');
       button.setAttribute('aria-busy', 'true');
@@ -227,7 +181,7 @@
       try {
         await state.videoPreviewModal?.htmlMotionPersistChain;
         const data = await requestConfirmedBurn(key);
-        await applyConfirmedBurn(data, shouldResumePlayback, button);
+        await applyConfirmedBurn(data, button);
       } catch (error) {
         syncBurnConfirmButton(state.videoPreviewModal?.burnReview || {});
         window.alert(error?.message || '确认烧录失败');

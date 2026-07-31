@@ -45,6 +45,12 @@
       display: none;
     }
 
+    @container (max-width: 28px) {
+      .video-preview-tts-chunk > .video-preview-timeline-trim-handle {
+        display: none;
+      }
+    }
+
     .video-preview-tts-chunk-meta {
       left: 14px;
       right: 14px;

@@ -732,7 +732,7 @@
     .video-preview-tts-timeline.is-open {
       max-height: 250px;
       margin-bottom: 0;
-      padding: 3px 0 0;
+      padding: 6px 8px;
       visibility: visible;
       border-width: 1px;
       opacity: 1;
@@ -947,6 +947,7 @@
       color: #fff;
       cursor: grab;
       touch-action: none;
+      container-type: inline-size;
     }
 
     .video-preview-tts-chunk:hover {
@@ -1060,7 +1061,7 @@
     .video-preview-html-motion-timeline.is-open {
       max-height: 220px;
       margin-bottom: 0;
-      padding: 3px 0 0;
+      padding: 6px 8px;
       visibility: visible;
       border-width: 1px;
       opacity: 1;
@@ -1146,6 +1147,25 @@
       container-type: inline-size;
     }
 
+    .video-preview-html-motion-chunk > span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: clip;
+      white-space: nowrap;
+    }
+
+    .video-preview-html-motion-chunk > small {
+      flex: 0 0 auto;
+      margin-left: 5px;
+      white-space: nowrap;
+    }
+
+    @container (max-width: 88px) {
+      .video-preview-html-motion-chunk > small {
+        display: none;
+      }
+    }
+
     .video-preview-html-motion-chunk:active {
       cursor: grabbing;
       z-index: 3;
@@ -1189,26 +1209,35 @@
       min-width: 0;
       max-width: 100%;
       overflow: hidden;
-      text-overflow: ellipsis;
+      text-overflow: clip;
       white-space: nowrap;
       font-size: 11px;
     }
 
     .video-preview-html-motion-chunk small {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      z-index: 2;
-      transform: translate(-50%, -50%);
+      position: static;
+      flex: 0 0 auto;
+      margin-left: 5px;
+      transform: none;
       font-size: 9px;
       opacity: 0.78;
       pointer-events: none;
     }
 
-    @container (max-width: 42px) {
-      .video-preview-html-motion-chunk > span:not(.video-preview-timeline-trim-handle),
-      .video-preview-html-motion-chunk small {
-        display: none;
+    @container (max-width: 52px) {
+      .video-preview-html-motion-chunk > span {
+        font-size: 0;
+      }
+
+      .video-preview-html-motion-chunk > span::before {
+        content: attr(data-compact-label);
+        font-size: 11px;
+      }
+    }
+
+    @container (max-width: 10px) {
+      .video-preview-html-motion-chunk > span::before {
+        content: "";
       }
     }
 

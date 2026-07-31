@@ -335,6 +335,15 @@
       grid-template-rows: auto minmax(0, 1fr);
       overflow: hidden;
       padding: 16px 0 0;
+      transition: width 220ms ease;
+    }
+
+    #videoPreviewModal .video-preview-panel:has(
+      [data-video-preview-video-timeline].is-open,
+      [data-video-preview-tts-timeline].is-open,
+      [data-video-preview-html-motion-timeline].is-open
+    ) {
+      width: calc(100vw - 32px);
     }
 
     #videoPreviewModal .modal-head {

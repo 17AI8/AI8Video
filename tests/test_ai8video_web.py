@@ -6755,7 +6755,47 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("if (key === 'y' || event.shiftKey) redoTimelineHistory();", source)
         self.assertIn("if (!changed) return setTtsTimelineStatus('配音位置未变化');", source)
         self.assertIn("if (!changed) return setHtmlMotionTimelineStatus('动效位置未变化');", source)
-        self.assertIn("clearTimelineHistory();\n      closeBurnTimelinePanels();", source)
+        self.assertNotIn("function updateConfirmedBurnVideo", source)
+        self.assertNotIn("function closeBurnTimelinePanels", source)
+        self.assertNotIn("clearTimelineHistory();\n      closeBurnTimelinePanels();", source)
+        self.assertIn("await refreshUserGeneratedResults();", source)
+
+    def test_video_preview_expands_when_a_timeline_is_open(self) -> None:
+        source = read_static_source()
+
+        self.assertIn("#videoPreviewModal .video-preview-panel:has(", source)
+        self.assertIn("[data-video-preview-tts-timeline].is-open", source)
+        self.assertIn("width: calc(100vw - 32px);", source)
+
+    def test_open_timeline_borders_have_inner_spacing(self) -> None:
+        source = read_static_source()
+
+        self.assertGreaterEqual(source.count("padding: 6px 8px;"), 2)
+
+    def test_html_motion_chunk_hides_metadata_when_narrow(self) -> None:
+        source = read_static_source()
+
+        self.assertIn("@container (max-width: 88px)", source)
+        self.assertIn(".video-preview-html-motion-chunk > small", source)
+        self.assertIn(".video-preview-html-motion-chunk > span", source)
+        self.assertIn("text-overflow: clip;", source)
+        self.assertNotIn("@container (max-width: 36px)", source)
+        self.assertNotIn("@container (max-width: 42px)", source)
+        self.assertIn("position: static;\n      flex: 0 0 auto;", source)
+        self.assertIn('data-compact-label="${escapeHtml(compactLabel)}"', source)
+        self.assertIn("@container (max-width: 52px)", source)
+        self.assertIn("content: attr(data-compact-label);", source)
+        self.assertIn("@container (max-width: 10px)", source)
+        self.assertNotIn("@container (max-width: 22px)", source)
+
+    def test_tts_chunk_hides_trim_handles_when_too_narrow(self) -> None:
+        source = read_static_source()
+
+        self.assertIn("@container (max-width: 28px)", source)
+        self.assertIn(
+            ".video-preview-tts-chunk > .video-preview-timeline-trim-handle",
+            source,
+        )
 
     def test_static_timeline_ruler_and_snapping_cover_all_tracks(self) -> None:
         source = read_static_source()
