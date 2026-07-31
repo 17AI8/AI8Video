@@ -116,7 +116,7 @@ class AI8VideoLocalTtsTest(unittest.TestCase):
             env_backup = os.environ.get("AI8VIDEO_LOCAL_TTS_DIR")
             try:
                 os.environ["AI8VIDEO_LOCAL_TTS_DIR"] = str(Path(tempdir) / "tts")
-                options = local_tts._voice_options_for_engine("mimo-api", local_tts.default_sherpa_onnx_model_dir())
+                options = local_tts._mimo_voice_options()
             finally:
                 if env_backup is None:
                     os.environ.pop("AI8VIDEO_LOCAL_TTS_DIR", None)

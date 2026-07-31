@@ -135,6 +135,7 @@ tests/             离线质量门禁，不进入运行包
 5. `用户文件夹/用户生成结果/` 是最终结果事实源；`temp/ai8video/` 只保存可丢弃、可重建的过程状态。
 6. 产品显示名统一为 `AI8video`，Python 包和命令统一为 `ai8video`，环境变量统一为 `AI8VIDEO_`。旧名称只允许存在于迁移兼容代码中，读取后只写新名称。
 7. `ai8video_cli/`、`frontends/` 和 `tools/ai8video/` 已移除，不得重新建立第二套入口或核心包。
+8. `media/local_tts.py` 是 TTS 稳定门面，只负责编排和兼容入口；设置、文本、MiMo 与 FFmpeg 实现分别放在对应的 `local_tts_*` 模块，不在 Web、桌面端或测试中复制另一套 TTS 逻辑。
 
 上述依赖方向、旧入口残留和重复核心路由由 `tests/test_ai8video_architecture.py` 持续检查。
 

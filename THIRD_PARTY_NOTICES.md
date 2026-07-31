@@ -14,12 +14,10 @@
 | Psycopg | `>=3.3,<4` | LGPL-3.0-or-later | PostgreSQL 剧本知识库驱动 |
 | Pillow | `>=9.0` | HPND | 图片和文字渲染 |
 | boto3 | `>=1.34` | Apache-2.0 | 可选 S3 归档 |
-| sherpa-onnx | `>=1.13` | Apache-2.0 | 可选本地语音合成 |
 | faster-whisper | `>=1.2,<2` | MIT | 爆款拆解的本地台词识别 |
 | CTranslate2 | `>=4,<5`（faster-whisper 间接依赖） | MIT | Whisper 模型推理运行时 |
 | PyAV / FFmpeg libraries | `>=11`（faster-whisper 间接依赖） | BSD-3-Clause / LGPL-3.0-or-later | 音视频解码；PyPI wheel 会携带 FFmpeg 动态库 |
 | Systran faster-whisper-base | 运行时按需下载 | MIT | 默认台词识别模型权重 |
-| AISHELL-3 | 可选旧版语音模型数据集 | Apache-2.0 | 兼容用户本机已有的 `vits-icefall-zh-aishell3` 模型 |
 | Electron | `43.2.0` | MIT | 桌面客户端运行时 |
 | Font Awesome Free Desktop | `7.3.1` | CC BY 4.0（SVG 图标）/ MIT（许可证文本） | 仅分发界面实际引用的 16 个 Solid SVG 图标与许可证 |
 | Source Han Serif SC Bold / Heavy | 当前仓内版本 | SIL OFL-1.1 | 可选本地字幕与花字渲染字体 |
@@ -40,6 +38,5 @@
 - PyAV：[PyAV-Org/PyAV](https://github.com/PyAV-Org/PyAV)
 - faster-whisper-base：[Systran/faster-whisper-base](https://huggingface.co/Systran/faster-whisper-base)
 - FFmpeg：[ffmpeg.org](https://ffmpeg.org/)
-- AISHELL-3：[OpenSLR 93](https://www.openslr.org/93/)
 - Font Awesome Free：[FortAwesome/Font-Awesome](https://github.com/FortAwesome/Font-Awesome/tree/7.3.1)
 - Source Han Serif：[adobe-fonts/source-han-serif](https://github.com/adobe-fonts/source-han-serif)

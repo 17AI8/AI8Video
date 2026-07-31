@@ -468,6 +468,8 @@ AI8Video/
 
 完整运行闭环、模块职责和依赖规则见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
+`media/local_tts.py` 只保留稳定调用入口与兼容补丁点；设置和音色库、口播文本提取、MiMo 请求、FFmpeg 时长适配与混音分别由 `local_tts_settings.py`、`local_tts_text.py`、`local_tts_mimo.py`、`local_tts_audio.py` 承担，避免桌面端、Web 与测试各自形成一套 TTS 行为。
+
 ## 本地数据与隐私
 
 以下内容默认只保存在本机，不进入仓库：
@@ -541,7 +543,15 @@ npm ci
 npm run dist:mac
 ```
 
-`.github/workflows/desktop-release.yml` 支持手动运行；推送 `v*` 注解标签时会自动生成 macOS ARM64 DMG 与 Windows x64 EXE，并附加到对应 GitHub Release。Release 正文直接采用标签中的模块化更新说明，不再只生成空泛的提交链接。工作流会在 `desktop/electron` 工作目录内安装依赖和执行打包，确保不同系统及 npm 版本都能稳定读取已纳入版本控制的 `package-lock.json`。普通代码推送不会触发大型打包任务，避免无意义消耗构建时长和制品存储。
+`.github/workflows/desktop-release.yml` 支持手动运行；推送 `v*` 注解标签时会自动生成 macOS ARM64 DMG 与 Windows x64 EXE，并附加到对应 GitHub Release。Release 正文直接采用标签中的模块化更新说明，不再只生成空泛的提交链接。工作流会在 `desktop/electron` 工作目录内安装依赖和执行打包，确保不同系统及 npm 版本都能稳定读取已纳入版本控制的 `package-lock.json`。发行暂存会移除 Node 依赖中的 source map、TypeScript 声明文件和 npm `.bin` 命令垫片，避免 GitHub Actions 临时目录的绝对符号链接进入应用并破坏 macOS 签名；Electron 仅保留简体中文和英文语言包。当前 TTS 已统一为 MiMo API，桌面运行时不再携带不可达的旧 sherpa-onnx 引擎、模型音色表及重复 ONNX 动态库。普通代码推送不会触发大型打包任务，避免无意义消耗构建时长和制品存储。
+
+GitHub Actions 支持按平台自动启用代码签名和 Apple 公证。仓库 Secrets 必须成组配置，缺少任意一项会立即中止，避免误以为已签名；整组未配置时仍会构建，并在 Actions 制品名和任务摘要中明确标记 `unsigned`，但 macOS 应用会走独立的完整 ad-hoc 签名通道并通过严格结构校验，不能发布系统会判定为“已损坏”的无效包。配置证书后则切换到 Developer ID 签名与公证通道，不会被 ad-hoc 参数覆盖。检查脚本只输出变量名和状态，不输出证书、密码或账号值。
+
+| 平台能力 | GitHub Secrets | 结果 |
+|---|---|---|
+| macOS 代码签名 | `MAC_CSC_LINK`、`MAC_CSC_KEY_PASSWORD` | 映射为 electron-builder 的 `CSC_LINK`、`CSC_KEY_PASSWORD` |
+| macOS Apple 公证 | `APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID` | 签名完成后自动提交公证并验证装订票据 |
+| Windows 代码签名 | `WIN_CSC_LINK`、`WIN_CSC_KEY_PASSWORD` | 同时验证安装器、Electron 主程序和冻结后端 |
 
 正式桌面版本请从 [GitHub Releases](https://github.com/17AI8/AI8Video/releases) 下载；Actions 手动运行产生的临时制品主要用于构建验证，正式交付以对应版本标签下的 DMG / EXE 为准。
 
@@ -550,7 +560,7 @@ npm run dist:mac
 - Web 服务固定监听 `127.0.0.1`；
 - 安装包内置 Python 后端、Web 静态资源、HyperFrames 和两款授权中文字体，不包含项目源码与本地密钥；
 - FFmpeg / FFprobe 仍使用用户系统中可用的外部运行时；
-- macOS 与 Windows 安装包目前未配置开发者证书签名，系统可能显示来源确认提示；
+- macOS 无证书构建现使用完整 ad-hoc 签名并通过严格结构校验，避免把无效包误发为“应用已损坏”；但 ad-hoc 不等于 Developer ID 信任，未完成 Apple 公证的制品仍会标记为 `unsigned`，正式公开交付须配置证书与公证 Secrets；
 - 项目未提供官方 Docker、Compose、Kubernetes 或生产服务器部署方案；
 - 当前 Web 层没有面向公网的认证和 TLS，不应直接反向代理到公网。
 

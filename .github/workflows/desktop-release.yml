@@ -77,14 +77,109 @@ jobs:
         working-directory: desktop/electron
         run: npm ci
 
-      - name: 生成安装包
+      - name: 检查 macOS 签名与公证配置
+        id: mac_signing
+        if: matrix.target == 'mac'
         working-directory: desktop/electron
-        run: npm run dist:${{ matrix.target }}
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: node ../runtime/check_signing_config.mjs mac
+
+      - name: 检查 Windows 签名配置
+        id: win_signing
+        if: matrix.target == 'win'
+        working-directory: desktop/electron
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: node ../runtime/check_signing_config.mjs win
+
+      - name: 生成已签名 macOS 安装包
+        if: matrix.target == 'mac' && steps.mac_signing.outputs.signing == 'true'
+        working-directory: desktop/electron
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.mac_signing.outputs.csc_identity_auto_discovery }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run dist:mac:signed
+
+      - name: 生成 ad-hoc macOS 安装包
+        if: matrix.target == 'mac' && steps.mac_signing.outputs.signing != 'true'
+        working-directory: desktop/electron
+        run: npm run dist:mac
+
+      - name: 生成 Windows 安装包
+        if: matrix.target == 'win'
+        working-directory: desktop/electron
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.win_signing.outputs.csc_identity_auto_discovery }}
+        run: npm run dist:win
+
+      - name: 验证 macOS 签名与公证
+        if: matrix.target == 'mac'
+        shell: bash
+        env:
+          SIGNING_ENABLED: ${{ steps.mac_signing.outputs.signing }}
+          NOTARIZATION_ENABLED: ${{ steps.mac_signing.outputs.notarization }}
+        run: |
+          set -euo pipefail
+          app_path="$(find desktop/electron/dist -maxdepth 2 -type d -name 'AI8video.app' -print -quit)"
+          test -n "$app_path"
+          signature_details="$(codesign -dv --verbose=4 "$app_path" 2>&1 || true)"
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          if [[ "$SIGNING_ENABLED" == "true" ]]; then
+            if [[ "$signature_details" != *"Authority="* || "$signature_details" == *"Signature=adhoc"* ]]; then
+              echo "::error::macOS 构建未使用受信代码签名身份"
+              exit 1
+            fi
+          else
+            if [[ "$signature_details" == *"Authority="* ]]; then
+              echo "::error::未配置证书时不应生成受信签名制品"
+              exit 1
+            fi
+            if [[ "$signature_details" != *"Signature=adhoc"* ]]; then
+              echo "::error::未配置证书时仍必须生成结构完整的 ad-hoc 签名"
+              exit 1
+            fi
+            echo "已确认 macOS 制品的 ad-hoc 签名结构有效；该制品仍未获得 Gatekeeper 信任"
+          fi
+          if [[ "$NOTARIZATION_ENABLED" == "true" ]]; then
+            xcrun stapler validate "$app_path"
+            spctl -a -vv --type execute "$app_path"
+          fi
+
+      - name: 验证 Windows 签名
+        if: matrix.target == 'win'
+        shell: pwsh
+        env:
+          SIGNING_ENABLED: ${{ steps.win_signing.outputs.signing }}
+        run: |
+          $installer = Get-ChildItem "desktop/electron/dist" -Filter "*.exe" -File | Select-Object -First 1
+          $app = Get-Item "desktop/electron/dist/win-unpacked/AI8video.exe"
+          $backend = Get-Item "desktop/electron/dist/win-unpacked/resources/runtime/backend/ai8video-backend.exe"
+          if (-not $installer) { throw "没有找到 Windows 安装包" }
+          $expectedStatus = if ($env:SIGNING_ENABLED -eq "true") { "Valid" } else { "NotSigned" }
+          foreach ($target in @($installer, $app, $backend)) {
+            $status = (Get-AuthenticodeSignature $target.FullName).Status.ToString()
+            Write-Host "$($target.Name): $status"
+            if ($status -ne $expectedStatus) {
+              throw "$($target.Name) 签名状态应为 $expectedStatus，实际为 $status"
+            }
+          }
 
       - name: 上传安装包
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.artifact }}
+          name: ${{ matrix.artifact }}-${{ steps.mac_signing.outputs.status || steps.win_signing.outputs.status }}
           path: ${{ matrix.package_glob }}
           if-no-files-found: error
           retention-days: 14

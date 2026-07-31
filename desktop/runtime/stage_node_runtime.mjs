@@ -11,6 +11,7 @@ if (!sourceArg || !targetArg) {
 const sourceRoot = path.resolve(sourceArg);
 const targetRoot = path.resolve(targetArg);
 const hyperframesCli = path.join(sourceRoot, 'hyperframes', 'dist', 'cli.js');
+const developmentArtifactPattern = /(?:\.map|\.d\.(?:ts|mts|cts))$/i;
 
 async function pathExists(target) {
   try {
@@ -56,6 +57,32 @@ async function pruneOnnxPlatforms() {
   }
 }
 
+async function pruneExecutableShims() {
+  const binRoot = path.join(targetRoot, '.bin');
+  if (!await pathExists(binRoot)) return { entries: 0 };
+  const entries = await fs.readdir(binRoot);
+  await fs.rm(binRoot, { recursive: true, force: true });
+  return { entries: entries.length };
+}
+
+async function pruneDevelopmentArtifacts(root) {
+  let bytes = 0;
+  let files = 0;
+  for (const entry of await fs.readdir(root, { withFileTypes: true })) {
+    const target = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      const nested = await pruneDevelopmentArtifacts(target);
+      bytes += nested.bytes;
+      files += nested.files;
+    } else if (entry.isFile() && developmentArtifactPattern.test(entry.name)) {
+      bytes += (await fs.stat(target)).size;
+      files += 1;
+      await fs.rm(target);
+    }
+  }
+  return { bytes, files };
+}
+
 async function directoryStats(root) {
   let bytes = 0;
   let files = 0;
@@ -75,6 +102,8 @@ async function directoryStats(root) {
 
 await copyProductionModules();
 await pruneOnnxPlatforms();
+const executableShims = await pruneExecutableShims();
+const pruned = await pruneDevelopmentArtifacts(targetRoot);
 const stats = await directoryStats(targetRoot);
 process.stdout.write(JSON.stringify({
   target: targetRoot,
@@ -82,4 +111,7 @@ process.stdout.write(JSON.stringify({
   arch: process.arch,
   files: stats.files,
   mebibytes: Number((stats.bytes / 1024 / 1024).toFixed(2)),
+  prunedBinEntries: executableShims.entries,
+  prunedFiles: pruned.files,
+  prunedMebibytes: Number((pruned.bytes / 1024 / 1024).toFixed(2)),
 }) + '\n');

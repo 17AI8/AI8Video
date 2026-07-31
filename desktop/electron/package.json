@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "electron .",
     "start": "electron .",
-    "dist:mac": "node ../runtime/verify_release_runtime.mjs && electron-builder --mac dmg --publish never && node ../runtime/verify_packaged_runtime.mjs dist",
+    "dist:mac": "node ../runtime/verify_release_runtime.mjs && electron-builder --mac dmg --publish never --config.mac.identity=- --config.mac.hardenedRuntime=false && node ../runtime/verify_packaged_runtime.mjs dist",
+    "dist:mac:signed": "node ../runtime/verify_release_runtime.mjs && electron-builder --mac dmg --publish never && node ../runtime/verify_packaged_runtime.mjs dist",
     "dist:win": "node ../runtime/verify_release_runtime.mjs && electron-builder --win nsis --publish never && node ../runtime/verify_packaged_runtime.mjs dist"
   },
   "devDependencies": {
@@ -20,6 +21,11 @@
     "appId": "com.ai8.video.electron",
     "productName": "AI8video",
     "asar": true,
+    "electronLanguages": [
+      "zh-CN",
+      "zh_CN",
+      "en-US"
+    ],
     "directories": {
       "output": "dist"
     },

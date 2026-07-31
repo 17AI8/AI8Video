@@ -54,7 +54,6 @@ def runtime_self_check() -> dict[str, object]:
     import ctranslate2
     import onnxruntime
     import psycopg
-    import sherpa_onnx
     from PIL import Image
     from faster_whisper import WhisperModel
 
@@ -67,7 +66,6 @@ def runtime_self_check() -> dict[str, object]:
             Image.__name__.split(".", 1)[0],
             onnxruntime.__name__,
             psycopg.__name__,
-            sherpa_onnx.__name__,
             WhisperModel.__module__.split(".", 1)[0],
         ],
     }

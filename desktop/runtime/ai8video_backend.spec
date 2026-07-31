@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 
 PROJECT_ROOT = Path(SPECPATH).resolve().parents[1]
@@ -20,23 +20,18 @@ datas.extend([
     (str(PROJECT_ROOT / "licenses"), "runtime-defaults/licenses"),
 ])
 
-binaries = collect_dynamic_libs("sherpa_onnx")
-hiddenimports = (
-    collect_submodules("PIL")
-    + collect_submodules("faster_whisper")
-    + collect_submodules("sherpa_onnx")
-)
+hiddenimports = collect_submodules("faster_whisper")
 
 analysis = Analysis(
     [str(ENTRY_PATH)],
     pathex=[str(PROJECT_ROOT / "src")],
-    binaries=binaries,
+    binaries=[],
     datas=datas,
     hiddenimports=sorted(set(hiddenimports)),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["mykey"],
+    excludes=["_pytest", "fsspec.conftest", "mykey", "pytest", "sherpa_onnx"],
     noarchive=False,
     optimize=1,
 )
