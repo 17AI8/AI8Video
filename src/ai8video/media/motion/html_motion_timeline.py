@@ -121,17 +121,19 @@ def _rebuild_scene(
     source_scene = scenes[source_index]
     if not isinstance(source_scene, dict):
         raise ValueError("chunk 来源片段不合法")
-    source_scene_start = float(source_scene.get("start") or 0.0)
-    source_scene_end = float(source_scene.get("end") or source_scene_start)
+    source_scene_start, source_scene_end = _scene_source_bounds(source_scene)
     source_start, source_end = _chunk_source_range(
         item,
         start=start,
         source_scene_start=source_scene_start,
         source_scene_end=source_scene_end,
     )
-    chunk_duration = source_end - source_start
-    if chunk_duration < 0.1:
-        raise ValueError("每个动效片段至少保留 0.1 秒")
+    # 历史坏数据可能带入零长度边界；只在来源区间内补齐，不能把合并后的
+    # 源时间坐标误裁到场景在总时间轴上的 start/end。
+    if round(source_end - source_start, 3) < 0.1:
+        source_end = min(source_scene_end, source_start + 0.1)
+        source_start = max(source_scene_start, source_end - 0.1)
+    chunk_duration = round(max(0.1, source_end - source_start), 3)
     restore_bounds = normalize_restore_bounds(
         item,
         visible_start_seconds=source_start,
@@ -149,12 +151,10 @@ def _rebuild_scene(
             "_timelineSourceStartSeconds": round(source_start, 3),
             "_timelineSourceEndSeconds": round(source_end, 3),
             "_timelineOriginalSourceStartSeconds": round(
-                max(source_scene_start, restore_bounds.start_seconds),
-                3,
+                max(source_scene_start, restore_bounds.start_seconds), 3
             ),
             "_timelineOriginalSourceEndSeconds": round(
-                min(source_scene_end, restore_bounds.end_seconds),
-                3,
+                min(source_scene_end, restore_bounds.end_seconds), 3
             ),
         }
     )
@@ -171,6 +171,23 @@ def _chunk_location(item: Any, target_index: int) -> tuple[int, float]:
         )
     except (TypeError, ValueError) as exc:
         raise ValueError("chunk 时间轴数据不合法") from exc
+
+
+def _scene_source_bounds(scene: dict[str, Any]) -> tuple[float, float]:
+    """返回 scene 所属源时间轴的可恢复范围，而非合并输出时间轴范围。"""
+    fallback_start = float(scene.get("start") or 0.0)
+    fallback_end = float(scene.get("end") or fallback_start)
+    source_start = optional_seconds(
+        scene.get("_timelineSourceStartSeconds"), fallback_start
+    )
+    source_end = optional_seconds(scene.get("_timelineSourceEndSeconds"), fallback_end)
+    original_start = optional_seconds(
+        scene.get("_timelineOriginalSourceStartSeconds"), source_start
+    )
+    original_end = optional_seconds(
+        scene.get("_timelineOriginalSourceEndSeconds"), source_end
+    )
+    return min(source_start, original_start), max(source_end, original_end)
 
 
 def _chunk_source_range(

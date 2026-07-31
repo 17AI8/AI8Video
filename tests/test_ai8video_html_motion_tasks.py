@@ -134,8 +134,9 @@ class HtmlMotionTaskServiceTest(unittest.TestCase):
         release = threading.Event()
 
         def target(*, stage_callback, **_kwargs):
-            stage_callback("generating", {"streamDelta": '{\"audit\":'})
-            stage_callback("generating", {"streamDelta": '{\"passed\":true}'})
+            stage_callback("generating", {"streamDelta": "分析中", "streamKind": "intermediate"})
+            stage_callback("generating", {"streamDelta": '{\"audit\":', "streamKind": "final"})
+            stage_callback("generating", {"streamDelta": '{\"passed\":true}', "streamKind": "final"})
             release.wait(1)
             return {"htmlMotionOverlay": {"status": "preview_ready"}}
 
@@ -146,7 +147,11 @@ class HtmlMotionTaskServiceTest(unittest.TestCase):
             time.sleep(0.01)
             snapshot = service.get(task["taskId"])
         release.set()
-        self.assertEqual(snapshot["streamText"], '{\"audit\":{\"passed\":true}')
+        self.assertEqual(snapshot["streamText"], '分析中{\"audit\":{\"passed\":true}')
+        self.assertEqual(snapshot["streamParts"], [
+            {"kind": "intermediate", "text": "分析中"},
+            {"kind": "final", "text": '{\"audit\":{\"passed\":true}'},
+        ])
 
 
 def _wait_for_terminal(service: HtmlMotionTaskService, task_id: str, timeout: float = 2.0) -> dict:

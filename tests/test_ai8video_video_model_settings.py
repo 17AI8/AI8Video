@@ -211,6 +211,29 @@ class AI8VideoVideoModelSettingsTest(unittest.TestCase):
 
         self.assertEqual(response.chunk_sizes, [1])
 
+    def test_llm_provider_streams_reasoning_before_content(self) -> None:
+        response = MockStreamResponse([
+            b'data: {"choices":[{"delta":{"reasoning_content":"thinking"}}]}',
+            b'data: {"choices":[{"delta":{"content":"{\\"ok\\":true}"}}]}',
+            b'data: [DONE]',
+        ])
+        config = AI8VideoConfig(
+            llm_base_url="https://api.example.com",
+            llm_api_key="sk-test",
+            llm_model="deepseek-test",
+        )
+        events: list[str] = []
+        llm = build_openai_compat_llm(
+            config,
+            on_delta=lambda delta: events.append(delta),
+            on_reasoning_delta=lambda delta: events.append(delta),
+        )
+
+        with patch("ai8video.integrations.llm_provider.api_request", return_value=response):
+            self.assertEqual(llm("只输出对象"), '{"ok":true}')
+
+        self.assertEqual(events, ["thinking", '{"ok":true}'])
+
     def test_llm_provider_does_not_retry_read_timeout(self) -> None:
         config = AI8VideoConfig(llm_base_url="https://api.example.com", llm_api_key="sk-test", llm_model="deepseek-test")
         llm = build_openai_compat_llm(config, stream=False, transport_retry_count=1)

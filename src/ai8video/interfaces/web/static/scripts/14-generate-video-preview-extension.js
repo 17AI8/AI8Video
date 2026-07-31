@@ -120,12 +120,11 @@
           const sourcePrompt = await postVideoPrompt(key, undefined, 'original');
           updateVideoPreviewExtensionState(key, { videoPrompt: String(sourcePrompt.text || '').trim() });
         }
-        const previewTime = mode === 'replace'
-          ? 0
-          : Math.max(0, Number(savedState?.previewTime ?? video.currentTime));
-        const sourceFrameTime = mode === 'replace'
-          ? 0
-          : Math.max(0, Number(savedState?.frameTime ?? videoOutputTimeToSourceTime(previewTime)));
+        const previewTime = Math.max(0, Number(savedState?.previewTime ?? video.currentTime));
+        const sourceFrameTime = Math.max(
+          0,
+          Number(savedState?.frameTime ?? videoOutputTimeToSourceTime(previewTime)),
+        );
         const frameAsset = savedState?.frameKey
           ? savedState
           : await saveVideoPreviewExtensionFrame(key, sourceFrameTime);
@@ -136,7 +135,7 @@
         if (deleteExtensionButton) deleteExtensionButton.disabled = false;
         const extensionStage = document.createElement('div');
         extensionStage.className = 'video-preview-extension-stage';
-        extensionStage.insertAdjacentHTML('afterbegin', `<img src="${escapeHtml(String(frameAsset.frameUrl || ''))}" alt="${mode === 'replace' ? '原视频首帧' : '已确认截图'}">`);
+        extensionStage.insertAdjacentHTML('afterbegin', `<img src="${escapeHtml(String(frameAsset.frameUrl || ''))}" alt="原视频当前时间点截图">`);
         extensionStage.insertAdjacentHTML('beforeend', `
           <button type="button" class="video-preview-extension-batch-toggle" data-extension-batch-toggle>批量</button>
           <div class="video-preview-extension-action-bar">
@@ -210,11 +209,11 @@
         syncMergeTip();
         saveState();
         syncVideoPreviewMergeAvailability();
-        setVideoPreviewButtonLabel(button, mode === 'replace' ? '重新生成' : '延长');
+        setVideoPreviewButtonLabel(button, mode === 'replace' ? '重新生成' : '延长视频');
         setVideoPreviewHeaderStatus('');
         button.disabled = false;
       } catch (error) {
-        setVideoPreviewButtonLabel(button, mode === 'replace' ? '重新生成' : '延长');
+        setVideoPreviewButtonLabel(button, mode === 'replace' ? '重新生成' : '延长视频');
         setVideoPreviewHeaderStatus(error?.message || '操作准备失败', 'error');
         button.disabled = false;
         if (savedState) console.warn('恢复视频延长状态失败', error);
@@ -250,7 +249,7 @@
       const activeButton = stageGrid.querySelector(`[data-video-preview-action="${action}"]`);
       if (activeButton) {
         activeButton.disabled = true;
-        setVideoPreviewButtonLabel(activeButton, mode === 'replace' ? '重新生成' : '延长');
+        setVideoPreviewButtonLabel(activeButton, mode === 'replace' ? '重新生成' : '延长视频');
       }
       setVideoPreviewHeaderStatus(mode === 'replace' ? '已生成替换视频' : '已生成延长视频', 'success');
       const leftKey = String(stageGrid.dataset.leftVideoKey || '').trim();
@@ -331,7 +330,7 @@
             <video class="video-preview-large" controls autoplay playsinline preload="metadata" ${cover ? `poster="${escapeHtml(cover)}"` : ''} src="${escapeHtml(src)}"></video>
             <span class="video-preview-extend-actions">
               <button type="button" class="video-preview-button video-preview-regenerate-button" data-video-preview-action="regenerate-video" data-icon="regenerate" data-video-user-generated-key="${escapeHtml(userGeneratedKey)}" ${userGeneratedKey ? '' : 'disabled'}>${videoPreviewButtonInnerHtml('regenerate', '重新生成')}</button>
-              <button type="button" class="video-preview-button video-preview-extend-button" data-video-preview-action="extend-video" data-icon="extend" data-video-user-generated-key="${escapeHtml(userGeneratedKey)}" ${userGeneratedKey ? '' : 'disabled'}>${videoPreviewButtonInnerHtml('extend', '延长')}</button>
+              <button type="button" class="video-preview-button video-preview-extend-button" data-video-preview-action="extend-video" data-icon="extend" data-video-user-generated-key="${escapeHtml(userGeneratedKey)}" ${userGeneratedKey ? '' : 'disabled'}>${videoPreviewButtonInnerHtml('extend', '延长视频')}</button>
               <button type="button" class="video-preview-button video-preview-extension-close-button" data-video-preview-action="delete-extension" data-icon="trash" aria-label="删除右侧延长内容">${videoPreviewButtonInnerHtml('trash', '')}</button>
             </span>
           </div>

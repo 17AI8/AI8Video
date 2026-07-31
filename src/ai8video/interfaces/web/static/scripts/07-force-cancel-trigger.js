@@ -23,6 +23,25 @@
         openResultModal();
         return;
       }
+      const batchMergeTrigger = event.target.closest('[data-toggle-agent-batch-merge]');
+      if (batchMergeTrigger) {
+        event.preventDefault();
+        toggleAgentResultBatchMergeMode();
+        return;
+      }
+      const agentBatchSelection = event.target.closest('.agent-video-results [data-result-batch-merge-select]');
+      if (agentBatchSelection) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleAgentResultBatchMergeSelection(agentBatchSelection.dataset.resultBatchMergeSelect);
+        return;
+      }
+      const agentBatchConfirm = event.target.closest('[data-confirm-agent-batch-merge]');
+      if (agentBatchConfirm) {
+        event.preventDefault();
+        await confirmAgentResultBatchMerge();
+        return;
+      }
       const fullscreenVideoTrigger = event.target.closest('[data-fullscreen-video]');
       if (fullscreenVideoTrigger) {
         event.preventDefault();

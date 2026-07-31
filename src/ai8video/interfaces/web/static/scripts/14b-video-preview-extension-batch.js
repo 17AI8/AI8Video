@@ -20,10 +20,14 @@
 
     function batchFrameMarkup(frame, index, busy = false) {
       const hasVideo = Boolean(frame.videoUrl);
-      const media = hasVideo
+      const failed = frame.status === 'failed';
+      const media = failed
+        ? `<span class="video-preview-extension-variant-failure-title">生成失败</span>
+          <span class="video-preview-extension-variant-failure-message">${escapeHtml(frame.error || '请稍后重试')}</span>`
+        : hasVideo
         ? `<video controls playsinline preload="metadata" src="${escapeHtml(frame.videoUrl)}"></video>`
         : (frame.frameUrl ? `<img src="${escapeHtml(frame.frameUrl)}" alt="批量截帧">` : '<span>等待截图</span>');
-      return `<div class="video-preview-extension-variant${frame.selected ? ' selected' : ''}${hasVideo ? ' has-video' : ''}" data-extension-frame-key="${escapeHtml(frame.frameKey || '')}">
+      return `<div class="video-preview-extension-variant${frame.selected ? ' selected' : ''}${hasVideo ? ' has-video' : ''}${failed ? ' is-failed' : ''}" data-extension-frame-key="${escapeHtml(frame.frameKey || '')}">
         ${media}
         <button type="button" class="video-preview-extension-variant-select" data-extension-batch-select="${index}" aria-label="选择第 ${index + 1} 张" aria-pressed="${frame.selected ? 'true' : 'false'}"${busy ? ' disabled' : ''}><span aria-hidden="true"></span></button>
       </div>`;
@@ -63,6 +67,7 @@
       stage.querySelector('video[data-frame-preview], .video-preview-extension-variants, :scope > img')?.remove();
       actionBar.insertAdjacentHTML('beforebegin', `<div class="video-preview-extension-variants">${displayFrames.map((frame, index) => batchFrameMarkup(frame, index, busy)).join('')}</div>`);
       stage.classList.add('batch-active');
+      actionBar.hidden = false;
       stage.classList.toggle('is-busy', busy);
       stageGrid.dataset.extensionBatchMode = 'true';
       stageGrid.dataset.extensionBatchFrames = JSON.stringify(displayFrames);
@@ -71,7 +76,7 @@
       confirmButton.textContent = '确认';
       stageGrid.dataset.extensionBatchSelectedIndex = String(selectedIndex);
       displayFrames.forEach((frame, index) => {
-        if (frame.status === 'repairing') setVideoPreviewBatchVariantLoading(stageGrid, index, true);
+        if (frame.status === 'repairing') setVideoPreviewBatchVariantLoading(stageGrid, index, true, '修图中');
         if (frame.status === 'video-generating') setVideoPreviewBatchVariantLoading(stageGrid, index, true, frame.progressLabel || '视频生成中');
       });
       syncVideoPreviewExtensionBatchControls(stageGrid, displayFrames);
@@ -177,6 +182,7 @@
         : String(item.statusLabel || item.status || '视频生成中');
       const statusMap = { queued: '排队中', pending: '等待提交', submitted: '已提交', running: '生成中', processing: '处理中', polling: '查询结果中', archiving: '归档中' };
       const status = String(rawStatus || '').replace(/\b(queued|pending|submitted|running|processing|polling|archiving)\b/gi, (value) => statusMap[value.toLowerCase()] || value);
+      if (['failed', 'cancelled', 'canceled'].includes(String(item?.status || '').toLowerCase())) return '生成失败';
       const percent = typeof generationProgressPercent === 'function' ? generationProgressPercent(item) : 0;
       return `${status}${percent && !/\d+(?:\.\d+)?%/.test(status) ? ` · ${percent}%` : ''}`;
     }
@@ -232,6 +238,17 @@
           const params = new URLSearchParams({ sessionId, videoCount: '1' });
           const res = await fetch(`/api/chat-status?${params.toString()}`);
           const payload = await res.json().catch(() => ({}));
+          if (signal.done) return;
+          const status = res.ok ? batchVideoProgressStatus(payload) : '';
+          if (['failed', 'cancelled', 'canceled'].includes(status)) {
+            signal.done = true;
+            const error = String(payload?.generationProgress?.items?.[0]?.error || '生成视频失败');
+            const nextFrames = updateVideoPreviewExtensionBatchFrame(stageGrid, index, {
+              status: 'failed', progressLabel: '', error,
+            });
+            applyVideoPreviewExtensionBatchStage(stageGrid, nextFrames);
+            return;
+          }
           const label = res.ok ? batchVideoProgressLabel(payload) : '';
           if (label) {
             setVideoPreviewBatchVariantLoading(stageGrid, index, true, label);
@@ -262,13 +279,20 @@
       persistVideoPreviewExtensionBatchState(stageGrid);
     }
 
-    function confirmVideoPreviewExtensionBatch() {
+    async function confirmVideoPreviewExtensionBatch() {
       const stageGrid = els.videoPreviewBody?.querySelector('.video-preview-stage-grid.extension-active');
       if (isVideoPreviewExtensionBatchBusy(stageGrid)) return;
       const frames = readVideoPreviewExtensionBatchFrames(stageGrid);
       const selected = frames.find((frame) => frame.selected);
       const stage = stageGrid?.querySelector('.video-preview-extension-stage');
       if (!selected || !stage) return;
+      const actionBar = stage.querySelector('.video-preview-extension-action-bar');
+      const confirmButton = stage.querySelector('[data-extension-batch-toggle]');
+      const key = String(stageGrid.dataset.leftVideoKey || '').trim();
+      if (confirmButton) {
+        confirmButton.disabled = true;
+        confirmButton.textContent = '确认中';
+      }
       stage.classList.remove('batch-active');
       stage.querySelector('.video-preview-extension-variants')?.remove();
       const mediaMarkup = selected.videoUrl
@@ -280,9 +304,8 @@
       stageGrid.dataset.extensionVideoUrl = selected.videoUrl || '';
       stageGrid.dataset.extensionBatchMode = 'false';
       stageGrid.dataset.extensionBatchFrames = '[]';
-      stage.querySelector('[data-extension-batch-toggle]').textContent = '批量';
-      stage.querySelector('[data-extension-batch-toggle]').disabled = false;
-      const key = String(stageGrid.dataset.leftVideoKey || '').trim();
+      stage.dataset.videoKey = selected.userGeneratedKey || '';
+      if (actionBar) actionBar.hidden = true;
       persistVideoPreviewExtensionState(key, {
         ...(loadVideoPreviewExtensionStates()[key] || {}), active: true,
         frameKey: selected.frameKey,
@@ -292,8 +315,27 @@
         batchMode: false,
         batchFrames: [],
       });
-      renderVideoPreviewFrameRepairActions();
       syncVideoPreviewMergeAvailability();
+      const discardedKeys = frames
+        .filter((frame) => frame !== selected)
+        .map((frame) => String(frame.userGeneratedKey || '').trim())
+        .filter(Boolean);
+      const cleanupFailures = [];
+      for (const rightKey of discardedKeys) {
+        try {
+          await discardDetachedVideoPreviewExtensionResult(key, rightKey, true);
+        } catch (error) {
+          cleanupFailures.push(error);
+        }
+      }
+      if (confirmButton) {
+        confirmButton.textContent = '批量';
+        confirmButton.disabled = false;
+      }
+      await refreshUserGeneratedResults();
+      if (cleanupFailures.length) {
+        window.alert(`${cleanupFailures.length} 份未选视频清理失败，请重试或刷新后检查`);
+      }
     }
 
     async function toggleVideoPreviewExtensionBatch() {
@@ -311,7 +353,7 @@
       const stageGrid = els.videoPreviewBody?.querySelector('.video-preview-stage-grid.extension-active');
       const frames = readVideoPreviewExtensionBatchFrames(stageGrid);
       const referencePaths = frameRepairReferencePaths();
-      const customPrompt = String(state.videoPreviewModal?.frameRepairPrompt || '').trim();
+      const customPrompt = currentFrameRepairPrompt();
       if (!frames.length || !customPrompt || button.disabled) return;
       button.disabled = true;
       button.textContent = '四份修图中';
@@ -329,7 +371,10 @@
           });
           const data = await res.json().catch(() => ({}));
           if (!res.ok || !data.ok) throw new Error(data.error || '修图失败');
-          return { frameKey: data.frameKey, frameUrl: data.frameUrl };
+          const repairedFrame = { frameKey: data.frameKey, frameUrl: data.frameUrl, status: 'completed' };
+          const nextFrames = updateVideoPreviewExtensionBatchFrame(stageGrid, index, repairedFrame);
+          applyVideoPreviewExtensionBatchStage(stageGrid, nextFrames);
+          return repairedFrame;
         } finally {
           setVideoPreviewBatchVariantLoading(stageGrid, index, false);
         }
@@ -379,7 +424,9 @@
         const videoPrompt = String(loadVideoPreviewExtensionStates()[userGeneratedKey]?.videoPrompt || '').trim();
         if (!videoPrompt) throw new Error('当前没有视频提示词，请先编辑并保存');
         const mode = videoPreviewExtensionMode(stageGrid);
-        const sessionIdBase = String(state.activeId || '').trim() || `extension-${Date.now()}`;
+        const parentSessionId = String(state.activeId || 'session').trim() || 'session';
+        const generationNonce = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const sessionIdBase = `extension-${parentSessionId}-${generationNonce}`;
         const pendingFrames = frames.map((frame, index) => ({
           ...frame,
           status: 'video-generating',
@@ -405,7 +452,23 @@
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.ok) throw new Error(data.error || '生成视频失败');
+            signal.done = true;
+            const completedFrame = {
+              status: 'completed',
+              progressLabel: '',
+              userGeneratedKey: data.userGeneratedKey,
+              videoUrl: data.videoUrl,
+            };
+            const nextFrames = updateVideoPreviewExtensionBatchFrame(stageGrid, index, completedFrame);
+            applyVideoPreviewExtensionBatchStage(stageGrid, nextFrames);
             return { ...data, index };
+          } catch (error) {
+            signal.done = true;
+            const nextFrames = updateVideoPreviewExtensionBatchFrame(stageGrid, index, {
+              status: 'failed', progressLabel: '', error: error?.message || '生成视频失败',
+            });
+            applyVideoPreviewExtensionBatchStage(stageGrid, nextFrames);
+            throw error;
           } finally {
             signal.done = true;
             setVideoPreviewBatchVariantLoading(stageGrid, index, false);
@@ -420,7 +483,9 @@
         if (videos.length) showVideoPreviewBatchVideos(stageGrid, videos);
         results.forEach((item, index) => {
           if (item.status === 'rejected') {
-            updateVideoPreviewExtensionBatchFrame(stageGrid, index, { status: 'failed', progressLabel: '' });
+            updateVideoPreviewExtensionBatchFrame(stageGrid, index, {
+              status: 'failed', progressLabel: '', error: item.reason?.message || '生成视频失败',
+            });
             setVideoPreviewBatchVariantFailure(stageGrid, index, item.reason?.message);
           }
         });
@@ -450,7 +515,7 @@
         return;
       }
       if (event.target?.closest?.('[data-extension-batch-toggle]')) {
-        if (isVideoPreviewExtensionBatchMode()) confirmVideoPreviewExtensionBatch();
+        if (isVideoPreviewExtensionBatchMode()) void confirmVideoPreviewExtensionBatch();
         else void toggleVideoPreviewExtensionBatch();
       }
     });

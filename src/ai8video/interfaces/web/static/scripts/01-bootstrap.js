@@ -290,6 +290,11 @@
         batchMergeSubmitting: false,
         selectedKeys: [],
       },
+      agentResultBatchMerge: {
+        active: false,
+        submitting: false,
+        selectedKeys: [],
+      },
       videoPreviewModal: {
         visible: false,
         playlist: [],

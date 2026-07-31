@@ -9,8 +9,13 @@ DIALOGUE_FIELD_RE = re.compile(
     r"(?:台词\s*/\s*口播|台词|口播|旁白|解说|画外音)"
     r"\s*(?:[（(][^）)\n]{0,30}[）)])?\s*[：:]\s*"
 )
-DIALOGUE_CUE_QUOTE_RE = re.compile(
-    r"(?:口播|旁白|解说|画外音)[^“”\"\n]{0,50}[“\"]([^”\"\n]+)[”\"]"
+DIALOGUE_CUE_DOUBLE_QUOTE_RE = re.compile(
+    r"(?:口播|旁白|解说|画外音|(?:面对|看向|对着)?镜头说|说道|说)"
+    r"[^“”\"\n]{0,50}[“\"]([^”\"\n]+)[”\"]"
+)
+DIALOGUE_CUE_SINGLE_QUOTE_RE = re.compile(
+    r"(?:口播|旁白|解说|画外音|(?:面对|看向|对着)?镜头说|说道|说)"
+    r"[^‘’'\n]{0,50}[‘']([^’'\n]+)[’']"
 )
 SHOT_BOUNDARY_RE = re.compile(
     r"(?:镜头[一二三四五六七八九十百\d]+|第?\d+[集格段镜]?)\s*(?:[（(]|[：:、.\s-])"
@@ -45,26 +50,43 @@ def extract_dialogue_text(text: str) -> str:
     raw = str(text or "")
     if not raw.strip():
         return ""
-    pieces: list[str] = []
     field_stop = (
         "情绪语气", "情绪", "音效建议", "音效", "音乐", "画面", "镜头景别",
         "景别", "场景描述", "场景", "运镜动作", "运镜", "人物动作",
         "动作", "表情", "构图", TAIL_FRAME_MARKER,
     )
-    for line in raw.splitlines():
-        _append_dialogue_pieces(pieces, str(line or "").strip(), field_stop)
+    lines = [str(line or "").strip() for line in raw.splitlines()]
+    pieces = _collect_dialogue_pieces(lines, field_stop, DIALOGUE_CUE_DOUBLE_QUOTE_RE)
+    if not pieces:
+        pieces = _collect_dialogue_pieces(lines, field_stop, DIALOGUE_CUE_SINGLE_QUOTE_RE)
     joined = re.sub(r"\s+", " ", " ".join(pieces))
     return joined.strip(" ，。；;")
 
 
-def _append_dialogue_pieces(pieces: list[str], line_text: str, field_stop: tuple[str, ...]) -> None:
+def _collect_dialogue_pieces(
+    lines: list[str],
+    field_stop: tuple[str, ...],
+    cue_quote_re: re.Pattern[str],
+) -> list[str]:
+    pieces: list[str] = []
+    for line_text in lines:
+        _append_dialogue_pieces(pieces, line_text, field_stop, cue_quote_re)
+    return pieces
+
+
+def _append_dialogue_pieces(
+    pieces: list[str],
+    line_text: str,
+    field_stop: tuple[str, ...],
+    cue_quote_re: re.Pattern[str],
+) -> None:
     if not line_text:
         return
     matches = list(DIALOGUE_FIELD_RE.finditer(line_text))
     if not matches:
         pieces.extend(
             match.group(1).strip()
-            for match in DIALOGUE_CUE_QUOTE_RE.finditer(line_text)
+            for match in cue_quote_re.finditer(line_text)
             if match.group(1).strip()
         )
         return
@@ -88,7 +110,7 @@ def _trim_dialogue_chunk(chunk: str, field_stop: tuple[str, ...]) -> str:
             stop_positions.append(boundary_match.start())
     if stop_positions:
         chunk = chunk[:min(stop_positions)]
-    return re.sub(r"^[“”\"'：:\s]+|[“”\"'\s]+$", "", chunk).strip()
+    return re.sub(r"^[“”‘’\"'：:\s]+|[“”‘’\"'\s]+$", "", chunk).strip()
 
 
 def strip_prompt_label(line: str) -> str:
@@ -101,7 +123,7 @@ def strip_prompt_label(line: str) -> str:
         text,
     )
     text = re.sub(r"^\s*(画面|动作|表情|运镜|景别|场景|音乐|音效|镜头|构图)[：:]\s*.*$", "", text)
-    return re.sub(r"[“”\"']", "", text).strip()
+    return re.sub(r"[“”‘’\"']", "", text).strip()
 
 
 def looks_like_visual_instruction(text: str) -> bool:

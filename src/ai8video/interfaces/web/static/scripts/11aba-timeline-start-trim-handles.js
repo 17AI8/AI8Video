@@ -282,7 +282,7 @@
       item.durationSeconds = timelineRoundSeconds(Number(item.sourceEndSeconds || 0) - nextStart);
       item.startSeconds = timelineRoundSeconds(fixedEnd - item.durationSeconds);
       const left = item.startSeconds / duration * 100;
-      const width = Math.max(2, item.durationSeconds / duration * 100);
+      const width = Math.max(0.1, item.durationSeconds) / duration * 100;
       element.style.left = `${left}%`;
       element.style.width = `${Math.min(width, 100 - left)}%`;
       const meta = element.querySelector('small');

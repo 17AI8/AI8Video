@@ -18,6 +18,7 @@ def build_openai_compat_llm(
     stream: bool = True,
     transport_retry_count: int = 0,
     on_delta: Callable[[str], None] | None = None,
+    on_reasoning_delta: Callable[[str], None] | None = None,
 ):
     if not config.has_llm():
         return None
@@ -25,7 +26,9 @@ def build_openai_compat_llm(
     def _call(prompt: str) -> str:
         for attempt in range(max(0, transport_retry_count) + 1):
             try:
-                return _request_completion(config, prompt, system_prompt, stream, timeout_seconds, on_delta)
+                return _request_completion(
+                    config, prompt, system_prompt, stream, timeout_seconds, on_delta, on_reasoning_delta,
+                )
             except requests.RequestException as exc:
                 if attempt >= transport_retry_count or not _should_retry_transport_error(exc):
                     raise RuntimeError(_transport_error_message(exc, attempt)) from exc
@@ -44,6 +47,7 @@ def _request_completion(
     stream: bool,
     timeout_seconds: int | None,
     on_delta: Callable[[str], None] | None,
+    on_reasoning_delta: Callable[[str], None] | None,
 ) -> str:
     response = api_request(
         "POST",
@@ -66,7 +70,11 @@ def _request_completion(
     )
     _raise_for_llm_http_error(response)
     if stream and _is_event_stream_response(response):
-        return _read_openai_chat_stream(response, on_delta=on_delta)
+        return _read_openai_chat_stream(
+            response,
+            on_delta=on_delta,
+            on_reasoning_delta=on_reasoning_delta,
+        )
     data = response.json()
     choices = data.get("choices") or []
     if not choices:
@@ -175,7 +183,12 @@ def _is_event_stream_response(response) -> bool:
     return "text/event-stream" in content_type
 
 
-def _read_openai_chat_stream(response, *, on_delta: Callable[[str], None] | None = None) -> str:
+def _read_openai_chat_stream(
+    response,
+    *,
+    on_delta: Callable[[str], None] | None = None,
+    on_reasoning_delta: Callable[[str], None] | None = None,
+) -> str:
     chunks: list[str] = []
     for raw_line in response.iter_lines(chunk_size=1, decode_unicode=False):
         if isinstance(raw_line, bytes):
@@ -194,7 +207,11 @@ def _read_openai_chat_stream(response, *, on_delta: Callable[[str], None] | None
         choices = data.get("choices") or []
         if not choices:
             continue
-        content = _extract_stream_text(data, choices[0])
+        choice = choices[0]
+        reasoning = _extract_stream_reasoning(choice)
+        if reasoning and on_reasoning_delta is not None:
+            on_reasoning_delta(reasoning)
+        content = _extract_stream_text(data, choice)
         if content:
             chunks.append(content)
             if on_delta is not None:
@@ -219,6 +236,11 @@ def _extract_stream_text(data: dict, choice: dict) -> str:
         if text:
             return text
     return ""
+
+
+def _extract_stream_reasoning(choice: dict) -> str:
+    delta = choice.get("delta") or {}
+    return _content_text(delta.get("reasoning_content"))
 
 
 def _content_text(value) -> str:

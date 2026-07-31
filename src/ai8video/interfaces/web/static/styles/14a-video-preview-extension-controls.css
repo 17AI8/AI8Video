@@ -10,6 +10,10 @@
       gap: 8px;
     }
 
+    .video-preview-extension-action-bar[hidden] {
+      display: none;
+    }
+
     .video-preview-extension-batch-toggle {
       position: absolute;
       top: 10px;

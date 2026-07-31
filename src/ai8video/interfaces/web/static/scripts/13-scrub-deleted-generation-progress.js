@@ -100,6 +100,78 @@
       return { keys, basenames, jobIds };
     }
 
+    function batchMergedResultGroups() {
+      return (state.userGeneratedResults || []).map((result) => ({
+        result,
+        sourceKeys: Array.isArray(result?.generationMeta?.batchMergedSourceKeys)
+          ? result.generationMeta.batchMergedSourceKeys.map((key) => String(key || '').trim()).filter(Boolean)
+          : [],
+      })).filter((group) => group.sourceKeys.length > 1);
+    }
+
+    function reconcileBatchMergedProgress(progress) {
+      if (!progress || !Array.isArray(progress.items)) return progress;
+      const groups = batchMergedResultGroups();
+      if (!groups.length) return progress;
+      let changed = false;
+      const items = progress.items.flatMap((item) => {
+        const match = findBatchMergedProgressMatch(item, groups);
+        const key = match?.sourceKey || '';
+        const group = match?.group;
+        if (!group) return [item];
+        changed = true;
+        if (key !== group.sourceKeys[0]) return [];
+        return [{
+          ...item,
+          ...group.result,
+          videoIndex: item.videoIndex,
+          title: item.title || group.result.videoTitle || '合并视频',
+          status: 'succeeded',
+          statusLabel: '已合并',
+          providerStatus: 'succeeded',
+          providerProgress: 100,
+          hasLocalAsset: true,
+          historicalSnapshot: false,
+        }];
+      });
+      if (!changed) return progress;
+      return {
+        ...progress,
+        items,
+        totalRequested: items.length,
+        succeededCount: items.filter((item) => item?.status === 'succeeded').length,
+        failedCount: items.filter((item) => item?.status === 'failed').length,
+        skippedCount: items.filter((item) => item?.status === 'skipped').length,
+        deletedCount: items.filter((item) => item?.status === 'deleted').length,
+      };
+    }
+
+    function resolveBatchMergedProgressSourceKey(item) {
+      const candidates = [
+        item?.userGeneratedKey,
+        item?.archiveKey,
+        item?.assetRecord?.userGeneratedKey,
+        item?.assetRecord?.archiveKey,
+        item?.assetRecord?.archiveUrl,
+      ];
+      return candidates.map((value) => String(value || '').trim()).find(Boolean) || '';
+    }
+
+    function findBatchMergedProgressMatch(item, groups) {
+      const key = resolveBatchMergedProgressSourceKey(item);
+      const jobIds = collectProgressItemJobIds(item);
+      const videoIndex = Number(item?.videoIndex || 0) || 0;
+      for (const group of groups) {
+        const sourceKey = group.sourceKeys.find((candidate) => (
+          candidate === key
+          || [...jobIds].some((jobId) => candidate.includes(jobId))
+          || (videoIndex > 0 && new RegExp(`^video/0*${videoIndex}-`).test(candidate))
+        ));
+        if (sourceKey) return { group, sourceKey };
+      }
+      return null;
+    }
+
     function progressItemHasExistingUserGeneratedMirror(item, identity) {
       if (!item || typeof item !== 'object' || !identity) return false;
       const itemJobIds = collectProgressItemJobIds(item);
@@ -164,7 +236,8 @@
           const payload = message?.payload;
           const progress = payload?.pendingStatus?.generationProgress;
           if (!progress) return message;
-          const nextProgress = scrubMissingUserGeneratedProgress(progress, identity);
+          const mergedProgress = reconcileBatchMergedProgress(progress);
+          const nextProgress = scrubMissingUserGeneratedProgress(mergedProgress, identity);
           if (nextProgress === progress) return message;
           changed = true;
           return {
@@ -289,14 +362,39 @@
       return Boolean(key && loadVideoPreviewExtensionStates()[key]?.active);
     }
 
-    async function discardDetachedVideoPreviewExtensionResult(leftKey, rightKey) {
+    async function discardDetachedVideoPreviewExtensionResult(leftKey, rightKey, preserveFrameState = false) {
       const res = await fetch('/api/user-generated-results/extension-state/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leftKey: String(leftKey || '').trim(), rightKey: String(rightKey || '').trim() }),
+        body: JSON.stringify({
+          leftKey: String(leftKey || '').trim(),
+          rightKey: String(rightKey || '').trim(),
+          preserveFrameState,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) throw new Error(data.error || '清理已删除延长任务的结果失败');
+    }
+
+    function collectVideoPreviewExtensionResultKeys(savedState = {}) {
+      const keys = [
+        savedState.rightVideoKey,
+        ...(Array.isArray(savedState.batchFrames)
+          ? savedState.batchFrames.map((frame) => frame?.userGeneratedKey)
+          : []),
+      ];
+      return [...new Set(keys.map((key) => String(key || '').trim()).filter(Boolean))];
+    }
+
+    async function deleteVideoPreviewExtensionAssets(leftKey, savedState = {}) {
+      const resultKeys = collectVideoPreviewExtensionResultKeys(savedState);
+      if (!resultKeys.length) {
+        await discardDetachedVideoPreviewExtensionResult(leftKey, '');
+        return;
+      }
+      for (const rightKey of resultKeys) {
+        await discardDetachedVideoPreviewExtensionResult(leftKey, rightKey);
+      }
     }
 
     async function deleteVideoPreviewExtensionState(userGeneratedKey, button) {
@@ -306,7 +404,7 @@
       const savedState = loadVideoPreviewExtensionStates()[key] || {};
       button.disabled = true;
       try {
-        await discardDetachedVideoPreviewExtensionResult(key, savedState.rightVideoKey || '');
+        await deleteVideoPreviewExtensionAssets(key, savedState);
         persistVideoPreviewExtensionState(key, null);
         stageGrid.querySelector('.video-preview-extension-stage')?.remove();
         stageGrid.querySelector('.video-preview-merge-control')?.remove();
@@ -320,7 +418,7 @@
         const extendButton = stageGrid.querySelector('[data-video-preview-action="extend-video"]');
         if (extendButton) {
           extendButton.disabled = false;
-          setVideoPreviewButtonLabel(extendButton, '延长');
+          setVideoPreviewButtonLabel(extendButton, '延长视频');
         }
         const regenerateButton = stageGrid.querySelector('[data-video-preview-action="regenerate-video"]');
         if (regenerateButton) {

@@ -36,8 +36,8 @@ def tts_timeline_review_status(
     tts_volume: float = 1.0,
 ) -> dict[str, Any]:
     state = _load_review(relative_key)
-    if _pending_state_is_valid(state, relative_key):
-        return _public_review(state, pending=True)
+    if _stored_state_is_valid(state, relative_key):
+        return _public_review(state, pending=state.get("pending") is True)
     if audio_path is None or not audio_path.is_file():
         return _empty_review(relative_key)
     video_duration, audio_duration = _media_durations(video_path, audio_path)
@@ -439,6 +439,17 @@ def _public_review(state: dict[str, Any], *, pending: bool) -> dict[str, Any]:
 def _pending_state_is_valid(state: dict[str, Any], relative_key: str) -> bool:
     audio = Path(str(state.get("audioPath") or ""))
     return bool(state.get("pending") is True and state.get("relativeKey") == relative_key and audio.is_file())
+
+
+def _stored_state_is_valid(state: dict[str, Any], relative_key: str) -> bool:
+    audio = Path(str(state.get("audioPath") or ""))
+    chunks = state.get("timelineChunks")
+    return bool(
+        state.get("relativeKey") == relative_key
+        and audio.is_file()
+        and isinstance(chunks, list)
+        and chunks
+    )
 
 
 def _positive_duration(value: Any, message: str) -> float:

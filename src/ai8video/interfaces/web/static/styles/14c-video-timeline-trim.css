@@ -51,8 +51,20 @@
     }
 
     .video-preview-html-motion-chunk {
-      padding-left: 14px;
-      padding-right: 14px;
+      padding-left: 7px;
+      padding-right: 7px;
+    }
+
+    .video-preview-html-motion-chunk .video-preview-timeline-trim-handle {
+      width: 7px;
+    }
+
+    .video-preview-html-motion-chunk .video-preview-timeline-trim-handle.is-start::before {
+      left: 1px;
+    }
+
+    .video-preview-html-motion-chunk .video-preview-timeline-trim-handle.is-end::before {
+      right: 1px;
     }
 
     .video-preview-timeline-ruler {

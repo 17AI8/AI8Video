@@ -210,10 +210,7 @@
       const chunk = state.videoPreviewModal?.videoTimelineChunks?.[index];
       const video = els.videoPreviewBody?.querySelector('video');
       if (!chunk || !video) return;
-      setVideoSelectedChunkIndex(index);
-      video.pause();
-      video.currentTime = Math.max(0, Number(chunk.startSeconds || 0));
-      syncVideoTimelinePlayhead();
+        setVideoSelectedChunkIndex(index);
     }
 
     function seekVideoTimelineToChunk(index) {

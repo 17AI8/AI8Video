@@ -230,6 +230,147 @@
     .agent-video-results .result-notify-strip { margin-top: 0; }
     .agent-video-results .result-notify-meta { display: none; }
 
+    .agent-video-results-primary {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .agent-video-results-primary > .result-notify-strip {
+      display: contents;
+    }
+
+    .agent-video-results-secondary {
+      margin-top: 8px;
+    }
+
+    .agent-video-batch-merge-button {
+      min-width: 88px;
+      min-height: 34px;
+      padding: 7px 10px;
+      border: 1px solid rgba(77, 116, 255, 0.42);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.78);
+      color: #3157d5;
+      font: 700 12px Arial, sans-serif;
+      cursor: pointer;
+    }
+
+    .agent-video-batch-merge-button:hover {
+      border-color: rgba(77, 116, 255, 0.78);
+      background: #fff;
+    }
+
+    .agent-video-batch-merge-actions {
+      display: grid;
+      width: 88px;
+      gap: 0;
+      align-self: flex-start;
+      transform-origin: top center;
+    }
+
+    .agent-video-batch-merge-actions.is-opening {
+      animation: agentBatchMergeDrawerOpen 180ms ease-out both;
+    }
+
+    .agent-video-batch-merge-actions.is-batch-merge-closing {
+      animation: agentBatchMergeDrawerClose 180ms ease-in both;
+      pointer-events: none;
+    }
+
+    .agent-video-batch-merge-actions .agent-video-batch-merge-button {
+      border-radius: 10px 10px 0 0;
+    }
+
+    .agent-video-batch-merge-cancel {
+      min-height: 30px;
+      margin-top: -1px;
+      border: 1px solid rgba(77, 116, 255, 0.42);
+      border-radius: 0 0 10px 10px;
+      background: rgba(255, 255, 255, 0.78);
+      color: #64748b;
+      font: 700 11px Arial, sans-serif;
+      cursor: pointer;
+    }
+
+    .agent-video-results .result-batch-merge-select {
+      transform-origin: top right;
+    }
+
+    .agent-video-results.is-batch-merge-opening .result-batch-merge-select {
+      animation: agentBatchMergeCheckboxIn 160ms 50ms ease-out both;
+    }
+
+    .agent-video-results.is-batch-merge-closing .result-batch-merge-select {
+      animation: agentBatchMergeCheckboxOut 130ms ease-in both;
+      pointer-events: none;
+    }
+
+    .agent-video-results.is-batch-merge-submitting .result-notify-play,
+    .agent-video-results.is-batch-merge-submitting .result-batch-merge-select {
+      cursor: wait;
+      pointer-events: none;
+    }
+
+    .agent-video-results.is-batch-merge-submitting .result-notify-play {
+      opacity: 0.45;
+    }
+
+    .agent-video-results .result-notify-card.is-batch-merge-folding {
+      z-index: 5;
+      pointer-events: none;
+      animation: agentBatchMergeFoldIntoAnchor 340ms cubic-bezier(0.4, 0, 0.2, 1) both;
+      transform-origin: center;
+    }
+
+    .agent-video-results .result-notify-card.is-batch-merge-anchor {
+      z-index: 6;
+      animation: agentBatchMergeAnchorReceive 340ms ease-out both;
+    }
+
+    @keyframes agentBatchMergeDrawerOpen {
+      from { opacity: 0; transform: scaleY(0.45) translateY(-4px); }
+      to { opacity: 1; transform: scaleY(1) translateY(0); }
+    }
+
+    @keyframes agentBatchMergeDrawerClose {
+      from { opacity: 1; transform: scaleY(1) translateY(0); }
+      to { opacity: 0; transform: scaleY(0.45) translateY(-4px); }
+    }
+
+    @keyframes agentBatchMergeCheckboxIn {
+      from { opacity: 0; transform: scale(0.55); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    @keyframes agentBatchMergeCheckboxOut {
+      from { opacity: 1; transform: scale(1); }
+      to { opacity: 0; transform: scale(0.55); }
+    }
+
+    @keyframes agentBatchMergeFoldIntoAnchor {
+      0% { opacity: 1; transform: translate(0, 0) scale(1); }
+      72% { opacity: 0.72; transform: translate(var(--batch-merge-x), var(--batch-merge-y)) scale(0.42); }
+      100% { opacity: 0; transform: translate(var(--batch-merge-x), var(--batch-merge-y)) scale(0.18); }
+    }
+
+    @keyframes agentBatchMergeAnchorReceive {
+      0%, 58% { transform: scale(1); }
+      78% { transform: scale(1.08); }
+      100% { transform: scale(1); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .agent-video-batch-merge-actions,
+      .agent-video-results .result-batch-merge-select,
+      .agent-video-results .result-notify-card.is-batch-merge-folding,
+      .agent-video-results .result-notify-card.is-batch-merge-anchor {
+        animation-duration: 1ms;
+        animation-delay: 0ms;
+      }
+    }
+
     .message:not(.user) .bubble.agent-run-with-results {
       display: grid;
       justify-items: start;

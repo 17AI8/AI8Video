@@ -105,7 +105,6 @@
           return;
         }
         if (!dragged) {
-          seekVideoPreviewToTtsChunk(index);
           return;
         }
         element.dataset.suppressTtsClick = 'true';
@@ -204,8 +203,7 @@
           setHtmlMotionTimelineStatus('已取消动效移动');
           return;
         }
-        if (!dragged) seekVideoPreviewToHtmlMotionChunk(index);
-        else {
+        if (dragged) {
           const changed = recordTimelineHistory('html', `移动 ${selectedItems.length} 个动效片段`, historyBefore);
           if (!changed) return setHtmlMotionTimelineStatus('动效位置未变化');
           commitLocalHtmlMotionTimeline(`已移动 ${selectedItems.length} 个动效片段`);
@@ -246,7 +244,7 @@
           item.durationSeconds = timelineRoundSeconds(nextEnd - Number(item.sourceStartSeconds || 0));
           item.endSeconds = timelineRoundSeconds(Number(item.startSeconds || 0) + item.durationSeconds);
           const left = Number(item.startSeconds || 0) / duration * 100;
-          const width = Math.max(2, item.durationSeconds / duration * 100);
+          const width = Math.max(0.1, item.durationSeconds) / duration * 100;
           element.style.width = `${Math.min(width, 100 - left)}%`;
           element.title = `动效结尾 ${item.endSeconds.toFixed(2)} 秒，释放后保存`;
           const video = els.videoPreviewBody?.querySelector('video');

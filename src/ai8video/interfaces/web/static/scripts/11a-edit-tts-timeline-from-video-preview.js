@@ -226,7 +226,7 @@
         const label = chunk.label || `配音 ${index + 1}`;
         const actionLabel = scissorMode
           ? `剪刀工具：点击${label}中的位置切块`
-          : `选择并跳转到${label}，${start.toFixed(1)}秒；拖动整体可移动，拖动左右边缘可裁剪或恢复`;
+          : `选择${label}，起点 ${start.toFixed(1)}秒；拖动整体可移动，拖动左右边缘可裁剪或恢复`;
         const selected = selectedIndexes.has(index);
         const waveformPath = buildTtsWaveformPath(waveformPeaks, chunk, audioDuration);
         const waveform = waveformPath
@@ -260,7 +260,7 @@
             delete element.dataset.suppressTtsClick;
             return;
           }
-          seekVideoPreviewToTtsChunk(Number(element.dataset.chunkIndex));
+          setTtsSelectedChunkIndex(Number(element.dataset.chunkIndex));
         });
       });
       syncTtsDeleteButton();

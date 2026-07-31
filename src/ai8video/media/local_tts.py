@@ -46,7 +46,8 @@ from ai8video.media.local_tts_settings import (
     MIMO_API_PRESET_VOICE_OPTIONS,
 )
 from ai8video.media.local_tts_text import (
-    DIALOGUE_CUE_QUOTE_RE,
+    DIALOGUE_CUE_DOUBLE_QUOTE_RE,
+    DIALOGUE_CUE_SINGLE_QUOTE_RE,
     DIALOGUE_FIELD_RE,
     MAX_TTS_TEXT_CHARS,
     SHOT_BOUNDARY_RE,

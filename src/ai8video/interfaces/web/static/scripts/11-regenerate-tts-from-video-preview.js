@@ -6,7 +6,7 @@
         button.disabled = true;
         button.classList.add('is-spinning');
         button.setAttribute('aria-busy', 'true');
-        setVideoPreviewButtonLabel(button, '生成中');
+        setVideoPreviewButtonLabel(button, '正在生成 tts 配音');
       }
       try {
         const res = await fetch('/api/user-generated-results/regenerate-tts', {
@@ -408,10 +408,18 @@
         ? String(task.streamText || '').trim()
         : '任务开始后，这里会显示流式输出。';
       const displayStream = streamText || '等待 AI 返回结果…';
-      if (detail.dataset.streamText === displayStream) return;
-      detail.dataset.streamText = displayStream;
+      const streamParts = Array.isArray(task.streamParts) ? task.streamParts : [];
+      const streamSignature = streamParts.length ? JSON.stringify(streamParts) : displayStream;
+      if (detail.dataset.streamText === streamSignature) return;
+      detail.dataset.streamText = streamSignature;
       const shouldStick = detail.scrollHeight - detail.scrollTop - detail.clientHeight < 16;
-      detail.innerHTML = `<pre class="video-preview-html-motion-stream">${escapeHtml(displayStream)}</pre>`;
+      const content = streamParts.length
+        ? streamParts.map((part) => {
+          const tone = part?.kind === 'final' ? 'is-final' : 'is-intermediate';
+          return `<span class="video-preview-html-motion-stream-part ${tone}">${escapeHtml(part?.text || '')}</span>`;
+        }).join('')
+        : escapeHtml(displayStream);
+      detail.innerHTML = `<pre class="video-preview-html-motion-stream">${content}</pre>`;
       if (shouldStick) detail.scrollTop = detail.scrollHeight;
     }
 
@@ -580,6 +588,11 @@
         if (status === 'preview_ready') {
           stopTick();
           if (jobKey) forgetHtmlMotionJob(jobKey);
+          if (state.videoPreviewModal?.htmlMotionTaskId === taskId) {
+            state.videoPreviewModal.htmlMotionTaskId = '';
+            state.videoPreviewModal.htmlMotionSubmitting = false;
+            state.videoPreviewModal.htmlMotionCancelRequested = false;
+          }
           const overlay = data?.htmlMotionOverlay || data?.result?.htmlMotionOverlay || {};
           const video = els.videoPreviewBody?.querySelector('video');
           if (data?.burnReview?.tts?.pending === true) {
@@ -596,6 +609,11 @@
         if (status === 'preview_failed' || status === 'failed' || status === 'cancelled') {
           stopTick();
           if (jobKey) forgetHtmlMotionJob(jobKey);
+          if (state.videoPreviewModal?.htmlMotionTaskId === taskId) {
+            state.videoPreviewModal.htmlMotionTaskId = '';
+            state.videoPreviewModal.htmlMotionSubmitting = false;
+            state.videoPreviewModal.htmlMotionCancelRequested = false;
+          }
           const overlay = data?.htmlMotionOverlay || data?.result?.htmlMotionOverlay || {};
           const reason = data?.error || data?.message || overlay.reason || 'HTML 动效预览失败';
           const detail = String(overlay.detail || '').trim();

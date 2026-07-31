@@ -32,7 +32,7 @@ from ai8video.media import tts_timeline_review
 from ai8video.media import timeline_boundary
 from ai8video.media import tts_waveform
 from ai8video.media import video_timeline_review
-from ai8video.media.background_music_track import build_hidden_bgm_timeline
+from ai8video.media.background_music_track import _merged_bgm_command, build_hidden_bgm_timeline
 from ai8video.media.merged_preview_tracks import merged_tts_chunks, merged_video_chunks
 from ai8video.media.motion import html_motion_review
 from ai8video.media.motion import html_motion_merge
@@ -415,6 +415,9 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn('aria-label="删除右侧延长内容"', source)
         self.assertIn("function hasActiveVideoPreviewExtensionState(userGeneratedKey)", source)
         self.assertIn("async function discardDetachedVideoPreviewExtensionResult(leftKey, rightKey)", source)
+        self.assertIn("function collectVideoPreviewExtensionResultKeys(savedState = {})", source)
+        self.assertIn("savedState.batchFrames.map((frame) => frame?.userGeneratedKey)", source)
+        self.assertIn("await deleteVideoPreviewExtensionAssets(key, savedState)", source)
         self.assertIn("if (deleteExtensionButton) deleteExtensionButton.disabled = false;", source)
         self.assertIn("function setVideoPreviewMainControlsDisabled(disabled)", source)
         self.assertIn("data-extension-disabled-before", source)
@@ -471,14 +474,20 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("video.addEventListener('loadeddata', seekSavedFrame", source)
         self.assertIn("video.addEventListener('seeked', () => void renderSavedFrame()", source)
         self.assertIn("videoOutputTimeToSourceTime(previewTime)", source)
-        self.assertIn("alt=\"${mode === 'replace' ? '原视频首帧' : '已确认截图'}\"", source)
+        self.assertIn("const previewTime = Math.max(0, Number(savedState?.previewTime ?? video.currentTime));", source)
+        self.assertNotIn("const previewTime = mode === 'replace'", source)
+        self.assertIn('alt="原视频当前时间点截图"', source)
         self.assertIn("video.pause()", source)
-        self.assertIn("mode === 'replace' ? '重新生成' : '延长'", source)
+        self.assertIn("mode === 'replace' ? '重新生成' : '延长视频'", source)
         self.assertIn(".video-preview-merge-control", source)
         self.assertIn("data-video-preview-merge disabled>待生成", source)
         self.assertIn("function videoPreviewExtensionActionLabel(mode, phase = 'ready')", source)
 
         self.assertIn("function syncVideoPreviewMergeAvailability()", source)
+        self.assertIn("async function confirmVideoPreviewExtensionBatch()", source)
+        self.assertIn("stage.dataset.videoKey = selected.userGeneratedKey || ''", source)
+        self.assertIn("if (actionBar) actionBar.hidden = true", source)
+        self.assertIn("discardedKeys.map((rightKey) => discardDetachedVideoPreviewExtensionResult(key, rightKey))", source)
         self.assertIn("async function mergeExtendedPreviewVideos(leftKey, button)", source)
         self.assertIn("'/api/user-generated-results/replace'", source)
         self.assertIn("'/api/user-generated-results/merge'", source)
@@ -1141,8 +1150,26 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn('if (!frameKey || !customPrompt || button.disabled) return;', source)
         self.assertIn('if (!frames.length || !customPrompt || button.disabled) return;', source)
         self.assertNotIn('if (!frameKey || !referencePaths.length || button.disabled) return;', source)
+        self.assertIn('function currentFrameRepairPrompt()', source)
+        self.assertIn("addEventListener('input', (event) => {", source)
+        self.assertIn("startButton.disabled = !prompt || isVideoPreviewExtensionBatchBusy(stageGrid)", source)
+        self.assertIn("persistVideoPreviewExtensionState(key, { ...(loadVideoPreviewExtensionStates()[key] || {}), frameRepairPrompt: prompt });\n        renderVideoPreviewFrameRepairActions();", source)
+        self.assertIn("const nextFrames = updateVideoPreviewExtensionBatchFrame(stageGrid, index, repairedFrame);", source)
+        self.assertIn("applyVideoPreviewExtensionBatchStage(stageGrid, nextFrames);", source)
+        self.assertIn("setVideoPreviewBatchVariantLoading(stageGrid, index, true, '修图中')", source)
+        self.assertIn("const completedFrame = {", source)
+        self.assertIn("userGeneratedKey: data.userGeneratedKey", source)
+        self.assertIn("videoUrl: data.videoUrl", source)
+        self.assertIn("if (signal.done) return;", source)
+        self.assertIn("signal.done = true;\n            const completedFrame", source)
+        self.assertIn("if (['failed', 'cancelled', 'canceled'].includes(String(item?.status || '').toLowerCase())) return '生成失败';", source)
+        self.assertIn("${failed ? ' is-failed' : ''}", source)
+        self.assertIn("status: 'failed', progressLabel: '', error: error?.message || '生成视频失败'", source)
         self.assertIn("queued: '排队中'", source)
         self.assertIn("percent && !/\\d+(?:\\.\\d+)?%/.test(status)", source)
+        self.assertIn("const generationNonce = globalThis.crypto?.randomUUID?.()", source)
+        self.assertIn("const sessionIdBase = `extension-${parentSessionId}-${generationNonce}`;", source)
+        self.assertNotIn("videoSessionId: `${String(state.activeId || '').trim()}-batch-${index + 1}`", source)
 
     def test_extension_batch_status_sits_below_center_spinner(self) -> None:
         source = read_static_source()
@@ -1157,6 +1184,12 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn('void resumeVideoPreviewExtensionBatchPolling(stageGrid);', source)
         self.assertIn('if (!isPendingBatchVideoFrame(frame)) return;', source)
         self.assertNotIn("return { ...frame, status: 'completed', progressLabel: '' };", source)
+
+    def test_extension_batch_status_normalizes_variant_frame_key(self) -> None:
+        source = Path(ai8video_web.__file__).read_text(encoding="utf-8")
+
+        self.assertIn('base_stem = re.sub(r"(?:-batch-[1-4])+$", "", source.stem)', source)
+        self.assertIn('source = source.with_name(f"{base_stem}{source.suffix}")', source)
 
     def test_extension_batch_restore_never_mounts_stale_single_video(self) -> None:
         source = read_static_source()
@@ -2287,6 +2320,28 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertFalse(cover_path.exists())
         self.assertTrue(other_path.exists())
         self.assertEqual([item["userGeneratedKey"] for item in remaining], [other_rel.as_posix()])
+
+    def test_delete_hidden_bgm_result_also_removes_visible_extension_assets(self) -> None:
+        generated_root = self.root / "用户生成结果"
+        media_rel = Path("extensions/video/demo.mp4")
+        hidden_rel = Path(".media-tracks/bgm-base") / media_rel
+        preview_rel = Path("extensions/preview/demo.jpg")
+        cover_rel = Path("extensions/cover/demo.jpg")
+        for relative_path in (media_rel, hidden_rel, preview_rel, cover_rel):
+            target = generated_root / relative_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b"asset")
+
+        with patch.object(ai8video_web, "USER_GENERATED_RESULT_ROOT", generated_root.resolve()), patch.object(
+            ai8video_web,
+            "ensure_user_generated_result_dir",
+            return_value=generated_root.resolve(),
+        ):
+            body = ai8video_web._delete_user_generated_video(hidden_rel.as_posix())
+
+        self.assertTrue(body["ok"])
+        for relative_path in (media_rel, hidden_rel, preview_rel, cover_rel):
+            self.assertFalse((generated_root / relative_path).exists())
 
     def test_api_regenerate_user_generated_previews_rebuilds_from_current_videos(self) -> None:
         generated_root = self.root / "用户生成结果"
@@ -5125,6 +5180,17 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn(".message:not(.user) .bubble", html)
         self.assertIn("width: 70%;", html)
         self.assertIn("function renderAgentExecutionEvents(pending = {}, options = {})", html)
+        self.assertIn("function renderAgentVideoResultActionButton(items = [])", html)
+        self.assertIn("const firstRowItems = items.slice(0, 6);", html)
+        self.assertIn("const secondRowItems = items.slice(6);", html)
+        self.assertIn("renderAgentVideoResultActionButton(items)", html)
+        self.assertIn("agent-video-results-secondary", html)
+        self.assertIn("data-toggle-agent-batch-merge", html)
+        self.assertIn("toggleAgentResultBatchMergeMode()", html)
+        self.assertIn("confirmAgentResultBatchMerge()", html)
+        self.assertIn("function humanizeAgentEventMessage(value)", html)
+        self.assertIn("queued: '排队中'", html)
+        self.assertIn("humanizeAgentEventMessage(event?.message || '状态已更新')", html)
         self.assertIn("function collapseAgentPollingEvents(rawEvents)", html)
         self.assertIn("const latestStatusIndex = new Map();", html)
         self.assertIn("const eventKey = status ? `${videoIndex}:${segmentIndex}:${status}:${eventKind}` : '';", html)
@@ -5345,6 +5411,39 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("const explicitKey = trigger?.getAttribute?.('data-video-user-generated-key') || '';", html)
         self.assertIn("const userGeneratedKey = explicitKey || deriveUserGeneratedKeyFromMediaUrl(src);", html)
 
+    def test_agent_batch_merge_collapses_cards_and_reconciles_merged_preview(self) -> None:
+        html = read_static_source()
+
+        self.assertIn("await animateAgentResultBatchMerge(keys);", html)
+        self.assertIn("function reconcileBatchMergedProgress(progress)", html)
+        self.assertIn("function resolveBatchMergedProgressSourceKey(item)", html)
+        self.assertIn("function findBatchMergedProgressMatch(item, groups)", html)
+        self.assertIn("item?.assetRecord?.archiveKey", html)
+        self.assertIn("historicalSnapshot: false", html)
+        self.assertIn("const progress = reconcileBatchMergedProgress(pending.generationProgress || {});", html)
+        self.assertIn("batchMergedSourceKeys", html)
+        self.assertIn("agentBatchMergeFoldIntoAnchor", html)
+        self.assertIn("outline-offset: 0;", html)
+        self.assertIn("batchSubmitting: batchState.submitting", html)
+        self.assertIn("options.batchSubmitting ? 'disabled aria-disabled=\"true\"'", html)
+        self.assertIn("is-batch-merge-submitting .result-notify-play", html)
+
+    def test_hidden_bgm_merge_stops_at_video_duration(self) -> None:
+        command = _merged_bgm_command(
+            "ffmpeg",
+            Path("input.mp4"),
+            Path("output.mp4"),
+            [{
+                "musicPath": "music.mp3",
+                "startSeconds": 0,
+                "durationSeconds": 3,
+                "sourceOffsetSeconds": 0,
+                "volume": 0.3,
+            }],
+        )
+
+        self.assertIn("-shortest", command)
+
     def test_viral_breakdown_interval_shows_live_frame_estimate(self) -> None:
         html = read_static_source()
 
@@ -5525,6 +5624,12 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("video.autoplay = shouldPlay", html)
         self.assertIn("splitTtsTimelineAtPlayhead", html)
         self.assertIn("beginTtsChunkDrag", html)
+        self.assertIn("选择${label}，起点 ${start.toFixed(1)}秒", html)
+        self.assertIn("setTtsSelectedChunkIndex(Number(element.dataset.chunkIndex))", html)
+        self.assertNotIn("if (!dragged) seekVideoPreviewToHtmlMotionChunk(index)", html)
+        self.assertIn("function resetTimelinePointerInteractions()", html)
+        self.assertIn("document.addEventListener('pointercancel', resetTimelinePointerInteractions, true)", html)
+        self.assertIn("window.addEventListener('blur', resetTimelinePointerInteractions)", html)
         self.assertNotIn("所有修改在确认烧录前都只是预览", html)
         self.assertIn(".video-preview-tts-timeline.is-open", html)
         self.assertIn('data-video-preview-action="toggle-html-motion-scissors"', html)
@@ -5776,6 +5881,30 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertEqual(body["text"], "第一句台词。第二句台词")
         self.assertFalse(body["manual"])
 
+    def test_tts_narration_payload_recovers_dialogue_from_archived_prompt(self) -> None:
+        result_root = self.root / "用户生成结果"
+        video_dir = result_root / "video"
+        video_dir.mkdir(parents=True)
+        video_path = video_dir / "demo.mp4"
+        video_path.write_bytes(b"video")
+        manifest_path = self.root / "demo-manifest.json"
+        manifest_path.write_text(json.dumps({
+            "video": {
+                "prompt": "8-10秒：人物面对镜头说：‘走，带你们去看面料样品，工厂到了！’语气期待。",
+            },
+        }, ensure_ascii=False), encoding="utf-8")
+        JsonlAssetStore(self.root / "assets.jsonl").rewrite_all([{
+            "archiveKey": "video/demo.mp4",
+            "archiveLocalPath": str(video_path),
+            "archiveManifestPath": str(manifest_path),
+        }])
+
+        with patch.object(ai8video_web, "ensure_user_generated_result_dir", return_value=result_root):
+            body = ai8video_web._tts_narration_text_payload_for_user_generated_video("video/demo.mp4")
+
+        self.assertEqual(body["text"], "走，带你们去看面料样品，工厂到了！")
+        self.assertFalse(body["manual"])
+
     def test_batch_merge_keeps_selection_order_and_removes_selected_sources(self) -> None:
         result_root = self.root / "用户生成结果"
         video_dir = result_root / "video"
@@ -5921,9 +6050,18 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertEqual(segments[0]["startSeconds"], 0.0)
         self.assertEqual(segments[0]["durationSeconds"], 24.5)
 
-    def test_batch_merge_rejects_legacy_baked_background_music(self) -> None:
-        with self.assertRaisesRegex(ValueError, "缺少独立背景音乐轨道"):
-            ai8video_web._reject_legacy_baked_music([{"legacyBakedMusic": True}, {}])
+    def test_batch_merge_treats_legacy_baked_background_music_as_empty_track(self) -> None:
+        with patch.object(ai8video_web, "load_restored_result_metadata", return_value={}), patch.object(
+            ai8video_web,
+            "_asset_record_for_user_generated_key",
+            return_value={"archiveMeta": {"backgroundMusic": {"enabled": True, "status": "mixed"}}},
+        ):
+            track = ai8video_web._background_music_track_for_user_generated_video(
+                "video/legacy.mp4",
+                self.root / "legacy.mp4",
+            )
+
+        self.assertEqual(track, {})
 
     def test_merged_preview_tracks_shift_each_source_to_merged_timeline(self) -> None:
         video_chunks = merged_video_chunks([8.0, 7.0])
@@ -5959,8 +6097,48 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
         self.assertEqual(scenes[0]["start"], 9.0)
         self.assertEqual(scenes[0]["end"], 10.5)
+        self.assertEqual(scenes[0]["_timelineSourceIndex"], 0)
         self.assertIn("m2-1-scene-title", scenes[0]["html"])
         self.assertEqual(scenes[0]["animations"][0]["target"], "#m2-1-scene-title")
+
+        next_scenes = html_motion_merge._offset_scenes(artifact, 2, 16.0, output_start_index=4)
+
+        self.assertEqual(next_scenes[0]["_timelineSourceIndex"], 4)
+
+    def test_batch_merge_uses_clean_html_motion_base_when_available(self) -> None:
+        video_path = self.root / "burned.mp4"
+        clean_base = self.root / "clean.mp4"
+        fallback = self.root / "bgm-base.mp4"
+
+        with patch.object(
+            ai8video_web,
+            "html_motion_review_base_path",
+            return_value=clean_base,
+        ):
+            source = ai8video_web._batch_merge_visual_source(
+                video_path,
+                "video/demo.mp4",
+                fallback,
+            )
+
+        self.assertEqual(source, clean_base)
+
+    def test_batch_merge_falls_back_when_clean_html_motion_base_is_missing(self) -> None:
+        video_path = self.root / "burned.mp4"
+        fallback = self.root / "bgm-base.mp4"
+
+        with patch.object(
+            ai8video_web,
+            "html_motion_review_base_path",
+            side_effect=LookupError("missing"),
+        ):
+            source = ai8video_web._batch_merge_visual_source(
+                video_path,
+                "video/demo.mp4",
+                fallback,
+            )
+
+        self.assertEqual(source, fallback)
 
     def test_batch_merge_restores_sources_when_install_fails(self) -> None:
         result_root = self.root / "用户生成结果"
@@ -6804,6 +6982,29 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertEqual(chunks[0]["originalSourceEndSeconds"], 4.0)
         self.assertEqual(plan["animations"][0]["at"], 0.0)
         self.assertEqual(plan["animations"][0]["localAt"], 1)
+
+    def test_html_motion_timeline_accepts_exact_tenth_second_chunk(self) -> None:
+        artifact = {"scenes": [{
+            "start": 0,
+            "end": 1,
+            "html": "<div>短动效</div>",
+            "css": "",
+            "animations": [],
+            "ids": [],
+        }]}
+
+        chunks = html_motion_review._apply_timeline_chunks(
+            artifact,
+            [{
+                "sourceIndex": 0,
+                "sourceStartSeconds": 0.7,
+                "sourceEndSeconds": 0.8,
+                "startSeconds": 0,
+            }],
+            1,
+        )
+
+        self.assertEqual(chunks[0]["durationSeconds"], 0.1)
 
     def test_pending_burn_context_rejects_tts_past_cropped_video_end(self) -> None:
         video_state = {"outputDurationSeconds": 8.0}

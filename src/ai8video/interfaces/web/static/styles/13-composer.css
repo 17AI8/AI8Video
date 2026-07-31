@@ -334,7 +334,11 @@
       height: min(860px, calc(100vh - 36px));
       grid-template-rows: auto minmax(0, 1fr);
       overflow: hidden;
-      padding: 16px;
+      padding: 16px 0 0;
+    }
+
+    #videoPreviewModal .modal-head {
+      padding-inline: 16px;
     }
 
     #videoPreviewBody {

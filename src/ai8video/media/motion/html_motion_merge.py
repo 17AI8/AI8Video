@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ai8video.media.motion.html_motion_overlay import _resolve_motion_font_family
+from ai8video.media.motion.html_motion_render_cache import sync_live_preview_font
 from ai8video.media.motion.html_motion_review import HTML_MOTION_REVIEW_ROOT, html_motion_review_status
 from ai8video.media.motion.html_motion_timeline import timeline_chunks
 from ai8video.media.motion.hyperframes_overlay_renderer import build_composition_html
@@ -52,6 +54,7 @@ def _offset_scenes(
         scene = copy.deepcopy(raw_scene)
         scene["start"] = round(offset + float(scene.get("start") or 0), 3)
         scene["end"] = round(offset + float(scene.get("end") or 0), 3)
+        scene["_timelineSourceIndex"] = output_start_index + scene_index
         ids = [str(value) for value in scene.get("ids") or [] if str(value)]
         replacements = {value: f"m{source_index + 1}-{scene_index + 1}-{value}" for value in set(ids)}
         replacements[f"hf-scene-{scene_index + 1}"] = f"hf-scene-{output_start_index + scene_index + 1}"
@@ -74,12 +77,16 @@ def _replace_ids(value: Any, replacements: dict[str, str]) -> Any:
 def _write_review(relative_key: str, video: Path, artifact: dict[str, Any], media: dict[str, Any]) -> dict[str, Any]:
     review_dir = _review_dir(relative_key)
     review_dir.mkdir(parents=True, exist_ok=True)
+    font_family = _resolve_motion_font_family()
     shutil.copy2(video, review_dir / f"base{video.suffix or '.mp4'}")
     for name in ("artifact.json", "artifact.original.json"):
         _write_json(review_dir / name, artifact)
     _write_json(review_dir / "media.json", media)
-    (review_dir / "composition.html").write_text(build_composition_html(artifact, media), encoding="utf-8")
+    (review_dir / "composition.html").write_text(
+        build_composition_html(artifact, media, font_family=font_family), encoding="utf-8",
+    )
     shutil.copy2(WAAPI_RUNTIME_SOURCE, review_dir / "waapi-timeline-runtime.js")
+    sync_live_preview_font(review_dir, font_family)
     payload = {
         "schemaVersion": TIMELINE_SCHEMA_VERSION,
         "revision": 1,
@@ -88,6 +95,7 @@ def _write_review(relative_key: str, video: Path, artifact: dict[str, Any], medi
         "candidateName": f"candidate{video.suffix or '.mp4'}",
         "preparedAt": datetime.now(timezone.utc).isoformat(),
         "renderResult": {"status": "applied", "durationSeconds": media["durationSeconds"]},
+        "fontFamily": font_family,
         "timelineChunks": timeline_chunks(artifact),
     }
     _write_json(review_dir / "review.json", payload)

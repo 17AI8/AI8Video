@@ -19,7 +19,7 @@
       return Math.max(timelineChunkVisibleDuration(chunk), end - start);
     }
 
-    function timelineFixedContentGeometry(chunk, timelineDuration, minimumWidthPercent = 1.5) {
+    function timelineFixedContentGeometry(chunk, timelineDuration, minimumWidthPercent = 0) {
       const duration = Math.max(0.001, Number(timelineDuration || 0));
       const start = Math.max(0, Number(chunk?.startSeconds || 0));
       const left = Math.min(100, start / duration * 100);

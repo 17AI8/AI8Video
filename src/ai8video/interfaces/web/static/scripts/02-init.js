@@ -22,14 +22,13 @@
       state.activeId = state.sessions[0].id;
       pruneSettledPendingProgressFromSessions();
       persistSessions();
-      await refreshHealth();
+      await refreshHealth(); await refreshUserGeneratedResults();
       await recoverSessionsAfterReload();
-      persistSessions();
+      scrubMissingUserGeneratedProgressFromSessions(); persistSessions();
       await refreshAuthSettings();
       await refreshVideoModelSettings();
       await refreshImageHostSettings();
       await refreshAssets();
-      await refreshUserGeneratedResults();
       await refreshUserMaterials();
       await refreshBackgroundMusic();
       await refreshDefaultReferenceImage();

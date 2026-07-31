@@ -395,6 +395,29 @@
       return String(lastMessage.payload?.awaiting || '').trim();
     }
 
+    function manualTailFrameCardKey(card) {
+      const action = card?.querySelector('[data-tail-frame-continue]');
+      const preview = card?.querySelector('.result-notify-preview img');
+      const batchId = String(action?.dataset.generationBatchId || '').trim();
+      const videoIndex = String(action?.dataset.tailFrameContinue || '').trim();
+      const previewPath = String(preview?.getAttribute('src') || '').trim().split(/[?#]/u, 1)[0];
+      return batchId && videoIndex && previewPath ? `${batchId}:${videoIndex}:${previewPath}` : '';
+    }
+
+    function collectStableManualTailFrameCards() {
+      return new Map(Array.from(els.messages.querySelectorAll('.manual-tail-frame')).map((card) => [
+        manualTailFrameCardKey(card),
+        card,
+      ]).filter(([key]) => key));
+    }
+
+    function restoreStableManualTailFrameCards(cards) {
+      els.messages.querySelectorAll('.manual-tail-frame').forEach((card) => {
+        const previous = cards.get(manualTailFrameCardKey(card));
+        if (previous) card.replaceWith(previous);
+      });
+    }
+
     function renderMessages() {
       const session = getActiveSession();
       repairRecoveredSmartSplitFailure(session);
@@ -413,6 +436,7 @@
       const scroller = els.messages.parentElement;
       const distanceFromBottom = Math.max(0, scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight);
       const shouldStickToBottom = distanceFromBottom < 64;
+      const stableTailFrameCards = collectStableManualTailFrameCards();
       els.messages.innerHTML = '';
       if (!session.messages.length) {
         els.messages.innerHTML = '<div class="empty">输入数量和要求，比如：2 个，618 活动</div>';
@@ -451,6 +475,7 @@
         }
         els.messages.appendChild(wrap);
       });
+      restoreStableManualTailFrameCards(stableTailFrameCards);
       recoverLegacySmartSplitPlans(session);
       if (shouldStickToBottom) {
         window.requestAnimationFrame(() => {

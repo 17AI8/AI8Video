@@ -45,13 +45,13 @@
       border-radius: 0 10px 10px 0;
     }
 
-    #resultModal .result-notify-card.is-batch-selected {
+    .result-notify-card.is-batch-selected {
       outline: 2px solid #4d74ff;
-      outline-offset: 2px;
+      outline-offset: 0;
       border-radius: 12px;
     }
 
-    #resultModal .result-batch-merge-select {
+    .result-batch-merge-select {
       position: absolute;
       top: 6px;
       right: 6px;
@@ -66,7 +66,7 @@
       cursor: pointer;
     }
 
-    #resultModal .result-batch-merge-checkbox {
+    .result-batch-merge-checkbox {
       display: grid;
       width: 20px;
       height: 20px;
@@ -80,12 +80,12 @@
       box-shadow: 0 2px 8px rgba(15, 28, 55, 0.28);
     }
 
-    #resultModal .result-batch-merge-select.is-selected .result-batch-merge-checkbox {
+    .result-batch-merge-select.is-selected .result-batch-merge-checkbox {
       border-color: #4d74ff;
       background: #4d74ff;
     }
 
-    #resultModal .result-batch-merge-order {
+    .result-batch-merge-order {
       min-width: 17px;
       height: 17px;
       padding: 0 4px;

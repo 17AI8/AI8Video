@@ -135,6 +135,9 @@ def _motion_plan(artifact: dict[str, Any], duration: float) -> dict[str, Any]:
     animations: list[dict[str, Any]] = []
     for scene in artifact["scenes"]:
         source_offset = _scene_source_offset(scene)
+        scene_duration = float(scene["end"]) - float(scene["start"])
+        # 极短裁剪片段没有足够时间完成入场再退场，预览应直接显示最终样式。
+        static_preview = scene_duration <= 0.15
         for animation in scene["animations"]:
             animations.append({
                 "target": animation["target"],
@@ -144,17 +147,19 @@ def _motion_plan(artifact: dict[str, Any], duration: float) -> dict[str, Any]:
                 "duration": animation["duration"],
                 "from": animation["from"],
                 "to": animation["to"],
+                "static": static_preview,
             })
-        for target in sorted({item["target"] for item in scene["animations"]}):
-            animations.append({
-                "target": target,
-                "kind": "scene-end",
-                "at": round(scene["end"], 3),
-                "localAt": round(scene["end"] - scene["start"], 3),
-                "duration": 0.001,
-                "from": {},
-                "to": {"autoAlpha": 0.0, "ease": "linear"},
-            })
+        if not static_preview:
+            for target in sorted({item["target"] for item in scene["animations"]}):
+                animations.append({
+                    "target": target,
+                    "kind": "scene-end",
+                    "at": round(scene["end"], 3),
+                    "localAt": round(scene["end"] - scene["start"], 3),
+                    "duration": 0.001,
+                    "from": {},
+                    "to": {"autoAlpha": 0.0, "ease": "linear"},
+                })
     return {"runtime": "waapi-v1", "duration": duration, "animations": animations}
 
 

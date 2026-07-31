@@ -68,7 +68,7 @@
       const context = buildResultNotifyContext(items);
       return `
         <div class="result-notify-strip${options.wall ? ' wall' : ''}${options.compact ? ' compact' : ''}">
-          ${items.map((item, index) => buildResultNotifyCardMarkup(item, index, context)).join('')}
+          ${items.map((item, index) => buildResultNotifyCardMarkup(item, index, context, options)).join('')}
         </div>
       `;
     }
@@ -216,6 +216,7 @@
               <button
                 type="button"
                 class="result-notify-play"
+                ${options.batchSubmitting ? 'disabled aria-disabled="true"' : ''}
                 data-fullscreen-video="${escapeHtml(videoSrc)}"
                 data-video-title="${escapeHtml(title)}"
                 data-video-cover="${escapeHtml(coverSrc || '')}"

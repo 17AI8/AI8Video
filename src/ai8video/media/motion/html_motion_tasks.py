@@ -39,6 +39,7 @@ class HtmlMotionTask:
     audit_result: str = ""
     attempt_traces: list[dict[str, Any]] = field(default_factory=list)
     stream_text: str = ""
+    stream_parts: list[dict[str, str]] = field(default_factory=list)
 
     def snapshot(self) -> dict[str, Any]:
         now = time.time()
@@ -62,6 +63,7 @@ class HtmlMotionTask:
             "auditResult": self.audit_result,
             "attemptTraces": list(self.attempt_traces),
             "streamText": self.stream_text,
+            "streamParts": [dict(part) for part in self.stream_parts],
             "result": self.result,
             "error": self.error,
         }
@@ -197,7 +199,7 @@ class HtmlMotionTaskService:
         stream_delta = payload.get("streamDelta")
         if isinstance(stream_delta, str) and stream_delta:
             with self._lock:
-                _append_stream_text(task, stream_delta)
+                _append_stream_text(task, stream_delta, str(payload.get("streamKind") or "final"))
         retry_count = int(payload.get("retryCount") or 0)
         retry_limit = int(payload.get("retryLimit") or 0)
         retry_reason = str(payload.get("retryReason") or "").strip()
@@ -216,7 +218,11 @@ class HtmlMotionTaskService:
                         f"\n第 {retry_count} 次方案审核评分：{score} 分"
                         if isinstance(score, int) else ""
                     )
-                    _append_stream_text(task, f"{score_text}\n\n—— 第 {retry_count + 1} 次方案 ——\n")
+                    _append_stream_text(
+                        task,
+                        f"{score_text}\n\n—— 第 {retry_count + 1} 次方案 ——\n",
+                        "intermediate",
+                    )
         retry_message = (
             f"审核结果：{audit_result}・正在第 {retry_count}/{retry_limit} 次重试"
             if retry_count > 0 else ""
@@ -278,13 +284,25 @@ def _close_current_phase(task: HtmlMotionTask, now: float) -> None:
     task.phase_timings[phase] = _round_seconds(task.phase_timings.get(phase, 0.0) + elapsed)
 
 
-def _append_stream_text(task: HtmlMotionTask, value: str) -> None:
+def _append_stream_text(task: HtmlMotionTask, value: str, kind: str) -> None:
     limit = 16_000
     text = task.stream_text + value
     if len(text) <= limit:
         task.stream_text = text
+        _append_stream_part(task, value, kind)
         return
-    task.stream_text = text[: limit - 8] + "\n…已截断"
+    remaining = max(0, limit - len(task.stream_text) - 8)
+    tail = value[:remaining] + "\n…已截断"
+    task.stream_text += tail
+    _append_stream_part(task, tail, kind)
+
+
+def _append_stream_part(task: HtmlMotionTask, value: str, kind: str) -> None:
+    normalized = "final" if kind == "final" else "intermediate"
+    if task.stream_parts and task.stream_parts[-1]["kind"] == normalized:
+        task.stream_parts[-1]["text"] += value
+        return
+    task.stream_parts.append({"kind": normalized, "text": value})
 
 
 def _apply_phase_locked(

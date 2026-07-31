@@ -2130,13 +2130,19 @@ def _user_generated_video_alias_target(root: Path, clean_key: str) -> Path | Non
 def _delete_user_generated_video(raw_key: object) -> dict:
     root = ensure_user_generated_result_dir().resolve()
     target, relative_key = _resolve_user_generated_video_key(raw_key)
-    cover_key = _find_user_generated_cover_key(root, relative_key)
-    preview_key = find_preview_key(root, relative_key)
-    related = _find_related_user_generated_asset_identity(relative_key)
+    bgm_prefix = ".media-tracks/bgm-base/"
+    media_key = relative_key[len(bgm_prefix):] if relative_key.startswith(bgm_prefix) else relative_key
+    cover_key = _find_user_generated_cover_key(root, media_key)
+    preview_key = find_preview_key(root, media_key)
+    related = _find_related_user_generated_asset_identity(media_key)
     deleted: list[str] = []
     target.unlink()
     deleted.append(relative_key)
-    deleted_preview_key = delete_preview_for_video(root, relative_key)
+    media_target = (root / media_key).resolve()
+    if media_key != relative_key and _is_within(root, media_target) and media_target.is_file():
+        media_target.unlink()
+        deleted.append(media_key)
+    deleted_preview_key = delete_preview_for_video(root, media_key)
     preview_key = preview_key or deleted_preview_key
     if preview_key:
         deleted.append(preview_key)
@@ -2145,7 +2151,11 @@ def _delete_user_generated_video(raw_key: object) -> dict:
         if _is_within(root, cover_target) and cover_target.is_file():
             cover_target.unlink()
             deleted.append(cover_key)
-    restored_metadata_key = delete_restored_result_metadata(root, relative_key)
+    bgm_base = hidden_bgm_base_path(root, media_key).resolve()
+    if _is_within(root, bgm_base) and bgm_base.is_file():
+        bgm_base.unlink()
+        deleted.append(bgm_base.relative_to(root).as_posix())
+    restored_metadata_key = delete_restored_result_metadata(root, media_key)
     if restored_metadata_key:
         deleted.append(restored_metadata_key)
     return {
@@ -2259,35 +2269,40 @@ def _resolve_frame_repair_references(raw_paths: object) -> list[str]:
     return [item for item in resolved if item]
 
 
-def _delete_extension_state_assets(left_key: object, right_key: object) -> dict:
+def _delete_extension_state_assets(
+    left_key: object,
+    right_key: object,
+    preserve_frame_state: bool = False,
+) -> dict:
     left_path, relative_left_key = _resolve_user_generated_video_key(left_key)
     root = ensure_user_generated_result_dir().resolve()
     frame_name = hashlib.sha256(relative_left_key.encode("utf-8")).hexdigest()[:24]
     deleted: list[str] = []
-    frame_root = (root / "extension-frame").resolve()
-    for target in frame_root.glob(f"{frame_name}*"):
-        resolved = target.resolve()
-        if not _is_within(frame_root, resolved) or not resolved.is_file():
-            continue
-        if resolved.suffix not in {".png", ".json"} and not resolved.name.endswith(".state.json"):
-            continue
-        resolved.unlink()
-        deleted.append(resolved.relative_to(root).as_posix())
-    try:
-        left_record = _asset_maintenance_service().clear_extension_frame_result(relative_left_key, left_path)
-        archive_manifest_path = left_record.get("archiveManifestPath")
-        archive_manifest = _load_json_file(archive_manifest_path)
-        if archive_manifest and archive_manifest_path:
-            archive_manifest.pop("extensionFrame", None)
-            archive_manifest.pop("extensionFrameVariants", None)
-            path = Path(str(archive_manifest_path))
-            if not path.is_absolute():
-                path = (PROJECT_ROOT / path).resolve()
-            temporary = path.with_name(f".{path.name}.tmp")
-            temporary.write_text(json.dumps(archive_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-            temporary.replace(path)
-    except LookupError:
-        pass
+    if not preserve_frame_state:
+        frame_root = (root / "extension-frame").resolve()
+        for target in frame_root.glob(f"{frame_name}*"):
+            resolved = target.resolve()
+            if not _is_within(frame_root, resolved) or not resolved.is_file():
+                continue
+            if resolved.suffix not in {".png", ".json"} and not resolved.name.endswith(".state.json"):
+                continue
+            resolved.unlink()
+            deleted.append(resolved.relative_to(root).as_posix())
+        try:
+            left_record = _asset_maintenance_service().clear_extension_frame_result(relative_left_key, left_path)
+            archive_manifest_path = left_record.get("archiveManifestPath")
+            archive_manifest = _load_json_file(archive_manifest_path)
+            if archive_manifest and archive_manifest_path:
+                archive_manifest.pop("extensionFrame", None)
+                archive_manifest.pop("extensionFrameVariants", None)
+                path = Path(str(archive_manifest_path))
+                if not path.is_absolute():
+                    path = (PROJECT_ROOT / path).resolve()
+                temporary = path.with_name(f".{path.name}.tmp")
+                temporary.write_text(json.dumps(archive_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+                temporary.replace(path)
+        except LookupError:
+            pass
     clean_right_key = str(right_key or "").strip()
     if clean_right_key and clean_right_key != relative_left_key:
         right_path, relative_right_key = _resolve_user_generated_video_key(clean_right_key)
@@ -2361,6 +2376,7 @@ def _collect_tts_narration_candidates(value: Any) -> list[str]:
                 "narrationText",
                 "sourceSummary",
                 "source_summary",
+                "prompt",
             ):
                 add(node.get(key))
             for key in ("segmentRecords", "segments"):
@@ -2593,10 +2609,14 @@ def _background_music_track_for_user_generated_video(relative_key: str, video_pa
     track = archive_meta.get("backgroundMusicTrack") if isinstance(archive_meta, dict) else None
     if isinstance(track, dict) and track:
         return track
-    music = archive_meta.get("backgroundMusic") if isinstance(archive_meta, dict) else None
-    if isinstance(music, dict) and music.get("enabled") is True and music.get("status") == "mixed":
-        return {"legacyBakedMusic": True}
     return {}
+
+
+def _batch_merge_visual_source(video_path: Path, relative_key: str, fallback: Path) -> Path:
+    try:
+        return html_motion_review_base_path(video_path, relative_key)
+    except LookupError:
+        return fallback
 
 
 def _replace_user_generated_background_music_track(raw_key: object, music: dict[str, Any]) -> None:
@@ -2634,11 +2654,6 @@ def _replace_user_generated_background_music_track(raw_key: object, music: dict[
     temporary.replace(metadata_path)
 
 
-def _reject_legacy_baked_music(tracks: list[dict[str, Any]]) -> None:
-    if any(track.get("legacyBakedMusic") is True for track in tracks):
-        raise ValueError("所选旧视频缺少独立背景音乐轨道，无法安全合并，请重新生成后再合并")
-
-
 def _prepare_batch_merge_context(raw_keys: object) -> dict[str, Any]:
     source_keys = [str(key or "").strip() for key in raw_keys] if isinstance(raw_keys, list) else []
     source_keys = list(dict.fromkeys(key for key in source_keys if key))
@@ -2654,8 +2669,11 @@ def _prepare_batch_merge_context(raw_keys: object) -> dict[str, Any]:
     first_visual_key = find_preview_key(root, first_key) or _find_user_generated_cover_key(root, first_key)
     narrations = [_tts_narration_text_for_user_generated_video(key, path)[0] for path, key in resolved_items]
     tracks = [_background_music_track_for_user_generated_video(key, path) for path, key in resolved_items]
-    _reject_legacy_baked_music(tracks)
-    merge_sources = [track_source(track, path) for (path, _), track in zip(resolved_items, tracks)]
+    track_sources = [track_source(track, path) for (path, _), track in zip(resolved_items, tracks)]
+    merge_sources = [
+        _batch_merge_visual_source(path, key, fallback)
+        for (path, key), fallback in zip(resolved_items, track_sources)
+    ]
     durations = [track_duration(path) for path in merge_sources]
     tts_statuses = [_current_tts_timeline_status(path, key) for path, key in resolved_items]
     return {
@@ -2680,11 +2698,8 @@ def _install_batch_merge_result(
     merged_base: Path, merged_tts: Path,
 ) -> int:
     root, target = context["root"], context["target"]
-    staged: list[tuple[Path, Path]] = []
     created: list[Path] = []
     try:
-        artifacts = _batch_merge_source_artifacts(root, context["items"])
-        staged = _stage_batch_merge_sources(artifacts, work / "sources")
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(candidate), str(target))
         created.append(target)
@@ -2732,15 +2747,13 @@ def _install_batch_merge_result(
             },
         )
         created.append(restored_result_metadata_path(root, relative_key))
-        removed_records, _ = _remove_batch_merged_asset_records(context["sourceKeys"])
-        return removed_records
+        return 0
     except Exception:
         for path in reversed(created):
             if path.is_dir():
                 shutil.rmtree(path)
             elif path.is_file():
                 path.unlink()
-        _restore_batch_merge_sources(staged)
         raise
 
 
@@ -3319,6 +3332,27 @@ def _regenerate_user_generated_tts(raw_key: object) -> dict:
     }
 
 
+def _html_motion_stream_callbacks(stage_callback):
+    if stage_callback is None:
+        return None, None
+    reasoning_started = False
+
+    def emit_final(chunk: str) -> None:
+        stage_callback("generating", {"streamDelta": chunk, "streamKind": "final"})
+
+    def emit_reasoning_activity(_chunk: str) -> None:
+        nonlocal reasoning_started
+        if reasoning_started:
+            return
+        reasoning_started = True
+        stage_callback(
+            "generating",
+            {"streamDelta": "AI 已开始分析，正在组织动效方案…\n\n", "streamKind": "intermediate"},
+        )
+
+    return emit_final, emit_reasoning_activity
+
+
 def _regenerate_user_generated_html_motion(
     raw_key: object,
     *,
@@ -3349,12 +3383,11 @@ def _regenerate_user_generated_html_motion(
         status="succeeded",
         prompt=prompt,
     )
+    on_delta, on_reasoning_delta = _html_motion_stream_callbacks(stage_callback)
     llm = build_html_motion_llm(
         AI8VideoConfig.from_env(),
-        on_delta=(
-            lambda chunk: stage_callback("generating", {"streamDelta": chunk})
-            if stage_callback is not None else None
-        ),
+        on_delta=on_delta,
+        on_reasoning_delta=on_reasoning_delta,
     )
     flower_settings = video_text_overlay_status()
     motion_text_style = {
@@ -5914,6 +5947,8 @@ def api_user_generated_extension_frame_batch_status():
         return {"ok": False, "error": "payload must be an object"}
     try:
         source = _resolve_extension_frame_path(payload.get("frameKey"))
+        base_stem = re.sub(r"(?:-batch-[1-4])+$", "", source.stem)
+        source = source.with_name(f"{base_stem}{source.suffix}")
         root = ensure_user_generated_result_dir().resolve()
         for variant in _extension_frame_variant_paths(source):
             _register_extension_frame_variant_archive(variant)
@@ -5945,7 +5980,11 @@ def api_delete_user_generated_extension_state():
         response.status = 400
         return {"ok": False, "error": "payload must be an object"}
     try:
-        return _delete_extension_state_assets(payload.get("leftKey"), payload.get("rightKey"))
+        return _delete_extension_state_assets(
+            payload.get("leftKey"),
+            payload.get("rightKey"),
+            preserve_frame_state=payload.get("preserveFrameState") is True,
+        )
     except FileNotFoundError as exc:
         response.status = 404
         return {"ok": False, "error": str(exc)}

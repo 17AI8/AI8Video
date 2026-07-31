@@ -19,6 +19,20 @@
       syncTimelineHistoryButtons();
     }
 
+    function resetTimelinePointerInteractions() {
+      const modal = state.videoPreviewModal;
+      if (!modal || Number(modal.timelineInteractionCount || 0) === 0) return;
+      modal.timelineInteractionCount = 0;
+      syncTimelineHistoryButtons();
+    }
+
+    document.addEventListener('pointerdown', (event) => {
+      if (event.isPrimary && event.button === 0) resetTimelinePointerInteractions();
+    }, true);
+    document.addEventListener('pointerup', resetTimelinePointerInteractions, true);
+    document.addEventListener('pointercancel', resetTimelinePointerInteractions, true);
+    window.addEventListener('blur', resetTimelinePointerInteractions);
+
     function timelineFormatRulerTime(seconds) {
       const value = Math.max(0, Number(seconds || 0));
       if (value < 1) return `${value.toFixed(1)}s`;

@@ -8,7 +8,7 @@
 
     function normalizeHtmlMotionTimelineChunks(chunks) {
       return cloneHtmlMotionTimelineChunks(chunks).map((chunk, index) => {
-        const start = Math.max(0, Number(chunk.startSeconds || 0));
+        const start = timelineRoundSeconds(Math.max(0, Number(chunk.startSeconds || 0)));
         const restored = timelineChunkWithRestoreBounds({
           ...chunk,
           sourceStartSeconds: chunk.sourceStartSeconds ?? start,
@@ -16,18 +16,25 @@
             Number(chunk.sourceStartSeconds ?? start) + Number(chunk.durationSeconds || 0.1)
           ),
         });
-        const duration = Math.max(
+        const sourceStart = timelineRoundSeconds(Math.max(0, Number(restored.sourceStartSeconds || 0)));
+        const sourceEnd = timelineRoundSeconds(Math.max(
+          sourceStart + 0.1,
+          Number(restored.sourceEndSeconds || 0),
+        ));
+        const duration = timelineRoundSeconds(Math.max(
           0.1,
-          Number(restored.sourceEndSeconds || 0) - Number(restored.sourceStartSeconds || 0),
-        );
+          sourceEnd - sourceStart,
+        ));
         const rawSourceIndex = Number(chunk.sourceIndex ?? chunk.index ?? index);
         return {
           ...restored,
           index,
           sourceIndex: Number.isInteger(rawSourceIndex) && rawSourceIndex >= 0 ? rawSourceIndex : index,
+          sourceStartSeconds: sourceStart,
+          sourceEndSeconds: sourceEnd,
           startSeconds: start,
           durationSeconds: duration,
-          endSeconds: start + duration,
+          endSeconds: timelineRoundSeconds(start + duration),
         };
       });
     }
@@ -183,10 +190,10 @@
         const start = Math.max(0, Number(chunk.startSeconds || 0));
         const label = chunk.label || `动效 ${index + 1}`;
         const left = start / duration * 100;
-        const width = Math.max(2, Number(chunk.durationSeconds || 0.1) / duration * 100);
+        const width = Math.max(0.1, Number(chunk.durationSeconds || 0.1)) / duration * 100;
         const action = scissorMode
           ? `剪刀工具：点击${label}中的位置切块`
-          : `选择并跳转到${label}，${start.toFixed(1)}秒；拖动整体可移动，拖动左右边缘可裁剪或恢复`;
+          : `选择${label}，起点 ${start.toFixed(1)}秒；拖动整体可移动，拖动左右边缘可裁剪或恢复`;
         const selected = selectedIndexes.has(index);
         return `<button type="button" class="video-preview-html-motion-chunk${selected ? ' is-selected' : ''}" data-video-preview-html-motion-chunk data-chunk-index="${index}" data-full-label="${escapeHtml(label)}" data-boundary-base-title="${escapeHtml(action)}" aria-label="${escapeHtml(action)}" aria-pressed="${selected ? 'true' : 'false'}" title="${escapeHtml(action)}" style="left:${left}%;width:${Math.min(width, 100 - left)}%;top:${1 + index % 2 * 22}px"><span>${escapeHtml(label)}</span><small>${start.toFixed(1)}s</small>${timelineTrimHandleMarkup(label)}</button>`;
       }).join('');
@@ -224,7 +231,7 @@
         toggleHtmlMotionChunkSelection(Number(element.dataset.chunkIndex));
         return;
       }
-      if (event.detail === 0) seekVideoPreviewToHtmlMotionChunk(Number(element.dataset.chunkIndex));
+      setHtmlMotionSelectedChunkIndex(Number(element.dataset.chunkIndex));
     }
 
     function seekVideoPreviewToHtmlMotionChunk(index) {

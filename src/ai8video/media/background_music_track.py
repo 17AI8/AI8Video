@@ -54,6 +54,9 @@ def merge_hidden_bgm_tracks(
     try:
         subprocess.run(command, check=True, capture_output=True, text=True, timeout=240)
         os.replace(output, video_path)
+    except subprocess.TimeoutExpired as exc:
+        output.unlink(missing_ok=True)
+        raise RuntimeError("合并背景音乐轨道超时") from exc
     except subprocess.CalledProcessError as exc:
         output.unlink(missing_ok=True)
         detail = (exc.stderr or exc.stdout or "").strip()
@@ -127,5 +130,6 @@ def _merged_bgm_command(ffmpeg: str, video: Path, output: Path, segments: list[d
         f"{''.join(mix_inputs)}amix=inputs={len(mix_inputs)}:duration=first:dropout_transition=0:normalize=0[aout]"
     )
     command.extend(["-filter_complex", ";".join(filters), "-map", "0:v:0", "-map", "[aout]"])
-    command.extend(["-c:v", "copy", "-c:a", "aac", "-movflags", "+faststart", str(output)])
+    # voice 使用 apad 补齐静音，因此音频滤镜本身没有自然终点；以视频流长度截断输出。
+    command.extend(["-c:v", "copy", "-c:a", "aac", "-shortest", "-movflags", "+faststart", str(output)])
     return command

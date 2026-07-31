@@ -4,6 +4,13 @@
         : [];
     }
 
+    function currentFrameRepairPrompt() {
+      const livePrompt = els.videoPreviewBody
+        ?.querySelector('[data-frame-repair-prompt-input]')?.value;
+      if (livePrompt !== undefined) return String(livePrompt).trim();
+      return String(state.videoPreviewModal?.frameRepairPrompt || '').trim();
+    }
+
     function renderVideoPreviewFrameRepairActions() {
       const stageGrid = els.videoPreviewBody?.querySelector('.video-preview-stage-grid.extension-active');
       const actionBar = stageGrid?.querySelector('.video-preview-extension-action-bar');
@@ -42,7 +49,7 @@
       const stageGrid = els.videoPreviewBody?.querySelector('.video-preview-stage-grid.extension-active');
       const frameKey = String(stageGrid?.dataset.extensionFrameKey || '').trim();
       const referencePaths = frameRepairReferencePaths();
-      const customPrompt = String(state.videoPreviewModal?.frameRepairPrompt || '').trim();
+      const customPrompt = currentFrameRepairPrompt();
       if (!frameKey || !customPrompt || button.disabled) return;
       button.disabled = true;
       button.textContent = '修图中';
@@ -65,6 +72,17 @@
         window.alert(error?.message || '修图失败');
       }
     }
+
+    els.videoPreviewBody?.addEventListener('input', (event) => {
+      const input = event.target?.closest?.('[data-frame-repair-prompt-input]');
+      if (!input) return;
+      const prompt = String(input.value || '').trim();
+      state.videoPreviewModal = { ...(state.videoPreviewModal || {}), frameRepairPrompt: prompt };
+      const stageGrid = els.videoPreviewBody?.querySelector('.video-preview-stage-grid.extension-active');
+      const startButton = input.closest('.video-preview-frame-repair-actions')
+        ?.querySelector('[data-frame-repair-start]');
+      if (startButton) startButton.disabled = !prompt || isVideoPreviewExtensionBatchBusy(stageGrid);
+    });
 
     els.videoPreviewBody?.addEventListener('click', async (event) => {
       const target = event.target?.closest?.('[data-frame-repair-toggle], [data-frame-repair-reference], [data-frame-repair-start], [data-frame-repair-prompt], [data-frame-repair-prompt-save]');
@@ -91,7 +109,7 @@
         state.videoPreviewModal = { ...(state.videoPreviewModal || {}), frameRepairPrompt: prompt };
         const key = String(els.videoPreviewBody?.querySelector('.video-preview-stage-grid')?.dataset.leftVideoKey || '').trim();
         persistVideoPreviewExtensionState(key, { ...(loadVideoPreviewExtensionStates()[key] || {}), frameRepairPrompt: prompt });
-        actions?.querySelector('.video-preview-frame-repair-prompt-drawer')?.classList.add('hidden');
+        renderVideoPreviewFrameRepairActions();
         return;
       }
       if (target.matches('[data-frame-repair-reference]')) {

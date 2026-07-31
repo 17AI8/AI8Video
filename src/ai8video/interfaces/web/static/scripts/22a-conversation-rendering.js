@@ -343,8 +343,28 @@
         ? ` · ${Number(event.providerProgress)}%`
         : '';
       const title = prefix + (event?.title || '后台任务');
-      const message = String(event?.message || '状态已更新') + progress;
+      const message = humanizeAgentEventMessage(event?.message || '状态已更新') + progress;
       return `<div class="agent-step-detail ${stateClass}"><span class="agent-step-detail-marker" aria-hidden="true"></span><div><strong>${escapeHtml(title)}</strong><span>${escapeHtml(message)}</span></div></div>`;
+    }
+
+    function humanizeAgentEventMessage(value) {
+      const statusLabels = {
+        queued: '排队中',
+        pending: '等待中',
+        submitted: '已提交',
+        running: '执行中',
+        processing: '处理中',
+        polling: '查询结果中',
+        archiving: '归档中',
+        succeeded: '已完成',
+        completed: '已完成',
+        failed: '失败',
+        cancelled: '已取消',
+      };
+      return String(value || '').replace(
+        /\b(queued|pending|submitted|running|processing|polling|archiving|succeeded|completed|failed|cancelled)\b/gi,
+        (status) => statusLabels[status.toLowerCase()] || status
+      );
     }
 
     function renderAgentExecutionEvents(pending = {}, options = {}) {
@@ -413,7 +433,7 @@
     }
 
     function renderAgentVideoThumbnails(pending = {}) {
-      const progress = pending.generationProgress || {};
+      const progress = reconcileBatchMergedProgress(pending.generationProgress || {});
       const planning = String(pending.phase || '').trim() === 'planning'
         || String(progress.status || '').trim() === 'planning';
       const submitted = Number(progress.submittedCount || 0) || 0;
@@ -444,9 +464,46 @@
         if (!pendingCount) return '';
         return `<div class="agent-video-results" aria-label="待生成视频">${renderProgressResultStrip([], pendingCount)}</div>`;
       }
+      const firstRowItems = items.slice(0, 6);
+      const secondRowItems = items.slice(6);
+      const batchState = ensureAgentResultBatchMergeState();
+      const batchOptions = {
+        compact: true,
+        batchMerge: batchState.active,
+        batchSubmitting: batchState.submitting,
+        selectedKeys: batchState.selectedKeys,
+      };
+      const batchOpeningClass = batchState.animateOpening ? ' is-batch-merge-opening' : '';
+      const batchSubmittingClass = batchState.submitting ? ' is-batch-merge-submitting' : '';
       return `
-        <div class="agent-video-results" aria-label="已生成视频">
-          ${renderResultNotifyStrip(items, { compact: true })}
+        <div class="agent-video-results${batchOpeningClass}${batchSubmittingClass}" aria-label="已生成视频">
+          <div class="agent-video-results-primary">
+            ${renderResultNotifyStrip(firstRowItems, batchOptions)}
+            ${renderAgentVideoResultActionButton(items)}
+          </div>
+          ${secondRowItems.length ? `<div class="agent-video-results-secondary">${renderResultNotifyStrip(secondRowItems, batchOptions)}</div>` : ''}
+        </div>
+      `;
+    }
+
+    function renderAgentVideoResultActionButton(items = []) {
+      const mergeableCount = new Set(
+        items.map((item) => resolveResultBatchMergeKey(item)).filter(Boolean)
+      ).size;
+      if (mergeableCount < 2) return '';
+      const batchState = ensureAgentResultBatchMergeState();
+      if (!batchState.active) {
+        return '<button type="button" class="agent-video-batch-merge-button" data-toggle-agent-batch-merge>批量合并</button>';
+      }
+      const selectedCount = batchState.selectedKeys.length;
+      const openingClass = batchState.animateOpening ? ' is-opening' : '';
+      return `
+        <div class="agent-video-batch-merge-actions${openingClass}">
+          <button type="button" class="agent-video-batch-merge-button" data-confirm-agent-batch-merge
+            ${selectedCount < 2 || batchState.submitting ? 'disabled' : ''}>
+            ${batchState.submitting ? '合并中' : '确认合并'}
+          </button>
+          <button type="button" class="agent-video-batch-merge-cancel" data-toggle-agent-batch-merge>取消</button>
         </div>
       `;
     }

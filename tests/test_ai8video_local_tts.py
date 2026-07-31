@@ -326,6 +326,26 @@ class AI8VideoLocalTtsTest(unittest.TestCase):
 
         self.assertEqual(text, "每天固定筛选三五十个同行刚上架的爆品，逐个测品。别偷懒，测就完了")
 
+    def test_prepare_narration_text_supports_camera_speech_with_curly_single_quotes(self) -> None:
+        prompt = (
+            "8-10秒：林晓面对镜头说：‘走，带你们去看面料样品，工厂到了！’语气期待。"
+            "音效：风声，共享单车提示音。"
+        )
+
+        text = local_tts.prepare_narration_text(prompt)
+
+        self.assertEqual(text, "走，带你们去看面料样品，工厂到了！")
+
+    def test_prepare_narration_text_prefers_double_quotes_before_single_quote_fallback(self) -> None:
+        prompt = (
+            "人物说：‘这里的概念叫增长飞轮。’随后面对镜头说："
+            "“真正的台词只取这一句。”"
+        )
+
+        text = local_tts.prepare_narration_text(prompt)
+
+        self.assertEqual(text, "真正的台词只取这一句")
+
     def test_attach_local_tts_replaces_original_audio_when_disabled(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             env_backup = os.environ.get("AI8VIDEO_LOCAL_TTS_DIR")

@@ -62,6 +62,10 @@
   function createAnimation(node, item, index) {
     const from = keyframe(item.from);
     const to = keyframe(item.to);
+    if (item.static) {
+      if (item.kind !== 'exit' && item.kind !== 'scene-end') initializeEntrance(node, to);
+      return null;
+    }
     if (item.kind === 'entrance') initializeEntrance(node, from);
     const staggerSeconds = number(item.to && item.to.stagger, 0);
     const delaySeconds = number(item.at, 0) + staggerSeconds * index;
@@ -103,7 +107,10 @@
       } catch (_) {
         continue;
       }
-      nodes.forEach((node, index) => animations.push(createAnimation(node, item, index)));
+      nodes.forEach((node, index) => {
+        const record = createAnimation(node, item, index);
+        if (record) animations.push(record);
+      });
     }
     global.__ai8MotionPlan = plan;
     global.__ai8MotionAnimations = animations.map((entry) => entry.animation);
