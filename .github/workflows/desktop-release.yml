@@ -2,6 +2,11 @@ name: 桌面安装包
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "可选：填写现有 v* 标签时覆盖对应 Release 的附件与说明"
+        required: false
+        type: string
   push:
     tags:
       - "v*"
@@ -186,10 +191,15 @@ jobs:
 
   release:
     name: 发布 GitHub Release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: 检出源码
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
       - name: 下载安装包
         uses: actions/download-artifact@v8
         with:
@@ -200,8 +210,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
-          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" --verify-tag --notes-from-tag
+          if [[ "$RELEASE_TAG" != v* ]]; then
+            echo "::error::Release 标签必须以 v 开头：$RELEASE_TAG"
+            exit 1
           fi
-          gh release upload "$GITHUB_REF_NAME" release-artifacts/* --clobber
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            git show -s --format='%B' "$GITHUB_SHA" > release-notes.md
+            if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+              gh release edit "$RELEASE_TAG" --notes-file release-notes.md
+            else
+              gh release create "$RELEASE_TAG" --verify-tag --notes-file release-notes.md
+            fi
+          elif ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --notes-from-tag
+          fi
+          gh release upload "$RELEASE_TAG" release-artifacts/* --clobber
