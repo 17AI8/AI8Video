@@ -125,15 +125,17 @@ def selected_video_text_overlay_font_path() -> Path | None:
 def video_text_overlay_runtime_status(settings: dict[str, Any] | None = None) -> dict[str, Any]:
     config = _normalize_settings(settings if settings is not None else _read_settings())
     pillow = _pillow_runtime_status()
-    enabled = bool(config.get("enabled"))
+    text_enabled = bool(config.get("enabled"))
     text_present = bool(_clean_text(config.get("text")))
     watermark_present = _watermark_slot_present(config, "watermark")
     watermark2_present = _watermark_slot_present(config, "watermark2")
+    enabled = (text_enabled and text_present) or watermark_present or watermark2_present
     blocking_reason = ""
-    if enabled and (text_present or watermark_present or watermark2_present) and not pillow["available"]:
+    if enabled and not pillow["available"]:
         blocking_reason = "缺少 Pillow/PIL，无法渲染花字图片"
     return {
         "enabled": enabled,
+        "textEnabled": text_enabled,
         "textPresent": text_present,
         "watermarkPresent": watermark_present or watermark2_present,
         "watermark1Present": watermark_present,
@@ -372,12 +374,12 @@ def apply_video_text_overlay(
     video = Path(video_path)
     config = _normalize_settings(settings if settings is not None else _read_settings())
     text = _clean_text(config.get("text"))
+    text_present = bool(config.get("enabled") and text)
     watermark_present = _watermark_slot_present(config, "watermark")
     watermark2_present = _watermark_slot_present(config, "watermark2")
-    if not config.get("enabled"):
+    overlay_enabled = text_present or watermark_present or watermark2_present
+    if not overlay_enabled:
         return {"enabled": False, "status": "skipped", "reason": "disabled"}
-    if not text and not watermark_present and not watermark2_present:
-        return {"enabled": True, "status": "skipped", "reason": "empty overlay"}
     if not video.is_file():
         return {"enabled": True, "status": "skipped", "reason": "video file missing"}
     target_size = _probe_video_size(video)
@@ -389,7 +391,7 @@ def apply_video_text_overlay(
         watermark_animation_type = _clean_animation_type(config.get("watermarkAnimationType"))
         watermark2_delay = _clean_animation_delay_seconds(config.get("watermark2AnimationDelaySeconds"))
         watermark2_animation_type = _clean_animation_type(config.get("watermark2AnimationType"))
-        if text:
+        if text_present:
             overlay_layers.append(("text", _render_overlay_png(config, target_size=target_size, layer="text"), text_delay, text_animation_type))
         if watermark_present:
             overlay_layers.append(("watermark", _render_overlay_png(config, target_size=target_size, layer="watermark"), watermark_delay, watermark_animation_type))
@@ -465,6 +467,7 @@ def apply_video_text_overlay(
                 pass
     return {
         "enabled": True,
+        "textEnabled": bool(config.get("enabled")),
         "status": "burned",
         "video": str(video),
         "canvasWidth": config["canvasWidth"],

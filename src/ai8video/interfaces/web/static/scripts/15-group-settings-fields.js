@@ -24,6 +24,9 @@
     function resolveActiveSettingsCategory(groups) {
       const labels = groups.map((group) => group.label);
       if (labels.includes(state.settingsModal.activeCategory)) {
+        if (modelSettingsCategories.includes(state.settingsModal.activeCategory)) {
+          state.settingsModal.activeModelCategory = state.settingsModal.activeCategory;
+        }
         return state.settingsModal.activeCategory;
       }
       if (labels.includes('AI8video')) {
@@ -329,9 +332,6 @@
         ? settings.templateOptions
         : [
             { value: 'doubao-seedance', label: '豆包 Seedance' },
-            { value: 'yunwu-grok', label: '云雾 Grok' },
-            { value: 'yunwu-omni', label: '云雾 Omni' },
-            { value: 'yunwu-veo', label: '云雾 Veo' },
             { value: 'bailian-wan', label: '百炼 Wan' },
             { value: 'openai-compatible', label: 'OpenAI 兼容' },
           ];

@@ -25,6 +25,23 @@ class IntentAgentTest(unittest.TestCase):
         self.assertEqual(decision.route, "new_request")
         self.assertTrue(decision.reset_session)
 
+    def test_confirmation_followup_keeps_model_interpretation(self) -> None:
+        calls: list[str] = []
+
+        def llm(prompt: str) -> str:
+            calls.append(prompt)
+            return '{"intent":"smart_split_replan","video_count":6,"style_hint":"林默改名林妹","confidence":0.99}'
+
+        decision = IntentAgent(llm).decide(
+            "重新分集：6 集，林默改名林妹",
+            IntentContext(awaiting="smart_split_confirmation"),
+        )
+
+        self.assertEqual(decision.route, "smart_split_followup")
+        self.assertEqual(decision.interpretation["video_count"], 6)
+        self.assertEqual(decision.interpretation["style_hint"], "林默改名林妹")
+        self.assertEqual(len(calls), 1)
+
     def test_completed_rewrite_keeps_current_session(self) -> None:
         agent = IntentAgent(lambda _: '{"intent":"rewrite","confidence":0.9}')
 

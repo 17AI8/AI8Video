@@ -110,6 +110,45 @@ class CapabilityRegistryTest(unittest.TestCase):
         self.assertFalse(capability.side_effects)
         self.assertEqual(capability.execution_mode, "parallel")
 
+    def test_planning_capability_uses_ai_plan_with_locked_smart_count(self) -> None:
+        request = ParsedRequest(raw_text="重新分集为 6 条", mode="batch_videos", video_count=6)
+        calls = {"infer": 0, "smart": 0, "repeat": 0}
+
+        def infer_count(*_args, **_kwargs):
+            calls["infer"] += 1
+            return 1, "不应调用"
+
+        def smart_plan(*_args, **_kwargs):
+            calls["smart"] += 1
+            return [VideoPrompt(index=index, title=f"主题 {index}", prompt=f"方案 {index}") for index in range(1, 7)]
+
+        capability = build_planning_capability(
+            infer_count=infer_count,
+            smart_plan=smart_plan,
+            repeat_plan=lambda *_args, **_kwargs: calls.__setitem__("repeat", calls["repeat"] + 1) or [],
+            single_plan=lambda *_args, **_kwargs: [],
+        )
+        registry = CapabilityRegistry()
+        registry.register(capability)
+
+        result = registry.execute(
+            PLANNING_CAPABILITY_NAME,
+            AgentRunContext(session_id="locked-smart-count"),
+            PlanningCapabilityInput(
+                request=request,
+                target_duration=10,
+                task_constraints="",
+                smart_split=True,
+                allow_mock=True,
+                llm=None,
+                trace_session_id="locked-smart-count",
+                smart_split_count_locked=True,
+            ),
+        )
+
+        self.assertEqual(len(result.value), 6)
+        self.assertEqual(calls, {"infer": 0, "smart": 1, "repeat": 0})
+
 
 if __name__ == "__main__":
     unittest.main()

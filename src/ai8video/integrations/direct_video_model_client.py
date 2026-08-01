@@ -308,45 +308,6 @@ def _template_for(name: str) -> dict[str, Any]:
             "done_states": common_done | {"succeeded"},
             "fail_states": common_fail,
         },
-        "yunwu-grok": {
-            "create_method": "POST",
-            "create_path": "/v1/videos",
-            "status_path": "/v1/videos/{task_id}?model={model}",
-            "task_id_paths": ["id", "task_id", "data.id", "data.task_id"],
-            "status_paths": ["status", "data.status"],
-            "progress_paths": ["progress", "data.progress", "metadata.progress", "payload.providerProgress"],
-            "stage_label_paths": ["stageLabel", "stage_label", "data.stageLabel", "data.stage_label"],
-            "output_url_paths": ["video_url", "data.video_url", "output.video_url", "url"],
-            "error_paths": ["error.message", "message", "data.message"],
-            "done_states": common_done,
-            "fail_states": common_fail,
-        },
-        "yunwu-omni": {
-            "create_method": "POST",
-            "create_path": "/v1/videos",
-            "status_path": "/v1/videos/{task_id}?model={model}",
-            "task_id_paths": ["id", "task_id", "data.id", "data.task_id"],
-            "status_paths": ["status", "data.status"],
-            "progress_paths": ["progress", "data.progress", "metadata.progress", "payload.providerProgress"],
-            "stage_label_paths": ["stageLabel", "stage_label", "data.stageLabel", "data.stage_label"],
-            "output_url_paths": ["video_url", "data.video_url", "output.video_url", "url"],
-            "error_paths": ["error.message", "message", "data.message"],
-            "done_states": common_done,
-            "fail_states": common_fail,
-        },
-        "yunwu-veo": {
-            "create_method": "POST",
-            "create_path": "/v1/video/create",
-            "status_path": "/v1/video/query?id={task_id}",
-            "task_id_paths": ["id", "task_id", "data.id", "data.task_id"],
-            "status_paths": ["status", "data.status"],
-            "progress_paths": ["progress", "data.progress", "metadata.progress", "payload.providerProgress"],
-            "stage_label_paths": ["stageLabel", "stage_label", "data.stageLabel", "data.stage_label"],
-            "output_url_paths": ["video_url", "data.video_url", "output.video_url", "url"],
-            "error_paths": ["error.message", "error_message", "message", "data.message"],
-            "done_states": common_done,
-            "fail_states": common_fail,
-        },
         "bailian-wan": {
             "create_method": "POST",
             "create_path": "/v1/videos",
@@ -481,31 +442,6 @@ def _build_create_payload(
                 "return_last_frame": return_last_frame,
                 "watermark": watermark,
             },
-        })
-    if template == "yunwu-veo":
-        return _drop_empty({
-            "model": model,
-            "prompt": prompt,
-            "aspect_ratio": _normalize_yunwu_ratio(ratio),
-            "images": [image] if image else None,
-            "enhance_prompt": enhance_prompt,
-            "enable_upsample": False,
-            "duration": seconds,
-            "seed": seed,
-            "watermark": watermark,
-        })
-    if template == "yunwu-omni":
-        return _drop_empty({
-            "model": _resolve_yunwu_omni_model(model, bool(image)),
-            "prompt": prompt,
-            "aspect_ratio": _normalize_yunwu_ratio(ratio),
-            "enhance_prompt": enhance_prompt,
-            "enable_upsample": False,
-            "images": [image] if image else None,
-            "input_reference": image,
-            "duration": seconds,
-            "seed": seed,
-            "watermark": watermark,
         })
     if template == "bailian-wan":
         return _drop_empty({
@@ -819,18 +755,6 @@ def _size_from_ratio(ratio: str, resolution: str, *, resolution_mode: str = "rat
     if ratio == "16:9":
         return "854x480"
     return "480x854"
-
-
-def _normalize_yunwu_ratio(ratio: str) -> str:
-    return "9:16" if ratio in {"9:16", "3:4", "2:3"} else "16:9"
-
-
-def _resolve_yunwu_omni_model(model: str, has_image: bool) -> str:
-    if has_image and model == "omni-flash":
-        return "omni-flash-components"
-    if not has_image and model == "omni-flash-components":
-        return "omni-flash"
-    return model
 
 
 def _redact_payload_for_usage(payload: Any) -> Any:

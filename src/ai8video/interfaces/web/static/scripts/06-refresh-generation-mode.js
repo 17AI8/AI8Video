@@ -145,7 +145,8 @@
     function getConfirmedSmartSplitVideos(session, message) {
       const compactMessage = String(message || '').replace(/\s+/g, '');
       const confirmationMessages = new Set(['确认分集', '确认并继续', '确认', '继续生成', '开始生成']);
-      if (!confirmationMessages.has(compactMessage)) return null;
+      const isReplanMessage = /^(?:重新分集|重分|重新规划)(?:[：:].*)?$/.test(compactMessage);
+      if (!confirmationMessages.has(compactMessage) && !isReplanMessage) return null;
       const messages = Array.isArray(session?.messages) ? session.messages : [];
       for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
         const plannedVideos = messages[messageIndex]?.payload?.meta?.guide?.plannedVideos;

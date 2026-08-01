@@ -408,7 +408,7 @@ class AI8VideoGenerationModeTest(unittest.TestCase):
         self.assertIn(message, planned_raw_texts[-1])
         self.assertIn("分集调整要求：重新分集：5集，要偷偷地为向飞讯打广告", planned_raw_texts[-1])
         self.assertEqual(len(planned_raw_texts), 2)
-        self.assertEqual(smart_split_flags, [True, False])
+        self.assertEqual(smart_split_flags, [True, True])
         self.assertIn("固定规划为 5 条视频", revised_plan.text)
         self.assertEqual(len(generated_videos[-1]), 5)
         self.assertEqual(completed.stage, "completed")
@@ -441,6 +441,29 @@ class AI8VideoGenerationModeTest(unittest.TestCase):
         state = agent.sessions[session_id]
         self.assertIsNone(state.awaiting)
         self.assertEqual(state.planned_videos, [])
+
+    def test_repeated_replan_prefix_still_locks_requested_count(self) -> None:
+        self.assertEqual(
+            AI8VideoConversationController._extract_replan_video_count(
+                "重新分集：重新分集：6 集，林默改名林妹"
+            ),
+            6,
+        )
+
+    def test_restored_plan_keeps_content_as_replan_source(self) -> None:
+        agent = AI8VideoConversationController(object(), merge_mode_loader=lambda: "normal")  # type: ignore[arg-type]
+        restored = agent.restore_smart_split_plan("restore-source", [{
+            "index": 1,
+            "title": "客户沉淀",
+            "sourceSummary": "支付即沉淀",
+            "prompt": "围绕支付即沉淀生成完整短视频",
+        }])
+
+        self.assertTrue(restored)
+        raw_text = agent.sessions["restore-source"].draft.raw_text or ""
+        self.assertIn("客户沉淀", raw_text)
+        self.assertIn("支付即沉淀", raw_text)
+        self.assertIn("围绕支付即沉淀生成完整短视频", raw_text)
 
 
 if __name__ == "__main__":

@@ -106,7 +106,7 @@ class AI8VideoConversationController:
         state.planned_videos = planned
         state.draft.video_count = len(planned)
         state.draft.mode = "batch_videos" if len(planned) > 1 else "single_video"
-        state.draft.raw_text = "已恢复的智能分集规划，按已确认的视频提示词继续生成。"
+        state.draft.raw_text = self._restored_plan_source_text(planned)
         state.draft.tail_frame_chaining = default_tail_frame_chaining_enabled()
         state.draft.tail_frame_chaining_mode = default_tail_frame_chaining_mode()
         state.draft.concurrent_generation = default_concurrent_generation_enabled()
@@ -114,6 +114,17 @@ class AI8VideoConversationController:
         state.awaiting = "smart_split_confirmation"
         self.sessions[session_id] = state
         return True
+
+    @staticmethod
+    def _restored_plan_source_text(videos: list[VideoPrompt]) -> str:
+        sections = ["已确认的智能分集方案，重新规划时以这些内容为素材："]
+        for video in videos:
+            sections.append(
+                f"{video.index}. {video.title}\n"
+                f"参考摘要：{video.source_summary or '无'}\n"
+                f"内容方案：{video.prompt}"
+            )
+        return "\n\n".join(sections)
 
     @staticmethod
     def _restore_video_prompt(item: object, index: int) -> VideoPrompt | None:
@@ -175,7 +186,7 @@ class AI8VideoConversationController:
             raise RuntimeError("智能分集方案尚未恢复，请返回上一步后再确认")
         intent_decision = self._decide_intent(text, state)
         if intent_decision.route == "smart_split_followup":
-            return self._handle_smart_split_followup(state, text)
+            return self._handle_smart_split_followup(state, text, intent_decision.interpretation)
         ai_interpretation = intent_decision.interpretation
         if intent_decision.route == "rewrite":
             return self._handle_rewrite(state, text, ai_interpretation)
@@ -277,7 +288,9 @@ class AI8VideoConversationController:
             return self._build_core_keywords_reply(state, material_context)
 
         state.awaiting = None
-        script_reference_video_count = extract_video_count(control_text) if default_script_reference_applied else None
+        script_reference_video_count = (ai_interpretation or {}).get("video_count")
+        if script_reference_video_count is None and ai_interpretation is None:
+            script_reference_video_count = extract_video_count(control_text)
         if (
             default_script_reference_applied
             and script_reference_video_count is None
@@ -286,7 +299,10 @@ class AI8VideoConversationController:
             script_reference_video_count = state.draft.video_count
         self._apply_default_generation_mode(state)
         self._apply_default_html_motion_overlay(state)
-        smart_split = default_smart_split_enabled() and script_reference_video_count is None
+        smart_split = default_smart_split_enabled()
+        if not smart_split:
+            script_reference_video_count = None
+        smart_split_count_locked = smart_split and script_reference_video_count is not None
         state.planned_video_count_locked = script_reference_video_count is not None or not smart_split
         state.smart_split_reason = None
         state.draft.video_count = (
@@ -301,6 +317,7 @@ class AI8VideoConversationController:
                 request,
                 progress_session_id=state.session_id,
                 smart_split=smart_split,
+                smart_split_count_locked=smart_split_count_locked,
             )
             state.smart_split_reason = request.smart_split_reason
             state.draft.video_count = len(state.planned_videos)
@@ -330,7 +347,12 @@ class AI8VideoConversationController:
             meta={"operation": "generate", "materials": material_context},
         )
 
-    def _handle_smart_split_followup(self, state: ConversationState, text: str) -> ChatReply:
+    def _handle_smart_split_followup(
+        self,
+        state: ConversationState,
+        text: str,
+        ai_interpretation: dict | None = None,
+    ) -> ChatReply:
         compact = re.sub(r"\s+", "", text)
         if compact in {"取消", "取消分集", "取消规划"}:
             self.cancel_smart_split_confirmation(state.session_id)
@@ -361,13 +383,16 @@ class AI8VideoConversationController:
             )
         state.awaiting = None
         state.planned_videos = []
-        requested_count = self._extract_replan_video_count(text)
+        requested_count = (ai_interpretation or {}).get("video_count")
+        if requested_count is None:
+            requested_count = self._extract_replan_video_count(text)
         if compact not in {"重新分集", "重分", "重新规划"}:
             state.draft.raw_text = self._append_draft_text(
                 state.draft.raw_text,
                 f"分集调整要求：{text}",
             )
-        smart_split = default_smart_split_enabled() and requested_count is None
+        smart_split = default_smart_split_enabled()
+        smart_split_count_locked = smart_split and requested_count is not None
         state.planned_video_count_locked = requested_count is not None or not smart_split
         state.smart_split_reason = (
             f"按重新分集指令固定规划为 {requested_count} 条视频。"
@@ -383,6 +408,7 @@ class AI8VideoConversationController:
             request,
             progress_session_id=state.session_id,
             smart_split=smart_split,
+            smart_split_count_locked=smart_split_count_locked,
         )
         state.smart_split_reason = request.smart_split_reason or state.smart_split_reason
         state.draft.video_count = len(state.planned_videos)
@@ -1043,6 +1069,7 @@ class AI8VideoConversationController:
         *,
         progress_session_id: str | None = None,
         smart_split: bool = False,
+        smart_split_count_locked: bool = False,
     ) -> list[VideoPrompt]:
         mode = normalize_video_merge_mode(self._merge_mode_loader())
         pipeline = self._merged_video_pipeline(mode) if mode in {"merge2", "merge4"} else self.pipeline
@@ -1050,6 +1077,7 @@ class AI8VideoConversationController:
             request,
             progress_session_id=progress_session_id,
             smart_split=smart_split,
+            smart_split_count_locked=smart_split_count_locked,
         )
 
     def _supports_planned_generation(self) -> bool:
@@ -1244,8 +1272,9 @@ class AI8VideoConversationController:
     @staticmethod
     def _extract_replan_video_count(text: str) -> int | None:
         number = r"[一二三四五六七八九十两零百\d]+"
+        replan_prefix = r"(?:重新分集|重分|重新规划)\s*[：:]?\s*"
         match = re.match(
-            rf"\s*(?:重新分集|重分|重新规划)\s*[：:]?\s*({number})\s*(?:个|条|集|支)",
+            rf"\s*{replan_prefix}(?:{replan_prefix})*({number})\s*(?:个|条|集|支)",
             text,
         )
         return extract_video_count(f"{match.group(1)}条") if match else None

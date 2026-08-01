@@ -102,11 +102,13 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         *,
         progress_session_id: str | None = None,
         smart_split: bool = False,
+        smart_split_count_locked: bool = False,
     ) -> list[VideoPrompt]:
         final_request, videos, _ = self.plan_merged_request(
             request,
             progress_session_id=progress_session_id,
             smart_split=smart_split,
+            smart_split_count_locked=smart_split_count_locked,
         )
         request.smart_split_reason = final_request.smart_split_reason
         return videos
@@ -117,6 +119,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         *,
         progress_session_id: str | None = None,
         smart_split: bool = False,
+        smart_split_count_locked: bool = False,
     ) -> tuple[ParsedRequest, list[VideoPrompt], int]:
         segment_duration = self._segment_duration_seconds(request)
         final_request = replace(request, duration_seconds=segment_duration * self.segment_count)
@@ -124,7 +127,7 @@ class AI8VideoMergedPipeline(AI8VideoPipeline):
         allow_mock_planning = self.config.dry_run
         task_constraints = self._merged_task_constraints(final_request, segment_duration)
         video_count = final_request.video_count
-        if smart_split:
+        if smart_split and not smart_split_count_locked:
             video_count, smart_split_reason = infer_smart_video_count_with_ai(
                 planning_text,
                 llm=self.llm,

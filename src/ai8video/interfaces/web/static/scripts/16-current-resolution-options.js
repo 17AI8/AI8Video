@@ -75,9 +75,6 @@
     function videoTemplateLabel(template) {
       const labels = {
         'doubao-seedance': '豆包 Seedance',
-        'yunwu-grok': '云雾 Grok',
-        'yunwu-omni': '云雾 Omni',
-        'yunwu-veo': '云雾 Veo',
         'bailian-wan': '百炼 Wan',
         'openai-compatible': '通用 OpenAI 兼容',
       };

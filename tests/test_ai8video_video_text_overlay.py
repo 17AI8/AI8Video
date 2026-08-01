@@ -227,6 +227,44 @@ class AI8VideoVideoTextOverlayTest(unittest.TestCase):
             self.assertEqual(video.read_bytes(), b"burned")
             self.assertEqual(commands[0][0], "ffmpeg-test")
 
+    def test_apply_video_text_overlay_burns_watermark_when_flower_text_disabled(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            root = Path(tempdir)
+            video = root / "video.mp4"
+            video.write_bytes(b"video")
+            watermark_dir = root / "花字水印库"
+            watermark_dir.mkdir()
+            (watermark_dir / "logo.png").write_bytes(b"png")
+            rendered_layers: list[str] = []
+
+            def fake_render(_settings, target_size=None, *, layer="all"):
+                rendered_layers.append(layer)
+                overlay = root / f"{layer}.png"
+                overlay.write_bytes(b"png")
+                return overlay
+
+            def fake_run(cmd: list[str], check: bool, capture_output: bool, text: bool) -> None:
+                Path(cmd[-1]).write_bytes(b"burned")
+
+            settings = {
+                "enabled": False,
+                "text": "不应烧录的花字",
+                "canvasWidth": 9,
+                "canvasHeight": 16,
+                "watermarkEnabled": True,
+                "watermarkImage": "logo.png",
+            }
+            with patch.object(video_text_overlay, "USER_FLOWER_WATERMARK_DIR", watermark_dir), \
+                    patch.object(video_text_overlay, "_probe_video_size", return_value=(416, 720)), \
+                    patch.object(video_text_overlay, "_render_overlay_png", side_effect=fake_render), \
+                    patch.object(video_text_overlay.subprocess, "run", side_effect=fake_run):
+                result = video_text_overlay.apply_video_text_overlay(video, ffmpeg_bin="ffmpeg-test", settings=settings)
+
+            self.assertEqual(result["status"], "burned")
+            self.assertFalse(result["textEnabled"])
+            self.assertEqual(rendered_layers, ["watermark"])
+            self.assertEqual(video.read_bytes(), b"burned")
+
     def test_apply_video_text_overlay_skips_when_disabled(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             video = Path(tempdir) / "video.mp4"
@@ -266,6 +304,25 @@ class AI8VideoVideoTextOverlayTest(unittest.TestCase):
 
         self.assertTrue(status["ready"])
         self.assertEqual(status["blockingReason"], "")
+
+    def test_runtime_status_treats_watermark_as_active_when_flower_text_disabled(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            watermark_dir = Path(tempdir)
+            (watermark_dir / "logo.png").write_bytes(b"png")
+            settings = {
+                "enabled": False,
+                "text": "关闭的花字",
+                "canvasWidth": 9,
+                "canvasHeight": 16,
+                "watermarkEnabled": True,
+                "watermarkImage": "logo.png",
+            }
+            with patch.object(video_text_overlay, "USER_FLOWER_WATERMARK_DIR", watermark_dir):
+                status = video_text_overlay.video_text_overlay_runtime_status(settings)
+
+        self.assertTrue(status["enabled"])
+        self.assertFalse(status["textEnabled"])
+        self.assertTrue(status["watermark1Present"])
 
     def test_render_video_text_overlay_preview_returns_png(self) -> None:
         settings = {

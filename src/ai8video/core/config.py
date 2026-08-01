@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ai8video.core.paths import PROJECT_ROOT
 from ai8video.integrations.model_overrides import load_model_overrides
+from ai8video.integrations.model_profiles import active_model_profile
 
 
 @dataclass(frozen=True)
@@ -101,6 +102,24 @@ class AI8VideoConfig:
         if model_overrides.get("AI8VIDEO_IMAGE_MODEL") and image_base_url and image_api_key:
             image_model = model_overrides["AI8VIDEO_IMAGE_MODEL"]
             image_source = _merge_source(image_source, "user_file")
+        llm_profile = active_model_profile("llm")
+        if llm_profile:
+            llm_base_url = llm_profile.get("baseUrl") or llm_base_url
+            llm_api_key = llm_profile.get("apiKey") or llm_api_key
+            llm_model = llm_profile.get("model") or llm_model
+            llm_source = _merge_source(llm_source, "model_profile")
+        multimodal_profile = active_model_profile("multimodal")
+        if multimodal_profile:
+            multimodal_base_url = multimodal_profile.get("baseUrl") or multimodal_base_url
+            multimodal_api_key = multimodal_profile.get("apiKey") or multimodal_api_key
+            multimodal_model = multimodal_profile.get("model") or multimodal_model
+            multimodal_source = _merge_source(multimodal_source, "model_profile")
+        image_profile = active_model_profile("image")
+        if image_profile:
+            image_base_url = image_profile.get("baseUrl") or image_base_url
+            image_api_key = image_profile.get("apiKey") or image_api_key
+            image_model = image_profile.get("model") or image_model
+            image_source = _merge_source(image_source, "model_profile")
         archive_backend = (os.getenv("AI8VIDEO_ARCHIVE_BACKEND") or "local").strip().lower()
         archive_s3_endpoint = (os.getenv("AI8VIDEO_ARCHIVE_S3_ENDPOINT") or "").rstrip("/") or None
         archive_public_base_url = (os.getenv("AI8VIDEO_ARCHIVE_PUBLIC_BASE_URL") or "").rstrip("/") or None

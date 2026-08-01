@@ -8,9 +8,9 @@
 @import url("./styles/07-flower-text.css");
 @import url("./styles/08-motion.css");
 @import url("./styles/09-dialogs.css");
-@import url("./styles/10-settings.css");
+@import url("./styles/10-settings.css?v=20260801-12");
 @import url("./styles/11-materials.css");
-@import url("./styles/12-messages.css?v=20260730-2");
+@import url("./styles/12-messages.css?v=20260801-5");
 @import url("./styles/12a-smart-split-dismiss.css?v=20260724-4");
 @import url("./styles/13-composer.css?v=20260731-1");
 @import url("./styles/13a-video-extension-batch.css?v=20260731-1");
@@ -27,4 +27,4 @@
 @import url("./styles/20-smart-image-editor.css?v=20260726-4");
 @import url("./styles/20a-smart-image-canvas.css?v=20260726-3");
 @import url("./styles/21-sidebar-nav.css?v=20260728-1");
-@import url("./styles/22-main-background.css?v=20260729-4");
+@import url("./styles/22-main-background.css?v=20260801-5");

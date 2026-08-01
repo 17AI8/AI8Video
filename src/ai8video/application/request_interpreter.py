@@ -36,6 +36,9 @@ def _build_request_interpretation_prompt(text: str) -> str:
   - "batch_run": 候选池/批量跑量/每日跑量任务。
   - "batch_seed_followup": 员工正在补充批量候选列表。
   - "rewrite": 修改或重做上一轮某一条视频。
+  - "smart_split_replan": 对当前智能分集方案重新分集、调整集数或修改规划要求。
+  - "smart_split_confirm": 确认当前智能分集方案并继续生成。
+  - "smart_split_cancel": 取消当前智能分集方案。
   - "content_completion_followup": 员工正在补充台词/口播，或要求AI8智能补全台词。
   - "core_keywords_followup": 员工正在补充或跳过核心主题/关键词。
   - "unknown": 无法判断。
@@ -67,6 +70,9 @@ def _normalize_interpretation(data: dict[str, Any]) -> dict[str, Any]:
         "batch_run",
         "batch_seed_followup",
         "rewrite",
+        "smart_split_replan",
+        "smart_split_confirm",
+        "smart_split_cancel",
         "content_completion_followup",
         "core_keywords_followup",
         "unknown",

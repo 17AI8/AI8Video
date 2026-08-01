@@ -310,6 +310,9 @@
       settingsModal: {
         visible: false,
         activeCategory: 'AI8video',
+        activeModelCategory: '文本/视频规划模型',
+        expandedModelProfiles: {},
+        savingModelProfileId: '',
         revealedSecrets: {},
         savingVideoModel: false,
         pullingVideoModels: false,

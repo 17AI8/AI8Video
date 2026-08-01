@@ -358,6 +358,15 @@ from ai8video.integrations.model_catalogs import (
     save_model_catalog,
 )
 from ai8video.integrations.model_overrides import save_model_override
+from ai8video.integrations.model_profiles import (
+    activate_model_profile,
+    create_model_profile,
+    delete_model_profile,
+    duplicate_model_profile,
+    ensure_model_profiles,
+    public_model_profiles,
+    update_model_profile,
+)
 from ai8video.media.video_segment_postprocess import concat_videos, extract_frame_at_time, trim_video_end
 
 
@@ -2782,9 +2791,16 @@ def _batch_merge_user_generated_videos(raw_keys: object) -> dict[str, Any]:
         first_visual = root / context["firstVisualKey"] if context["firstVisualKey"] else None
         if first_visual and first_visual.suffix.lower() in {".jpg", ".jpeg"}:
             shutil.copy2(first_visual, visual_copy)
-        removed_records = _install_batch_merge_result(
-            context, work, candidate, visual_copy, merged_base, merged_tts,
-        )
+        source_artifacts = _batch_merge_source_artifacts(root, items)
+        staged_sources = _stage_batch_merge_sources(source_artifacts, work / "sources")
+        try:
+            _install_batch_merge_result(
+                context, work, candidate, visual_copy, merged_base, merged_tts,
+            )
+            removed_records = _remove_batch_merged_asset_records(context["sourceKeys"])
+        except Exception:
+            _restore_batch_merge_sources(staged_sources)
+            raise
     relative_key = target.relative_to(root).as_posix()
     return {
         "ok": True,
@@ -3975,7 +3991,9 @@ def _copy_extension_frame_variant(frame_path: Path, variant_index: object) -> Pa
 def _extension_frame_variant_status(frame_path: Path) -> str:
     state_path = frame_path.with_suffix(".state.json")
     state = _load_json_file(state_path)
-    if isinstance(state, dict) and state.get("status") in {"repairing", "completed", "failed"}:
+    if isinstance(state, dict) and state.get("status") in {
+        "repairing", "completed", "failed", "reconciliation_required",
+    }:
         return str(state["status"])
     source = re.sub(r"-batch-[1-4](\.[^.]+)$", r"\1", frame_path.name)
     source_path = frame_path.with_name(source)
@@ -5155,6 +5173,17 @@ def api_auth_settings():
     html_motion = html_motion_overlay_status()
     narration_review = narration_review_status()
     archive_items = archive_artifacts["items"]
+    model_profiles = ensure_model_profiles({
+        "llm": {"baseUrl": config.llm_base_url, "apiKey": config.llm_api_key, "model": config.llm_model},
+        "multimodal": {"baseUrl": config.multimodal_base_url, "apiKey": config.multimodal_api_key, "model": config.multimodal_model},
+        "image": {"baseUrl": config.image_base_url, "apiKey": config.image_api_key, "model": config.image_model},
+        "video": {
+            "baseUrl": video_settings.base_url,
+            "apiKey": video_settings.api_key,
+            "model": video_settings.model,
+            "template": video_settings.template,
+        },
+    })
     fields = [
         _settings_field("视频合并", "AI8VIDEO_VIDEO_MERGE", load_video_merge_mode(), "用户文件夹/视频合并", sensitive=False, category="运行模式"),
         _settings_field("接口地址", "AI8VIDEO_LOCAL_TTS_API_BASE_URL", tts.get("apiBaseUrl"), "用户文件夹/TTS", sensitive=False, category="TTS"),
@@ -5352,7 +5381,39 @@ def api_auth_settings():
         "archiveArtifacts": archive_artifacts,
         "agentSkills": _agent_skill_settings_payload(),
         "modelCatalogs": load_model_catalogs(),
+        "modelProfiles": public_model_profiles(model_profiles),
     }
+
+
+@app.route("/api/model-profiles", method=["POST", "OPTIONS"])
+def api_model_profiles():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    if not isinstance(payload, dict):
+        response.status = 400
+        return {"ok": False, "error": "payload must be an object"}
+    action = str(payload.get("action") or "").strip()
+    category = str(payload.get("category") or "").strip()
+    profile_id = str(payload.get("profileId") or "").strip()
+    profile = payload.get("profile") if isinstance(payload.get("profile"), dict) else {}
+    try:
+        if action == "create":
+            store = create_model_profile(category, profile)
+        elif action == "duplicate":
+            store = duplicate_model_profile(category, profile_id)
+        elif action == "update":
+            store = update_model_profile(category, profile_id, profile)
+        elif action == "activate":
+            store = activate_model_profile(category, profile_id)
+        elif action == "delete":
+            store = delete_model_profile(category, profile_id)
+        else:
+            raise ValueError("不支持这个模型配置操作")
+    except ValueError as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "modelProfiles": public_model_profiles(store)}
 
 
 @app.route("/api/archive-artifacts", method=["GET", "OPTIONS"])
@@ -5899,6 +5960,8 @@ def api_repair_user_generated_extension_frame():
     if not isinstance(payload, dict):
         response.status = 400
         return {"ok": False, "error": "payload must be an object"}
+    source_frame_path = None
+    frame_path = None
     try:
         source_frame_path = _resolve_extension_frame_path(payload.get("frameKey"))
         frame_path = (
@@ -5935,6 +5998,13 @@ def api_repair_user_generated_extension_frame():
         response.status = 404
         return {"ok": False, "error": str(exc)}
     except (ValueError, RuntimeError) as exc:
+        if (
+            isinstance(frame_path, Path)
+            and isinstance(source_frame_path, Path)
+            and frame_path != source_frame_path
+            and _extension_frame_variant_status(frame_path) == "repairing"
+        ):
+            _write_extension_frame_variant_status(frame_path, "reconciliation_required")
         response.status = 400
         return {"ok": False, "error": str(exc)}
 
@@ -7379,6 +7449,7 @@ def api_retry_failed_generation():
     video_index = int(payload.get("videoIndex") or 0)
     tail_frame_chaining = bool(payload.get("tailFrameChaining")) if "tailFrameChaining" in payload else None
     retry_batch_id = ""
+    display_progress: dict[str, Any] | None = None
     if not session_id or video_index < 1:
         response.status = 400
         return {"ok": False, "error": "缺少重试会话或视频序号"}
@@ -7390,6 +7461,9 @@ def api_retry_failed_generation():
             tail_frame_chaining=tail_frame_chaining,
         )
         tail_frame_source = _resolve_retry_tail_frame_source(config, session_id, video_index, retry_request)
+        source_ledger = get_generation_ledger_snapshot(session_id, generation_batch_id)
+        if isinstance(source_ledger, dict) and isinstance(source_ledger.get("progress"), dict):
+            display_progress = dict(source_ledger["progress"])
         retry_batch_id = create_generation_batch_id(session_id)
         clear_generation_progress(session_id)
         claim_generation_batch(session_id, retry_batch_id)
@@ -7422,6 +7496,7 @@ def api_retry_failed_generation():
             "generationBatchId": retry_batch_id,
             "workerId": task.worker_id,
             "videoIndex": video.index,
+            **({"displayGenerationProgress": display_progress} if display_progress else {}),
         }
     except (ValueError, RuntimeError) as exc:
         if str(exc) == "未找到当前会话的视频失败记录，无法重试":
@@ -7588,7 +7663,8 @@ def _resolve_retry_tail_frame_source(
             source = _retry_asset_local_path(item.get("assetRecord"))
             if source:
                 return source
-        raise ValueError(f"传尾帧模式下，请先成功生成第 {predecessor_index} 条视频，再重试第 {video_index} 条")
+        # 账本状态可能仍停在归档阶段；继续用成品库核对真实本地成片。
+        break
     records = JsonlAssetStore(config.asset_store_path).read_all()
     for item in reversed(records):
         if str(item.get("sessionId") or "") != session_id:

@@ -68,6 +68,28 @@ class RecoveredTailFrameResumeTests(TestCase):
                 with self.assertRaises(LookupError):
                     get_recovered_tail_frame_resume("session-1", "batch-1", 2)
 
+    def test_recovery_does_not_replace_active_remote_job_with_manual_wait(self):
+        progress = {
+            "items": [
+                {"videoIndex": 1, "status": "succeeded"},
+                {
+                    "videoIndex": 2,
+                    "status": "polling",
+                    "jobId": "remote-job-2",
+                    "videoPrompt": "提示词二",
+                },
+            ]
+        }
+
+        checkpoint = prepare_recovered_tail_frame_resume(
+            session_id="session-1",
+            source_batch_id="batch-1",
+            progress=progress,
+            asset_records=[],
+        )
+
+        self.assertIsNone(checkpoint)
+
     @staticmethod
     def _write_preview(_source: Path, output: Path) -> None:
         output.parent.mkdir(parents=True, exist_ok=True)

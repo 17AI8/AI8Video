@@ -238,5 +238,8 @@
         return;
       }
       const feedback = String(card?.querySelector?.('[data-smart-split-feedback]')?.value || '').trim();
-      setComposerDraft(feedback ? `重新分集：${feedback}` : text, { submit: true });
+      const replanText = /^(?:重新分集|重分|重新规划)\s*[：:]?/.test(feedback)
+        ? feedback
+        : (feedback ? `重新分集：${feedback}` : text);
+      setComposerDraft(replanText, { submit: true });
     }

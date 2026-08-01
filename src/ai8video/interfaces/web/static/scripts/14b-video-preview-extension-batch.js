@@ -21,14 +21,18 @@
     function batchFrameMarkup(frame, index, busy = false) {
       const hasVideo = Boolean(frame.videoUrl);
       const failed = frame.status === 'failed';
+      const reconciliationRequired = frame.status === 'reconciliation_required';
       const media = failed
         ? `<span class="video-preview-extension-variant-failure-title">生成失败</span>
           <span class="video-preview-extension-variant-failure-message">${escapeHtml(frame.error || '请稍后重试')}</span>`
         : hasVideo
         ? `<video controls playsinline preload="metadata" src="${escapeHtml(frame.videoUrl)}"></video>`
         : (frame.frameUrl ? `<img src="${escapeHtml(frame.frameUrl)}" alt="批量截帧">` : '<span>等待截图</span>');
-      return `<div class="video-preview-extension-variant${frame.selected ? ' selected' : ''}${hasVideo ? ' has-video' : ''}${failed ? ' is-failed' : ''}" data-extension-frame-key="${escapeHtml(frame.frameKey || '')}">
-        ${media}
+      const status = reconciliationRequired
+        ? '<span class="video-preview-extension-variant-status">远端已完成<br>结果待同步</span>'
+        : '';
+      return `<div class="video-preview-extension-variant${frame.selected ? ' selected' : ''}${hasVideo ? ' has-video' : ''}${failed ? ' is-failed' : ''}${reconciliationRequired ? ' needs-reconciliation' : ''}" data-extension-frame-key="${escapeHtml(frame.frameKey || '')}">
+        ${media}${status}
         <button type="button" class="video-preview-extension-variant-select" data-extension-batch-select="${index}" aria-label="选择第 ${index + 1} 张" aria-pressed="${frame.selected ? 'true' : 'false'}"${busy ? ' disabled' : ''}><span aria-hidden="true"></span></button>
       </div>`;
     }
@@ -110,10 +114,13 @@
         const currentFrames = readVideoPreviewExtensionBatchFrames(stageGrid);
         applyVideoPreviewExtensionBatchStage(stageGrid, data.frames.map((frame, index) => {
           const current = currentFrames[index] || {};
+          const authoritativeRecovery = ['repairing', 'reconciliation_required'].includes(frame.status)
+            && frame.status !== current.status;
           return {
             ...current,
             ...frame,
-            status: current.status === 'repairing' ? frame.status : current.status,
+            status: authoritativeRecovery || current.status === 'repairing' ? frame.status : current.status,
+            ...(authoritativeRecovery ? { error: '' } : {}),
             selected: selectedIndex >= 0 && index === selectedIndex,
           };
         }));
@@ -382,12 +389,20 @@
       const failed = results.filter((item) => item.status === 'rejected');
       stageGrid.dataset.extensionBatchBusy = 'false';
       if (failed.length) {
+        await hydrateVideoPreviewExtensionBatchStatus(stageGrid);
+        const authoritativeFrames = readVideoPreviewExtensionBatchFrames(stageGrid);
         const settledFrames = results.map((item, index) => item.status === 'fulfilled'
           ? { ...item.value, status: 'completed' }
-          : { ...pendingFrames[index], status: 'failed' });
+          : ['repairing', 'reconciliation_required'].includes(authoritativeFrames[index]?.status)
+            ? { ...authoritativeFrames[index], error: '' }
+            : { ...pendingFrames[index], status: 'failed', error: item.reason?.message || '修图失败' });
         applyVideoPreviewExtensionBatchStage(stageGrid, settledFrames);
         persistVideoPreviewExtensionBatchState(stageGrid);
-        window.alert(`${failed.length}/4 份修图失败：${failed[0].reason?.message || '请稍后重试'}`);
+        const reconciling = settledFrames.filter((frame) => frame.status === 'reconciliation_required').length;
+        window.alert(reconciling
+          ? `${reconciling}/4 份远端结果仍在回填，已保留生成状态，请勿重复提交`
+          : `${failed.length}/4 份修图失败：${failed[0].reason?.message || '请稍后重试'}`);
+        if (reconciling) void resumeVideoPreviewExtensionBatchPolling(stageGrid);
         return;
       }
       const repaired = results.map((item) => ({ ...item.value, status: 'completed' }));

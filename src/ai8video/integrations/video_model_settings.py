@@ -11,6 +11,7 @@ from urllib.parse import urljoin
 import requests
 
 from ai8video.assets.user_files import USER_FILE_ROOT, ensure_user_file_root
+from ai8video.integrations.model_profiles import active_model_profile
 
 
 VIDEO_MODEL_SETTINGS_DIR = (USER_FILE_ROOT / "视频模型").resolve()
@@ -19,12 +20,10 @@ VIDEO_MODEL_SETTINGS_PATH = VIDEO_MODEL_SETTINGS_DIR / "settings.json"
 
 SUPPORTED_VIDEO_TEMPLATES = (
     "doubao-seedance",
-    "yunwu-grok",
-    "yunwu-omni",
-    "yunwu-veo",
     "bailian-wan",
     "openai-compatible",
 )
+REMOVED_VIDEO_TEMPLATES = {"yunwu-grok", "yunwu-omni", "yunwu-veo"}
 
 SUPPORTED_RATIOS = ("9:16", "16:9", "1:1")
 SUPPORTED_RESOLUTION_MODES = ("ratio", "size")
@@ -38,9 +37,6 @@ BAILIAN_WAN_DEFAULT_RESOLUTION_OPTIONS = ("480P", "720P", "1080P")
 
 VIDEO_TEMPLATE_OPTIONS = (
     {"value": "doubao-seedance", "label": "豆包 Seedance", "description": "适合短视频批量生成，默认 480p。"},
-    {"value": "yunwu-grok", "label": "云雾 Grok", "description": "Grok 视频兼容模板。"},
-    {"value": "yunwu-omni", "label": "云雾 Omni", "description": "Omni 文生/图生视频兼容模板。"},
-    {"value": "yunwu-veo", "label": "云雾 Veo", "description": "Veo 视频兼容模板。"},
     {"value": "bailian-wan", "label": "百炼 Wan", "description": "通义 Wan 视频兼容模板。"},
     {"value": "openai-compatible", "label": "OpenAI 兼容", "description": "通用 /v1/videos 兼容模板。"},
 )
@@ -113,6 +109,20 @@ def load_video_model_settings(*, llm_base_url: str | None = None, llm_api_key: s
         data.update(file_settings)
         source = _merge_source(source, "user_file")
 
+    profile = active_model_profile("video")
+    if profile:
+        data.update({
+            key: value
+            for key, value in {
+                "base_url": profile.get("baseUrl"),
+                "api_key": profile.get("apiKey"),
+                "model": profile.get("model"),
+                "template": profile.get("template"),
+            }.items()
+            if value
+        })
+        source = _merge_source(source, "model_profile")
+
     settings = normalize_video_model_settings(data, source=source)
     if not settings.api_key and llm_api_key:
         settings = VideoModelSettings(**{**asdict(settings), "api_key": llm_api_key})
@@ -157,6 +167,8 @@ def save_video_model_settings(payload: dict[str, Any]) -> VideoModelSettings:
 
 def normalize_video_model_settings(payload: dict[str, Any], *, source: str = "default") -> VideoModelSettings:
     template = str(payload.get("template") or "doubao-seedance").strip()
+    if template in REMOVED_VIDEO_TEMPLATES:
+        template = "openai-compatible"
     if template not in SUPPORTED_VIDEO_TEMPLATES:
         template = "doubao-seedance"
     model = str(payload.get("model") or "doubao-seedance-1-5-pro-251215").strip()

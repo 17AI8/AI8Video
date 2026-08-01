@@ -167,18 +167,22 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("action.disabled = shouldOpen", source)
         self.assertIn("action.setAttribute('aria-hidden'", source)
         self.assertIn("block: 'center'", source)
-        self.assertIn("feedback ? `重新分集：${feedback}` : text", source)
+        self.assertIn("const replanText = /^(?:重新分集|重分|重新规划)\\s*[：:]?/.test(feedback)", source)
+        self.assertIn("? feedback", source)
+        self.assertIn(": (feedback ? `重新分集：${feedback}` : text);", source)
+        self.assertIn("const isReplanMessage = /^(?:重新分集|重分|重新规划)(?:[：:].*)?$/.test(compactMessage);", source)
+        self.assertIn("if (!confirmationMessages.has(compactMessage) && !isReplanMessage) return null;", source)
         self.assertIn("trigger?.closest?.('.guide-card')", source)
         self.assertIn("if (actionKind === 'dismiss-plan')", source)
         self.assertIn("fetch('/api/chat-plan-cancel'", source)
-        self.assertIn("function dismissSmartSplitMessage(trigger)", source)
+        self.assertIn("function dismissSmartSplitMessage(trigger, options = {})", source)
         self.assertIn("function getSmartSplitDismissRange(session, targetMessage)", source)
         self.assertIn("session.messages[startIndex - 1]?.role === 'user'", source)
         self.assertIn("function fadeSmartSplitMessages(session, targetMessage)", source)
         self.assertIn("function removeSmartSplitMessages(session, targetMessage)", source)
         self.assertIn("range.currentIndex - range.startIndex + 1", source)
         self.assertIn("continuationClosed: true", source)
-        self.assertIn("if (data.cancelled !== true)", source)
+        self.assertIn("if (data.cancelled !== true && !options.allowResetSession)", source)
         self.assertIn("function isConversationContinuationClosed(payload)", source)
         self.assertIn("!isSessionPending(targetSession)", source)
         self.assertIn("is-smart-split-dismissing", source)
@@ -414,7 +418,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertNotIn("if (!String(savedState.rightVideoKey || '').trim() || !String(savedState.rightVideoUrl || '').trim()) return;", source)
         self.assertIn('aria-label="删除右侧延长内容"', source)
         self.assertIn("function hasActiveVideoPreviewExtensionState(userGeneratedKey)", source)
-        self.assertIn("async function discardDetachedVideoPreviewExtensionResult(leftKey, rightKey)", source)
+        self.assertIn("async function discardDetachedVideoPreviewExtensionResult(leftKey, rightKey, preserveFrameState = false)", source)
         self.assertIn("function collectVideoPreviewExtensionResultKeys(savedState = {})", source)
         self.assertIn("savedState.batchFrames.map((frame) => frame?.userGeneratedKey)", source)
         self.assertIn("await deleteVideoPreviewExtensionAssets(key, savedState)", source)
@@ -459,7 +463,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("padding: 4px", source)
         self.assertIn("height: 36px", source)
         self.assertIn("border: 1px solid rgba(77, 116, 255, 0.28)", source)
-        self.assertIn("#resultModal .result-notify-card.is-batch-selected", source)
+        self.assertIn(".result-notify-card.is-batch-selected", source)
         self.assertIn("border-radius: 12px", source)
         self.assertIn('id="videoPreviewStatus"', source)
         self.assertIn("function setVideoPreviewHeaderStatus(message = '', tone = '')", source)
@@ -487,7 +491,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("async function confirmVideoPreviewExtensionBatch()", source)
         self.assertIn("stage.dataset.videoKey = selected.userGeneratedKey || ''", source)
         self.assertIn("if (actionBar) actionBar.hidden = true", source)
-        self.assertIn("discardedKeys.map((rightKey) => discardDetachedVideoPreviewExtensionResult(key, rightKey))", source)
+        self.assertIn("await discardDetachedVideoPreviewExtensionResult(key, rightKey, true);", source)
         self.assertIn("async function mergeExtendedPreviewVideos(leftKey, button)", source)
         self.assertIn("'/api/user-generated-results/replace'", source)
         self.assertIn("'/api/user-generated-results/merge'", source)
@@ -1170,7 +1174,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         source = read_static_source()
 
         self.assertIn("data-frame-repair-start ${customPrompt.trim() && !busy ? '' : 'disabled'}", source)
-        self.assertIn("${busy ? '视频生成中' : '开始修图'}", source)
+        self.assertIn("function frameRepairActionLabel(stageGrid)", source)
+        self.assertIn("${actionLabel}", source)
         self.assertIn('if (!frameKey || !customPrompt || button.disabled) return;', source)
         self.assertIn('if (!frames.length || !customPrompt || button.disabled) return;', source)
         self.assertNotIn('if (!frameKey || !referencePaths.length || button.disabled) return;', source)
@@ -5235,7 +5240,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn('class="pending-card-status"', html)
         self.assertIn("function renderAgentVideoThumbnails(pending = {})", html)
         self.assertIn("String(progress.status || '').trim() === 'planning'", html)
-        self.assertIn("if (planning && !submitted) return '';", html)
+        self.assertIn("if (planning) return '';", html)
         self.assertIn("if (!submitted) return '';", html)
         self.assertIn("${renderProgressResultStrip([], pendingCount)}", html)
         self.assertIn("return buildProgressStatusResultItem(itemWithBatch, index, progressItems);", html)
@@ -5258,7 +5263,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("preview.title = '正在重新生成';", html)
         self.assertIn("const restoreFailedCard = showGenerationRetryPendingCard(button);", html)
         self.assertIn("restoreFailedCard();", html)
-        self.assertIn("function persistGenerationRetryPendingState(sessionId, videoIndex, generationBatchId)", html)
+        self.assertIn("function persistGenerationRetryPendingState(sessionId, videoIndex, generationBatchId, displayProgress = null)", html)
         self.assertIn("operation: 'pending', continuationClosed: false", html)
         self.assertIn("last.payload.generationBatchId = generationBatchId;", html)
         self.assertIn("schedulePendingPoll(sessionId, 200);", html)
@@ -5350,6 +5355,29 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 "status": "succeeded",
                 "assetRecord": {"archiveLocalPath": str(predecessor)},
             }]}}
+
+            with patch.object(ai8video_web, "get_generation_ledger_snapshot", return_value=ledger):
+                source = ai8video_web._resolve_retry_tail_frame_source(
+                    config,
+                    "session-1",
+                    2,
+                    retry_request,
+                )
+
+            self.assertEqual(source, str(predecessor))
+
+    def test_tail_frame_retry_falls_back_to_archived_asset_when_ledger_status_is_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            predecessor = Path(tmp) / "video-1.mp4"
+            predecessor.write_bytes(b"video")
+            asset_path = Path(tmp) / "assets.jsonl"
+            asset_path.write_text(
+                f'{json.dumps({"sessionId": "session-1", "videoIndex": 1, "generationStatus": "generated", "archiveLocalPath": str(predecessor)}, ensure_ascii=False)}\n',
+                encoding="utf-8",
+            )
+            config = SimpleNamespace(asset_store_path=asset_path)
+            retry_request = SimpleNamespace(tail_frame_chaining=True)
+            ledger = {"progress": {"items": [{"videoIndex": 1, "status": "archiving"}]}}
 
             with patch.object(ai8video_web, "get_generation_ledger_snapshot", return_value=ledger):
                 source = ai8video_web._resolve_retry_tail_frame_source(
@@ -5528,7 +5556,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertNotIn("video-preview-html-motion-ruler", html)
         self.assertNotIn("data-video-preview-video-output-duration", html)
         self.assertIn(".video-preview-tts-timeline:not(.video-preview-video-timeline) > .video-preview-tts-chunks", html)
-        self.assertIn("padding: 3px 10px 2px;", html)
+        self.assertIn("padding: 6px 10px;", html)
         self.assertIn("padding-block: 5px;", html)
         self.assertIn("height: 44px;", html)
         self.assertNotIn("width: 90%;", html)
@@ -5710,7 +5738,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn('data-delete-viral-library-video', html)
         self.assertIn("fetch('/api/viral-breakdown/delete'", html)
         self.assertIn('原视频、截图、宫格图、台词、镜头语言、猜剧本、生成会话及爆款拆解成片副本都会一并删除', html)
-        self.assertIn('grid-template-columns: auto minmax(280px, 320px) auto;', html)
+        self.assertIn('grid-template-columns: auto minmax(0, 1fr) auto;', html)
         self.assertIn("if (event.key === 'Escape' && state.viralBreakdown.libraryVisible)", html)
         self.assertIn("if (state.viralBreakdown.libraryVisible) closeViralBreakdownLibraryModal();", html)
         library_modal = html.index('id="viralBreakdownLibraryModal"')
@@ -6799,9 +6827,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
     def test_html_motion_chunk_hides_metadata_when_narrow(self) -> None:
         source = read_static_source()
 
-        self.assertIn("@container (max-width: 88px)", source)
-        self.assertIn(".video-preview-html-motion-chunk > small", source)
-        self.assertIn(".video-preview-html-motion-chunk > span", source)
+        self.assertIn(".video-preview-html-motion-chunk small", source)
+        self.assertIn(".video-preview-html-motion-chunk span", source)
         self.assertIn("text-overflow: clip;", source)
         self.assertNotIn("@container (max-width: 36px)", source)
         self.assertNotIn("@container (max-width: 42px)", source)
@@ -7972,7 +7999,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("bindMainBackgroundSwitcher();", html)
         self.assertIn(".main.is-grid-background", html)
         self.assertIn(".main-background-button", html)
-        self.assertIn('22-main-background.css?v=20260729-4', html)
+        self.assertIn('22-main-background.css?v=20260801-5', html)
         self.assertIn('id="clearConversationConfirmModal"', html)
         self.assertIn("确认清空对话？", html)
         self.assertIn("只会清空当前窗口里的文字对话，不会删除任务、结果、素材或媒体文件。", html)

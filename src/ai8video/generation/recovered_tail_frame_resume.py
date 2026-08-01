@@ -54,6 +54,14 @@ def prepare_recovered_tail_frame_resume(
     )
     if first_unfinished is None:
         return None
+    active_job_statuses = {
+        "submitting", "submitted", "polling", "archiving", "preparing_first_frame",
+    }
+    if (
+        str(first_unfinished.get("jobId") or "").strip()
+        and str(first_unfinished.get("status") or "").strip() in active_job_statuses
+    ):
+        return None
     next_index = int(first_unfinished.get("videoIndex") or 0)
     if next_index <= 1 or any(
         int(item.get("videoIndex") or 0) not in completed_indexes

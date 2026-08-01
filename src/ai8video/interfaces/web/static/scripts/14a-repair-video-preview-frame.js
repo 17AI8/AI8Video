@@ -11,6 +11,16 @@
       return String(state.videoPreviewModal?.frameRepairPrompt || '').trim();
     }
 
+    function frameRepairActionLabel(stageGrid) {
+      const frames = typeof readVideoPreviewExtensionBatchFrames === 'function'
+        ? readVideoPreviewExtensionBatchFrames(stageGrid)
+        : [];
+      if (frames.some((frame) => frame.status === 'repairing')) return '修图中';
+      if (frames.some((frame) => frame.status === 'reconciliation_required')) return '结果待同步';
+      if (frames.some((frame) => frame.status === 'video-generating')) return '视频生成中';
+      return '开始修图';
+    }
+
     function renderVideoPreviewFrameRepairActions() {
       const stageGrid = els.videoPreviewBody?.querySelector('.video-preview-stage-grid.extension-active');
       const actionBar = stageGrid?.querySelector('.video-preview-extension-action-bar');
@@ -19,6 +29,7 @@
       const selected = frameRepairReferencePaths();
       const customPrompt = String(state.videoPreviewModal?.frameRepairPrompt || '');
       const busy = isVideoPreviewExtensionBatchBusy(stageGrid);
+      const actionLabel = frameRepairActionLabel(stageGrid);
       const images = Array.isArray(state.userMaterials?.images) ? state.userMaterials.images : [];
       const items = images.length
         ? images.map((item) => {
@@ -34,7 +45,7 @@
           <div class="video-preview-split-button" role="group" aria-label="截图修图">
             <button type="button" class="video-preview-button" data-frame-repair-prompt>提示词</button>
             <button type="button" class="video-preview-button" data-frame-repair-toggle>参考图${selected.length ? ` · ${selected.length}` : ''}</button>
-            <button type="button" class="video-preview-button" data-frame-repair-start ${customPrompt.trim() && !busy ? '' : 'disabled'}>${busy ? '视频生成中' : '开始修图'}</button>
+            <button type="button" class="video-preview-button" data-frame-repair-start ${customPrompt.trim() && !busy ? '' : 'disabled'}>${actionLabel}</button>
           </div>
           <div class="video-preview-frame-repair-prompt-drawer hidden">
             <textarea data-frame-repair-prompt-input placeholder="补充修图要求，例如：将人物服装改为商务正装。">${escapeHtml(customPrompt)}</textarea>

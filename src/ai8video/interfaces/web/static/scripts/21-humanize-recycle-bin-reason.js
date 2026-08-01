@@ -438,6 +438,30 @@
       });
     }
 
+    function collectStableProgressResultCards() {
+      const cards = new Map();
+      els.messages.querySelectorAll('.message').forEach((message) => {
+        const messageIndex = String(message.dataset.messageIndex || '').trim();
+        message.querySelectorAll('.agent-video-results-primary .result-notify-card').forEach((card, cardIndex) => {
+          cards.set(`${messageIndex}:${cardIndex}`, {
+            card,
+            markup: card.outerHTML,
+          });
+        });
+      });
+      return cards;
+    }
+
+    function restoreStableProgressResultCards(cards) {
+      els.messages.querySelectorAll('.message').forEach((message) => {
+        const messageIndex = String(message.dataset.messageIndex || '').trim();
+        message.querySelectorAll('.agent-video-results-primary .result-notify-card').forEach((card, cardIndex) => {
+          const previous = cards.get(`${messageIndex}:${cardIndex}`);
+          if (previous?.markup === card.outerHTML) card.replaceWith(previous.card);
+        });
+      });
+    }
+
     function renderMessages() {
       const session = getActiveSession();
       repairRecoveredSmartSplitFailure(session);
@@ -457,6 +481,7 @@
       const distanceFromBottom = Math.max(0, scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight);
       const shouldStickToBottom = distanceFromBottom < 64;
       const stableTailFrameCards = collectStableManualTailFrameCards();
+      const stableProgressResultCards = collectStableProgressResultCards();
       els.messages.innerHTML = '';
       if (!session.messages.length) {
         els.messages.innerHTML = '<div class="empty">输入数量和要求，比如：2 个，618 活动</div>';
@@ -504,6 +529,7 @@
         els.messages.appendChild(wrap);
       });
       restoreStableManualTailFrameCards(stableTailFrameCards);
+      restoreStableProgressResultCards(stableProgressResultCards);
       recoverLegacySmartSplitPlans(session);
       if (shouldStickToBottom) {
         window.requestAnimationFrame(() => {

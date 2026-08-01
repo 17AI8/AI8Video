@@ -112,6 +112,7 @@ class AI8VideoPipeline:
         *,
         progress_session_id: str | None = None,
         smart_split: bool = False,
+        smart_split_count_locked: bool = False,
     ) -> list[VideoPrompt]:
         allow_mock_planning = self.config.dry_run
         task_constraints = self._reference_task_constraints(request)
@@ -124,6 +125,7 @@ class AI8VideoPipeline:
             allow_mock=allow_mock_planning,
             llm=self.llm,
             trace_session_id=progress_session_id,
+            smart_split_count_locked=smart_split_count_locked,
         )
         context = AgentRunContext(
             session_id=str(progress_session_id or ""),

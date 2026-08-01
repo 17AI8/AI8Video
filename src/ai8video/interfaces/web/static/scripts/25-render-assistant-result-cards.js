@@ -581,12 +581,14 @@
       };
     }
 
-    function persistGenerationRetryPendingState(sessionId, videoIndex, generationBatchId) {
+    function persistGenerationRetryPendingState(sessionId, videoIndex, generationBatchId, displayProgress = null) {
       const session = state.sessions.find((item) => item.id === sessionId);
       const last = session?.messages?.at?.(-1);
       if (!last?.payload || last.role !== 'assistant') return;
       const pending = last.payload.pendingStatus || {};
-      const progress = pending.generationProgress || {};
+      const progress = displayProgress && typeof displayProgress === 'object'
+        ? displayProgress
+        : (pending.generationProgress || {});
       const items = Array.isArray(progress.items) ? progress.items : [];
       last.payload.meta = { ...(last.payload.meta || {}), operation: 'pending', continuationClosed: false };
       last.payload.generationBatchId = generationBatchId;
@@ -633,6 +635,7 @@
           sessionId,
           videoIndex,
           String(data?.generationBatchId || generationBatchId).trim(),
+          data?.displayGenerationProgress,
         );
       } catch (error) {
         restoreFailedCard();

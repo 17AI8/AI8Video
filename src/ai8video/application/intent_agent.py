@@ -28,12 +28,11 @@ class IntentAgent:
         self.llm = llm
 
     def decide(self, text: str, context: IntentContext) -> IntentDecision:
-        control_route = self._control_route(text, context.awaiting)
-        if control_route:
-            return IntentDecision(control_route, False, "命中当前会话控制意图")
-
         interpretation = interpret_generation_request_with_ai(text, llm=self.llm)
         intent = str((interpretation or {}).get("intent") or "unknown")
+        control_route = self._control_route(context.awaiting)
+        if control_route:
+            return IntentDecision(control_route, False, "模型识别当前会话控制意图", interpretation)
         if context.completed_runs > 0 and intent == "rewrite":
             return IntentDecision("rewrite", False, "修改上一轮结果", interpretation)
         if context.completed_runs > 0 and intent in {"generation", "batch_run"}:
@@ -41,7 +40,7 @@ class IntentAgent:
         return IntentDecision("continue_session", False, "继续当前任务收集或执行", interpretation)
 
     @staticmethod
-    def _control_route(text: str, awaiting: str | None) -> str | None:
+    def _control_route(awaiting: str | None) -> str | None:
         if awaiting == "smart_split_confirmation":
             return "smart_split_followup"
         if awaiting:

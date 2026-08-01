@@ -84,7 +84,6 @@
         refreshUserGeneratedResults(),
       ]).then(() => {
         if (!state.generationProgress || state.generationProgress.sessionId !== progress.sessionId) return;
-        renderMessages();
         renderProgress();
         renderProgressModal();
       });

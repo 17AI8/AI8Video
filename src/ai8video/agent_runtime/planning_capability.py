@@ -21,6 +21,7 @@ class PlanningCapabilityInput:
     allow_mock: bool
     llm: Callable[[str], str] | None
     trace_session_id: str | None
+    smart_split_count_locked: bool = False
 
 
 def build_planning_capability(
@@ -57,12 +58,13 @@ def _execute_planning(
     request = data.request
     video_count = request.video_count
     if data.smart_split:
-        video_count, request.smart_split_reason = infer_count(
-            request.raw_text,
-            llm=data.llm,
-            duration_seconds=data.target_duration,
-            trace_session_id=data.trace_session_id,
-        )
+        if not data.smart_split_count_locked:
+            video_count, request.smart_split_reason = infer_count(
+                request.raw_text,
+                llm=data.llm,
+                duration_seconds=data.target_duration,
+                trace_session_id=data.trace_session_id,
+            )
         if not video_count:
             raise ValueError("video_count is required for video planning")
         return smart_plan(

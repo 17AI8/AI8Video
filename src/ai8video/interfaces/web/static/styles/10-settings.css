@@ -737,6 +737,171 @@
       outline: none;
       overflow: auto;
     }
+    .model-settings-nav {
+      justify-content: flex-start;
+    }
+    .model-settings-panel {
+      min-width: 0;
+      min-height: 300px;
+      display: flex;
+      flex-direction: column;
+      overflow: auto;
+      background: rgba(255, 255, 255, 0.92);
+    }
+    .model-settings-panel.is-drawer-animating {
+      overflow: hidden;
+      scrollbar-width: none;
+    }
+    .model-settings-panel.is-drawer-animating::-webkit-scrollbar {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+    .model-profile-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .model-profile-toolbar > div { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+    .model-profile-toolbar strong { font-size: 13px; }
+    .model-profile-toolbar span { color: var(--muted); font-size: 11px; }
+    .model-profile-list { display: grid; padding: 0 16px 14px; }
+    .model-profile-card { border-bottom: 1px solid var(--line); }
+    .model-profile-collapse {
+      height: 0;
+      opacity: 0;
+      overflow: hidden;
+    }
+    .model-profile-collapse-inner {
+      will-change: transform;
+    }
+    .model-profile-card.is-expanded .model-profile-collapse {
+      height: auto;
+      opacity: 1;
+    }
+    .model-profile-summary {
+      width: 100%;
+      min-height: 54px;
+      display: grid;
+      grid-template-columns: 14px 24px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      border: 0;
+      padding: 0 10px;
+      background: transparent;
+      color: var(--text);
+      text-align: left;
+      box-shadow: none;
+    }
+    .model-profile-summary:hover { background: color-mix(in srgb, var(--brand-soft) 24%, transparent); }
+    .model-profile-chevron { color: var(--muted); font-size: 20px; transition: transform 140ms ease; }
+    .model-profile-card.is-expanded .model-profile-chevron { transform: rotate(90deg); }
+    .model-profile-card.is-collapsing .model-profile-chevron { transform: rotate(0deg); }
+    .model-profile-index {
+      width: 24px;
+      height: 24px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .model-profile-summary-copy { min-width: 0; display: grid; justify-self: start; gap: 2px; }
+    .model-profile-title-row { min-width: 0; display: flex; align-items: center; gap: 8px; }
+    .model-profile-summary-copy strong,
+    .model-profile-summary-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .model-profile-summary-copy strong { font-size: 13px; }
+    .model-profile-summary-copy small { color: var(--muted); font-size: 11px; }
+    .model-profile-switch {
+      position: relative;
+      width: 34px;
+      min-width: 34px;
+      height: 18px;
+      min-height: 18px;
+      border: 0;
+      border-radius: 999px;
+      padding: 0;
+      background: color-mix(in srgb, var(--muted) 28%, #fff);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--muted) 20%, transparent);
+      transition: background 160ms ease, box-shadow 160ms ease;
+    }
+    .model-profile-switch > span {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(20, 28, 58, 0.24);
+      transition: transform 160ms ease;
+    }
+    .model-profile-switch.is-active {
+      background: var(--brand);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand) 72%, transparent);
+    }
+    .model-profile-switch.is-active > span { transform: translateX(16px); }
+    .model-profile-switch:focus-visible {
+      outline: 3px solid color-mix(in srgb, var(--brand) 22%, transparent);
+      outline-offset: 2px;
+    }
+    .model-profile-copy-button {
+      min-height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 12px;
+      background: #fff;
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+      transition: border-color 140ms ease, background 140ms ease;
+    }
+    .model-profile-copy-button:hover {
+      border-color: color-mix(in srgb, var(--brand) 42%, var(--line));
+      background: var(--brand-soft);
+    }
+    .model-profile-copy-button:focus-visible {
+      outline: 3px solid color-mix(in srgb, var(--brand) 22%, transparent);
+      outline-offset: 2px;
+    }
+    .model-profile-form {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px 12px;
+      padding: 2px 10px 14px 56px;
+    }
+    .model-profile-form label { min-width: 0; display: grid; gap: 5px; color: var(--muted); font-size: 11px; font-weight: 700; }
+    .model-profile-form input,
+    .model-profile-form select {
+      width: 100%;
+      min-height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 10px;
+      background: #fff;
+      color: var(--text);
+      font: inherit;
+      font-weight: 500;
+    }
+    .model-profile-actions {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .model-profile-actions .danger { color: #b42318; }
+    .model-profile-supplemental {
+      margin-top: auto;
+      border-top: 1px solid var(--line);
+    }
     .multi-agent-overview { display: grid; gap: 14px; align-content: start; }
     .multi-agent-lede {
       margin: 0;
@@ -957,6 +1122,9 @@
       }
       .multi-agent-nav-item { flex: 0 0 auto; }
       .multi-agent-panel { min-height: 0; padding: 14px; }
+      .model-settings-panel { min-height: 0; }
+      .model-profile-form { grid-template-columns: 1fr; padding-left: 10px; }
+      .model-profile-toolbar { align-items: flex-start; }
       .multi-agent-flow-item { grid-template-columns: 28px minmax(0, 1fr); }
       .multi-agent-flow-item .multi-agent-role-flags { grid-column: 2; justify-content: flex-start; }
       .multi-agent-detail-grid { grid-template-columns: 1fr; }
@@ -966,5 +1134,6 @@
     }
     @media (prefers-reduced-motion: reduce) {
       .multi-agent-nav-item,
-      .multi-agent-flow-item { transition: none; }
+      .multi-agent-flow-item,
+      .model-profile-chevron { transition: none; }
     }
