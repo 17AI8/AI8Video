@@ -14,6 +14,30 @@ from ai8video.core.models import ConversationState, VideoPrompt, ParsedRequest, 
 
 
 class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
+    def test_legacy_retrieval_accepts_matching_bm25_snapshot(self) -> None:
+        item = {
+            "documentId": 42,
+            "contentHash": "a" * 64,
+            "bm25IndexVersion": 1,
+            "bm25TokenizerVersion": 1,
+            "bm25CorpusHash": "b" * 64,
+        }
+        retrieval = {
+            "ok": True,
+            "documentId": 42,
+            "indexVersion": 1,
+            "tokenizerVersion": 1,
+            "retrievalBackend": "legacy",
+            "retrievalTrace": {
+                "contentHash": "a" * 64,
+                "corpusHash": "b" * 64,
+            },
+        }
+
+        mismatch_reason = default_script_reference._snapshot_mismatch_reason(item, retrieval)
+
+        self.assertEqual(mismatch_reason, "")
+
     def test_temporary_script_knowledge_is_bounded_and_can_add_default_reference(self) -> None:
         payload = {
             "title": "猜剧本临时知识库 · TEMU 教程",

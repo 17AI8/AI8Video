@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import xml.etree.ElementTree as ET
 from pathlib import Path
 import re
@@ -138,6 +139,8 @@ def expand_material_mentions(text: str) -> tuple[str, dict[str, Any]]:
     for script in scripts:
         content = read_script_material_text(script["path"], limit=None)
         if content:
+            script["source"] = "explicitMaterialMention"
+            script["retrievalMode"] = "fullMention"
             script["contentPreview"] = re.sub(r"\s+", " ", content).strip()[:180]
             script["contentCharCount"] = len(content)
             additions.append(f"@{script['name']} 剧本素材内容：\n{content}")
@@ -177,6 +180,8 @@ def _list_material_files(
             "modifiedAt": stat.st_mtime,
             "kind": kind,
         }
+        if kind == "script" and not include_script_preview:
+            item["sourceFileHash"] = _file_sha256(path)
         if kind == "image":
             item["url"] = f"/user-materials/images/{relative}"
         elif kind == "flower-watermark":
@@ -186,6 +191,17 @@ def _list_material_files(
         items.append(item)
     items.sort(key=lambda item: item.get("modifiedAt") or 0, reverse=True)
     return items
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as source:
+            while chunk := source.read(1024 * 1024):
+                digest.update(chunk)
+    except OSError:
+        return ""
+    return digest.hexdigest()
 
 
 def _read_text(path: Path, *, limit: int | None) -> str:

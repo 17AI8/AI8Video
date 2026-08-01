@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,9 @@ from ai8video.generation.business_prompt import read_business_prompt
 from ai8video.knowledge.script_knowledge_query import plan_retrieval_query
 from ai8video.assets.user_files import USER_FILE_ROOT, ensure_user_file_root
 from ai8video.assets.user_materials import list_user_materials, read_script_material_text
+from ai8video.knowledge.script_knowledge import get_script_knowledge_store
 from ai8video.knowledge.script_knowledge_context import retrieve_reference_context
+from ai8video.knowledge.script_knowledge_trace import append_retrieval_trace
 
 
 DEFAULT_SCRIPT_REFERENCE_DIR = (USER_FILE_ROOT / "剧本参考").resolve()
@@ -34,7 +37,10 @@ def load_default_script_reference() -> dict[str, Any] | None:
     relative_path = str(data.get("relativePath") or "").strip()
     if not relative_path:
         return None
-    return _find_script_material(relative_path)
+    item = _find_script_material(relative_path)
+    if not item:
+        return None
+    return {**item, **_reference_snapshot(data)}
 
 
 def select_default_script_reference(relative_path: str) -> dict[str, Any]:
@@ -44,6 +50,7 @@ def select_default_script_reference(relative_path: str) -> dict[str, Any]:
     _write_settings({
         "relativePath": item.get("relativePath") or item.get("name") or "",
         "name": item.get("name") or "",
+        **_load_knowledge_snapshot(str(item.get("relativePath") or item.get("name") or "")),
     })
     return default_script_reference_status()
 
@@ -72,6 +79,7 @@ def apply_default_script_reference(
     if any(str(script.get("path") or "") == item_path for script in scripts):
         return text, context
     relative_path = str(item.get("relativePath") or item.get("name") or "").strip()
+    retrieval: dict[str, Any] | None = None
     if not prefer_full and relative_path:
         retrieval = retrieve_script_reference_context(
             text,
@@ -81,7 +89,20 @@ def apply_default_script_reference(
         )
         if retrieval.get("ok"):
             return _apply_retrieved_reference(text, context, item, scripts, retrieval)
-    return _apply_full_reference(text, context, item, scripts, item_path)
+        if str(retrieval.get("fallbackReason") or "").startswith("selected_document_snapshot_"):
+            return text, context
+        if not _full_reference_fallback_enabled():
+            return text, context
+    fallback_reason = str((retrieval or {}).get("fallbackReason") or "")
+    return _apply_full_reference(
+        text,
+        context,
+        item,
+        scripts,
+        item_path,
+        fallback_reason=fallback_reason,
+        explicit=prefer_full,
+    )
 
 
 def apply_temporary_script_knowledge(
@@ -185,13 +206,23 @@ def retrieve_script_reference_context(
         query_hint,
         llm=query_llm,
     )
-    return retrieve_reference_context(
+    retrieval = retrieve_reference_context(
         text,
         relative_path,
         rerank_llm=rerank_llm,
         query_hint=query_hint,
         query_plan=query_plan,
     )
+    mismatch_reason = _snapshot_mismatch_reason(item, retrieval)
+    if mismatch_reason:
+        retrieval = dict(retrieval)
+        retrieval["ok"] = False
+        retrieval["fallbackReason"] = mismatch_reason
+        retrieval_trace = dict(retrieval.get("retrievalTrace") or {})
+        retrieval_trace["retrievalFailureReason"] = mismatch_reason
+        retrieval["retrievalTrace"] = retrieval_trace
+        append_retrieval_trace(retrieval_trace)
+    return retrieval
 
 
 def _apply_full_reference(
@@ -200,12 +231,17 @@ def _apply_full_reference(
     item: dict[str, Any],
     scripts: list[dict[str, Any]],
     item_path: str,
+    *,
+    fallback_reason: str,
+    explicit: bool,
 ) -> tuple[str, dict[str, Any]]:
     content = read_script_material_text(item_path, limit=None)
     if not content:
         return text, context
     enriched = dict(item)
     enriched["source"] = "defaultScriptReference"
+    enriched["retrievalMode"] = "full" if explicit else "fullFallback"
+    enriched["retrievalFallbackReason"] = fallback_reason
     enriched["contentPreview"] = re.sub(r"\s+", " ", content).strip()[:180]
     enriched["contentCharCount"] = len(content)
     scripts.append(enriched)
@@ -232,6 +268,14 @@ def _apply_retrieved_reference(
         "topK": int(retrieval.get("topK") or 0),
         "rerankApplied": bool(retrieval.get("rerankApplied")),
         "rerankFallbackReason": str(retrieval.get("fallbackReason") or ""),
+        "retrievalBackend": str(retrieval.get("retrievalBackend") or "legacy"),
+        "retrievalBackendFallbackReason": str(
+            retrieval.get("retrievalBackendFallbackReason") or ""
+        ),
+        "retrievalTrace": dict(retrieval.get("retrievalTrace") or {}),
+        "documentId": int(retrieval.get("documentId") or item.get("documentId") or 0),
+        "indexVersion": int(retrieval.get("indexVersion") or 0),
+        "tokenizerVersion": int(retrieval.get("tokenizerVersion") or 0),
         "retrievedSections": _retrieved_section_meta(retrieval.get("sections") or []),
         "contentPreview": re.sub(r"\s+", " ", content).strip()[:180],
         "contentCharCount": len(content),
@@ -249,6 +293,9 @@ def _retrieved_section_meta(sections: list[dict[str, Any]]) -> list[dict[str, An
             "id": int(section.get("id") or 0),
             "heading": str(section.get("heading") or ""),
             "score": float(section.get("score") or 0),
+            "bm25Score": float(section.get("bm25Score") or 0),
+            "trigramScore": float(section.get("trigramScore") or 0),
+            "retrievalChannels": list(section.get("retrievalChannels") or []),
         }
         for section in sections
     ]
@@ -281,6 +328,58 @@ def _write_settings(data: dict[str, Any]) -> None:
         json.dumps(data, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+
+def _load_knowledge_snapshot(relative_path: str) -> dict[str, Any]:
+    try:
+        document = get_script_knowledge_store().get_document_by_relative_path(relative_path)
+    except Exception:
+        return {}
+    return {
+        "documentId": int(document.get("id") or 0),
+        "contentHash": str(document.get("contentHash") or ""),
+        "indexVersion": int(document.get("indexVersion") or 0),
+        "bm25IndexVersion": int(document.get("bm25IndexVersion") or 0),
+        "bm25TokenizerVersion": int(document.get("bm25TokenizerVersion") or 0),
+        "bm25CorpusHash": str(document.get("bm25CorpusHash") or ""),
+    }
+
+
+def _reference_snapshot(data: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "documentId",
+        "contentHash",
+        "indexVersion",
+        "bm25IndexVersion",
+        "bm25TokenizerVersion",
+        "bm25CorpusHash",
+    )
+    return {key: data[key] for key in keys if key in data}
+
+
+def _snapshot_mismatch_reason(item: dict[str, Any], retrieval: dict[str, Any]) -> str:
+    if not retrieval.get("ok"):
+        return ""
+    trace = retrieval.get("retrievalTrace")
+    trace_values = trace if isinstance(trace, dict) else {}
+    comparisons = (
+        ("documentId", item.get("documentId"), retrieval.get("documentId")),
+        ("contentHash", item.get("contentHash"), trace_values.get("contentHash")),
+        ("bm25IndexVersion", item.get("bm25IndexVersion"), retrieval.get("indexVersion")),
+        ("bm25TokenizerVersion", item.get("bm25TokenizerVersion"), retrieval.get("tokenizerVersion")),
+        ("bm25CorpusHash", item.get("bm25CorpusHash"), trace_values.get("corpusHash")),
+    )
+    for field_name, expected_value, actual_value in comparisons:
+        if expected_value in {None, "", 0}:
+            continue
+        if str(expected_value) != str(actual_value):
+            return f"selected_document_snapshot_{field_name}_mismatch"
+    return ""
+
+
+def _full_reference_fallback_enabled() -> bool:
+    value = str(os.getenv("AI8VIDEO_SCRIPT_FULL_FALLBACK_ENABLED") or "1").strip().lower()
+    return value not in {"0", "false", "no", "off", "disabled"}
 
 
 def _find_script_material(relative_path: str) -> dict[str, Any] | None:

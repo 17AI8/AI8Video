@@ -18,6 +18,7 @@ def _candidates(count: int = 8) -> list[dict]:
             "heading": f"脚本{index}",
             "content": f"候选正文 {index}",
             "score": float(count - index),
+            "relativePath": "老板话术.docx",
         }
         for index in range(1, count + 1)
     ]
@@ -78,12 +79,9 @@ class ScriptKnowledgeRerankTest(unittest.TestCase):
 
     def test_context_retrieval_reranks_top_twenty_to_top_five(self) -> None:
         store = Mock()
-        store.status.return_value = {"available": True}
+        store.status.side_effect = AssertionError("普通检索不应执行健康检查或索引维护")
         store.search_sections.return_value = _candidates(20)
         with patch(
-            "ai8video.knowledge.script_knowledge_context.register_script_knowledge_sources",
-            return_value={"unchanged": 1},
-        ), patch(
             "ai8video.knowledge.script_knowledge_context.get_script_knowledge_store",
             return_value=store,
         ):
@@ -98,6 +96,17 @@ class ScriptKnowledgeRerankTest(unittest.TestCase):
         self.assertEqual(result["recallCount"], 20)
         self.assertEqual([item["id"] for item in result["sections"]], [7, 4, 2, 1, 3])
         self.assertIn("[知识段 1｜脚本7]", result["contextText"])
+        store.status.assert_not_called()
+
+    def test_context_retrieval_rejects_missing_document_scope_before_store_access(self) -> None:
+        with patch(
+            "ai8video.knowledge.script_knowledge_context.get_script_knowledge_store"
+        ) as get_store:
+            result = retrieve_reference_context("查询 ISO-9001", "")
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["fallbackReason"], "missing_document_scope")
+        get_store.assert_not_called()
 
 
 class DefaultScriptReferenceTopKTest(unittest.TestCase):

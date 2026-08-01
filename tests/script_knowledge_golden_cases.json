@@ -1,0 +1,114 @@
+{
+  "documents": [
+    {
+      "relativePath": "__bm25_golden__/质量管理.md",
+      "title": "质量管理与专业标识符",
+      "leaves": [
+        {
+          "heading": "质量管理 / 标准与审核",
+          "content": "依据 GB/T 19001-2016 和 ISO-9001 执行内部审核，审核证据至少保存三年。"
+        },
+        {
+          "heading": "质量管理 / 型号与测量",
+          "content": "API_V2 设备输出 H.264，校准液浓度为 12.5mg/mL，生效日期为 2026-08-01。"
+        },
+        {
+          "heading": "质量管理 / 默认规则与例外",
+          "content": "设备温度超过 80 摄氏度时默认停机；紧急排烟模式是唯一例外，但必须保留操作证据。"
+        },
+        {
+          "heading": "质量管理 / 禁止条件",
+          "content": "外部人员不得访问客户资料，禁止把审核记录上传到公共网盘。"
+        }
+      ]
+    },
+    {
+      "relativePath": "__bm25_golden__/跨境运营.md",
+      "title": "跨境运营规则",
+      "leaves": [
+        {
+          "heading": "跨境运营 / 私域承接",
+          "content": "跨境客户资料必须沉淀到企业私域，评论区只负责引导，不保存客户主档。"
+        },
+        {
+          "heading": "跨境运营 / 发布流程",
+          "content": "全球发布前先完成法务审核，再按国家和时区分批上线。"
+        }
+      ]
+    }
+  ],
+  "queries": [
+    {
+      "id": "common-term",
+      "relativePath": "__bm25_golden__/质量管理.md",
+      "query": "内部审核证据保存多久",
+      "expectedHeadingContains": "标准与审核"
+    },
+    {
+      "id": "standard-number",
+      "relativePath": "__bm25_golden__/质量管理.md",
+      "query": "GB/T 19001-2016",
+      "expectedHeadingContains": "标准与审核"
+    },
+    {
+      "id": "iso-identifier",
+      "relativePath": "__bm25_golden__/质量管理.md",
+      "query": "ISO-9001 审核要求",
+      "expectedHeadingContains": "标准与审核"
+    },
+    {
+      "id": "model",
+      "relativePath": "__bm25_golden__/质量管理.md",
+      "query": "API_V2 输出格式",
+      "expectedHeadingContains": "型号与测量"
+    },
+    {
+      "id": "codec",
+      "relativePath": "__bm25_golden__/质量管理.md",
+      "query": "H.264",
+      "expectedHeadingContains": "型号与测量"
+    },
+    {
+      "id": "number-unit",
+      "relativePath": "__bm25_golden__/质量管理.md",
+      "query": "12.5mg/mL",
+      "expectedHeadingContains": "型号与测量"
+    },
+    {
+      "id": "date",
+      "relativePath": "__bm25_golden__/质量管理.md",
+      "query": "2026-08-01 生效",
+      "expectedHeadingContains": "型号与测量"
+    },
+    {
+      "id": "exception",
+      "relativePath": "__bm25_golden__/质量管理.md",
+      "query": "超过 80 摄氏度停机有什么例外",
+      "expectedHeadingContains": "默认规则与例外"
+    },
+    {
+      "id": "negative-condition",
+      "relativePath": "__bm25_golden__/质量管理.md",
+      "query": "谁不得访问客户资料",
+      "expectedHeadingContains": "禁止条件"
+    },
+    {
+      "id": "typo",
+      "relativePath": "__bm25_golden__/跨境运营.md",
+      "query": "跨镜客户私域承接",
+      "expectedHeadingContains": "私域承接"
+    },
+    {
+      "id": "scope-isolation",
+      "relativePath": "__bm25_golden__/跨境运营.md",
+      "query": "公共网盘审核记录",
+      "expectedHeadingContains": ""
+    },
+    {
+      "id": "no-answer",
+      "relativePath": "__bm25_golden__/质量管理.md",
+      "query": "火星基地量子电池保修期",
+      "expectedHeadingContains": ""
+    }
+  ]
+}

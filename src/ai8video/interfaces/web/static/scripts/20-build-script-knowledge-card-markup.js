@@ -10,6 +10,7 @@
       const tags = buildScriptKnowledgeTagsMarkup(item?.tags || []);
       const score = Number(item?.score || 0);
       const scoreCopy = score > 0 ? `<span>匹配 ${score.toFixed(2)}</span>` : '';
+      const bm25Status = getScriptKnowledgeBm25StatusLabel(item);
       return `
         <button type="button" class="script-knowledge-list-card${active ? ' is-active' : ''}"
           data-script-knowledge-document="${Number(item?.id || 0)}">
@@ -18,11 +19,22 @@
           <span class="script-knowledge-list-preview">${escapeHtml(normalizeMaterialPreview(preview))}</span>
           <span class="script-knowledge-list-foot">
             <span>${Number(item?.sectionCount || 0)} 个叶节点</span>
+            <span>${escapeHtml(bm25Status)}</span>
             <span>${escapeHtml(formatFileSize(item?.sizeBytes || 0) || '0 B')}</span>
             ${scoreCopy}
           </span>
         </button>
       `;
+    }
+
+    function getScriptKnowledgeBm25StatusLabel(item) {
+      const documentId = Number(item?.id || 0);
+      const job = getScriptKnowledgeIngestionJob(documentId);
+      if (['queued', 'running'].includes(job?.state)) return 'BM25 构建中';
+      const status = String(item?.bm25Status || 'not_ready');
+      if (status === 'ready') return 'BM25 可用';
+      if (status === 'pending') return 'BM25 过期';
+      return 'BM25 未建';
     }
 
     function buildScriptKnowledgeTagsMarkup(tags) {

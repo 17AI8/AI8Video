@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tempfile
@@ -291,6 +292,10 @@ class ScriptKnowledgeTextTest(unittest.TestCase):
 
         self.assertEqual(sources[0]["name"], "示例.md")
         self.assertNotIn("preview", sources[0])
+        self.assertEqual(
+            sources[0]["sourceFileHash"],
+            hashlib.sha256("剧本正文".encode("utf-8")).hexdigest(),
+        )
 
 
 @unittest.skipUnless(
@@ -354,6 +359,141 @@ class ScriptKnowledgePostgresTest(unittest.TestCase):
         self.assertEqual(unchanged["unchanged"], 1)
         self.assertEqual(removed["removed"], 1)
         self.assertEqual(self.store.list_documents(), [])
+
+    def test_legacy_empty_file_hash_backfills_without_reading_or_rebuild(self) -> None:
+        content = "旧库中的 ready 文档必须保留知识叶节点。"
+        legacy_source = self._source("兼容迁移.md", content, source_file_hash="")
+        self.store.register_sources([legacy_source], lambda _path: content)
+        pending = self.store.list_documents()[0]
+        ready = self.store.replace_document_tree(
+            pending["id"],
+            self._tree("兼容迁移.md"),
+            [{"heading": "迁移规则", "content": content}],
+        )
+        section_id = ready["sections"][0]["id"]
+        source_file_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        migrated_source = {**legacy_source, "sourceFileHash": source_file_hash}
+
+        result = self.store.register_sources(
+            [migrated_source],
+            lambda _path: self.fail("旧指纹迁移不应读取或重新解析正文"),
+        )
+        migrated = self.store.get_document(ready["id"])
+
+        self.assertEqual(result["unchanged"], 1)
+        self.assertEqual(migrated["sections"][0]["id"], section_id)
+        self.assertEqual(migrated["indexStatus"], "ready")
+        self.assertEqual(self._stored_file_hash(ready["id"]), source_file_hash)
+
+    def test_file_hash_detects_changed_content_with_same_size_and_mtime(self) -> None:
+        original_content = "规则甲"
+        changed_content = "规则乙"
+        original_source = self._source("哈希判变.md", original_content)
+        self.store.register_sources([original_source], lambda _path: original_content)
+        pending = self.store.list_documents()[0]
+        self.store.replace_document_tree(
+            pending["id"],
+            self._tree("哈希判变.md"),
+            [{"heading": "旧规则", "content": original_content}],
+        )
+        changed_source = {
+            **original_source,
+            "sourceFileHash": hashlib.sha256(changed_content.encode("utf-8")).hexdigest(),
+        }
+
+        result = self.store.register_sources([changed_source], lambda _path: changed_content)
+        changed = self.store.get_document(pending["id"])
+
+        self.assertEqual(result["registered"], 1)
+        self.assertEqual(changed["indexStatus"], "pending")
+        self.assertEqual(changed["sectionCount"], 0)
+        self.assertEqual(changed["content"], changed_content)
+
+    def test_same_file_hash_refreshes_metadata_without_reading_content(self) -> None:
+        content = "相同原始字节不应重复提取正文。"
+        original_source = self._source("元数据刷新.md", content)
+        self.store.register_sources([original_source], lambda _path: content)
+        pending = self.store.list_documents()[0]
+        ready = self.store.replace_document_tree(
+            pending["id"],
+            self._tree("元数据刷新.md"),
+            [{"heading": "稳定规则", "content": content}],
+        )
+        section_id = ready["sections"][0]["id"]
+        refreshed_source = {**original_source, "modifiedAt": 200.0}
+
+        result = self.store.register_sources(
+            [refreshed_source],
+            lambda _path: self.fail("相同文件哈希不应读取正文"),
+        )
+        refreshed = self.store.get_document(ready["id"])
+
+        self.assertEqual(result["unchanged"], 1)
+        self.assertEqual(refreshed["modifiedAt"], 200.0)
+        self.assertEqual(refreshed["sections"][0]["id"], section_id)
+
+    def test_changed_file_bytes_with_same_extracted_text_preserve_ready_tree(self) -> None:
+        content = "DOCX 容器元数据变化但提取正文保持不变。"
+        original_source = self._source(
+            "容器变化.docx",
+            content,
+            source_file_hash=hashlib.sha256(b"container-a").hexdigest(),
+        )
+        self.store.register_sources([original_source], lambda _path: content)
+        pending = self.store.list_documents()[0]
+        ready = self.store.replace_document_tree(
+            pending["id"],
+            self._tree("容器变化.docx"),
+            [{"heading": "稳定正文", "content": content}],
+        )
+        section_id = ready["sections"][0]["id"]
+        changed_file_hash = hashlib.sha256(b"container-b").hexdigest()
+        changed_source = {**original_source, "sourceFileHash": changed_file_hash}
+
+        result = self.store.register_sources([changed_source], lambda _path: content)
+        refreshed = self.store.get_document(ready["id"])
+
+        self.assertEqual(result["unchanged"], 1)
+        self.assertEqual(refreshed["sections"][0]["id"], section_id)
+        self.assertEqual(refreshed["indexStatus"], "ready")
+        self.assertEqual(self._stored_file_hash(ready["id"]), changed_file_hash)
+
+    def _stored_file_hash(self, document_id: int) -> str:
+        import psycopg
+
+        with psycopg.connect(self.database_url) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT source_file_hash FROM ai8_script_documents WHERE id = %s",
+                (document_id,),
+            )
+            return str(cursor.fetchone()[0])
+
+    @staticmethod
+    def _source(
+        relative_path: str,
+        content: str,
+        *,
+        source_file_hash: str | None = None,
+    ) -> dict[str, object]:
+        return {
+            "name": relative_path,
+            "relativePath": relative_path,
+            "path": f"/tmp/{relative_path}",
+            "sizeBytes": len(content.encode("utf-8")),
+            "modifiedAt": 100.0,
+            "sourceFileHash": source_file_hash
+            if source_file_hash is not None
+            else hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        }
+
+    @staticmethod
+    def _tree(relative_path: str) -> dict[str, object]:
+        return {
+            "title": relative_path,
+            "summary": "源文件哈希生命周期 fixture",
+            "tags": ["source-hash"],
+            "tree": [],
+        }
 
 
 if __name__ == "__main__":

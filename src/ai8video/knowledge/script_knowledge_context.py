@@ -4,8 +4,12 @@ import os
 import re
 from typing import Any
 
-from ai8video.knowledge.script_knowledge import get_script_knowledge_store, register_script_knowledge_sources
+from ai8video.knowledge.script_knowledge import (
+    ScriptKnowledgeUnavailable,
+    get_script_knowledge_store,
+)
 from ai8video.knowledge.script_knowledge_rerank import RerankLLM, rerank_candidates
+from ai8video.knowledge.script_knowledge_trace import append_retrieval_trace
 
 
 def retrieve_reference_context(
@@ -20,28 +24,49 @@ def retrieve_reference_context(
     query = build_retrieval_query(str(plan.get("query") or ""), query_hint=query_hint)
     recall_limit = _bounded_env_int("AI8VIDEO_SCRIPT_RECALL_TOP_K", 20, 5, 30)
     inject_top_k = _bounded_env_int("AI8VIDEO_SCRIPT_INJECT_TOP_K", 5, 1, 10)
+    if not str(relative_path or "").strip():
+        return _traced_failure("missing_document_scope", query)
     try:
-        register_script_knowledge_sources()
         store = get_script_knowledge_store()
-        status = store.status()
-        if not status.get("available"):
-            return _failure("postgres_unavailable", query)
         candidates = store.search_sections(
             query,
             relative_path=relative_path,
             limit=recall_limit,
         )
+    except ScriptKnowledgeUnavailable:
+        return _traced_failure("postgres_unavailable", query)
     except Exception as exc:
-        return _failure(f"retrieval_failed:{_safe_error(exc)}", query)
+        return _traced_failure(f"retrieval_failed:{_safe_error(exc)}", query)
     if not candidates:
-        return _failure("no_candidates", query)
+        return _traced_failure("no_candidates", query)
+    scope_error = _candidate_scope_error(candidates, relative_path)
+    if scope_error:
+        return _traced_failure(scope_error, query)
+    retrieval_trace = _retrieval_trace(candidates)
     ranking_query = str(plan.get("rankingQuery") or query)
     reranked = _select_candidates(ranking_query, candidates, rerank_llm, inject_top_k)
     selected = list(reranked["candidates"])
+    scope_error = _candidate_scope_error(selected, relative_path)
+    if scope_error:
+        return _traced_failure(scope_error, query, retrieval_trace=retrieval_trace)
+    retrieval_trace["selectedCandidateIds"] = [int(item.get("id") or 0) for item in selected]
+    retrieval_trace["rerankApplied"] = bool(reranked["rerankApplied"])
+    retrieval_trace["rerankFallbackReason"] = str(reranked["fallbackReason"] or "")
+    retrieval_trace["rerankCandidateIds"] = list(retrieval_trace["selectedCandidateIds"])
+    append_retrieval_trace(retrieval_trace)
     return {
         "ok": True,
         "query": query,
         "queryPlan": plan,
+        "retrievalMode": str(retrieval_trace.get("retrievalMode") or "legacy"),
+        "retrievalBackend": str(retrieval_trace.get("retrievalBackend") or "legacy"),
+        "retrievalBackendFallbackReason": str(
+            retrieval_trace.get("retrievalBackendFallbackReason") or ""
+        ),
+        "retrievalTrace": retrieval_trace,
+        "documentId": int(retrieval_trace.get("documentId") or 0),
+        "indexVersion": int(retrieval_trace.get("indexVersion") or 0),
+        "tokenizerVersion": int(retrieval_trace.get("tokenizerVersion") or 0),
         "recallCount": len(candidates),
         "topK": len(selected),
         "rerankApplied": bool(reranked["rerankApplied"]),
@@ -102,10 +127,24 @@ def _select_candidates(
     return rerank_candidates(query, candidates, llm=rerank_llm, top_k=top_k)
 
 
-def _failure(reason: str, query: str) -> dict[str, Any]:
+def _failure(
+    reason: str,
+    query: str,
+    *,
+    retrieval_trace: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    trace = dict(retrieval_trace or {})
+    trace.setdefault("retrievalFailureReason", reason)
+    trace.setdefault("query", query)
     return {
         "ok": False,
         "query": query,
+        "retrievalMode": str(trace.get("retrievalMode") or ""),
+        "retrievalBackend": str(trace.get("retrievalBackend") or ""),
+        "retrievalBackendFallbackReason": str(
+            trace.get("retrievalBackendFallbackReason") or ""
+        ),
+        "retrievalTrace": trace,
         "recallCount": 0,
         "topK": 0,
         "rerankApplied": False,
@@ -113,6 +152,39 @@ def _failure(reason: str, query: str) -> dict[str, Any]:
         "sections": [],
         "contextText": "",
     }
+
+
+def _traced_failure(
+    reason: str,
+    query: str,
+    *,
+    retrieval_trace: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    failure = _failure(reason, query, retrieval_trace=retrieval_trace)
+    append_retrieval_trace(failure["retrievalTrace"])
+    return failure
+
+
+def _retrieval_trace(candidates: list[dict[str, Any]]) -> dict[str, Any]:
+    if not candidates:
+        return {}
+    trace = candidates[0].get("retrievalTrace")
+    return dict(trace) if isinstance(trace, dict) else {
+        "retrievalMode": "legacy",
+        "retrievalBackend": str(candidates[0].get("retrievalBackend") or "legacy"),
+        "documentId": int(candidates[0].get("documentId") or 0),
+    }
+
+
+def _candidate_scope_error(candidates: list[dict[str, Any]], relative_path: str) -> str:
+    expected_path = str(relative_path or "").strip()
+    if not expected_path:
+        return "missing_document_scope"
+    mismatched = [
+        candidate for candidate in candidates
+        if str(candidate.get("relativePath") or "").strip() != expected_path
+    ]
+    return "selected_document_scope_violation" if mismatched else ""
 
 
 def _bounded_env_int(name: str, default: int, minimum: int, maximum: int) -> int:

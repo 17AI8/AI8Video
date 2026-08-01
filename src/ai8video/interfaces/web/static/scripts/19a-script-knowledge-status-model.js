@@ -13,5 +13,7 @@
       }
       const ready = Number(status.readyCount || 0);
       const total = Number(status.documentCount || 0);
-      return { text: `${ready}/${total} 已索引 · 无向量模型`, error: false };
+      const bm25Ready = Number(status.bm25ReadyCount || 0);
+      const retrievalMode = String(status.retrievalMode || 'bm25').toUpperCase();
+      return { text: `${bm25Ready}/${ready || total} BM25 可用 · ${retrievalMode}`, error: false };
     }

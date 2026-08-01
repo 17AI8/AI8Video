@@ -116,6 +116,7 @@
           <span class="script-knowledge-list-preview">${escapeHtml(preview)}</span>
           <span class="script-knowledge-list-foot">
             <span>${sectionCount ? `${sectionCount} 个叶节点` : '未知识入库'}</span>
+            <span>${escapeHtml(getScriptKnowledgeBm25StatusLabel(item))}</span>
             <span>${escapeHtml(formatFileSize(item?.sizeBytes || 0) || '0 B')}</span>
           </span>
         </button>

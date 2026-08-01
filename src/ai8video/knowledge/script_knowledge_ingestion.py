@@ -129,11 +129,12 @@ def _run_job(job: KnowledgeIngestionJob, config: AI8VideoConfig) -> None:
             "validate",
             f"完整性校验通过：{quality.leaf_count} 段，使用 {quality.used_unit_count} 个原文单元",
         )
-        job.emit("persist", f"正在保存 {quality.leaf_count} 个结构化知识段")
+        job.emit("persist", f"正在保存 {quality.leaf_count} 个结构化知识段并构建 BM25 索引")
         store.replace_document_tree(
             job.document_id,
             proposal.tree,
             proposal.leaves,
+            expected_content_hash=str(document.get("contentHash") or ""),
             ingestion_metadata={
                 "knowledgeAgent": KnowledgeBaseAgent.role,
                 "reviewerAgent": ReviewerAgent.role,
@@ -145,7 +146,7 @@ def _run_job(job: KnowledgeIngestionJob, config: AI8VideoConfig) -> None:
             },
         )
         job.state = "succeeded"
-        job.emit("done", f"知识入库完成，Reviewer 审核通过，返工 {outcome.revision_count} 次")
+        job.emit("done", f"知识入库与 BM25 索引完成，Reviewer 审核通过，返工 {outcome.revision_count} 次")
     except Exception as exc:
         job.error = _safe_error(exc)
         job.state = "failed"

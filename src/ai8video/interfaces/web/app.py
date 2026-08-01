@@ -271,6 +271,7 @@ from ai8video.knowledge.script_knowledge import (
     ScriptKnowledgeUnavailable,
     get_script_knowledge_store,
     index_script_path,
+    register_script_knowledge_sources,
     remove_script_knowledge_document,
     script_knowledge_payload,
 )
@@ -5065,6 +5066,7 @@ def api_health():
         return HTTPResponse(status=204)
     payload = get_health_payload(refresh=True)
     payload.setdefault("chatBackend", CHAT_BACKEND)
+    payload["scriptKnowledge"] = get_script_knowledge_store().status()
     return payload
 
 
@@ -9625,6 +9627,11 @@ def main() -> int:
             len(migration.get("movedVideos") or []),
             len(migration.get("movedMetadata") or []),
         )
+    try:
+        knowledge_sync = register_script_knowledge_sources()
+        logging.info("剧本知识库启动维护完成：%s", knowledge_sync)
+    except Exception as exc:
+        logging.warning("剧本知识库启动维护失败：%s", _script_knowledge_error(exc))
     health = get_health_payload()
     print(json.dumps({
         "url": f"http://127.0.0.1:{port}",

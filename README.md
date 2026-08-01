@@ -146,7 +146,8 @@ ai8video serve --port 0
 - 支持自定义 RSS/Atom、并行抓取、过滤去重、缓存降级和事实约束总结；
 - 热点可以一键转换为创作提示词并填入主工作台；
 - TXT、Markdown、DOCX 原稿保留在本地，PostgreSQL 保存可重建的检索结构；
-- 使用标题/标签匹配、`pg_trgm`、`tsvector`、查询提炼和模型 Rerank（重排）完成召回；
+- 对当前选中文档的知识树叶节点建立持久化 BM25 倒排索引，使用 `pg_trgm` 补充错别字召回，再由模型 Rerank（重排）筛选 Top 5；
+- 标准号、型号、版本号、日期、数字和单位经过统一 NFKC 标准化及版本化分词，检索范围在召回与重排前后都严格限定为当前文档；
 - 支持临时知识和爆款拆解知识树，不必先污染长期素材库。
 
 ### 3. 爆款视频拆解
@@ -386,20 +387,34 @@ export AI8VIDEO_SCRIPT_DATABASE_URL='postgresql://user:password@127.0.0.1:5432/a
 ```
 
 ```text
-标题 / 标签精确匹配
+KnowledgeBaseAgent 建立单文档知识树 → Reviewer 审核
         ↓
-文本模型提炼检索意图
+叶节点持久化 → 统一分词 → 构建文档内 BM25 倒排索引
         ↓
-pg_trgm 中文模糊匹配 + tsvector 召回
+文本模型提炼检索意图并确定性保留专业标识符
         ↓
-SQL 加权排序 + 模型 Rerank
+当前文档 BM25 Top 20 + 同文档 pg_trgm 不足补召回
         ↓
-向生成模型注入最相关知识段
-        ↓
-最终输出审核与可执行修正
+模型 Rerank Top 5 → 带来源知识段注入生成模型
 ```
 
-默认方案不运行本地 Embedding（向量嵌入）模型，数据库内容可从用户原稿重建。
+BM25 的 `N`、`df`、词频和平均叶节点长度均只统计当前选中文档，未选文档不会参与候选或分数计算。普通生成查询只读取已有索引并实时算分；Schema 迁移、源文件同步和无模型 BM25 回填在 Web 启动或知识库管理接口中执行。原始文件 SHA-256 用于判变，旧库首次升级会在文件元数据一致时只补指纹，不删除 ready 叶节点，也不重新调用建树模型。
+
+可通过以下环境变量灰度和回滚：
+
+```bash
+# legacy：旧 PostgreSQL 全文排序；shadow：返回旧排序并记录 BM25 对比；bm25：BM25 主排序
+export AI8VIDEO_SCRIPT_RETRIEVAL_MODE=bm25
+
+# 候选召回和最终注入数量，默认分别为 20 和 5
+export AI8VIDEO_SCRIPT_RECALL_TOP_K=20
+export AI8VIDEO_SCRIPT_INJECT_TOP_K=5
+
+# 检索失败时是否允许回退为整篇原文；设为 0 可严格禁止
+export AI8VIDEO_SCRIPT_FULL_FALLBACK_ENABLED=0
+```
+
+健康接口会返回 Schema、BM25 索引、分词器版本、ready / pending 文档数和当前检索模式。检索 Trace 默认追加到 `temp/ai8video/script_knowledge_retrieval_traces.jsonl`。默认方案不运行本地 Embedding（向量嵌入）模型，不依赖向量数据库、Redis、Jieba 或第三方 BM25 包；数据库派生内容均可从用户原稿和已审核叶节点重建。
 
 ## CLI
 
@@ -506,6 +521,14 @@ python -m unittest discover -s tests
 - FFmpeg 缺失时，部分媒体测试会跳过；
 - PostgreSQL 集成测试只在设置 `AI8VIDEO_TEST_POSTGRES_URL` 后运行；
 - PostgreSQL 测试会清理专用测试表，**只能使用独立、可丢弃的测试数据库，严禁指向生产库或用户库**。
+
+BM25 与旧检索的 Golden Regression（黄金题集回归）会检查 Recall@20、Hit@3、重排后 Hit@5、无答案精度和文档范围泄漏率，并在 BM25 指标退化或泄漏不为 0 时返回非零状态：
+
+```bash
+AI8VIDEO_TEST_POSTGRES_URL='postgresql:///ai8video_test' \
+PYTHONPATH=src \
+python tests/evaluate_script_knowledge_golden.py
+```
 
 ## Electron 与部署边界
 

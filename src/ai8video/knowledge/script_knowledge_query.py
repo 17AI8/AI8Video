@@ -8,12 +8,16 @@ from typing import Any
 
 from ai8video.core.config import AI8VideoConfig
 from ai8video.integrations.llm_provider import build_openai_compat_llm
+from ai8video.knowledge.script_knowledge_text import extract_protected_terms
 
 
 QueryLLM = Callable[[str], str]
 QUERY_SYSTEM_PROMPT = (
-    "你是剧本知识库检索意图提炼器。区分正向主题与禁止项，"
-    "只返回严格 JSON，不生成剧本正文。"
+    "你是通用文档知识库检索意图提炼器。区分正向问题与禁止项，"
+    "保留原文中的专业术语、标识符和数字条件，只返回严格 JSON。"
+)
+_EXCLUDED_CLAUSE_PATTERN = re.compile(
+    r"(?:禁止|不要|不允许|过滤|避免|排除|不得)\s*([^，。；;\n]{1,80})"
 )
 
 
@@ -45,18 +49,19 @@ def plan_retrieval_query(
     except Exception as exc:
         fallback["fallbackReason"] = f"query_model_failed:{_safe_error(exc)}"
         return fallback
-    return data
+    return _merge_deterministic_terms(data, text)
 
 
 def _build_prompt(text: str, system_prompt: str, reference_hint: str) -> str:
-    return f"""请提炼用于 PostgreSQL 剧本知识库召回的检索意图。
+    return f"""请提炼用于文档知识库召回的检索意图。
 
 要求：
-1. 正向关键词只保留用户希望画面或内容出现的主题、人物、场景、产品、受众和动作。
+1. 正向关键词保留用户要查询的事实、术语、条件、规则、步骤、例外和证据。
 2. “禁止、不要、不允许、过滤、避免”等内容必须进入 excluded_terms，不能放入正向关键词。
-3. 数量、开始生成等控制词不属于检索主题。
-4. query 控制在 80 个中文字符以内。
-5. 只返回 JSON：{{"query":"主题摘要","keywords":["词"],"excluded_terms":["词"]}}。
+3. 型号、标准号、缩写、数字、单位、日期、法条号和引号短语必须保持原样。
+4. 视频数量、时长、画幅、音色和开始生成等控制词不属于检索主题。
+5. query 控制在 120 个中文字符以内。
+6. 只返回 JSON：{{"query":"检索问题","keywords":["词"],"excluded_terms":["词"]}}。
 
 用户输入：{str(text or '').strip()[:500]}
 
@@ -80,9 +85,12 @@ def _parse_plan(raw: str) -> dict[str, Any]:
 
 def _fallback_plan(text: str, reference_hint: str) -> dict[str, Any]:
     raw = str(text or "").strip()
-    query = reference_hint if re.fullmatch(r"\s*\d{1,3}\s*(?:个|条|集|支|段)?\s*", raw) else raw
+    excluded = _extract_excluded_terms(raw)
+    positive_text = _EXCLUDED_CLAUSE_PATTERN.sub(" ", raw)
+    query = reference_hint if re.fullmatch(r"\s*\d{1,3}\s*(?:个|条|集|支|段)?\s*", raw) else positive_text
     query = re.sub(r"\s+", " ", str(query or reference_hint)).strip()[:160]
-    return _plan(query, [], [], applied=False, reason="query_llm_unavailable")
+    result = _plan(query, [], excluded, applied=False, reason="query_llm_unavailable")
+    return _merge_deterministic_terms(result, raw)
 
 
 def _plan(query: str, keywords: list[str], excluded: list[str], *, applied: bool, reason: str) -> dict[str, Any]:
@@ -94,9 +102,62 @@ def _plan(query: str, keywords: list[str], excluded: list[str], *, applied: bool
         "rankingQuery": ranking_query,
         "keywords": keywords,
         "excludedTerms": excluded,
+        "protectedTerms": [],
         "queryModelApplied": applied,
         "fallbackReason": reason,
     }
+
+
+def _merge_deterministic_terms(plan: dict[str, Any], source_text: str) -> dict[str, Any]:
+    result = dict(plan)
+    excluded = _merge_unique_strings(
+        list(result.get("excludedTerms") or []),
+        _extract_excluded_terms(source_text),
+        limit=12,
+    )
+    protected = [
+        term for term in extract_protected_terms(source_text)
+        if not _term_is_excluded(term, excluded)
+    ]
+    base_query = str(result.get("query") or "").strip()
+    query_parts = [*protected]
+    if base_query and not any(base_query == term for term in query_parts):
+        query_parts.append(base_query)
+    query = " ".join(dict.fromkeys(query_parts)).strip()[:200]
+    keywords = _merge_unique_strings(protected, list(result.get("keywords") or []), limit=12)
+    result.update(_plan(
+        query or base_query,
+        keywords,
+        excluded,
+        applied=bool(result.get("queryModelApplied")),
+        reason=str(result.get("fallbackReason") or ""),
+    ))
+    result["protectedTerms"] = protected
+    return result
+
+
+def _extract_excluded_terms(value: str) -> list[str]:
+    return _merge_unique_strings(
+        [],
+        [match.group(1).strip() for match in _EXCLUDED_CLAUSE_PATTERN.finditer(str(value or ""))],
+        limit=12,
+    )
+
+
+def _merge_unique_strings(first: list[str], second: list[str], *, limit: int) -> list[str]:
+    result: list[str] = []
+    for value in [*first, *second]:
+        clean_value = str(value or "").strip()[:80]
+        if clean_value and clean_value not in result:
+            result.append(clean_value)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _term_is_excluded(term: str, excluded: list[str]) -> bool:
+    comparable_term = re.sub(r"\s+", "", term).lower()
+    return any(comparable_term in re.sub(r"\s+", "", value).lower() for value in excluded)
 
 
 def _string_list(value: Any, limit: int) -> list[str]:

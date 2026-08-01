@@ -10,12 +10,20 @@ from pathlib import Path
 from typing import Any
 
 from ai8video.knowledge.script_knowledge_sql import (
+    SCRIPT_KNOWLEDGE_SCHEMA_VERSION,
     document_detail_sql as _document_detail_sql,
     document_list_sql as _document_list_sql,
     schema_statements as _schema_statements,
-    section_search_sql as _section_search_sql,
     search_sql as _search_sql,
-    upsert_document_sql as _upsert_document_sql,
+)
+from ai8video.knowledge.script_knowledge_bm25 import (
+    BM25_INDEX_VERSION,
+    BM25_TOKENIZER_VERSION,
+    backfill_ready_document_indexes,
+    build_bm25_corpus,
+    replace_document_sections,
+    retrieval_mode,
+    search_section_rows,
 )
 from ai8video.knowledge.script_knowledge_text import (
     build_search_terms as _build_search_terms,
@@ -23,13 +31,22 @@ from ai8video.knowledge.script_knowledge_text import (
     escape_like as _escape_like,
     normalize_query as _normalize_query,
     normalize_tags as _normalize_tags,
-    preview as _preview,
+)
+from ai8video.knowledge.script_knowledge_records import (
+    attach_search_trace as _attach_search_trace,
+    dedupe_search_rows as _dedupe_search_rows,
+    document_summary as _document_summary,
+    section_candidate as _section_candidate,
+)
+from ai8video.knowledge.script_knowledge_sources import (
+    SCRIPT_INDEX_VERSION,
+    register_document_source,
+    synchronize_document_sources,
 )
 
 
 DATABASE_URL_ENV = "AI8VIDEO_SCRIPT_DATABASE_URL"
 DEFAULT_DATABASE_URL = "postgresql:///ai8video"
-SCRIPT_INDEX_VERSION = 4
 
 
 class ScriptKnowledgeUnavailable(RuntimeError):
@@ -46,6 +63,7 @@ class ScriptKnowledgeStore:
         self._connector = connector
         self._schema_ready = False
         self._schema_lock = threading.Lock()
+        self._bm25_last_error = ""
 
     @property
     def configured(self) -> bool:
@@ -70,8 +88,13 @@ class ScriptKnowledgeStore:
             with self._connect() as connection, connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT COUNT(*) AS total, "
-                    "COUNT(*) FILTER (WHERE index_status = 'ready') AS ready "
-                    "FROM ai8_script_documents"
+                    "COUNT(*) FILTER (WHERE d.index_status = 'ready') AS ready, "
+                    "COUNT(*) FILTER (WHERE d.index_status = 'ready' "
+                    "AND c.index_version = %s AND c.tokenizer_version = %s) AS bm25_ready, "
+                    "current_setting('server_version') AS server_version "
+                    "FROM ai8_script_documents d "
+                    "LEFT JOIN ai8_script_bm25_corpora c ON c.document_id = d.id",
+                    (BM25_INDEX_VERSION, BM25_TOKENIZER_VERSION),
                 )
                 row = cursor.fetchone() or {}
         except Exception as exc:
@@ -81,8 +104,16 @@ class ScriptKnowledgeStore:
             "available": True,
             "backend": "postgresql",
             "embeddingEnabled": False,
+            "databaseVersion": str(row.get("server_version") or ""),
+            "schemaVersion": SCRIPT_KNOWLEDGE_SCHEMA_VERSION,
             "documentCount": int(row.get("total") or 0),
             "readyCount": int(row.get("ready") or 0),
+            "bm25ReadyCount": int(row.get("bm25_ready") or 0),
+            "bm25PendingCount": max(0, int(row.get("ready") or 0) - int(row.get("bm25_ready") or 0)),
+            "bm25IndexVersion": BM25_INDEX_VERSION,
+            "bm25TokenizerVersion": BM25_TOKENIZER_VERSION,
+            "retrievalMode": retrieval_mode(),
+            "bm25LastError": self._bm25_last_error,
             "error": "",
         }
 
@@ -126,18 +157,28 @@ class ScriptKnowledgeStore:
         clean_query = _normalize_query(query)
         if not clean_query:
             return []
-        self.initialize()
         safe_limit = max(1, min(int(limit), 50))
-        params = (
-            clean_query,
-            f"%{_escape_like(clean_query)}%",
-            _build_ts_query(clean_query),
-            str(relative_path or "").strip(),
-            safe_limit,
-        )
         with self._connect() as connection, connection.cursor() as cursor:
-            cursor.execute(_section_search_sql(), params)
-            return [_section_candidate(row) for row in cursor.fetchall()]
+            search_result = search_section_rows(
+                cursor,
+                clean_query,
+                str(relative_path or "").strip(),
+                safe_limit,
+            )
+        return [
+            _attach_search_trace(_section_candidate(row), search_result.trace)
+            for row in search_result.rows
+        ]
+
+    def backfill_bm25_indexes(self) -> dict[str, Any]:
+        if not self._schema_ready:
+            self.initialize()
+        stats = backfill_ready_document_indexes(self._connect)
+        if stats["failed"]:
+            self._bm25_last_error = str(stats["lastError"] or "BM25 index backfill failed")
+        else:
+            self._bm25_last_error = ""
+        return stats
 
     def get_document(self, document_id: int) -> dict[str, Any]:
         self.initialize()
@@ -147,7 +188,7 @@ class ScriptKnowledgeStore:
             if not row:
                 raise KeyError("剧本文档不存在")
             cursor.execute(
-                "SELECT id, section_order, heading, content, char_count "
+                "SELECT id, section_order, heading, content, char_count, retrieval_text, token_count "
                 "FROM ai8_script_sections WHERE document_id = %s ORDER BY section_order",
                 (int(document_id),),
             )
@@ -155,6 +196,18 @@ class ScriptKnowledgeStore:
         detail = _document_summary(row)
         detail.update({"content": str(row.get("content") or ""), "sections": sections})
         return detail
+
+    def get_document_by_relative_path(self, relative_path: str) -> dict[str, Any]:
+        self.initialize()
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT id FROM ai8_script_documents WHERE relative_path = %s",
+                (str(relative_path or "").strip(),),
+            )
+            row = cursor.fetchone()
+        if not row:
+            raise KeyError("剧本文档不存在")
+        return self.get_document(int(row["id"]))
 
     def update_document(
         self,
@@ -185,8 +238,10 @@ class ScriptKnowledgeStore:
         leaves: list[dict[str, Any]],
         *,
         ingestion_metadata: dict[str, Any] | None = None,
+        expected_content_hash: str = "",
     ) -> dict[str, Any]:
         self.initialize()
+        corpus = build_bm25_corpus(leaves)
         metadata = {
             "knowledgeTree": tree.get("tree") or [],
             "ingestion": "multi_agent_reviewed",
@@ -194,9 +249,20 @@ class ScriptKnowledgeStore:
         }
         with self._connect() as connection, connection.cursor() as cursor:
             cursor.execute(
+                "SELECT content_hash FROM ai8_script_documents WHERE id = %s FOR UPDATE",
+                (int(document_id),),
+            )
+            document_row = cursor.fetchone()
+            if not document_row:
+                raise KeyError("剧本文档不存在")
+            current_content_hash = str(document_row.get("content_hash") or "")
+            if expected_content_hash and current_content_hash != expected_content_hash:
+                raise RuntimeError("原文已在知识入库期间更新，请重新执行知识入库")
+            replace_document_sections(cursor, document_id, corpus)
+            cursor.execute(
                 "UPDATE ai8_script_documents SET title = %s, summary = %s, tags = %s, "
                 "metadata = metadata || %s::jsonb, index_status = 'ready', index_version = %s, "
-                "indexed_at = NOW(), updated_at = NOW() WHERE id = %s RETURNING id",
+                "indexed_at = NOW(), updated_at = NOW() WHERE id = %s",
                 (
                     str(tree.get("title") or ""),
                     str(tree.get("summary") or ""),
@@ -206,25 +272,6 @@ class ScriptKnowledgeStore:
                     int(document_id),
                 ),
             )
-            if not cursor.fetchone():
-                raise KeyError("剧本文档不存在")
-            cursor.execute("DELETE FROM ai8_script_sections WHERE document_id = %s", (int(document_id),))
-            for section_order, leaf in enumerate(leaves):
-                heading = str(leaf.get("heading") or "知识段")
-                content = str(leaf.get("content") or "")
-                cursor.execute(
-                    "INSERT INTO ai8_script_sections "
-                    "(document_id, section_order, heading, content, char_count, search_terms) "
-                    "VALUES (%s, %s, %s, %s, %s, %s)",
-                    (
-                        int(document_id),
-                        section_order,
-                        heading,
-                        content,
-                        len(content),
-                        _build_search_terms(f"{heading} {content}"),
-                    ),
-                )
         return self.get_document(document_id)
 
     def register_sources(
@@ -233,80 +280,18 @@ class ScriptKnowledgeStore:
         content_reader: Callable[[str | Path], str],
     ) -> dict[str, int]:
         self.initialize()
-        stats = {"registered": 0, "unchanged": 0, "removed": 0}
         with self._connect() as connection, connection.cursor() as cursor:
-            cursor.execute("SELECT relative_path, size_bytes, source_modified_at, index_version FROM ai8_script_documents")
-            known = {str(row["relative_path"]): row for row in cursor.fetchall()}
-            current_paths: set[str] = set()
-            for source in sources:
-                relative_path = str(source.get("relativePath") or "").strip()
-                if not relative_path:
-                    continue
-                current_paths.add(relative_path)
-                known_source = known.get(relative_path)
-                if _source_matches(source, known_source):
-                    if int(known_source.get("index_version") or 0) < SCRIPT_INDEX_VERSION:
-                        self._mark_document_pending(cursor, relative_path)
-                        stats["registered"] += 1
-                        continue
-                    stats["unchanged"] += 1
-                    continue
-                content = content_reader(str(source.get("path") or ""))
-                self._register_document(cursor, source, content)
-                stats["registered"] += 1
-            stale_paths = set(known) - current_paths
-            if stale_paths:
-                cursor.execute("DELETE FROM ai8_script_documents WHERE relative_path = ANY(%s)", (list(stale_paths),))
-                stats["removed"] = len(stale_paths)
+            stats = synchronize_document_sources(cursor, sources, content_reader)
+        try:
+            self.backfill_bm25_indexes()
+        except Exception as exc:
+            self._bm25_last_error = _safe_error(exc)
         return stats
 
     def register_source(self, source: dict[str, Any], content: str) -> int:
         self.initialize()
         with self._connect() as connection, connection.cursor() as cursor:
-            return self._register_document(cursor, source, content)
-
-    def _upsert_document(self, cursor: Any, source: dict[str, Any], content: str) -> int:
-        relative_path = str(source.get("relativePath") or "").strip()
-        name = str(source.get("name") or Path(relative_path).name).strip()
-        source_path = str(source.get("path") or "").strip()
-        source_mtime = float(source.get("modifiedAt") or 0)
-        size_bytes = int(source.get("sizeBytes") or len(content.encode("utf-8")))
-        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
-        cursor.execute(
-            _upsert_document_sql(),
-            (
-                relative_path,
-                name,
-                Path(name).stem,
-                source_path,
-                Path(name).suffix.lower().lstrip(".") or "text",
-                content,
-                content_hash,
-                _preview(content),
-                size_bytes,
-                source_mtime,
-                "pending",
-                SCRIPT_INDEX_VERSION,
-                Path(name).stem,
-            ),
-        )
-        document_id = int(cursor.fetchone()["id"])
-        return document_id
-
-    def _register_document(self, cursor: Any, source: dict[str, Any], content: str) -> int:
-        document_id = self._upsert_document(cursor, source, content)
-        cursor.execute("DELETE FROM ai8_script_sections WHERE document_id = %s", (document_id,))
-        return document_id
-
-    def _mark_document_pending(self, cursor: Any, relative_path: str) -> None:
-        cursor.execute(
-            "UPDATE ai8_script_documents SET index_status = 'pending', index_version = %s, "
-            "indexed_at = NOW(), updated_at = NOW() WHERE relative_path = %s RETURNING id",
-            (SCRIPT_INDEX_VERSION, relative_path),
-        )
-        row = cursor.fetchone()
-        if row:
-            cursor.execute("DELETE FROM ai8_script_sections WHERE document_id = %s", (int(row["id"]),))
+            return register_document_source(cursor, source, content)
 
     def _connect(self) -> Any:
         if self._connector:
@@ -366,6 +351,7 @@ def index_script_path(path: str | Path, *, root: str | Path) -> dict[str, Any]:
         "path": str(target),
         "sizeBytes": stat.st_size,
         "modifiedAt": stat.st_mtime,
+        "sourceFileHash": hashlib.sha256(target.read_bytes()).hexdigest(),
     }
     store = get_script_knowledge_store()
     store.register_source(source, read_script_material_text(target, limit=None))
@@ -389,69 +375,6 @@ def _database_url_from_env() -> str:
     return value or DEFAULT_DATABASE_URL
 
 
-def _document_summary(row: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "id": int(row["id"]),
-        "name": str(row.get("name") or ""),
-        "stem": str(row.get("stem") or ""),
-        "relativePath": str(row.get("relative_path") or ""),
-        "path": str(row.get("source_path") or ""),
-        "contentType": str(row.get("content_type") or ""),
-        "preview": str(row.get("preview") or ""),
-        "title": str(row.get("title") or row.get("stem") or ""),
-        "summary": str(row.get("summary") or ""),
-        "tags": list(row.get("tags") or []),
-        "metadata": dict(row.get("metadata") or {}),
-        "sizeBytes": int(row.get("size_bytes") or 0),
-        "modifiedAt": float(row.get("source_modified_at") or 0),
-        "indexStatus": str(row.get("index_status") or ""),
-        "indexVersion": int(row.get("index_version") or 0),
-        "sectionCount": int(row.get("section_count") or 0),
-        "score": float(row.get("score") or 0),
-        "matchedSectionId": int(row.get("matched_section_id") or 0),
-        "matchedHeading": str(row.get("matched_heading") or ""),
-        "matchedExcerpt": str(row.get("matched_excerpt") or ""),
-        "kind": "script",
-    }
-
-
-def _section_candidate(row: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "id": int(row["section_id"]),
-        "documentId": int(row["document_id"]),
-        "documentName": str(row.get("name") or ""),
-        "documentTitle": str(row.get("title") or row.get("name") or ""),
-        "relativePath": str(row.get("relative_path") or ""),
-        "sectionOrder": int(row.get("section_order") or 0),
-        "heading": str(row.get("heading") or ""),
-        "content": str(row.get("content") or ""),
-        "score": float(row.get("score") or 0),
-    }
-
-
-def _dedupe_search_rows(rows: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
-    results: list[dict[str, Any]] = []
-    seen: set[int] = set()
-    for row in rows:
-        document_id = int(row["id"])
-        if document_id in seen:
-            continue
-        seen.add(document_id)
-        results.append(_document_summary(row))
-        if len(results) >= limit:
-            break
-    return results
-
-
-def _source_matches(source: dict[str, Any], known: dict[str, Any] | None) -> bool:
-    if not known:
-        return False
-    return (
-        int(source.get("sizeBytes") or 0) == int(known.get("size_bytes") or 0)
-        and abs(float(source.get("modifiedAt") or 0) - float(known.get("source_modified_at") or 0)) < 0.001
-    )
-
-
 def _safe_error(exc: Exception) -> str:
     line = str(exc).splitlines()[0].strip()
     line = re.sub(r"postgres(?:ql)?://[^\s@]+@", "postgresql://***@", line, flags=re.IGNORECASE)
@@ -464,7 +387,15 @@ def _unavailable_status(error: str) -> dict[str, Any]:
         "available": False,
         "backend": "postgresql",
         "embeddingEnabled": False,
+        "databaseVersion": "",
+        "schemaVersion": SCRIPT_KNOWLEDGE_SCHEMA_VERSION,
         "documentCount": 0,
         "readyCount": 0,
+        "bm25ReadyCount": 0,
+        "bm25PendingCount": 0,
+        "bm25IndexVersion": BM25_INDEX_VERSION,
+        "bm25TokenizerVersion": BM25_TOKENIZER_VERSION,
+        "retrievalMode": retrieval_mode(),
+        "bm25LastError": "",
         "error": str(error or "PostgreSQL 不可用"),
     }
