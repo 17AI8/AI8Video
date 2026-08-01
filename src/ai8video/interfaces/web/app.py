@@ -7970,6 +7970,46 @@ def api_chat_plan_cancel():
     return cancel_smart_split_confirmation_via_ai8video(session_id=session_id)
 
 
+@app.route("/api/smart-split-plan/confirm", method=["POST", "OPTIONS"])
+def api_confirm_smart_split_plan():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    session_id = str(payload.get("sessionId") or "").strip()
+    planned_videos = payload.get("plannedVideos")
+    if not session_id or not isinstance(planned_videos, list) or not planned_videos:
+        response.status = 400
+        return {"error": "sessionId and plannedVideos are required"}
+    if not restore_smart_split_plan(session_id, planned_videos):
+        response.status = 409
+        return {"error": "已确认的智能分集方案无法恢复，请重新分集"}
+    clear_generation_progress(session_id)
+    try:
+        body = handle_chat_via_ai8video(
+            session_id=session_id,
+            message="确认分集",
+            timeout_seconds=_web_chat_timeout_seconds(),
+        )
+        body.setdefault("chatBackend", CHAT_BACKEND)
+        _apply_deleted_asset_progress_state(body)
+        return body
+    except TimeoutError:
+        pending_status = get_chat_status_via_ai8video(session_id=session_id)
+        return {
+            "reply": {
+                "text": "已使用确认的分集方案开始生成，结果会自动回填到当前对话。",
+                "stage": "pending",
+                "awaiting": None,
+                "draft": None,
+                "meta": {"operation": "pending"},
+                "result": None,
+            },
+            **pending_status,
+            "sessionId": session_id,
+            "chatBackend": "ai8video-timeout",
+        }
+
+
 def _parse_chat_status_jobs() -> list[dict]:
     raw = str(request.query.get("jobs") or "").strip()
     if not raw:

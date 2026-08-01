@@ -173,12 +173,49 @@
       removeSmartSplitMessages(session, targetMessage);
     }
 
+    async function confirmSmartSplitPlan(trigger) {
+      const session = getActiveSession();
+      const plannedVideos = getConfirmedSmartSplitVideos(session, '确认分集');
+      if (!session?.id || !Array.isArray(plannedVideos) || !plannedVideos.length) return;
+      const pendingPayload = buildLocalPendingPayload(session.id, '确认分集');
+      session.messages.push({ role: 'user', text: '确认分集' });
+      session.messages.push({ role: 'assistant', payload: pendingPayload });
+      persistSessions();
+      state.busy = true;
+      startGenerationProgress(session.id, '确认分集');
+      render();
+      try {
+        const response = await fetch('/api/smart-split-plan/confirm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: session.id, plannedVideos }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw buildRequestError(data);
+        replaceLocalPendingPayload(session, buildAssistantPayload(data, session.id));
+        persistSessions();
+        await Promise.allSettled([refreshAssets(), refreshUserGeneratedResults()]);
+      } catch (error) {
+        replaceLocalPendingPayload(session, { error: formatNetworkError(error) });
+        persistSessions();
+      } finally {
+        state.busy = false;
+        clearGenerationProgress();
+        render();
+        renderStatus();
+      }
+    }
+
     async function handleGuideAction(kind, value, trigger = null) {
       const actionKind = String(kind || '').trim();
       const text = String(value || '').trim();
       if (state.busy || !text) return;
       if (actionKind === 'dismiss-error') {
         await dismissAssistantErrorMessage(trigger);
+        return;
+      }
+      if (actionKind === 'confirm-smart-split') {
+        await confirmSmartSplitPlan(trigger);
         return;
       }
       if (actionKind === 'dismiss-plan') {

@@ -459,7 +459,11 @@
             generationBatchId: item?.generationBatchId || progress.generationBatchId || pending.generationBatchId || '',
           };
           if (itemWithBatch.historicalSnapshot) return buildProgressStatusResultItem(itemWithBatch, index, progressItems);
-          const mirror = findUserGeneratedMirror(item);
+          const itemStatus = String(itemWithBatch.status || '').trim();
+          // 未创建上游任务的失败条目仍需显示状态卡，但不得匹配历史成片。
+          const canMatchGeneratedMirror = itemStatus !== 'failed'
+            || Boolean(String(itemWithBatch.jobId || '').trim());
+          const mirror = canMatchGeneratedMirror ? findUserGeneratedMirror(itemWithBatch) : null;
           if (mirror?.userGeneratedKey) return mirror;
           return buildProgressStatusResultItem(itemWithBatch, index, progressItems);
         })
@@ -622,8 +626,8 @@
         smartSplitPlanRecoveryReady.add(session.id);
         if (fetched) {
           persistSessions();
-          if (session.id === state.activeId) renderMessages();
         }
+        if (session.id === state.activeId) renderMessages();
       } finally {
         smartSplitPlanRecoveryInflight.delete(session.id);
       }
@@ -653,13 +657,16 @@
       const isReplanToggle = isSmartSplitConfirmation && value.trim() === '重新分集';
       const isSmartSplitConfirm = isSmartSplitConfirmation && value.trim() === '确认分集';
       const isSmartSplitCancel = isSmartSplitConfirmation && action.kind === 'dismiss-plan';
+      const confirmationPlanReady = !isSmartSplitConfirm
+        || smartSplitPlanRecoveryReady.has(getActiveSession()?.id);
       return `
         <button
           type="button"
           class="guide-action-button${index === 0 && !isSmartSplitConfirmation ? ' primary' : ''}"
-          data-guide-action-kind="${escapeHtml(action.kind || 'fill')}"
+          data-guide-action-kind="${escapeHtml(isSmartSplitConfirm ? 'confirm-smart-split' : (action.kind || 'fill'))}"
           data-guide-action-value="${escapeHtml(value)}"
           ${isSmartSplitConfirm ? 'data-smart-split-confirm-action data-smart-split-hide-on-feedback' : ''}
+          ${confirmationPlanReady ? '' : 'disabled title="正在恢复已规划的分集方案"'}
           ${isSmartSplitCancel ? 'data-smart-split-cancel-action data-smart-split-hide-on-feedback' : ''}
           ${isReplanToggle ? 'data-smart-split-feedback-toggle aria-expanded="false"' : ''}
         >${escapeHtml(action.label || '继续')}</button>

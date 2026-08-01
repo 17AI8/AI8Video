@@ -34,6 +34,12 @@
     function humanizeAssistantError(value) {
       const text = String(value || '').trim();
       const lowered = text.toLowerCase();
+      if (lowered.includes('insufficient_user_quota') || text.includes('资源不足')) {
+        return '视频服务当前可用额度不足，本轮视频没有提交成功。\n请稍后重试，或取消后回到上一步。';
+      }
+      if (lowered.includes('fail_to_fetch_task')) {
+        return '视频服务暂时无法创建生成任务，本轮视频没有提交成功。\n请稍后重试，或取消后回到上一步。';
+      }
       const networkInterrupted = lowered.includes('unexpected_eof_while_reading')
         || lowered.includes('ssleoferror')
         || lowered.includes('connection reset')
@@ -477,7 +483,15 @@
         if (message.role === 'user') {
           bubble.innerHTML = `<p>${escapeHtml(message.text)}</p>`;
         } else if (message.error) {
-          bubble.innerHTML = `<p>本次请求失败：${escapeHtml(formatNetworkError(message.error))}</p>`;
+          bubble.innerHTML = renderAssistantPayload({
+            text: formatNetworkError(message.error),
+            meta: { operation: 'error' },
+          }, {
+            sessionId: session.id,
+            messageIndex,
+            messageCount: session.messages.length,
+            activeAwaiting,
+          });
         } else {
           bubble.innerHTML = renderAssistantPayload(message.payload, {
             sessionId: session.id,

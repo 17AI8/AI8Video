@@ -127,15 +127,26 @@ class AI8VideoConversationController:
             title=str(item.get("title") or f"第 {index + 1} 条视频").strip(),
             source_summary=str(item.get("sourceSummary") or item.get("source_summary") or "").strip(),
             prompt=prompt,
+            keyword_guidance={
+                "post_review": {
+                    "narrationText": str(
+                        item.get("narrationText") or item.get("narration_text") or ""
+                    ).strip(),
+                },
+            },
         )
 
     @staticmethod
     def _is_recovered_plan_confirmation(text: str, state: ConversationState) -> bool:
-        compact = re.sub(r"\s+", "", text)
         return bool(
             state.planned_videos
-            and compact in {"确认分集", "确认并继续", "确认", "继续生成", "开始生成"}
+            and AI8VideoConversationController._is_smart_split_confirmation(text)
         )
+
+    @staticmethod
+    def _is_smart_split_confirmation(text: str) -> bool:
+        compact = re.sub(r"\s+", "", text)
+        return compact in {"确认分集", "确认并继续", "确认", "继续生成", "开始生成"}
 
     def reset_session(self, session_id: str) -> bool:
         existed = session_id in self.sessions
@@ -160,6 +171,8 @@ class AI8VideoConversationController:
             if not state.draft.raw_text:
                 state.draft.raw_text = "已恢复的智能分集规划，按已确认的视频提示词继续生成。"
             return self._handle_smart_split_followup(state, text)
+        if self._is_smart_split_confirmation(text):
+            raise RuntimeError("智能分集方案尚未恢复，请返回上一步后再确认")
         intent_decision = self._decide_intent(text, state)
         if intent_decision.route == "smart_split_followup":
             return self._handle_smart_split_followup(state, text)

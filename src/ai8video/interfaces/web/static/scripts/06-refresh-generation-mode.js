@@ -363,7 +363,13 @@
         }),
       };
       mergePendingGenerationBatchId(payload, nextPayload);
-      if (data.status !== 'pending' && incomingProgress && isTerminalTaskStatus(data.status)) {
+      const isErrorPayload = String(payload?.meta?.operation || '').trim() === 'error';
+      if (
+        !isErrorPayload
+        && data.status !== 'pending'
+        && incomingProgress
+        && isTerminalTaskStatus(data.status)
+      ) {
         nextPayload.stage = 'completed';
         nextPayload.meta = {
           ...(nextPayload.meta || {}),
@@ -467,7 +473,15 @@
         const { res, data } = await fetchChatStatusWithBatchFallback(sessionId, statusSession, {
           preferLatestBatch: true,
         });
-        if (!res.ok || !data?.generationProgress) return false;
+        if (!res.ok) return false;
+        if (data.status !== 'pending' && data.reply) {
+          const terminalPayload = buildAssistantPayload(data, sessionId);
+          messageToUpdate.payload = data.generationProgress
+            ? mergeGenerationStatusPayload(terminalPayload, data, sessionId)
+            : terminalPayload;
+          return true;
+        }
+        if (!data?.generationProgress) return false;
         messageToUpdate.payload = mergeGenerationStatusPayload(messageToUpdate.payload, data, sessionId);
         return true;
       } catch (error) {

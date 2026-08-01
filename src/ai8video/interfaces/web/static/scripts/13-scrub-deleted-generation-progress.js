@@ -160,12 +160,13 @@
     function findBatchMergedProgressMatch(item, groups) {
       const key = resolveBatchMergedProgressSourceKey(item);
       const jobIds = collectProgressItemJobIds(item);
-      const videoIndex = Number(item?.videoIndex || 0) || 0;
+      // videoIndex only identifies a position within a batch and is not globally unique.
+      // Matching it against the asset library can attach an unrelated historical merge.
+      if (!key && !jobIds.size) return null;
       for (const group of groups) {
         const sourceKey = group.sourceKeys.find((candidate) => (
           candidate === key
           || [...jobIds].some((jobId) => candidate.includes(jobId))
-          || (videoIndex > 0 && new RegExp(`^video/0*${videoIndex}-`).test(candidate))
         ));
         if (sourceKey) return { group, sourceKey };
       }
