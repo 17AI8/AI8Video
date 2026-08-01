@@ -737,171 +737,170 @@
       outline: none;
       overflow: auto;
     }
-    .model-settings-nav {
-      justify-content: flex-start;
-    }
-    .model-settings-panel {
-      min-width: 0;
-      min-height: 300px;
-      display: flex;
-      flex-direction: column;
-      overflow: auto;
-      background: rgba(255, 255, 255, 0.92);
-    }
-    .model-settings-panel.is-drawer-animating {
-      overflow: hidden;
-      scrollbar-width: none;
-    }
-    .model-settings-panel.is-drawer-animating::-webkit-scrollbar {
-      display: none;
-      width: 0;
-      height: 0;
-    }
-    .model-profile-toolbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--line);
-    }
-    .model-profile-toolbar > div { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-    .model-profile-toolbar strong { font-size: 13px; }
-    .model-profile-toolbar span { color: var(--muted); font-size: 11px; }
-    .model-profile-list { display: grid; padding: 0 16px 14px; }
-    .model-profile-card { border-bottom: 1px solid var(--line); }
-    .model-profile-collapse {
-      height: 0;
-      opacity: 0;
-      overflow: hidden;
-    }
-    .model-profile-collapse-inner {
-      will-change: transform;
-    }
-    .model-profile-card.is-expanded .model-profile-collapse {
-      height: auto;
-      opacity: 1;
-    }
-    .model-profile-summary {
-      width: 100%;
-      min-height: 54px;
+    .model-settings-detail {
       display: grid;
-      grid-template-columns: 14px 24px minmax(0, 1fr) auto;
-      align-items: center;
-      gap: 8px;
-      border: 0;
-      padding: 0 10px;
-      background: transparent;
-      color: var(--text);
-      text-align: left;
-      box-shadow: none;
+      gap: 14px;
+      align-content: start;
+      overflow: visible;
+      padding-inline: 14px;
     }
-    .model-profile-summary:hover { background: color-mix(in srgb, var(--brand-soft) 24%, transparent); }
-    .model-profile-chevron { color: var(--muted); font-size: 20px; transition: transform 140ms ease; }
-    .model-profile-card.is-expanded .model-profile-chevron { transform: rotate(90deg); }
-    .model-profile-card.is-collapsing .model-profile-chevron { transform: rotate(0deg); }
-    .model-profile-index {
-      width: 24px;
-      height: 24px;
+    .model-profile-activate-button,
+    .model-profile-copy-button {
+      min-height: 26px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      border-radius: 50%;
-      background: var(--brand-soft);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 0 9px;
+      background: #fff;
       color: var(--brand);
       font-size: 11px;
-      font-weight: 800;
-    }
-    .model-profile-summary-copy { min-width: 0; display: grid; justify-self: start; gap: 2px; }
-    .model-profile-title-row { min-width: 0; display: flex; align-items: center; gap: 8px; }
-    .model-profile-summary-copy strong,
-    .model-profile-summary-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .model-profile-summary-copy strong { font-size: 13px; }
-    .model-profile-summary-copy small { color: var(--muted); font-size: 11px; }
-    .model-profile-switch {
-      position: relative;
-      width: 34px;
-      min-width: 34px;
-      height: 18px;
-      min-height: 18px;
-      border: 0;
-      border-radius: 999px;
-      padding: 0;
-      background: color-mix(in srgb, var(--muted) 28%, #fff);
-      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--muted) 20%, transparent);
-      transition: background 160ms ease, box-shadow 160ms ease;
-    }
-    .model-profile-switch > span {
-      position: absolute;
-      top: 2px;
-      left: 2px;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: #fff;
-      box-shadow: 0 1px 3px rgba(20, 28, 58, 0.24);
-      transition: transform 160ms ease;
-    }
-    .model-profile-switch.is-active {
-      background: var(--brand);
-      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand) 72%, transparent);
-    }
-    .model-profile-switch.is-active > span { transform: translateX(16px); }
-    .model-profile-switch:focus-visible {
-      outline: 3px solid color-mix(in srgb, var(--brand) 22%, transparent);
-      outline-offset: 2px;
-    }
-    .model-profile-copy-button {
-      min-height: 30px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 0 12px;
-      background: #fff;
-      color: var(--brand);
-      font-size: 12px;
       font-weight: 700;
       white-space: nowrap;
-      transition: border-color 140ms ease, background 140ms ease;
+      cursor: pointer;
     }
+    .model-profile-copy-button { color: var(--muted); }
+    .model-profile-activate-button:hover,
     .model-profile-copy-button:hover {
-      border-color: color-mix(in srgb, var(--brand) 42%, var(--line));
+      border-color: color-mix(in srgb, var(--brand) 36%, var(--line));
       background: var(--brand-soft);
+      color: var(--brand);
     }
-    .model-profile-copy-button:focus-visible {
-      outline: 3px solid color-mix(in srgb, var(--brand) 22%, transparent);
-      outline-offset: 2px;
+    /* 连接与模型 / 类型参数：次视觉，无底板 */
+    #settingsModal #model-settings-panel .model-profile-editor.settings-panel.is-embedded,
+    #settingsModal #model-settings-panel .model-settings-detail > .settings-panel.is-embedded {
+      border: 0 !important;
+      border-radius: 0;
+      background: transparent !important;
+      box-shadow: none;
+      overflow: visible;
     }
-    .model-profile-form {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 10px 12px;
-      padding: 2px 10px 14px 56px;
-    }
-    .model-profile-form label { min-width: 0; display: grid; gap: 5px; color: var(--muted); font-size: 11px; font-weight: 700; }
-    .model-profile-form input,
-    .model-profile-form select {
-      width: 100%;
-      min-height: 36px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 0 10px;
-      background: #fff;
-      color: var(--text);
-      font: inherit;
-      font-weight: 500;
-    }
-    .model-profile-actions {
-      grid-column: 1 / -1;
-      display: flex;
+    #settingsModal #model-settings-panel .model-profile-editor .settings-panel-head,
+    #settingsModal #model-settings-panel .model-settings-detail > .settings-panel.is-embedded > .settings-panel-head {
       align-items: center;
-      justify-content: flex-end;
-      gap: 8px;
+      background: transparent !important;
+      border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+      padding: 4px 0 10px;
     }
-    .model-profile-actions .danger { color: #b42318; }
-    .model-profile-supplemental {
-      margin-top: auto;
-      border-top: 1px solid var(--line);
+    #settingsModal #model-settings-panel .model-profile-editor .settings-section-title,
+    #settingsModal #model-settings-panel .model-settings-detail > .settings-panel.is-embedded .settings-section-title {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
     }
+    #settingsModal #model-settings-panel .model-profile-editor .settings-section-title::before,
+    #settingsModal #model-settings-panel .model-settings-detail > .settings-panel.is-embedded .settings-section-title::before {
+      display: none;
+    }
+    #settingsModal #model-settings-panel .model-profile-editor .primary-button {
+      min-height: 30px;
+      padding: 0 12px;
+      font-size: 12px;
+      box-shadow: none;
+      background: color-mix(in srgb, var(--brand) 78%, #fff);
+    }
+    #settingsModal #model-settings-panel .model-profile-editor .settings-row-list,
+    #settingsModal #model-settings-panel .model-settings-detail > .settings-panel.is-embedded .settings-row-list {
+      background: transparent;
+    }
+    #settingsModal #model-settings-panel .model-profile-settings-row {
+      grid-template-columns: 140px minmax(0, 1fr);
+      padding: 10px 0;
+      border-bottom: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
+      cursor: text;
+      background: transparent;
+    }
+    #settingsModal #model-settings-panel .model-profile-settings-row:last-child { border-bottom: 0; }
+    #settingsModal #model-settings-panel .model-profile-settings-row:hover { background: transparent; }
+    #settingsModal #model-settings-panel .model-settings-detail > .settings-panel.is-embedded .settings-row-list > .settings-row {
+      padding-left: 0;
+      padding-right: 0;
+      background: transparent;
+    }
+    #settingsModal #model-settings-panel .model-settings-detail > .model-profile-supplemental.settings-panel.is-embedded {
+      grid-template-columns: 178px minmax(0, 1fr);
+      border: 1px solid color-mix(in srgb, var(--brand) 22%, var(--line)) !important;
+      border-radius: 12px;
+      background: #fff !important;
+      box-shadow: 0 10px 24px color-mix(in srgb, var(--brand) 8%, transparent);
+      overflow: hidden;
+    }
+    #settingsModal #model-settings-panel .model-settings-detail > .model-profile-supplemental.settings-panel.is-embedded > .settings-panel-head {
+      display: grid;
+      align-content: center;
+      justify-content: stretch;
+      gap: 3px;
+      padding: 10px 12px;
+      border-right: 1px solid color-mix(in srgb, var(--brand) 16%, var(--line));
+      border-bottom: 0;
+      background: #fff !important;
+    }
+    #settingsModal #model-settings-panel .model-profile-supplemental .settings-section-title {
+      color: var(--text);
+    }
+    #settingsModal #model-settings-panel .model-profile-supplemental .settings-archive-total {
+      color: var(--brand);
+      font-size: 10px;
+      font-weight: 700;
+    }
+    #settingsModal #model-settings-panel .model-settings-detail > .model-profile-supplemental.settings-panel.is-embedded .settings-row-list {
+      background: #fff;
+    }
+    #settingsModal #model-settings-panel .model-settings-detail > .model-profile-supplemental.settings-panel.is-embedded .settings-row-list > .settings-row {
+      min-height: 62px;
+      grid-template-columns: 142px minmax(120px, 190px);
+      gap: 14px;
+      align-items: center;
+      justify-content: start;
+      padding: 10px 12px;
+      background: #fff;
+    }
+    #settingsModal #model-settings-panel .model-profile-supplemental .settings-row-actions:empty {
+      display: none;
+    }
+    #settingsModal #model-settings-panel .model-profile-supplemental .settings-row-title {
+      color: var(--text);
+      font-weight: 700;
+    }
+    .model-profile-settings-row .settings-row-main {
+      display: grid;
+      gap: 2px;
+    }
+    .model-profile-settings-row .settings-row-title {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .model-profile-settings-row .settings-row-meta {
+      color: color-mix(in srgb, var(--muted) 88%, transparent);
+      font-size: 10px;
+      line-height: 1.35;
+    }
+    #settingsModal .model-profile-editor .settings-value {
+      min-height: 32px;
+      border-color: color-mix(in srgb, var(--line) 78%, transparent);
+      background: #fff;
+      font-size: 12px;
+    }
+    .model-profile-footnote {
+      margin: 0;
+      padding: 8px 0 0;
+      color: color-mix(in srgb, var(--muted) 90%, transparent);
+      font-size: 10px;
+    }
+    .model-profile-empty {
+      min-height: 96px;
+      display: grid;
+      place-content: center;
+      gap: 4px;
+      border: 1px dashed var(--line);
+      border-radius: 10px;
+      color: var(--muted);
+      text-align: center;
+    }
+    .model-profile-empty strong { color: var(--text); font-size: 13px; }
+    .model-profile-empty span { font-size: 11px; }
     .multi-agent-overview { display: grid; gap: 14px; align-content: start; }
     .multi-agent-lede {
       margin: 0;
@@ -920,6 +919,173 @@
       overflow: hidden;
     }
     .multi-agent-flow li + li { border-top: 1px solid var(--line); }
+    /* 外框独立绘制，选中行可覆盖重叠段且不会留下半截圆角线。 */
+    .model-profile-flow.multi-agent-flow {
+      position: relative;
+      isolation: isolate;
+      display: flex;
+      flex-direction: column;
+      margin: 0;
+      border: 0;
+      border-radius: 12px;
+      overflow: visible;
+      background: #fff;
+      box-shadow: 0 8px 22px color-mix(in srgb, var(--brand) 10%, transparent);
+    }
+    .model-profile-flow.multi-agent-flow::before {
+      content: '';
+      position: absolute;
+      z-index: 1;
+      inset: 0;
+      border: 1px solid color-mix(in srgb, var(--brand) 28%, var(--line));
+      border-radius: inherit;
+      pointer-events: none;
+    }
+    .model-profile-flow.multi-agent-flow > li {
+      position: relative;
+      z-index: 0;
+      flex: 0 0 auto;
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
+      background: #fff;
+    }
+    .model-profile-flow.multi-agent-flow > li + li { border-top: 1px solid var(--line); }
+    .model-profile-flow.multi-agent-flow > li:has(.active) {
+      z-index: 3;
+      width: calc(100% + 28px);
+      margin-left: -14px;
+      margin-right: -14px;
+      /* 保持视觉无底色，同时用实心白底盖住下层列表边框。 */
+      background: #fff;
+      border-radius: 12px;
+    }
+    .model-profile-flow-item.multi-agent-flow-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 0;
+      width: 100%;
+      min-height: 52px;
+      background: #fff;
+      box-shadow: none;
+      text-align: left;
+      opacity: 0.78;
+      transition: min-height 160ms ease, opacity 160ms ease, background 160ms ease, color 160ms ease;
+    }
+    .model-profile-flow-item.multi-agent-flow-item:hover {
+      background: color-mix(in srgb, var(--brand-soft) 28%, #fff);
+      opacity: 0.92;
+    }
+    .model-profile-flow-item.multi-agent-flow-item.active {
+      min-height: 72px;
+      opacity: 1;
+      width: 100%;
+      margin: 0;
+      border: 1px solid color-mix(in srgb, var(--brand) 42%, var(--line));
+      border-radius: 12px;
+      background: #fff;
+      box-shadow:
+        inset 4px 0 0 var(--brand),
+        0 10px 24px color-mix(in srgb, var(--brand) 10%, transparent);
+    }
+    html.is-model-profile-selection-transition::view-transition-old(root) {
+      animation: none;
+      opacity: 0;
+    }
+    html.is-model-profile-selection-transition::view-transition-new(root) {
+      animation: none;
+      mix-blend-mode: normal;
+    }
+    html.is-model-profile-selection-transition::view-transition-group(model-profile-selection) {
+      z-index: 1000;
+      animation-duration: 280ms;
+      animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    html.is-model-profile-selection-transition::view-transition-old(model-profile-selection),
+    html.is-model-profile-selection-transition::view-transition-new(model-profile-selection) {
+      animation-duration: 280ms;
+      mix-blend-mode: normal;
+    }
+    .model-profile-flow-item .multi-agent-flow-index {
+      width: 24px;
+      height: 24px;
+      font-size: 11px;
+    }
+    .model-profile-flow-item.is-current .multi-agent-flow-index,
+    .model-profile-flow-item.active .multi-agent-flow-index {
+      width: 30px;
+      height: 30px;
+      font-size: 13px;
+      background: var(--brand);
+      color: #fff;
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent);
+    }
+    .model-profile-flow-item .multi-agent-flow-copy strong {
+      font-size: 12px;
+      color: color-mix(in srgb, var(--text) 82%, var(--muted));
+    }
+    .model-profile-flow-item .multi-agent-flow-copy span { font-size: 11px; }
+    .model-profile-flow-item.active .multi-agent-flow-copy strong {
+      color: var(--text);
+      font-size: 15px;
+    }
+    .model-profile-flow-item.active .multi-agent-flow-copy span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .model-profile-flow-item.active .multi-agent-role-status {
+      color: var(--text);
+    }
+    .model-profile-flow-item.active .multi-agent-role-status.is-live {
+      color: var(--brand);
+    }
+    .model-profile-flow-item .multi-agent-role-status.model-profile-current-status.is-live {
+      min-height: 26px;
+      padding: 0 9px;
+      border: 1px solid var(--brand);
+      border-radius: 999px;
+      background: var(--brand);
+      color: #fff;
+      font-weight: 700;
+    }
+    .model-profile-flow-item.active .model-profile-activate-button,
+    .model-profile-flow-item.active .model-profile-copy-button {
+      border-color: color-mix(in srgb, var(--brand) 34%, var(--line));
+      background: #fff;
+      color: var(--brand);
+    }
+    .model-profile-flow-item.active .model-profile-copy-button {
+      color: var(--text);
+    }
+    .model-profile-flow-item.active .model-profile-activate-button:hover,
+    .model-profile-flow-item.active .model-profile-copy-button:hover {
+      border-color: var(--brand);
+      background: var(--brand-soft);
+      color: var(--brand);
+    }
+    .model-profile-flow-select {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: 30px minmax(0, 1fr);
+      gap: 12px;
+      align-items: center;
+      padding: 8px 0 8px 14px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--text);
+      box-shadow: none;
+      text-align: left;
+      cursor: pointer;
+    }
+    .model-profile-flow-item.active .model-profile-flow-select { padding: 14px 0 14px 14px; }
+    .model-profile-flow-select:hover { color: var(--brand); }
+    .model-profile-flow-flags {
+      padding-right: 14px;
+      align-items: center;
+    }
     .multi-agent-flow-item {
       width: 100%;
       display: grid;
@@ -1100,8 +1266,40 @@
     }
     .multi-agent-shared-note > div { min-width: 0; display: grid; gap: 6px; }
     @media (max-width: 720px) {
+      #settingsModal .material-modal-panel {
+        min-width: 0;
+        grid-template-columns: minmax(0, 1fr);
+        overflow-x: hidden;
+      }
+      #settingsModalBody {
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+      }
+      #settingsModal .modal-head {
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+        box-sizing: border-box;
+        padding: 0 36px 0 0;
+      }
+      #settingsModal .modal-title {
+        min-width: 0;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 8px;
+      }
+      #settingsModal .modal-sub {
+        position: static;
+        grid-column: 1 / -1;
+        width: 100%;
+        max-width: 100%;
+        transform: none;
+        overflow: hidden;
+      }
+      #settingsModal .settings-status { width: 100%; }
       .multi-agent-settings {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
         min-height: 0;
       }
       .multi-agent-nav {
@@ -1122,11 +1320,34 @@
       }
       .multi-agent-nav-item { flex: 0 0 auto; }
       .multi-agent-panel { min-height: 0; padding: 14px; }
-      .model-settings-panel { min-height: 0; }
-      .model-profile-form { grid-template-columns: 1fr; padding-left: 10px; }
-      .model-profile-toolbar { align-items: flex-start; }
       .multi-agent-flow-item { grid-template-columns: 28px minmax(0, 1fr); }
       .multi-agent-flow-item .multi-agent-role-flags { grid-column: 2; justify-content: flex-start; }
+      .model-profile-flow-item.multi-agent-flow-item {
+        grid-template-columns: 1fr;
+        gap: 0;
+      }
+      .model-profile-flow-select { padding-right: 14px; }
+      #settingsModal #model-settings-panel .model-settings-detail > .model-profile-supplemental.settings-panel.is-embedded {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      #settingsModal #model-settings-panel .model-settings-detail > .model-profile-supplemental.settings-panel.is-embedded > .settings-panel-head {
+        border-right: 0;
+        border-bottom: 1px solid color-mix(in srgb, var(--brand) 16%, var(--line));
+      }
+      .model-profile-flow-flags {
+        grid-column: 1;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+        padding: 0 14px 12px 54px;
+      }
+      #settingsModal .model-profile-settings-row {
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+      .model-profile-editor .settings-panel-head {
+        flex-direction: column;
+        align-items: stretch;
+      }
       .multi-agent-detail-grid { grid-template-columns: 1fr; }
       .multi-agent-shared-note { flex-direction: column; }
       .multi-agent-role-skill-item { grid-template-columns: 1fr; }
@@ -1135,5 +1356,6 @@
     @media (prefers-reduced-motion: reduce) {
       .multi-agent-nav-item,
       .multi-agent-flow-item,
-      .model-profile-chevron { transition: none; }
+      .model-profile-copy-button,
+      .model-profile-activate-button { transition: none; }
     }

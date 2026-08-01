@@ -104,14 +104,6 @@
         label: '共享模型',
       },
     ];
-    const modelSettingsCategories = ['文本/视频规划模型', '多模态模型', '图片模型', '视频模型'];
-    const modelProfileCategoryKeys = {
-      '文本/视频规划模型': 'llm',
-      '多模态模型': 'multimodal',
-      '图片模型': 'image',
-      '视频模型': 'video',
-    };
-
     function renderSettingsModal() {
       if (!els.settingsModal) return;
       const visible = !!state.settingsModal.visible;
@@ -177,175 +169,6 @@
       return tabs;
     }
 
-    function buildModelSettingsNavMarkup(groups, activeCategory) {
-      const categories = modelSettingsCategories.filter((category) => groups.some((group) => group.label === category));
-      if (!categories.length) return '';
-      return `
-        <nav class="multi-agent-nav model-settings-nav" aria-label="模型设置分类">
-          <div class="multi-agent-nav-group" role="tablist" aria-label="模型类型">
-          ${categories.map((category) => {
-            const active = category === activeCategory;
-            return `<button type="button" class="multi-agent-nav-item model-settings-nav-item${active ? ' active' : ''}" data-model-settings-category="${escapeHtml(category)}" role="tab" aria-selected="${active ? 'true' : 'false'}" aria-controls="model-settings-panel" tabindex="${active ? '0' : '-1'}"><span>${escapeHtml(category)}</span></button>`;
-          }).join('')}
-          </div>
-        </nav>
-      `;
-    }
-
-    function buildModelSettingsPanelMarkup(groups, group, labelledBy, density) {
-      const categoryKey = modelProfileCategoryKeys[group.label];
-      const bucket = state.authSettings?.modelProfiles?.[categoryKey] || { activeId: '', profiles: [] };
-      const profiles = Array.isArray(bucket.profiles) ? bucket.profiles : [];
-      const expandedProfiles = state.settingsModal.expandedModelProfiles || {};
-      const expandedId = Object.prototype.hasOwnProperty.call(expandedProfiles, categoryKey)
-        ? expandedProfiles[categoryKey]
-        : bucket.activeId || profiles[0]?.id || '';
-      const supplementalFields = group.fields.filter((field) => !['接口地址', 'API Key', '模型名', '模板'].includes(String(field.label || '')));
-      return `
-        <section id="settings-category-panel" class="multi-agent-settings model-settings-layout${density ? ` ${density}` : ''}" role="tabpanel" aria-labelledby="${labelledBy}">
-          ${buildModelSettingsNavMarkup(groups, group.label)}
-          <div id="model-settings-panel" class="model-settings-panel" role="tabpanel">
-            <div class="model-profile-toolbar">
-              <div><strong>${escapeHtml(group.label)}</strong><span>${profiles.length} 套配置</span></div>
-              <button type="button" class="settings-action-button" data-create-model-profile="${escapeHtml(categoryKey)}">＋ 新建备选模型</button>
-            </div>
-            <div class="model-profile-list">
-              ${profiles.map((profile, index) => buildModelProfileCardMarkup(categoryKey, profile, bucket.activeId, expandedId, index)).join('')}
-            </div>
-            ${supplementalFields.length ? `<div class="settings-row-list model-profile-supplemental">${supplementalFields.map((field) => buildSettingsRowMarkup(field)).join('')}</div>` : ''}
-          </div>
-        </section>
-      `;
-    }
-
-    function buildModelProfileCardMarkup(categoryKey, profile, activeId, expandedId, index) {
-      const active = profile.id === activeId;
-      const expanded = profile.id === expandedId;
-      const saving = state.settingsModal.savingModelProfileId === profile.id;
-      const templateOptions = categoryKey === 'video'
-        ? videoTemplateOptions().map((item) => `<option value="${escapeHtml(item.value)}" ${profile.template === item.value ? 'selected' : ''}>${escapeHtml(item.label)}</option>`).join('')
-        : '';
-      return `
-        <article class="model-profile-card${active ? ' is-active' : ''}${expanded ? ' is-expanded' : ''}">
-          <div class="model-profile-summary" data-toggle-model-profile="${escapeHtml(categoryKey)}:${escapeHtml(profile.id)}" role="button" tabindex="0" aria-expanded="${expanded ? 'true' : 'false'}">
-            <span class="model-profile-chevron">›</span>
-            <span class="model-profile-index">${index + 1}</span>
-            <span class="model-profile-summary-copy">
-              <span class="model-profile-title-row">
-                <strong>${escapeHtml(profile.name || `配置 ${index + 1}`)}</strong>
-                <button type="button" class="model-profile-switch${active ? ' is-active' : ''}" data-switch-model-profile="${escapeHtml(categoryKey)}:${escapeHtml(profile.id)}" role="switch" aria-checked="${active ? 'true' : 'false'}" aria-label="${active ? '当前启用' : '设为当前配置'}" title="${active ? '当前启用' : '切换为当前配置'}"><span></span></button>
-              </span>
-              <small>${escapeHtml(profile.model || '尚未填写模型')}</small>
-            </span>
-            <button type="button" class="model-profile-copy-button" data-duplicate-model-profile="${escapeHtml(categoryKey)}:${escapeHtml(profile.id)}" aria-label="复制${escapeHtml(profile.name || `配置 ${index + 1}`)}">复制</button>
-          </div>
-          <div class="model-profile-collapse" aria-hidden="${expanded ? 'false' : 'true'}">
-            <div class="model-profile-collapse-inner">
-            <form class="model-profile-form" data-model-profile-form data-category="${escapeHtml(categoryKey)}" data-profile-id="${escapeHtml(profile.id)}" ${expanded ? '' : 'inert'}>
-              <label><span>配置名称</span><input name="name" value="${escapeHtml(profile.name || '')}" maxlength="60" /></label>
-              <label><span>接口地址</span><input name="baseUrl" value="${escapeHtml(profile.baseUrl || '')}" placeholder="https://api.example.com" spellcheck="false" /></label>
-              <label><span>API Key</span><input name="apiKey" type="password" value="" placeholder="${profile.hasApiKey ? '已保存，留空保持不变' : '填写 API Key'}" autocomplete="off" spellcheck="false" /></label>
-              <label><span>模型名</span><input name="model" value="${escapeHtml(profile.model || '')}" spellcheck="false" /></label>
-              ${categoryKey === 'video' ? `<label><span>模板</span><select name="template">${templateOptions}</select></label>` : ''}
-              <div class="model-profile-actions">
-                ${categoryKey === 'video' ? '<button type="button" class="settings-action-button" data-open-video-params="1">参数设置</button>' : ''}
-                ${active ? '' : `<button type="button" class="settings-action-button danger" data-delete-model-profile="${escapeHtml(categoryKey)}:${escapeHtml(profile.id)}">删除</button>`}
-                <button type="submit" class="primary-button" ${saving ? 'disabled' : ''}>${saving ? '保存中' : '保存配置'}</button>
-              </div>
-            </form>
-            </div>
-          </div>
-        </article>
-      `;
-    }
-
-    async function mutateModelProfile(action, category, profileId = '', profile = {}) {
-      const res = await fetch('/api/model-profiles', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, category, profileId, profile }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data?.ok === false) throw new Error(data?.error || '模型配置操作失败');
-      state.authSettings = {
-        ...(state.authSettings || {}),
-        modelProfiles: data.modelProfiles || {},
-      };
-      return data.modelProfiles || {};
-    }
-
-    async function createModelProfileFromSettings(category) {
-      const profiles = await mutateModelProfile('create', category, '', { name: '备选配置' });
-      const items = profiles?.[category]?.profiles || [];
-      const created = items[items.length - 1];
-      if (created) {
-        state.settingsModal.expandedModelProfiles = {
-          ...(state.settingsModal.expandedModelProfiles || {}),
-          [category]: created.id,
-        };
-      }
-      renderSettingsModal();
-    }
-
-    async function duplicateModelProfileFromSettings(category, profileId) {
-      const profiles = await mutateModelProfile('duplicate', category, profileId);
-      const items = profiles?.[category]?.profiles || [];
-      const duplicate = items[items.length - 1];
-      if (duplicate) {
-        state.settingsModal.expandedModelProfiles = {
-          ...(state.settingsModal.expandedModelProfiles || {}),
-          [category]: duplicate.id,
-        };
-      }
-      renderSettingsModal();
-    }
-
-    async function activateModelProfileFromSettings(category, profileId) {
-      await mutateModelProfile('activate', category, profileId);
-      await refreshAuthSettings();
-      await refreshVideoModelSettings();
-      await refreshHealth();
-      renderSettingsModal();
-    }
-
-    async function deleteModelProfileFromSettings(category, profileId) {
-      if (!window.confirm('确定删除这套备选模型配置吗？')) return;
-      await mutateModelProfile('delete', category, profileId);
-      state.settingsModal.expandedModelProfiles = {
-        ...(state.settingsModal.expandedModelProfiles || {}),
-        [category]: '',
-      };
-      renderSettingsModal();
-    }
-
-    document.addEventListener('submit', async (event) => {
-      const form = event.target.closest('[data-model-profile-form]');
-      if (!form) return;
-      event.preventDefault();
-      const category = String(form.dataset.category || '');
-      const profileId = String(form.dataset.profileId || '');
-      const values = new FormData(form);
-      state.settingsModal.savingModelProfileId = profileId;
-      renderSettingsModal();
-      try {
-        await mutateModelProfile('update', category, profileId, {
-          name: String(values.get('name') || '').trim(),
-          baseUrl: String(values.get('baseUrl') || '').trim(),
-          apiKey: String(values.get('apiKey') || '').trim(),
-          model: String(values.get('model') || '').trim(),
-          template: String(values.get('template') || '').trim(),
-        });
-        await refreshAuthSettings();
-        await refreshVideoModelSettings();
-        await refreshHealth();
-      } catch (error) {
-        window.alert(error?.message || '模型配置保存失败');
-      } finally {
-        state.settingsModal.savingModelProfileId = '';
-        renderSettingsModal();
-      }
-    });
-
     function buildAuthSettingsMarkup(groups, activeCategory) {
       if (!groups.length) {
         return '<div class="empty">当前没有可显示的鉴权信息。</div>';
@@ -368,7 +191,7 @@
       const isArchive = group.label === '归档';
       const density = fieldCount <= 2 ? 'is-compact' : fieldCount <= 5 ? 'is-cozy' : '';
       if (modelSettingsCategories.includes(group.label)) {
-        return buildModelSettingsPanelMarkup(groups, group, labelledBy, density);
+        return buildModelSettingsPanelMarkup(groups, group, labelledBy);
       }
       return `
         <div id="settings-category-panel" class="settings-panel${density ? ` ${density}` : ''}" role="tabpanel" aria-labelledby="${labelledBy}">
@@ -577,12 +400,12 @@
     });
 
     document.addEventListener('keydown', (event) => {
-      const trigger = event.target.closest('.multi-agent-nav-item[role="tab"]');
+      const trigger = event.target.closest('.multi-agent-nav-item[role="tab"][data-agent-settings-role]');
       if (!trigger) return;
       const keys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'];
       if (!keys.includes(event.key)) return;
       const root = trigger.closest('.multi-agent-nav');
-      const tabs = Array.from(root?.querySelectorAll('.multi-agent-nav-item[role="tab"]') || []);
+      const tabs = Array.from(root?.querySelectorAll('.multi-agent-nav-item[role="tab"][data-agent-settings-role]') || []);
       if (!tabs.length) return;
       event.preventDefault();
       const currentIndex = Math.max(0, tabs.indexOf(trigger));

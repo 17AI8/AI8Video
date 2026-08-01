@@ -214,45 +214,7 @@
       if (toggleModelProfileTrigger) {
         event.preventDefault();
         const [category, profileId] = String(toggleModelProfileTrigger.getAttribute('data-toggle-model-profile') || '').split(':');
-        const shouldExpand = toggleModelProfileTrigger.getAttribute('aria-expanded') !== 'true';
-        state.settingsModal.expandedModelProfiles = {
-          ...(state.settingsModal.expandedModelProfiles || {}),
-          [category]: shouldExpand ? profileId : '',
-        };
-        const list = toggleModelProfileTrigger.closest('.model-profile-list');
-        if (!list || list.dataset.drawerAnimating === 'true') return;
-        const modal = toggleModelProfileTrigger.closest('.material-modal-panel');
-        const settingsPanel = toggleModelProfileTrigger.closest('#settings-category-panel');
-        const modelSettingsPanel = toggleModelProfileTrigger.closest('#model-settings-panel');
-        const lockedModalHeight = modal?.getBoundingClientRect().height || 0;
-        const lockedPanelHeight = settingsPanel?.getBoundingClientRect().height || 0;
-        if (modal && lockedModalHeight) {
-          modal.style.height = `${lockedModalHeight}px`;
-          modal.style.overflow = 'hidden';
-        }
-        if (settingsPanel && lockedPanelHeight) {
-          settingsPanel.style.height = `${lockedPanelHeight}px`;
-          settingsPanel.style.overflow = 'hidden';
-        }
-        modelSettingsPanel?.classList.add('is-drawer-animating');
-        list.dataset.drawerAnimating = 'true';
-        const drawerAnimations = [];
-        Array.from(list.querySelectorAll('.model-profile-card')).forEach((card) => {
-          const summary = card.querySelector('[data-toggle-model-profile]');
-          const isTarget = shouldExpand
-            && summary?.getAttribute('data-toggle-model-profile') === `${category}:${profileId}`;
-          const isExpanded = summary?.getAttribute('aria-expanded') === 'true';
-          if (isTarget !== isExpanded) drawerAnimations.push(animateModelProfileDrawer(card, isTarget));
-        });
-        await Promise.all(drawerAnimations);
-        await resizeSettingsModalAfterDrawer(
-          modal,
-          lockedModalHeight,
-          settingsPanel,
-          lockedPanelHeight,
-        );
-        modelSettingsPanel?.classList.remove('is-drawer-animating');
-        delete list.dataset.drawerAnimating;
+        selectModelProfileFromSettings(category, profileId);
         return;
       }
       const createModelProfileTrigger = event.target.closest('[data-create-model-profile]');
