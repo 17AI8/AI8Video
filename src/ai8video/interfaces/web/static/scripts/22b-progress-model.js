@@ -21,8 +21,10 @@
       const archiveStarted = archivingCount > 0 || (Array.isArray(progress.events) && progress.events.some(
         (event) => String(event?.status || '').trim() === 'archiving'
       ));
-      const terminal = ['cancelled', 'canceled'].includes(status)
-        || (total > 0 && finished + failed >= total);
+      const terminal = !planning && (
+        ['cancelled', 'canceled'].includes(status)
+        || (total > 0 && finished + failed >= total)
+      );
       let activeStepIndex = 0;
       if (!terminal && manualTailFrameWait) activeStepIndex = 2;
       else if (!terminal && (planning || planningCount)) activeStepIndex = 1;

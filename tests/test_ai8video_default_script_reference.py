@@ -38,7 +38,7 @@ class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
 
         self.assertEqual(mismatch_reason, "")
 
-    def test_temporary_script_knowledge_is_bounded_and_can_add_default_reference(self) -> None:
+    def test_temporary_script_knowledge_is_bounded_and_preserves_structured_payload(self) -> None:
         payload = {
             "title": "猜剧本临时知识库 · TEMU 教程",
             "summary": "根据宫格、台词和剧本骨架生成。",
@@ -59,16 +59,40 @@ class AI8VideoDefaultScriptReferenceTest(unittest.TestCase):
             include_default_reference=True,
         )
 
-        self.assertIn("[临时知识库｜猜剧本临时知识库 · TEMU 教程]", enriched)
-        self.assertIn("[叶节点 1｜开场 / 冲突]", enriched)
-        self.assertIn("发送后自动解绑，不会写入正式知识库", enriched)
         self.assertIn("同时使用当前已选知识库参考", enriched)
         self.assertLessEqual(len(enriched), default_script_reference.TEMPORARY_SCRIPT_REFERENCE_MAX_CHARS + 100)
-        control_text, context = default_script_reference.split_temporary_script_knowledge(enriched)
+        control_text, temporary = default_script_reference.split_temporary_script_knowledge(enriched)
         self.assertIn("生成 2 条 10 秒视频", control_text)
         self.assertIn("同时使用当前已选知识库参考", control_text)
         self.assertNotIn("前三秒先展示", control_text)
-        self.assertIn("前三秒先展示", context)
+        self.assertEqual(temporary["title"], "猜剧本临时知识库 · TEMU 教程")
+        self.assertIn("前三秒先展示", temporary["leaves"][0]["content"])
+        self.assertLessEqual(
+            len(temporary["leaves"][0]["content"]),
+            default_script_reference.TEMPORARY_SCRIPT_REFERENCE_LEAF_MAX_CHARS,
+        )
+
+    def test_temporary_script_knowledge_uses_shared_bm25_retrieval(self) -> None:
+        payload = {
+            "videoKey": "tutorial.mp4",
+            "title": "猜剧本临时知识库 · 教程",
+            "summary": "跨境私域教程",
+            "tags": ["私域", "支付"],
+            "leaves": [
+                {"heading": "开场", "content": "开场介绍产品界面。"},
+                {"heading": "支付沉淀", "content": "支付完成后自动沉淀客户关系。"},
+                {"heading": "收尾", "content": "结尾展示品牌标志。"},
+            ],
+        }
+
+        enriched = default_script_reference.apply_retrieved_temporary_script_knowledge(
+            "生成一条讲支付沉淀客户关系的视频",
+            payload,
+        )
+
+        self.assertIn("临时知识库《猜剧本临时知识库 · 教程》相关知识段", enriched)
+        self.assertIn("支付完成后自动沉淀客户关系", enriched)
+        self.assertNotIn("开场介绍产品界面", enriched)
 
     def test_temporary_script_knowledge_requires_leaf_content(self) -> None:
         with self.assertRaisesRegex(ValueError, "leaves is required"):

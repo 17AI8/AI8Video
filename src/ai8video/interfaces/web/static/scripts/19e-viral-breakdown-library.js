@@ -33,7 +33,9 @@
       const badges = viralBreakdownLibraryBadges(item)
         .map((label) => `<span class="viral-breakdown-library-badge">${escapeHtml(label)}</span>`)
         .join('');
+      const previews = viralBreakdownLibraryPreviewMarkup(item);
       return `<div class="viral-breakdown-library-item${isSelected ? ' is-selected' : ''}">
+        ${previews}
         <input type="checkbox" data-viral-library-select="${escapeHtml(key)}" aria-label="选择 ${escapeHtml(String(item?.name || key))}" ${isSelected ? 'checked' : ''}>
         <div class="viral-breakdown-library-copy">
           <div class="viral-breakdown-library-name" title="${escapeHtml(String(item?.name || key))}">${escapeHtml(String(item?.name || key))}</div>
@@ -41,6 +43,28 @@
         </div>
         <button type="button" class="viral-breakdown-library-delete" data-delete-viral-library-video="${escapeHtml(key)}">删除</button>
       </div>`;
+    }
+
+    function viralBreakdownLibraryPreviewMarkup(item) {
+      const frameCount = Number(item?.frameCount || 0);
+      const frameDirectoryKey = String(item?.frameDirKey || '').replace(/\/$/, '');
+      if (!frameDirectoryKey || frameCount < 1) return '';
+      const previewCount = Math.min(frameCount, 5);
+      const frameIndexes = Array.from({ length: previewCount }, (_, previewIndex) => {
+        if (previewCount === 1) return 1;
+        return Math.round(previewIndex * (frameCount - 1) / (previewCount - 1)) + 1;
+      });
+      const mediaWidth = Number(item?.media?.width || 0);
+      const mediaHeight = Number(item?.media?.height || 0);
+      const orientation = mediaWidth > mediaHeight
+        ? 'is-landscape'
+        : (mediaHeight > mediaWidth ? 'is-portrait' : 'is-square');
+      const images = frameIndexes.map((frameIndex) => {
+        const frameKey = `${frameDirectoryKey}/frame-${String(frameIndex).padStart(4, '0')}.jpg`;
+        const source = `/api/viral-breakdown/file?key=${encodeURIComponent(frameKey)}`;
+        return `<img src="${source}" alt="截图 ${frameIndex}" loading="lazy">`;
+      }).join('');
+      return `<div class="viral-breakdown-library-previews ${orientation}" style="--preview-count: ${previewCount}">${images}</div>`;
     }
 
     function openViralBreakdownLibraryModal() {
@@ -81,6 +105,22 @@
       });
     }
 
+    function clearDeletedTemporaryKnowledgeBindings(videoKeys) {
+      const deletedKeys = new Set(videoKeys);
+      let clearedCount = 0;
+      state.sessions.forEach((session) => {
+        const boundVideoKey = String(session?.temporaryScriptKnowledge?.videoKey || '');
+        if (!boundVideoKey || !deletedKeys.has(boundVideoKey)) return;
+        session.temporaryScriptKnowledge = null;
+        clearedCount += 1;
+      });
+      if (!clearedCount) return 0;
+      persistSessions();
+      renderScriptReferenceButton();
+      renderScriptReferenceDrawer();
+      return clearedCount;
+    }
+
     async function deleteViralBreakdownLibraryItems(videoKeys) {
       const keys = Array.from(new Set((videoKeys || []).map((key) => String(key || '')).filter(Boolean)));
       if (!keys.length || state.viralBreakdown.libraryDeleting) return;
@@ -97,6 +137,7 @@
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.ok) throw new Error(data?.error || '删除爆款拆解素材失败');
         clearDeletedViralBreakdownDrafts(keys);
+        clearDeletedTemporaryKnowledgeBindings(keys);
         state.viralBreakdown.librarySelectedKeys = [];
         await refreshViralBreakdownWorkspace({ keepSelection: true });
         state.viralBreakdown.notice = `已删除 ${Number(data.deletedCount || keys.length)} 个视频及其相关产物。`;

@@ -336,6 +336,29 @@
       margin-bottom: 6px;
     }
 
+    .assistant-error-detail {
+      white-space: pre-line;
+    }
+
+    .assistant-error-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 10px;
+    }
+
+    .assistant-error-actions .guide-action-button {
+      flex: 0 0 auto;
+      min-width: 54px;
+      border-color: rgba(100, 116, 139, 0.2);
+      color: #64748b;
+    }
+
+    .assistant-error-actions .guide-action-button:hover:not(:disabled) {
+      border-color: rgba(220, 38, 38, 0.2);
+      background: rgba(254, 226, 226, 0.66);
+      color: #b42318;
+    }
+
     .mini-card.pending-card {
       background: #eef4ff;
       border-color: rgba(47, 109, 183, 0.18);

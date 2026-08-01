@@ -73,6 +73,71 @@ def build_bm25_corpus(sections: Sequence[Mapping[str, Any]]) -> BM25CorpusData:
     )
 
 
+def search_bm25_sections_in_memory(
+    query: str,
+    sections: Sequence[Mapping[str, Any]],
+    *,
+    limit: int,
+    source_id: str,
+    source_title: str,
+) -> list[dict[str, Any]]:
+    """Search one request-scoped corpus with the same tokenizer and BM25 math as PostgreSQL."""
+    query_terms = build_bm25_query_terms(query)
+    corpus = build_bm25_corpus(sections)
+    if not query_terms or not corpus.sections:
+        return []
+
+    document_frequencies = {
+        term: sum(1 for section in corpus.sections if term in section.term_frequencies)
+        for term in query_terms
+    }
+    candidates: list[dict[str, Any]] = []
+    relative_path = f"temporary:{source_id or 'request'}"
+    for candidate_id, section in enumerate(corpus.sections, start=1):
+        score = sum(
+            calculate_bm25_term_score(
+                document_count=corpus.section_count,
+                document_frequency=document_frequencies[term],
+                term_frequency=section.term_frequencies.get(term, 0),
+                section_length=section.token_count,
+                average_section_length=corpus.average_section_length,
+            )
+            for term in query_terms
+        )
+        if score <= 0:
+            continue
+        candidates.append({
+            "id": candidate_id,
+            "documentId": 0,
+            "documentName": source_title,
+            "documentTitle": source_title,
+            "relativePath": relative_path,
+            "sectionOrder": section.section_order,
+            "heading": section.heading,
+            "content": section.content,
+            "score": score,
+            "bm25Score": score,
+            "exactMatchScore": 0.0,
+            "trigramScore": 0.0,
+            "retrievalChannels": ["bm25"],
+            "retrievalBackend": "memory_bm25",
+            "retrievalTrace": {
+                "retrievalMode": "bm25",
+                "retrievalBackend": "memory_bm25",
+                "relativePath": relative_path,
+                "documentId": 0,
+                "indexVersion": BM25_INDEX_VERSION,
+                "tokenizerVersion": BM25_TOKENIZER_VERSION,
+                "corpusHash": corpus.corpus_hash,
+                "queryTerms": query_terms,
+                "sectionCount": corpus.section_count,
+                "knowledgeSource": "temporary",
+            },
+        })
+    candidates.sort(key=lambda item: (-float(item["score"]), int(item["sectionOrder"])))
+    return candidates[: max(1, int(limit))]
+
+
 def build_bm25_section(
     section: Mapping[str, Any],
     *,

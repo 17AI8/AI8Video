@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Callable
 from typing import Any
 
 from ai8video.knowledge.script_knowledge import (
@@ -23,7 +24,6 @@ def retrieve_reference_context(
     plan = query_plan or _fallback_query_plan(text, query_hint)
     query = build_retrieval_query(str(plan.get("query") or ""), query_hint=query_hint)
     recall_limit = _bounded_env_int("AI8VIDEO_SCRIPT_RECALL_TOP_K", 20, 5, 30)
-    inject_top_k = _bounded_env_int("AI8VIDEO_SCRIPT_INJECT_TOP_K", 5, 1, 10)
     if not str(relative_path or "").strip():
         return _traced_failure("missing_document_scope", query)
     try:
@@ -37,16 +37,57 @@ def retrieve_reference_context(
         return _traced_failure("postgres_unavailable", query)
     except Exception as exc:
         return _traced_failure(f"retrieval_failed:{_safe_error(exc)}", query)
+    return retrieve_candidate_context(
+        query,
+        candidates,
+        rerank_llm=rerank_llm,
+        query_plan=plan,
+        candidate_validator=lambda items: _candidate_scope_error(items, relative_path),
+    )
+
+
+def retrieve_knowledge_context(
+    text: str,
+    *,
+    candidate_retriever: Callable[[str, int], list[dict[str, Any]]],
+    rerank_llm: RerankLLM | None = None,
+    query_hint: str = "",
+    query_plan: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    plan = query_plan or _fallback_query_plan(text, query_hint)
+    query = build_retrieval_query(str(plan.get("query") or ""), query_hint=query_hint)
+    recall_limit = _bounded_env_int("AI8VIDEO_SCRIPT_RECALL_TOP_K", 20, 5, 30)
+    try:
+        candidates = candidate_retriever(query, recall_limit)
+    except Exception as exc:
+        return _traced_failure(f"retrieval_failed:{_safe_error(exc)}", query)
+    return retrieve_candidate_context(
+        query,
+        candidates,
+        rerank_llm=rerank_llm,
+        query_plan=plan,
+    )
+
+
+def retrieve_candidate_context(
+    query: str,
+    candidates: list[dict[str, Any]],
+    *,
+    rerank_llm: RerankLLM | None,
+    query_plan: dict[str, Any],
+    candidate_validator: Callable[[list[dict[str, Any]]], str] | None = None,
+) -> dict[str, Any]:
     if not candidates:
         return _traced_failure("no_candidates", query)
-    scope_error = _candidate_scope_error(candidates, relative_path)
+    scope_error = candidate_validator(candidates) if candidate_validator else ""
     if scope_error:
         return _traced_failure(scope_error, query)
     retrieval_trace = _retrieval_trace(candidates)
-    ranking_query = str(plan.get("rankingQuery") or query)
+    ranking_query = str(query_plan.get("rankingQuery") or query)
+    inject_top_k = _bounded_env_int("AI8VIDEO_SCRIPT_INJECT_TOP_K", 5, 1, 10)
     reranked = _select_candidates(ranking_query, candidates, rerank_llm, inject_top_k)
     selected = list(reranked["candidates"])
-    scope_error = _candidate_scope_error(selected, relative_path)
+    scope_error = candidate_validator(selected) if candidate_validator else ""
     if scope_error:
         return _traced_failure(scope_error, query, retrieval_trace=retrieval_trace)
     retrieval_trace["selectedCandidateIds"] = [int(item.get("id") or 0) for item in selected]
@@ -57,7 +98,7 @@ def retrieve_reference_context(
     return {
         "ok": True,
         "query": query,
-        "queryPlan": plan,
+        "queryPlan": query_plan,
         "retrievalMode": str(retrieval_trace.get("retrievalMode") or "legacy"),
         "retrievalBackend": str(retrieval_trace.get("retrievalBackend") or "legacy"),
         "retrievalBackendFallbackReason": str(

@@ -194,6 +194,7 @@
         id: session.id,
         title: session.title,
         messages: (session.messages || []).slice(-messageLimit),
+        temporaryScriptKnowledge: session.temporaryScriptKnowledge || null,
       }));
     }
 
@@ -235,7 +236,6 @@
       }
       return false;
     }
-
 
 
 

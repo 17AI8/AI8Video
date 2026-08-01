@@ -48,7 +48,7 @@
             <button type="button" class="viral-transcript-chunk-action" data-transcript-tts="${index}" ${deleted ? 'disabled' : ''}>重新配音</button>
             <button type="button" class="viral-transcript-chunk-action is-danger" data-transcript-delete="${index}">${deleted ? '恢复' : '删除'}</button>
           </div>
-          <textarea rows="2" spellcheck="false" data-transcript-text="${index}" placeholder="${deleted ? '该时间槽已留空' : '输入该时间段台词'}">${escapeHtml(deleted ? '' : String(segment.text || ''))}</textarea>
+          <textarea rows="1" spellcheck="false" data-transcript-text="${index}" placeholder="${deleted ? '该时间槽已留空' : '输入该时间段台词'}">${escapeHtml(deleted ? '' : String(segment.text || ''))}</textarea>
         </article>`;
     }
 

@@ -61,6 +61,7 @@
       }
 
       const session = getActiveSession();
+      const confirmedSmartSplitVideos = getConfirmedSmartSplitVideos(session, value);
       const temporaryKnowledge = buildTemporaryScriptKnowledgeChatPayload();
       const useDefaultKnowledgeReference = !!temporaryKnowledge
         && !!state.scriptReference?.enabled
@@ -87,6 +88,7 @@
           body: JSON.stringify({
             sessionId: session.id,
             message: value,
+            confirmedSmartSplitVideos,
             temporaryKnowledge,
             useDefaultKnowledgeReference,
           }),
@@ -95,7 +97,6 @@
         if (!res.ok) {
           const recovered = await tryRecoverTimedOutChat(session, value, data);
           if (recovered) {
-            clearTemporaryScriptKnowledgeReference();
             clearGenerationProgress();
             persistSessions();
             await refreshHealth();
@@ -111,7 +112,6 @@
           }
           throw buildRequestError(data);
         }
-        clearTemporaryScriptKnowledgeReference();
         replaceLocalPendingPayload(session, buildAssistantPayload(data, session.id));
         clearGenerationProgress();
         persistSessions();
@@ -141,6 +141,18 @@
         renderStatus();
       }
     });
+
+    function getConfirmedSmartSplitVideos(session, message) {
+      const compactMessage = String(message || '').replace(/\s+/g, '');
+      const confirmationMessages = new Set(['确认分集', '确认并继续', '确认', '继续生成', '开始生成']);
+      if (!confirmationMessages.has(compactMessage)) return null;
+      const messages = Array.isArray(session?.messages) ? session.messages : [];
+      for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+        const plannedVideos = messages[messageIndex]?.payload?.meta?.guide?.plannedVideos;
+        if (Array.isArray(plannedVideos) && plannedVideos.length) return plannedVideos;
+      }
+      return null;
+    }
 
     function buildLocalPendingPayload(sessionId, text) {
       return {
@@ -232,13 +244,18 @@
       if (!pendingStatus || typeof pendingStatus !== 'object') return pendingStatus;
       const progress = pendingStatus.generationProgress;
       if (!progress || typeof progress !== 'object') return pendingStatus;
-      const originalItems = Array.isArray(progress.items) ? progress.items : [];
+      const progressStatus = String(progress.status || '').trim();
+      const receivedItems = Array.isArray(progress.items) ? progress.items : [];
+      // 规划状态由当前请求主导；丢弃同一会话残留的上一批终态结果。
+      const originalItems = progressStatus === 'planning'
+        ? receivedItems.filter((item) => ['planning', 'pending_submission'].includes(String(item?.status || '').trim()))
+        : receivedItems;
       const maxVideoIndex = originalItems.reduce((max, item, index) => (
         Math.max(max, Number(item?.videoIndex || 0) || index + 1)
       ), 0);
       const requested = Math.max(
         Number(pendingStatus.videoCount || 0) || 0,
-        Number(progress.totalRequested || 0) || 0,
+        progressStatus === 'planning' ? 0 : (Number(progress.totalRequested || 0) || 0),
         originalItems.length,
         maxVideoIndex
       );
@@ -289,6 +306,15 @@
 
     function mergeGenerationProgressSnapshot(previousProgress = {}, nextProgress = {}) {
       if (!nextProgress || typeof nextProgress !== 'object') return nextProgress;
+      const previousBatchId = String(previousProgress?.generationBatchId || '').trim();
+      const nextBatchId = String(nextProgress?.generationBatchId || '').trim();
+      const differentBatch = previousBatchId && nextBatchId && previousBatchId !== nextBatchId;
+      const authoritativeRecovery = !!(
+        nextProgress.readOnlyRecovery
+        || nextProgress.statelessProgress
+        || ['cancelled', 'canceled'].includes(String(nextProgress.status || '').trim())
+      );
+      if (differentBatch || authoritativeRecovery) return nextProgress;
       const previousItems = Array.isArray(previousProgress?.items) ? previousProgress.items : [];
       const nextItems = Array.isArray(nextProgress.items) ? nextProgress.items : [];
       if (!previousItems.length || previousItems.length <= nextItems.length) return nextProgress;
@@ -318,13 +344,20 @@
       const previousPending = payload?.pendingStatus || {};
       const incomingPending = extractPendingStatus(data, sessionId) || {};
       const incomingProgress = incomingPending.generationProgress;
+      const authoritativeRecovery = !!(
+        incomingPending.readOnlyRecovery
+        || incomingPending.statelessProgress
+        || incomingProgress?.readOnlyRecovery
+        || incomingProgress?.statelessProgress
+      );
       const generationProgress = incomingProgress
         ? mergeGenerationProgressSnapshot(previousPending.generationProgress, incomingProgress)
         : previousPending.generationProgress;
+      const pendingBase = authoritativeRecovery ? {} : previousPending;
       const nextPayload = {
         ...payload,
         pendingStatus: normalizePendingStatusProgress({
-          ...previousPending,
+          ...pendingBase,
           ...incomingPending,
           ...(generationProgress ? { generationProgress } : {}),
         }),

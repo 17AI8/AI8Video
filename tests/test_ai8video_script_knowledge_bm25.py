@@ -14,6 +14,7 @@ from ai8video.knowledge.script_knowledge_bm25 import (
     BM25_TOKENIZER_VERSION,
     build_bm25_corpus,
     calculate_bm25_term_score,
+    search_bm25_sections_in_memory,
 )
 from ai8video.knowledge.script_knowledge_query import plan_retrieval_query
 from ai8video.knowledge.script_knowledge_text import (
@@ -62,6 +63,24 @@ class ScriptKnowledgeBM25MathTest(unittest.TestCase):
         self.assertEqual(corpus.section_count, 0)
         self.assertEqual(corpus.average_section_length, 0)
         self.assertEqual(len(corpus.corpus_hash), 64)
+
+    def test_in_memory_search_uses_shared_bm25_ranking(self) -> None:
+        candidates = search_bm25_sections_in_memory(
+            "支付沉淀客户关系",
+            [
+                {"heading": "开场", "content": "开场展示产品界面。"},
+                {"heading": "客户沉淀", "content": "支付完成后自动沉淀客户关系。"},
+                {"heading": "结尾", "content": "结尾展示品牌标志。"},
+            ],
+            limit=5,
+            source_id="tutorial.mp4",
+            source_title="教程临时知识库",
+        )
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["heading"], "客户沉淀")
+        self.assertEqual(candidates[0]["retrievalBackend"], "memory_bm25")
+        self.assertEqual(candidates[0]["retrievalTrace"]["knowledgeSource"], "temporary")
 
     @staticmethod
     def _score(*, term_frequency: int, section_length: int = 100) -> float:

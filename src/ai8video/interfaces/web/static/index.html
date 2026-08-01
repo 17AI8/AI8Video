@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" href="/static/images/ai8video-avatar.png?v=20260727-1">
   <link rel="stylesheet" href="/static/script-knowledge.css?v=20260724-18">
   <!-- Updated: 2026-06-23 15:17 CST - 花字调色预览连体按钮圆角修正 -->
-  <link rel="stylesheet" href="/static/workbench.css?v=20260731-116">
+  <link rel="stylesheet" href="/static/workbench.css?v=20260801-129">
 </head>
 <body>
   <div class="shell">
@@ -202,8 +202,13 @@
       <div class="viral-breakdown-toolbar">
         <div class="viral-breakdown-toolbar-bar">
           <div class="viral-breakdown-toolbar-meta">
-            <button id="viralBreakdownLibraryButton" type="button" class="viral-breakdown-kicker viral-breakdown-library-button">素材库</button>
-            <div id="viralBreakdownArchiveMeta" class="material-meta">0 个视频 · 0 B</div>
+            <button id="viralBreakdownLibraryButton" type="button" class="viral-breakdown-kicker viral-breakdown-library-button">
+              <span class="viral-breakdown-library-copy">
+                <span class="viral-breakdown-library-title">素材库</span>
+                <span id="viralBreakdownArchiveMeta" class="material-meta">0 个视频 · 0 B</span>
+              </span>
+            </button>
+            <label id="viralBreakdownUploadButton" class="button-secondary viral-breakdown-upload-trigger" for="viralBreakdownUploadInput" role="button" tabindex="0">上传视频</label>
           </div>
           <label class="viral-breakdown-field is-video">
             <span>当前视频</span>
@@ -221,9 +226,6 @@
               <div id="viralBreakdownVideoSelectList" class="viral-breakdown-select-list" role="listbox" hidden></div>
             </div>
           </label>
-          <div class="viral-breakdown-toolbar-files">
-            <label id="viralBreakdownUploadButton" class="button-secondary viral-breakdown-upload-trigger" for="viralBreakdownUploadInput" role="button" tabindex="0">上传视频</label>
-          </div>
         </div>
       </div>
       <div id="viralBreakdownVideoStage" class="viral-breakdown-stage">
@@ -604,6 +606,6 @@
       </div>
     </div>
   </div>
-    <script src="/static/workbench.js?v=20260731-144"></script>
+    <script src="/static/workbench.js?v=20260801-152"></script>
 </body>
 </html>

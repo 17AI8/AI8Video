@@ -6963,6 +6963,14 @@ def api_chat():
     if not message:
         response.status = 400
         return {"error": "message is required"}
+    confirmed_smart_split_videos = payload.get("confirmedSmartSplitVideos")
+    if confirmed_smart_split_videos is not None:
+        if not isinstance(confirmed_smart_split_videos, list) or not confirmed_smart_split_videos:
+            response.status = 400
+            return {"error": "confirmedSmartSplitVideos must be a non-empty list"}
+        if not restore_smart_split_plan(session_id, confirmed_smart_split_videos):
+            response.status = 409
+            return {"error": "已确认的智能分集方案无法恢复，请重新分集"}
     temporary_knowledge = payload.get("temporaryKnowledge")
     if temporary_knowledge is not None:
         try:

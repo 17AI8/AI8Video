@@ -90,6 +90,13 @@ def cancel_smart_split_confirmation(session_id: str) -> dict:
     return ai8video_chat_service.cancel_smart_split_confirmation_via_ai8video(session_id=session_id)
 
 
+def restore_smart_split_plan(session_id: str, videos: list[dict]) -> bool:
+    return ai8video_chat_service.restore_smart_split_plan_via_ai8video(
+        session_id=session_id,
+        videos=videos,
+    )
+
+
 __all__ = [
     "CHAT_BACKEND",
     "build_batch_seed_file_payload",
@@ -104,6 +111,7 @@ __all__ = [
     "get_supervisor_admin_result_path",
     "handle_chat",
     "run_batch_payload",
+    "restore_smart_split_plan",
     "start_external_generation_task",
     "write_supervisor_admin_result_payload",
 ]

@@ -34,6 +34,20 @@
     function humanizeAssistantError(value) {
       const text = String(value || '').trim();
       const lowered = text.toLowerCase();
+      const networkInterrupted = lowered.includes('unexpected_eof_while_reading')
+        || lowered.includes('ssleoferror')
+        || lowered.includes('connection reset')
+        || lowered.includes('connection aborted')
+        || lowered.includes('remote end closed connection');
+      if (networkInterrupted) {
+        return '网络连接出现短暂波动，本次请求没有完成。\n请稍后重试，或取消后回到上一步。';
+      }
+      if (lowered.includes('max retries exceeded') || lowered.includes('connectionpool')) {
+        return '暂时无法连接模型服务，本次请求没有完成。\n请检查网络后重试，或取消后回到上一步。';
+      }
+      if (lowered.includes('timeout') || lowered.includes('timed out') || text.includes('超时')) {
+        return '模型服务响应超时，本次请求没有完成。\n请稍后重试，或取消后回到上一步。';
+      }
       if (lowered.includes('exceeded 30 redirects') || lowered.includes('too many redirects')) {
         return '模型服务连接异常，接口发生循环跳转。请稍后重试，或检查 API Key 服务状态。';
       }

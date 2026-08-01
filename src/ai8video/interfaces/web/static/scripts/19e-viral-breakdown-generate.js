@@ -76,15 +76,21 @@
       };
     }
 
+    function getSessionTemporaryScriptKnowledge() {
+      return getActiveSession()?.temporaryScriptKnowledge || null;
+    }
+
     function buildTemporaryScriptKnowledgeChatPayload() {
-      const temporary = state.temporaryScriptKnowledge;
+      const temporary = getSessionTemporaryScriptKnowledge();
       if (!temporary || !Array.isArray(temporary.leaves) || !temporary.leaves.length) return null;
       return temporary;
     }
 
     function clearTemporaryScriptKnowledgeReference() {
-      if (!state.temporaryScriptKnowledge) return;
-      state.temporaryScriptKnowledge = null;
+      const session = getActiveSession();
+      if (!session?.temporaryScriptKnowledge) return;
+      session.temporaryScriptKnowledge = null;
+      persistSessions();
       renderScriptReferenceButton();
       renderScriptReferenceDrawer();
     }
@@ -102,8 +108,9 @@
           <span class="script-knowledge-list-preview">${escapeHtml(preview)}</span>
           <span class="script-knowledge-list-foot">
             <span>${leafCount} 个叶节点</span>
-            <span>发送后自动解绑</span>
+            <span>当前会话持续引用</span>
           </span>
+          <button type="button" class="viral-breakdown-ghost-button" data-clear-temporary-script-knowledge>解除绑定</button>
         </article>
       `;
     }
@@ -145,9 +152,12 @@
       const temporary = buildViralBreakdownTemporaryKnowledgeReference(currentItem);
       const scriptText = getViralBreakdownComposerScript(currentItem);
       if (!temporary || !scriptText) throw new Error('临时知识库或剧本骨架不可用，请重新猜剧本');
-      state.temporaryScriptKnowledge = temporary;
+      const session = getActiveSession() || createSession('新会话');
+      state.activeId = session.id;
+      session.temporaryScriptKnowledge = temporary;
+      persistSessions();
       state.viralBreakdown.error = '';
-      state.viralBreakdown.notice = '已回填主界面；临时知识库将在下一次发送后自动解绑';
+      state.viralBreakdown.notice = '已回填主界面；临时知识库将在当前会话持续引用';
       closeViralBreakdownModal();
       setComposerDraft(scriptText, { submit: false });
       renderScriptReferenceButton();

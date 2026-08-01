@@ -5,9 +5,14 @@
     });
 
     els.scriptReferenceDrawer?.addEventListener('click', async (event) => {
-      const addScriptButton = event.target.closest('[data-add-script-reference]');
-      if (addScriptButton) {
-        beginUserMaterialUpload('script');
+      const clearTemporaryButton = event.target.closest('[data-clear-temporary-script-knowledge]');
+      if (clearTemporaryButton) {
+        clearTemporaryScriptKnowledgeReference();
+        return;
+      }
+      const openScriptKnowledgeButton = event.target.closest('[data-open-script-knowledge]');
+      if (openScriptKnowledgeButton) {
+        openMaterialLibraryModal('script');
         return;
       }
       const selectButton = event.target.closest('[data-select-script-reference]');

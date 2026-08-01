@@ -157,8 +157,7 @@
     #viralBreakdownModal .viral-breakdown-toolbar-bar {
       grid-column: 1 / -1;
       display: grid;
-      grid-template-columns: auto minmax(280px, 320px) auto;
-      justify-content: space-between;
+      grid-template-columns: auto minmax(280px, 1fr);
       align-items: center;
       gap: 18px;
     }
@@ -182,6 +181,36 @@
       background: var(--viral-glass-strong);
       color: var(--viral-text);
       box-shadow: none;
+    }
+
+    #viralBreakdownModal #viralBreakdownVideoSelectButton {
+      padding-right: 13px;
+      line-height: 1;
+      background-color: var(--viral-glass-strong);
+      background-image: linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent 7px,
+        rgba(79, 109, 255, 0.16) 7px,
+        rgba(79, 109, 255, 0.16) calc(100% - 7px),
+        transparent calc(100% - 7px)
+      );
+      background-position: right 34px top;
+      background-repeat: no-repeat;
+      background-size: 1px 100%;
+    }
+
+    #viralBreakdownModal #viralBreakdownVideoSelectLabel {
+      display: flex;
+      align-items: center;
+      align-self: stretch;
+      line-height: 1.35;
+      transform: translateY(1px);
+    }
+
+    #viralBreakdownModal #viralBreakdownVideoSelectButton::after {
+      margin-left: 12px;
+      margin-right: 2px;
     }
 
     #viralBreakdownModal .viral-breakdown-field .config-input:focus,

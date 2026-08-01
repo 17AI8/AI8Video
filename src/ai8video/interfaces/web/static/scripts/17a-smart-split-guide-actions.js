@@ -131,7 +131,7 @@
       }, 1800);
     }
 
-    async function dismissSmartSplitMessage(trigger) {
+    async function dismissSmartSplitMessage(trigger, options = {}) {
       const messageNode = trigger?.closest?.('.message');
       const session = getActiveSession();
       const messageIndex = Number(messageNode?.dataset?.messageIndex);
@@ -149,7 +149,9 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-        if (data.cancelled !== true) throw new Error('当前分集确认已失效，未执行取消');
+        if (data.cancelled !== true && !options.allowResetSession) {
+          throw new Error('当前分集确认已失效，未执行取消');
+        }
         const duration = smartSplitDismissDuration();
         messageNode.classList.remove('is-smart-split-dismiss-pending');
         fadeSmartSplitMessages(session, targetMessage);
@@ -160,10 +162,25 @@
       }
     }
 
+    async function dismissAssistantErrorMessage(trigger) {
+      const messageNode = trigger?.closest?.('.message');
+      const session = getActiveSession();
+      const messageIndex = Number(messageNode?.dataset?.messageIndex);
+      const targetMessage = session?.messages?.[messageIndex];
+      if (!messageNode || !targetMessage) return;
+      fadeSmartSplitMessages(session, targetMessage);
+      await new Promise((resolve) => window.setTimeout(resolve, smartSplitDismissDuration()));
+      removeSmartSplitMessages(session, targetMessage);
+    }
+
     async function handleGuideAction(kind, value, trigger = null) {
       const actionKind = String(kind || '').trim();
       const text = String(value || '').trim();
       if (state.busy || !text) return;
+      if (actionKind === 'dismiss-error') {
+        await dismissAssistantErrorMessage(trigger);
+        return;
+      }
       if (actionKind === 'dismiss-plan') {
         await dismissSmartSplitMessage(trigger);
         return;

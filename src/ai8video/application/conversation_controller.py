@@ -28,6 +28,7 @@ from ai8video.assets.default_reference_image import (
 )
 from ai8video.knowledge.default_script_reference import (
     apply_default_script_reference,
+    apply_retrieved_temporary_script_knowledge,
     split_temporary_script_knowledge,
 )
 from ai8video.generation.generation_mode import (
@@ -185,6 +186,15 @@ class AI8VideoConversationController:
             if default_script_reference_applied:
                 ai_interpretation = {}
 
+        if temporary_script_knowledge:
+            text = apply_retrieved_temporary_script_knowledge(
+                text,
+                temporary_script_knowledge,
+                query_text=control_text,
+                query_llm=getattr(self.pipeline, "script_query_llm", None),
+                rerank_llm=getattr(self.pipeline, "script_rerank_llm", None),
+            )
+
         if state.awaiting == "batch_seed_messages":
             return self._handle_batch_seed_followup(state, text, ai_interpretation)
 
@@ -206,8 +216,6 @@ class AI8VideoConversationController:
         if not default_script_reference_applied and self._is_batch_request(text, ai_interpretation):
             return self._handle_batch_request(state, text, ai_interpretation)
 
-        if temporary_script_knowledge:
-            text = f"{text.rstrip()}\n\n{temporary_script_knowledge}"
         self._merge_message(state, text, control_text=control_text, ai_interpretation=ai_interpretation)
 
         if not state.draft.raw_text:

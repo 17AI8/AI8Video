@@ -129,9 +129,17 @@
       }
       if (payload.meta?.operation === 'error') {
         blocks.push(`
-          <div class="assistant-error-message">
-            <strong>本轮真实任务未完成</strong>
-            <div>${escapeHtml(humanizeAssistantError(payload.text))}</div>
+          <div class="assistant-error-message assistant-error-card guide-card">
+            <strong>本轮任务未完成</strong>
+            <div class="assistant-error-detail">${escapeHtml(humanizeAssistantError(payload.text))}</div>
+            <div class="guide-actions assistant-error-actions">
+              <button
+                type="button"
+                class="guide-action-button"
+                data-guide-action-kind="dismiss-error"
+                data-guide-action-value="取消"
+              >取消</button>
+            </div>
           </div>
         `);
       } else if (payload.text && !isGeneratedResult && payload.meta?.operation !== 'pending') {
@@ -437,8 +445,10 @@
       const planning = String(pending.phase || '').trim() === 'planning'
         || String(progress.status || '').trim() === 'planning';
       const submitted = Number(progress.submittedCount || 0) || 0;
-      // 理解需求/规划阶段尚无可预览任务，不展示视频占位卡。
-      if (planning && !submitted) return '';
+      // 规划阶段不展示结果，避免同一会话的上一批成片被误认为本轮结果。
+      if (planning) return '';
+      // 只读恢复且本批没有任务条目时，不得用本地旧结果补出视频卡片。
+      if (progress.readOnlyRecovery && (!Array.isArray(progress.items) || !progress.items.length)) return '';
       const progressItems = Array.isArray(progress.items)
         ? progress.items
         : [];

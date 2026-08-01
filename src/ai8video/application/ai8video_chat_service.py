@@ -38,6 +38,7 @@ from ai8video.application.runtime import (
     get_chat_snapshot,
     get_runtime,
     handle_chat_message,
+    restore_smart_split_plan,
 )
 from ai8video.assets.user_generated_results import build_generation_result_reconciliation
 from ai8video.assets.user_recycle_bin import humanize_failed_video_reason
@@ -696,6 +697,11 @@ def handle_chat_via_ai8video(
 ) -> dict:
     session = _get_session(session_id=session_id, refresh=refresh)
     return session.handle_message(message=message, timeout_seconds=timeout_seconds)
+
+
+def restore_smart_split_plan_via_ai8video(session_id: str, videos: list[dict]) -> bool:
+    _get_session(session_id=session_id)
+    return restore_smart_split_plan(session_id, videos)
 
 
 def start_external_generation_task(

@@ -36,7 +36,7 @@
       const ref = state.scriptReference || {};
       const item = ref.item || {};
       const enabled = !!ref.enabled && !!item;
-      const temporary = state.temporaryScriptKnowledge || null;
+      const temporary = getSessionTemporaryScriptKnowledge();
       const selecting = !!ref.selecting;
       button.classList.toggle('is-ready', enabled || !!temporary);
       button.classList.toggle('is-open', !!state.scriptReferenceDrawer?.visible);
@@ -67,7 +67,7 @@
       els.scriptReferenceButton?.setAttribute('aria-expanded', visible ? 'true' : 'false');
       if (!visible) return;
       const ref = state.scriptReference || {};
-      const temporary = state.temporaryScriptKnowledge || null;
+      const temporary = getSessionTemporaryScriptKnowledge();
       const scripts = Array.isArray(state.scriptReferenceDrawer.items) ? state.scriptReferenceDrawer.items : [];
       const selectedPath = String(ref.item?.relativePath || '');
       const loading = !!state.scriptReferenceDrawer.loading;
@@ -93,7 +93,7 @@
         <div class="background-music-head">
           <div class="background-music-status">${escapeHtml(statusText)}</div>
           <div class="background-music-actions">
-            <button type="button" class="background-music-add-button" data-add-script-reference>导入文档</button>
+            <button type="button" class="background-music-add-button" data-open-script-knowledge>打开剧本知识库</button>
           </div>
         </div>
         <div class="background-music-list">

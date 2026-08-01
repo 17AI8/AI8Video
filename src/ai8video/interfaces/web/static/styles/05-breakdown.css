@@ -684,13 +684,13 @@
     }
 
     .viral-transcript-preview-group.is-open .script-knowledge-tree-chevron { transform: rotate(90deg); }
-    .viral-transcript-preview-group-body { display: none; gap: 6px; padding: 2px 0 8px 20px; }
+    .viral-transcript-preview-group-body { display: none; gap: 4px; padding: 2px 0 6px 12px; }
     .viral-transcript-preview-group.is-open .viral-transcript-preview-group-body { display: grid; }
 
     .viral-transcript-chunk {
       display: grid;
-      gap: 6px;
-      padding: 8px;
+      gap: 4px;
+      padding: 5px 6px;
       border: 1px solid rgba(79, 109, 255, 0.12);
       border-radius: 10px;
       background: rgba(255, 255, 255, 0.68);
@@ -705,20 +705,20 @@
     .viral-transcript-chunk-top {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 4px;
       min-width: 0;
     }
 
     .viral-transcript-drag-handle {
-      width: 24px;
-      min-width: 24px;
-      height: 24px;
+      width: 20px;
+      min-width: 20px;
+      height: 22px;
       padding: 0;
       border: 0;
       background: transparent;
       color: #8a93a8;
       cursor: grab;
-      font-size: 17px;
+      font-size: 15px;
     }
 
     .viral-transcript-audio-state {
@@ -732,9 +732,9 @@
     .viral-transcript-time-button {
       display: inline-flex;
       align-items: center;
-      gap: 5px;
-      min-height: 24px;
-      padding: 0 8px;
+      gap: 4px;
+      min-height: 22px;
+      padding: 0 7px;
       border: 1px solid rgba(79, 109, 255, 0.18);
       border-radius: 999px;
       background: rgba(79, 109, 255, 0.08);
@@ -754,8 +754,8 @@
     }
 
     .viral-transcript-chunk-action {
-      min-height: 24px;
-      padding: 0 7px;
+      min-height: 22px;
+      padding: 0 6px;
       border: 1px solid rgba(79, 109, 255, 0.16);
       border-radius: 7px;
       background: rgba(255, 255, 255, 0.8);
@@ -768,10 +768,10 @@
     .viral-transcript-chunk textarea {
       width: 100%;
       min-width: 0;
-      min-height: 46px;
+      min-height: 32px;
       box-sizing: border-box;
       resize: vertical;
-      padding: 7px 9px;
+      padding: 5px 8px;
       border: 1px solid rgba(79, 109, 255, 0.12);
       border-radius: 8px;
       background: rgba(255, 255, 255, 0.76);
