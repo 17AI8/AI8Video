@@ -465,7 +465,7 @@
         buildSidebarNavItemMarkup({
           icon: 'smartImage',
           title: '智能修图',
-          meta: '调用图片模型精修并导出副本',
+          meta: '导入、描述、对比并导出副本',
           actionLabel: '开始修图',
           attrs: 'data-open-smart-image-editor-entry aria-expanded="false"',
           extraClass: 'assistant-tool-card assistant-tool-card--smart-image',

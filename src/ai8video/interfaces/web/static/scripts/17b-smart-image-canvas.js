@@ -1,61 +1,79 @@
-    function smartImageId(prefix = 'node') {
-      return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    function smartImageDefaultEdits() {
+      return { brightness: 100, contrast: 100, saturation: 100, rotation: 0, flipX: false, ratio: 'original' };
     }
 
-    function smartImageClamp(value, min, max) {
-      return Math.min(max, Math.max(min, Number(value) || 0));
+    function smartImageCloneEdits(edits) {
+      return { ...smartImageDefaultEdits(), ...(edits || {}) };
     }
 
-    function smartImageRemainingLayers() {
-      return Math.max(0, SMART_IMAGE_MAX_LAYERS - AI8SmartImage.state.nodes.length);
+    function smartImageResultById(id) {
+      return AI8SmartImage.state.results.find((item) => item.id === id) || null;
     }
 
-    function smartImageCanAddLayers(count = 1, notify = true) {
-      const allowed = smartImageRemainingLayers() >= Math.max(1, Number(count) || 1);
-      if (!allowed && notify) setSmartImageStatus(`图层最多为 ${SMART_IMAGE_MAX_LAYERS} 层，请先删除现有图层`, 'error');
-      return allowed;
+    function smartImageJobById(id) {
+      return AI8SmartImage.state.jobs.find((item) => item.id === id) || null;
     }
 
-    function smartImageNodeById(id) {
-      return AI8SmartImage.state.nodes.find((node) => node.id === id) || null;
+    function smartImageSelectedJob() {
+      return smartImageJobById(AI8SmartImage.state.selectedJobId);
     }
 
-    function smartImageSelectedNodes() {
-      const ids = new Set(AI8SmartImage.state.selectedIds);
-      return AI8SmartImage.state.nodes.filter((node) => ids.has(node.id));
+    function smartImageResultsForJob(job) {
+      if (!job) return [];
+      const resultIds = smartImageSerializableStringList(job.resultIds, 64);
+      const resultById = new Map(AI8SmartImage.state.results.map((result) => [result.id, result]));
+      const ordered = resultIds.map((resultId) => resultById.get(resultId)).filter(Boolean);
+      const included = new Set(ordered.map((result) => result.id));
+      return ordered.concat(AI8SmartImage.state.results.filter((result) => result.jobId === job.id && !included.has(result.id)));
     }
 
-    function smartImagePrimaryNode() {
-      return smartImageNodeById(AI8SmartImage.state.selectedIds[0]);
+    function smartImageVisibleResults() {
+      return smartImageResultsForJob(smartImageSelectedJob());
     }
 
-    function smartImageDefaultNode(type, overrides = {}) {
-      const base = {
-        id: smartImageId(type), type, name: type === 'image' ? '图片' : type === 'text' ? '文字' : '形状',
-        x: 120, y: 100, width: 320, height: 240, rotation: 0, opacity: 100,
-        visible: true, locked: false, groupId: '', flipX: false, fit: 'cover', cropRatio: 'original',
-        filter: { brightness: 100, contrast: 100, saturation: 100, blur: 0 },
-        strokes: [],
-      };
-      return { ...base, ...overrides, filter: { ...base.filter, ...(overrides.filter || {}) } };
+    function smartImageSelectedResult() {
+      return smartImageVisibleResults().find((item) => item.id === AI8SmartImage.state.selectedResultId) || null;
     }
 
-    function smartImageWorldCenter(width = 320, height = 240) {
-      const { viewport } = smartImageElements();
-      const stateViewport = AI8SmartImage.state.viewport;
-      const x = (viewport.clientWidth / 2 - stateViewport.x) / stateViewport.zoom - width / 2;
-      const y = (viewport.clientHeight / 2 - stateViewport.y) / stateViewport.zoom - height / 2;
-      return { x: Math.round(x), y: Math.round(y) };
+    function smartImageActiveAsset() {
+      return smartImageSelectedResult() || AI8SmartImage.state.source;
     }
 
-    function smartImageCreateNode(type, overrides = {}, historyLabel = '创建图层') {
-      if (!smartImageCanAddLayers()) return null;
-      AI8SmartImage.pushHistory?.(historyLabel);
-      const node = smartImageDefaultNode(type, overrides);
-      AI8SmartImage.state.nodes.push(node);
-      AI8SmartImage.state.selectedIds = [node.id];
-      AI8SmartImage.commit?.(historyLabel);
-      return node;
+    function smartImageAssetSource(asset) {
+      return String(asset?.url || asset?.dataUrl || '');
+    }
+
+    function smartImageCssFilter(asset) {
+      const edits = smartImageCloneEdits(asset?.edits);
+      return `brightness(${edits.brightness}%) contrast(${edits.contrast}%) saturate(${edits.saturation}%)`;
+    }
+
+    function smartImageRotation(asset) {
+      const edits = smartImageCloneEdits(asset?.edits);
+      return ((Number(edits.rotation || 0) % 360) + 360) % 360;
+    }
+
+    function smartImageRatioValue(ratio, asset) {
+      const fixed = { '1:1': 1, '4:5': 4 / 5, '9:16': 9 / 16, '16:9': 16 / 9 };
+      if (fixed[ratio]) return fixed[ratio];
+      return Math.max(.05, Number(asset?.width || 1) / Math.max(1, Number(asset?.height || 1)));
+    }
+
+    function smartImagePreviewRatio(asset) {
+      const edits = smartImageCloneEdits(asset?.edits);
+      const ratio = smartImageRatioValue(edits.ratio, asset);
+      return smartImageRotation(asset) % 180 ? 1 / ratio : ratio;
+    }
+
+    function smartImagePreviewStyle(asset, includeFilter = true) {
+      const edits = smartImageCloneEdits(asset?.edits);
+      const rotation = smartImageRotation(asset);
+      const ratio = smartImagePreviewRatio(asset);
+      const rotated = rotation % 180 !== 0;
+      const width = rotated ? `calc(100% / ${ratio})` : '100%';
+      const height = rotated ? `calc(100% * ${ratio})` : '100%';
+      const filter = includeFilter ? `filter:${smartImageCssFilter(asset)};` : '';
+      return `${filter}position:absolute;left:50%;top:50%;width:${width};height:${height};transform:translate(-50%,-50%) rotate(${rotation}deg) scaleX(${edits.flipX ? -1 : 1})`;
     }
 
     function smartImageLoadElement(source) {
@@ -80,283 +98,213 @@
       });
     }
 
-    function smartImageValidateFile(file) {
-      if (!SMART_IMAGE_ACCEPTED_TYPES.has(String(file?.type || '').toLowerCase())) {
-        throw new Error(`${file?.name || '文件'} 不是支持的图片格式`);
+    function smartImageStableHash(value) {
+      let hash = 2166136261;
+      const text = String(value || '');
+      for (let index = 0; index < text.length; index += 1) {
+        hash ^= text.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
       }
-      if (Number(file.size || 0) > SMART_IMAGE_MAX_BYTES) {
-        throw new Error(`${file.name || '图片'} 超过 30 MB`);
-      }
+      return (hash >>> 0).toString(36);
     }
 
-    async function smartImageFileNode(file, index) {
+    function smartImageSourceKey(source) {
+      const relativePath = String(source?.sourceRelativePath || '').trim().replace(/\\/g, '/').replace(/^\/+/, '');
+      if (relativePath) return `library:${relativePath}`;
+      const dataUrl = String(source?.dataUrl || '');
+      const dataSample = dataUrl.length > 2048 ? `${dataUrl.slice(0, 1024)}|${dataUrl.slice(-1024)}` : dataUrl;
+      const fingerprint = [
+        source?.sourceName,
+        source?.mime,
+        source?.size,
+        source?.lastModified,
+        source?.width,
+        source?.height,
+        dataSample,
+      ].join('|');
+      return `local:${smartImageStableHash(fingerprint)}`;
+    }
+
+    function smartImageEnsureSourceKey(source) {
+      if (!source) return '';
+      const sourceKey = String(source.sourceKey || smartImageSourceKey(source));
+      source.sourceKey = sourceKey;
+      return sourceKey;
+    }
+
+    function smartImageValidateFile(file) {
+      if (!SMART_IMAGE_ACCEPTED_TYPES.has(String(file?.type || '').toLowerCase())) {
+        throw new Error('仅支持 JPG、PNG 或 WebP 图片');
+      }
+      if (!file.size) throw new Error('图片文件为空');
+      if (Number(file.size) > SMART_IMAGE_MAX_BYTES) throw new Error('图片超过 30 MB，请压缩后再试');
+    }
+
+    async function smartImageAssetFromFile(file, sourceRelativePath = '') {
       smartImageValidateFile(file);
       const dataUrl = await smartImageReadFile(file);
       const image = await smartImageLoadElement(dataUrl);
-      const scale = Math.min(1, 440 / Math.max(image.naturalWidth, image.naturalHeight));
-      const width = Math.max(80, Math.round(image.naturalWidth * scale));
-      const height = Math.max(80, Math.round(image.naturalHeight * scale));
-      const center = smartImageWorldCenter(width, height);
-      return smartImageDefaultNode('image', {
-        name: String(file.name || `图片 ${index + 1}`).replace(/\.[^.]+$/, '').slice(0, 60),
-        x: center.x + index * 34, y: center.y + index * 34, width, height,
-        dataUrl, originalDataUrl: dataUrl, originalRatio: width / Math.max(1, height), sourceName: file.name || '图片', fit: 'contain',
-      });
+      const source = {
+        id: smartImageId('source'),
+        name: String(file.name || '待修图片').replace(/\.[^.]+$/, '').slice(0, 80),
+        sourceName: String(file.name || '待修图片').slice(0, 120),
+        mime: String(file.type || 'image/png'),
+        size: Number(file.size || 0),
+        lastModified: Number(file.lastModified || 0),
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+        dataUrl,
+        sourceRelativePath: String(sourceRelativePath || ''),
+        edits: smartImageDefaultEdits(),
+      };
+      source.sourceKey = smartImageSourceKey(source);
+      return source;
     }
 
-    async function addSmartImageFiles(files) {
-      const requested = Array.from(files || []).slice(0, 20);
-      if (!requested.length) return;
-      const remaining = smartImageRemainingLayers();
-      if (!remaining) {
-        smartImageCanAddLayers();
-        return;
-      }
-      const list = requested.slice(0, remaining);
-      setSmartImageStatus(`正在导入 ${list.length} 张图片…`);
+    async function setSmartImageSourceFile(file, sourceRelativePath = '') {
       try {
-        const nodes = await Promise.all(list.map(smartImageFileNode));
-        const acceptedNodes = nodes.slice(0, smartImageRemainingLayers());
-        if (!acceptedNodes.length) {
-          smartImageCanAddLayers();
-          return;
+        if (AI8SmartImage.state.processing || AI8SmartImage.state.jobs.some((job) => job.status === 'queued')) {
+          throw new Error('任务队列执行中，请完成后再替换原图');
         }
-        const truncated = acceptedNodes.length < requested.length;
-        AI8SmartImage.pushHistory?.('导入图片');
-        AI8SmartImage.state.nodes.push(...acceptedNodes);
-        AI8SmartImage.state.selectedIds = acceptedNodes.map((node) => node.id);
-        AI8SmartImage.commit?.('导入图片');
-        AI8SmartImage.fitAll?.();
-        setSmartImageStatus(truncated
-          ? `已导入 ${acceptedNodes.length} 张图片，画布最多保留 ${SMART_IMAGE_MAX_LAYERS} 层`
-          : `已导入 ${acceptedNodes.length} 张图片`, 'success');
+        setSmartImageStatus('正在读取图片…');
+        const source = await smartImageAssetFromFile(file, sourceRelativePath);
+        smartImageRememberSourceSession();
+        const restored = smartImageActivateSourceSession(source);
+        AI8SmartImage.render();
+        AI8SmartImage.scheduleSave();
+        setSmartImageStatus(
+          restored
+            ? `已切回 ${source.sourceName}，恢复 ${AI8SmartImage.state.results.length} 张结果`
+            : `已导入 ${source.sourceName}`,
+          'success',
+        );
+        return true;
       } catch (error) {
         setSmartImageStatus(error?.message || '图片导入失败', 'error');
+        return false;
       }
     }
 
-    function smartImageNodeFilter(node) {
-      const filter = node.filter || {};
-      return `brightness(${filter.brightness || 100}%) contrast(${filter.contrast || 100}%) saturate(${filter.saturation ?? 100}%) blur(${filter.blur || 0}px)`;
+    function smartImageEmptyPreviewMarkup() {
+      return `<div class="smart-image-preview-empty"><span>${smartImageIcon('library')}</span><strong>先从素材库选择一张图片</strong><p>选中图片后，它的任务与结果会一起恢复并显示。</p><button type="button" data-smart-image-action="manage-library">打开素材库</button><small>最近选择会固定显示在左侧六宫格</small></div>`;
     }
 
-    function smartImageNodeContent(node) {
-      if (node.type === 'image') {
-        if (node.batchItems?.length) {
-          const items = node.batchItems.map((item) => `<img class="${node.activeBatchItemId === item.id ? 'is-active' : ''}" data-smart-image-batch-item="${item.id}" src="${escapeHtml(item.dataUrl || '')}" alt="" draggable="false" style="left:${item.x}px;top:${item.y}px;width:${item.width}px;height:${item.height}px;object-fit:cover;transform:rotate(${item.rotation || 0}deg) scaleX(${item.flipX ? -1 : 1})">`).join('');
-          return `<div class="smart-image-batch-images" style="filter:${smartImageNodeFilter(node)};transform:scaleX(${node.flipX ? -1 : 1})">${items}</div>`;
-        }
-        return `<img src="${escapeHtml(node.dataUrl || '')}" alt="" draggable="false" style="object-fit:${node.fit || 'cover'};filter:${smartImageNodeFilter(node)};transform:scaleX(${node.flipX ? -1 : 1})">`;
+    function smartImagePreviewImageMarkup(asset, label) {
+      const source = smartImageAssetSource(asset);
+      const ratio = smartImagePreviewRatio(asset);
+      return `<div class="smart-image-preview-frame" style="--preview-ratio:${ratio}"><img src="${escapeHtml(source)}" alt="${escapeHtml(label)}" style="${smartImagePreviewStyle(asset)}"><span class="smart-image-preview-label">${escapeHtml(label)}</span></div>`;
+    }
+
+    function smartImageCompareMarkup(result) {
+      const source = AI8SmartImage.state.source;
+      const position = smartImageClamp(AI8SmartImage.state.comparePosition, 0, 100);
+      const ratio = smartImagePreviewRatio(result || source);
+      const beforeStyle = smartImagePreviewStyle(result || source, false);
+      return `<div class="smart-image-compare" style="--compare-position:${position}%;--preview-ratio:${ratio}"><img class="smart-image-compare-before" src="${escapeHtml(source.dataUrl)}" alt="原图" style="${beforeStyle}"><div class="smart-image-compare-after"><img src="${escapeHtml(result.url)}" alt="AI 修图结果" style="${smartImagePreviewStyle(result)}"></div><span class="smart-image-compare-label before">原图</span><span class="smart-image-compare-label after">AI 结果</span><i class="smart-image-compare-handle"></i><input id="smartImageCompareRange" type="range" min="0" max="100" value="${position}" aria-label="调整原图与结果的对比位置"></div>`;
+    }
+
+    function smartImagePreviewMarkup() {
+      const source = AI8SmartImage.state.source;
+      if (!source) return smartImageEmptyPreviewMarkup();
+      const result = smartImageSelectedResult();
+      const visibleResults = smartImageVisibleResults();
+      if (AI8SmartImage.state.viewMode === 'source' || !result) return smartImagePreviewImageMarkup(source, '原图');
+      if (AI8SmartImage.state.viewMode === 'compare') return smartImageCompareMarkup(result);
+      return smartImagePreviewImageMarkup(result, `AI 结果 ${visibleResults.indexOf(result) + 1}`);
+    }
+
+    function smartImageResultListMarkup() {
+      const source = AI8SmartImage.state.source;
+      if (!source) return '<div class="smart-image-empty-list">选择图片后，生成结果会出现在这里</div>';
+      const selectedJob = smartImageSelectedJob();
+      if (!selectedJob) return '<div class="smart-image-empty-list">还没有任务。请在右侧描述效果并开始 AI 修图。</div>';
+      const visibleResults = smartImageVisibleResults();
+      if (!visibleResults.length) {
+        return `<div class="smart-image-empty-list">${['queued', 'running'].includes(selectedJob.status) ? '当前任务正在生成，结果会自动出现在这里。' : '当前任务还没有可用结果。'}</div>`;
       }
-      if (node.type === 'text') {
-        const style = `color:${node.color || '#ffffff'};font-size:${Number(node.fontSize || 36)}px;text-align:${node.textAlign || 'center'}`;
-        return `<div class="smart-image-text-node" style="${style}">${escapeHtml(node.text || '双击编辑文字')}</div>`;
-      }
-      const radius = node.shape === 'ellipse' ? '50%' : `${Number(node.radius || 18)}px`;
-      return `<div class="smart-image-shape-node" style="background:${node.fill || '#725cf3'};border-radius:${radius}"></div>`;
+      const results = visibleResults.map((item, index) => {
+        const selected = item.id === AI8SmartImage.state.selectedResultId;
+        return `<button type="button" class="smart-image-result-card${selected ? ' is-selected' : ''}" data-smart-image-result="${item.id}" aria-pressed="${selected}"><span class="smart-image-result-thumb"><img src="${escapeHtml(item.url)}" alt="AI 结果 ${index + 1}"><i>结果 ${index + 1}</i></span><strong>${escapeHtml(item.model || '图片模型')}</strong><small>${new Date(item.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small></button>`;
+      }).join('');
+      return results;
     }
 
-    function smartImageBatchItemTools(item) {
-      const left = item.x + item.width / 2;
-      const ratioTop = item.y + item.height + 8;
-      const transformTop = item.y - 8;
-      const ratio = item.width / Math.max(1, item.height);
-      const active = (value) => Math.abs(ratio - value) < .01;
-      return `<div class="smart-image-batch-item-tools"><div class="smart-image-node-ratio-toolbar smart-image-node-floating-toolbar" style="left:${left}px;top:${ratioTop}px" role="group" aria-label="裁切比例"><button data-smart-image-batch-ratio="1:1" data-item-id="${item.id}" aria-pressed="${item.cropRatio === '1:1' && active(1)}">1:1</button><button data-smart-image-batch-ratio="16:9" data-item-id="${item.id}" aria-pressed="${item.cropRatio === '16:9' && active(16 / 9)}">16:9</button><button data-smart-image-batch-ratio="9:16" data-item-id="${item.id}" aria-pressed="${item.cropRatio === '9:16' && active(9 / 16)}">9:16</button><button data-smart-image-batch-ratio="original" data-item-id="${item.id}" aria-pressed="${item.cropRatio === 'original'}">原比例</button></div><div class="smart-image-node-transform-toolbar smart-image-node-floating-toolbar" style="left:${left}px;top:${transformTop}px" role="group" aria-label="图片调整"><button data-smart-image-library-save="current">保存到素材库</button><button data-smart-image-action="export-current">导出</button><button class="danger" data-smart-image-batch-action="delete-item" data-item-id="${item.id}">删除</button></div></div>`;
-    }
-
-    function smartImageNodeMarkup(node) {
-      const selected = AI8SmartImage.state.selectedIds.includes(node.id);
-      const showRatioToolbar = selected && AI8SmartImage.state.selectedIds.length === 1 && node.type === 'image' && !node.batchItems?.length;
-      const hidden = node.visible === false ? ' is-hidden' : '';
-      const locked = node.locked ? ' is-locked' : '';
-      const style = `left:${node.x}px;top:${node.y}px;width:${node.width}px;height:${node.height}px;opacity:${node.opacity / 100};--node-rotation:${node.rotation || 0}deg;--node-counter-rotation:${-(node.rotation || 0)}deg;transform:rotate(var(--node-rotation))`;
-      const currentRatio = node.width / Math.max(1, node.height);
-      const ratioActive = (ratio) => Math.abs(currentRatio - ratio) < .01;
-      const floatingTools = showRatioToolbar ? `<div class="smart-image-node-ratio-toolbar smart-image-node-floating-toolbar" role="group" aria-label="裁切比例"><button data-smart-image-ratio="1:1" aria-pressed="${node.cropRatio === '1:1' && ratioActive(1)}">1:1</button><button data-smart-image-ratio="16:9" aria-pressed="${node.cropRatio === '16:9' && ratioActive(16 / 9)}">16:9</button><button data-smart-image-ratio="9:16" aria-pressed="${node.cropRatio === '9:16' && ratioActive(9 / 16)}">9:16</button><button data-smart-image-ratio="original" aria-pressed="${node.cropRatio === 'original' && !!node.originalRatio && ratioActive(node.originalRatio)}">原比例</button></div><div class="smart-image-node-transform-toolbar smart-image-node-floating-toolbar" role="group" aria-label="图片调整"><button data-smart-image-library-save="current">保存到素材库</button><button data-smart-image-action="export-current">导出</button><button class="danger" data-smart-image-action="delete">删除</button></div>` : '';
-      const batchTools = selected && node.batchItems?.length ? smartImageBatchItemTools(node.batchItems.find((item) => item.id === node.activeBatchItemId) || node.batchItems[0]) : '';
-      return `<div class="smart-image-node${selected ? ' is-selected' : ''}${hidden}${locked}" data-smart-image-node="${node.id}" data-node-type="${node.type}" style="${style}">${smartImageNodeContent(node)}${floatingTools}${batchTools}${selected ? '<span class="smart-image-resize-handle" data-smart-image-resize></span>' : ''}</div>`;
-    }
-
-    function smartImageLayerIcon(node) {
-      if (node.type === 'image') return `<img src="${escapeHtml(node.dataUrl || '')}" alt="">`;
-      return smartImageIcon(node.type === 'text' ? 'text' : node.shape === 'ellipse' ? 'ellipse' : 'rect');
-    }
-
-    function smartImageLayerListMarkup() {
-      if (!AI8SmartImage.state.nodes.length) return '<div class="smart-image-empty-list">暂无图层</div>';
-      return [...AI8SmartImage.state.nodes].reverse().map((node) => {
-        const selected = AI8SmartImage.state.selectedIds.includes(node.id);
-        return `<div class="smart-image-layer${selected ? ' is-selected' : ''}" data-smart-image-layer="${node.id}" draggable="true" title="拖拽调整图层顺序"><span class="smart-image-layer-thumb">${smartImageLayerIcon(node)}</span><button class="smart-image-layer-name" data-smart-image-select-layer="${node.id}">${escapeHtml(node.name)}</button><button data-smart-image-layer-action="visibility" data-node-id="${node.id}" aria-label="${node.visible === false ? '显示' : '隐藏'}图层">${node.visible === false ? '○' : '●'}</button><button class="smart-image-layer-delete" data-smart-image-layer-action="delete" data-node-id="${node.id}" aria-label="删除图层">${smartImageIcon('trash')}</button></div>`;
+    function smartImageJobListMarkup() {
+      const jobs = [...AI8SmartImage.state.jobs].reverse();
+      if (!jobs.length) return '<div class="smart-image-empty-list">暂无任务。设置修图要求后点击“开始 AI 修图”。</div>';
+      const label = { queued: '等待中', running: '生成中', done: '已完成', partial: '部分完成', error: '失败' };
+      return jobs.map((job) => {
+        const selected = job.id === AI8SmartImage.state.selectedJobId;
+        const attemptTotal = Math.max(1, Number(job.attemptTotal || job.total || 1));
+        const attemptDone = Math.min(attemptTotal, Number(job.attemptDone || 0));
+        const percent = Math.round(attemptDone / attemptTotal * 100);
+        const removable = !['running'].includes(job.status);
+        const resultCount = smartImageResultsForJob(job).length;
+        const actions = removable ? `<span class="smart-image-job-actions">${['error', 'partial'].includes(job.status) ? `<button type="button" data-smart-image-retry-job="${job.id}">重试</button>` : ''}<button type="button" data-smart-image-remove-job="${job.id}" aria-label="删除任务及其 ${resultCount} 张结果" title="删除任务及其结果">${smartImageIcon('close')}</button></span>` : '';
+        return `<article class="smart-image-job${selected ? ' is-selected' : ''}" data-status="${job.status}"><button type="button" class="smart-image-job-select" data-smart-image-job="${job.id}" aria-pressed="${selected}"><span class="smart-image-job-state">${job.status === 'done' ? smartImageIcon('check') : smartImageIcon('sparkle')}</span><span class="smart-image-job-copy"><strong>修图任务 · 目标 ${job.total} 张</strong><span>${escapeHtml(label[job.status] || job.status)} · ${resultCount} 张结果${job.status === 'running' ? ` · 本轮 ${attemptDone}/${attemptTotal}` : ''}</span><small>${escapeHtml(job.error || job.prompt)}</small>${job.status === 'running' ? `<i class="smart-image-job-progress"><b style="width:${percent}%"></b></i>` : ''}</span></button>${actions}</article>`;
       }).join('');
     }
 
-    function smartImageAssetListMarkup() {
-      const images = AI8SmartImage.state.nodes.filter((node) => node.type === 'image');
-      if (!images.length) return '<div class="smart-image-empty-list">导入后的图片会显示在这里</div>';
-      return images.map((node) => `<button type="button" data-smart-image-select-layer="${node.id}" class="smart-image-asset-card"><img src="${escapeHtml(node.dataUrl)}" alt=""><span>${escapeHtml(node.name)}</span></button>`).join('');
-    }
-
-    function renderSmartImageMask(node) {
-      if (node.type !== 'image' || !node.strokes?.length || node.visible === false) return;
-      const canvas = smartImageElements().scene.querySelector(`[data-smart-image-mask="${node.id}"]`);
-      if (!canvas) return;
-      canvas.width = Math.max(1, Math.round(node.width));
-      canvas.height = Math.max(1, Math.round(node.height));
-      const context = canvas.getContext('2d');
-      context.strokeStyle = '#ffffff';
-      context.lineCap = 'round';
-      context.lineJoin = 'round';
-      node.strokes.forEach((stroke) => {
-        const points = stroke.points || [];
-        if (!points.length) return;
-        context.lineWidth = Math.max(4, (stroke.size || 36) * node.width / 400);
-        context.beginPath();
-        points.forEach((point, index) => {
-          const x = point.x * node.width;
-          const y = point.y * node.height;
-          if (!index) context.moveTo(x, y); else context.lineTo(x, y);
-        });
-        context.stroke();
-      });
-    }
-
-    function renderSmartImageNodes() {
-      const { scene } = smartImageElements();
-      scene.innerHTML = AI8SmartImage.state.nodes.map((node) => {
-        const mask = node.type === 'image' ? `<canvas class="smart-image-mask-overlay" data-smart-image-mask="${node.id}"></canvas>` : '';
-        return smartImageNodeMarkup(node).replace(/<\/div>$/, `${mask}</div>`);
-      }).join('');
-      AI8SmartImage.state.nodes.forEach(renderSmartImageMask);
-    }
-
-    function renderSmartImageInspector() {
+    function renderSmartImageStudio() {
       const elements = smartImageElements();
-      const selected = smartImageSelectedNodes();
-      const node = selected.length === 1 ? selected[0] : null;
-      const layerUsage = `${AI8SmartImage.state.nodes.length}/${SMART_IMAGE_MAX_LAYERS} 层`;
-      elements.selectionMeta.textContent = selected.length ? `已选 ${selected.length} 个 · ${layerUsage}` : layerUsage;
-      elements.layerList.innerHTML = smartImageLayerListMarkup();
-      elements.assetList.innerHTML = smartImageAssetListMarkup();
-      elements.assetCount.textContent = String(AI8SmartImage.state.nodes.filter((item) => item.type === 'image').length);
-      const contentSection = elements.modal.querySelector('#smartImageContentSection');
-      const contentMeta = elements.modal.querySelector('#smartImageContentMeta');
-      contentSection?.classList.toggle('is-disabled', !node || node.type === 'image');
-      if (contentMeta) contentMeta.textContent = node?.type === 'text' ? '文字图层' : node?.type === 'shape' ? '形状图层' : '选择文字或形状';
-      elements.modal.querySelectorAll('[data-smart-image-content]').forEach((input) => {
-        const key = input.dataset.smartImageContent;
-        const enabled = node?.type === 'text' ? ['text', 'color', 'fontSize'].includes(key) : node?.type === 'shape' && key === 'fill';
-        input.disabled = !enabled;
-        if (node && enabled) input.value = String(node[key] ?? input.value);
-        else if (key === 'text') input.value = '';
+      const source = AI8SmartImage.state.source;
+      const result = smartImageSelectedResult();
+      const visibleResults = smartImageVisibleResults();
+      const active = smartImageActiveAsset();
+      elements.preview.innerHTML = smartImagePreviewMarkup();
+      elements.resultList.innerHTML = smartImageResultListMarkup();
+      elements.resultCount.textContent = `${visibleResults.length} 张`;
+      elements.jobList.innerHTML = smartImageJobListMarkup();
+      elements.jobCount.textContent = `${AI8SmartImage.state.jobs.length} 项`;
+      if (elements.jobOwner) elements.jobOwner.textContent = source ? `${source.name} · 点击任务切换结果` : '先选择素材图片';
+      elements.modal.querySelector('.smart-image-result-section')?.classList.toggle('is-empty', !visibleResults.length);
+      elements.previewTitle.textContent = result ? `AI 结果 ${visibleResults.indexOf(result) + 1}` : source ? source.name : '等待导入图片';
+      elements.previewMeta.textContent = result ? `${result.model || '图片模型'} · 原图可随时对比` : source ? `${source.width} × ${source.height} · 原图始终保留` : '原图始终保留，不会被覆盖';
+      elements.presetSummary.textContent = AI8SmartImage.state.selectedPresetId === 'custom' ? '自定义描述' : '建议描述';
+      elements.callHint.textContent = `本任务预计调用图片模型 ${AI8SmartImage.state.batchCount} 次${AI8SmartImage.state.promptOptimizing ? ' · 正在优化描述' : ''}`;
+      elements.generateLabel.textContent = AI8SmartImage.state.processing ? '加入任务队列' : '开始 AI 修图';
+      if (document.activeElement !== elements.prompt) elements.prompt.value = AI8SmartImage.state.prompt;
+      elements.batchCount.value = String(AI8SmartImage.state.batchCount);
+      elements.exportFormat.value = AI8SmartImage.state.exportFormat;
+      elements.exportQuality.value = String(AI8SmartImage.state.exportQuality);
+      const qualityValue = elements.modal.querySelector('#smartImageExportQualityValue');
+      if (qualityValue) qualityValue.textContent = String(AI8SmartImage.state.exportQuality);
+      elements.modal.querySelector('#smartImageExportQualityRow')?.classList.toggle('is-disabled', AI8SmartImage.state.exportFormat === 'png');
+      elements.modal.querySelector('#smartImageAdjustSection')?.classList.toggle('is-disabled', !active);
+      elements.modal.querySelector('#smartImageFinishSection')?.classList.toggle('is-disabled', !active);
+      const effectiveViewMode = result ? AI8SmartImage.state.viewMode : 'source';
+      elements.modal.querySelectorAll('[data-smart-image-view]').forEach((button) => {
+        const mode = button.dataset.smartImageView;
+        button.setAttribute('aria-pressed', String(mode === effectiveViewMode));
+        button.disabled = mode !== 'source' && !result;
       });
-      const imageNode = node?.type === 'image' ? node : null;
-      elements.modal.querySelector('#smartImageAppearanceSection')?.classList.toggle('is-disabled', !node);
+      const edits = smartImageCloneEdits(active?.edits);
       elements.modal.querySelectorAll('[data-smart-image-adjustment]').forEach((input) => {
-        const key = input.dataset.smartImageAdjustment;
-        const isOpacity = key === 'opacity';
-        input.disabled = isOpacity ? !node : !imageNode;
-        input.value = String(isOpacity ? (node?.opacity ?? 100) : (imageNode?.filter?.[key] ?? (key === 'blur' ? 0 : 100)));
-        const output = elements.modal.querySelector(`[data-smart-image-value="${key}"]`);
+        input.value = String(edits[input.dataset.smartImageAdjustment] ?? 100);
+        const output = elements.modal.querySelector(`[data-smart-image-adjustment-value="${input.dataset.smartImageAdjustment}"]`);
         if (output) output.textContent = input.value;
       });
-    }
-
-    function smartImageBounds(nodes = AI8SmartImage.state.nodes) {
-      const visible = nodes.filter((node) => node.visible !== false);
-      if (!visible.length) return null;
-      const left = Math.min(...visible.map((node) => node.x));
-      const top = Math.min(...visible.map((node) => node.y));
-      const right = Math.max(...visible.map((node) => node.x + node.width));
-      const bottom = Math.max(...visible.map((node) => node.y + node.height));
-      return { left, top, right, bottom, width: right - left, height: bottom - top };
-    }
-
-    function renderSmartImageMinimap() {
-      const { minimap } = smartImageElements();
-      const bounds = smartImageBounds();
-      if (!bounds || AI8SmartImage.state.nodes.length < 2) {
-        minimap.innerHTML = '';
-        minimap.classList.add('hidden');
-        return;
+      elements.modal.querySelectorAll('[data-smart-image-ratio]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.smartImageRatio === edits.ratio)));
+      const enqueueButton = elements.modal.querySelector('[data-smart-image-action="enqueue"]');
+      if (enqueueButton) enqueueButton.disabled = !source || !state.health?.hasImageModel || AI8SmartImage.state.promptOptimizing;
+      const optimizeButton = elements.modal.querySelector('[data-smart-image-action="prompt-optimize"]');
+      if (optimizeButton) {
+        optimizeButton.disabled = AI8SmartImage.state.promptOptimizing || !state.health?.hasLLM;
+        optimizeButton.innerHTML = AI8SmartImage.state.promptOptimizing ? `${smartImageIcon('sparkle')}优化中…` : `${smartImageIcon('sparkle')}AI 优化描述`;
+        optimizeButton.title = state.health?.hasLLM ? '调用当前文本模型优化描述（1 次文本调用）' : '请先在设置中配置文本模型';
       }
-      minimap.classList.remove('hidden');
-      minimap.innerHTML = AI8SmartImage.state.nodes.filter((node) => node.visible !== false).map((node) => {
-        const left = ((node.x - bounds.left) / Math.max(1, bounds.width)) * 100;
-        const top = ((node.y - bounds.top) / Math.max(1, bounds.height)) * 100;
-        const width = Math.max(4, node.width / Math.max(1, bounds.width) * 100);
-        const height = Math.max(4, node.height / Math.max(1, bounds.height) * 100);
-        return `<span class="${AI8SmartImage.state.selectedIds.includes(node.id) ? 'is-selected' : ''}" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%"></span>`;
-      }).join('');
-    }
-
-    function renderSmartImageCanvas() {
-      AI8SmartImage.state.renderQueued = false;
-      const elements = smartImageElements();
-      const viewport = AI8SmartImage.state.viewport;
-      elements.scene.style.transform = `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`;
-      elements.scene.style.setProperty('--viewport-inverse-zoom', String(1 / Math.max(.1, viewport.zoom)));
-      elements.zoomValue.textContent = `${Math.round(viewport.zoom * 100)}%`;
-      elements.empty.classList.toggle('hidden', AI8SmartImage.state.nodes.length > 0);
-      elements.viewport.classList.toggle('is-hand', AI8SmartImage.state.tool === 'hand' || AI8SmartImage.state.spacePanning);
-      elements.viewport.classList.toggle('is-mask', AI8SmartImage.state.tool === 'mask');
-      elements.viewport.classList.remove('is-grid', 'is-dots', 'is-blank');
-      elements.viewport.classList.add(`is-${AI8SmartImage.state.background}`);
-      elements.modal.querySelectorAll('[data-smart-image-tool]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.smartImageTool === AI8SmartImage.state.tool)));
-      renderSmartImageNodes();
-      renderSmartImageInspector();
-      renderSmartImageMinimap();
-    }
-
-    function scheduleSmartImageCanvasRender() {
-      if (AI8SmartImage.state.renderQueued) return;
-      AI8SmartImage.state.renderQueued = true;
-      requestAnimationFrame(renderSmartImageCanvas);
-    }
-
-    function fitSmartImageCanvas(nodes = AI8SmartImage.state.nodes) {
-      const bounds = smartImageBounds(nodes);
-      const { viewport } = smartImageElements();
-      if (!bounds) {
-        AI8SmartImage.state.viewport = { x: 120, y: 90, zoom: 1 };
-      } else {
-        const padding = 96;
-        const zoom = smartImageClamp(Math.min((viewport.clientWidth - padding) / Math.max(1, bounds.width), (viewport.clientHeight - padding) / Math.max(1, bounds.height)), 0.08, 2.5);
-        AI8SmartImage.state.viewport = {
-          zoom,
-          x: (viewport.clientWidth - bounds.width * zoom) / 2 - bounds.left * zoom,
-          y: (viewport.clientHeight - bounds.height * zoom) / 2 - bounds.top * zoom,
-        };
-      }
-      scheduleSmartImageCanvasRender();
-    }
-
-    function setSmartImageZoom(nextZoom, anchorX, anchorY) {
-      const { viewport } = smartImageElements();
-      const current = AI8SmartImage.state.viewport;
-      const zoom = smartImageClamp(nextZoom, 0.08, 4);
-      const x = Number.isFinite(anchorX) ? anchorX : viewport.clientWidth / 2;
-      const y = Number.isFinite(anchorY) ? anchorY : viewport.clientHeight / 2;
-      const worldX = (x - current.x) / current.zoom;
-      const worldY = (y - current.y) / current.zoom;
-      AI8SmartImage.state.viewport = { zoom, x: x - worldX * zoom, y: y - worldY * zoom };
-      scheduleSmartImageCanvasRender();
+      elements.modal.querySelectorAll('[data-smart-image-action="export-current"], [data-smart-image-action="save-library"]').forEach((button) => { button.disabled = !active; });
+      AI8SmartImage.renderLibrary?.();
     }
 
     Object.assign(AI8SmartImage, {
       id: smartImageId,
       clamp: smartImageClamp,
-      remainingLayers: smartImageRemainingLayers,
-      canAddLayers: smartImageCanAddLayers,
-      nodeById: smartImageNodeById,
-      selectedNodes: smartImageSelectedNodes,
-      primaryNode: smartImagePrimaryNode,
-      createNode: smartImageCreateNode,
-      addFiles: addSmartImageFiles,
       loadImage: smartImageLoadElement,
-      bounds: smartImageBounds,
-      render: scheduleSmartImageCanvasRender,
-      renderNow: renderSmartImageCanvas,
-      fitAll: fitSmartImageCanvas,
-      setZoom: setSmartImageZoom,
+      activeAsset: smartImageActiveAsset,
+      selectedJob: smartImageSelectedJob,
+      visibleResults: smartImageVisibleResults,
+      selectedResult: smartImageSelectedResult,
+      setSourceFile: setSmartImageSourceFile,
+      render: renderSmartImageStudio,
     });

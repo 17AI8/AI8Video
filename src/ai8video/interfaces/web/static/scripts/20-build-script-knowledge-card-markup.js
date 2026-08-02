@@ -279,7 +279,10 @@
       const relativePath = String(item.relativePath || item.name || name);
       const selectedForSmartImage = item.kind === 'image'
         && typeof AI8SmartImage !== 'undefined'
-        && AI8SmartImage.state.nodes.some((node) => node.sourceRelativePath === relativePath);
+        && (typeof AI8SmartImage.isMaterialSelected === 'function'
+          ? AI8SmartImage.isMaterialSelected(relativePath)
+          : Array.isArray(AI8SmartImage.state?.nodes)
+            && AI8SmartImage.state.nodes.some((node) => node.sourceRelativePath === relativePath));
       const smartImageButton = item.kind === 'image'
         ? `<button type="button" class="material-wall-smart-image-button${selectedForSmartImage ? ' is-selected' : ''}" data-edit-smart-image-material="${escapeHtml(relativePath)}" aria-pressed="${selectedForSmartImage}">${selectedForSmartImage ? '已选择' : '选择'}</button>`
         : '';

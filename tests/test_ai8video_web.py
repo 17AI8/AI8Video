@@ -555,30 +555,76 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
     def test_smart_image_editor_uses_configured_image_model_and_precedes_hot_radar(self) -> None:
         source = read_static_source()
         editor_source = (STATIC_ROOT / "scripts" / "17a-smart-image-editor.js").read_text(encoding="utf-8")
+        canvas_source = (STATIC_ROOT / "scripts" / "17b-smart-image-canvas.js").read_text(encoding="utf-8")
+        history_source = (STATIC_ROOT / "scripts" / "17c-smart-image-history-export.js").read_text(encoding="utf-8")
+        smart_image_style = (STATIC_ROOT / "styles" / "20-smart-image-editor.css").read_text(encoding="utf-8")
 
         self.assertLess(
             source.index('data-open-smart-image-editor-entry'),
             source.index('data-open-hot-radar-entry'),
         )
-        self.assertIn("调用图片模型精修并导出副本", source)
-        self.assertIn('data-smart-image-action="model-edit"', source)
-        self.assertIn('aria-label="批量生图数量"', editor_source)
+        self.assertIn("导入、描述、对比并导出副本", source)
+        self.assertIn('data-smart-image-action="enqueue"', source)
+        self.assertIn('aria-label="生成结果数量"', editor_source)
+        self.assertIn("id: 'portrait'", editor_source)
+        self.assertNotIn('data-smart-image-preset="${preset.id}"', editor_source)
+        self.assertIn('id="smartImageCompareRange"', source)
+        self.assertIn('<option value="jpeg">JPEG</option>', editor_source)
+        self.assertIn('<option value="webp">WebP</option>', editor_source)
         self.assertIn('data-smart-image-ratio="9:16"', source)
         self.assertIn("SMART_IMAGE_MAX_EDGE = 4096", source)
         self.assertIn("canvas.toBlob(resolve, 'image/png')", source)
         self.assertIn("fetch('/api/smart-image-editor/render'", source)
+        self.assertIn("fetch('/api/smart-image-editor/optimize-prompt'", source)
         self.assertIn("form.append('prompt'", source)
         self.assertIn("-智能修图.png", source)
         self.assertIn("AI8VIDEO_IMAGE_MODEL", editor_source)
         self.assertNotIn("去水印", editor_source)
         self.assertIn("const AI8SmartImage", source)
-        self.assertIn('id="smartImageAssetList"', source)
-        self.assertIn("data-smart-image-library-manage", source)
-        self.assertIn("data-smart-image-library-save", source)
+        self.assertNotIn('id="smartImageSourceCard"', source)
+        self.assertNotIn('id="smartImageUploadInput"', source)
+        self.assertIn('id="smartImageLibraryList"', source)
+        self.assertIn('data-smart-image-action="manage-library"', source)
+        self.assertIn('data-smart-image-action="save-library"', source)
         self.assertIn("data-edit-smart-image-material", source)
         self.assertIn("fetch('/api/upload-user-material'", source)
         self.assertIn("refreshUserMaterials()", source)
-        self.assertIn("smartImageToolButton('mask'", source)
+        self.assertNotIn("smartImageToolButton('mask'", source)
+        self.assertNotIn('aria-label="无限画布"', source)
+        self.assertIn("任务队列", editor_source)
+        self.assertIn("前后对比", editor_source)
+        self.assertIn("选择图片", editor_source)
+        self.assertIn("描述并生成", editor_source)
+        self.assertIn("对比并导出", editor_source)
+        self.assertIn("可选：快速微调", editor_source)
+        self.assertNotIn("选择修图方案", editor_source)
+        self.assertNotIn("smart-image-preset-grid", editor_source)
+        self.assertIn('id="smartImageJobSection" class="smart-image-job-section smart-image-sidebar-job-section"', editor_source)
+        self.assertEqual(editor_source.count('id="smartImageJobSection"'), 1)
+        self.assertLess(editor_source.index('smart-image-library-section'), editor_source.index('id="smartImageJobSection"'))
+        self.assertIn('id="smartImageJobOwner"', editor_source)
+        self.assertIn("最近选择 · 最多 6 张", editor_source)
+        self.assertIn("SMART_IMAGE_RECENT_LIBRARY_LIMIT = 6", editor_source)
+        self.assertIn("recentLibraryHistory", source)
+        self.assertIn("smart-image-library-slot", source)
+        self.assertNotIn("smartImageLibraryItems().slice(0, 8)", source)
+        self.assertNotIn("smart-image-source-ready", source)
+        self.assertNotIn("is-file-dragging", source)
+        self.assertIn("当前任务结果", editor_source)
+        self.assertIn("修图任务 · 目标", canvas_source)
+        self.assertIn("AI8SmartImage.state.jobs.length", canvas_source)
+        self.assertIn('data-smart-image-job="${job.id}"', canvas_source)
+        self.assertIn("smartImageVisibleResults()", canvas_source)
+        self.assertEqual(editor_source.count('data-smart-image-action="export-current"'), 1)
+        self.assertEqual(editor_source.count('data-smart-image-action="save-library"'), 1)
+        self.assertNotIn('data-smart-image-result="source"', canvas_source)
+        self.assertIn("导出为副本，不覆盖原图", editor_source)
+        self.assertNotIn("smart-image-rights-notice", editor_source)
+        self.assertNotIn("仅处理你有权使用的图片", editor_source)
+        self.assertIn("container-type: size", smart_image_style)
+        self.assertIn("aspect-ratio: var(--preview-ratio)", smart_image_style)
+        self.assertIn("width: min(92cqw, calc(92cqh * var(--preview-ratio)))", smart_image_style)
+        self.assertNotIn("height: min(92%, calc(92% / var(--preview-ratio)))", smart_image_style)
         self.assertIn("SIDEBAR_NAV_ICON_NAMES", source)
         self.assertIn('data-icon="${iconName}"', source)
         self.assertIn('id="sidebarBrandToggle"', source)
@@ -601,13 +647,36 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn(".shell.is-sidebar-collapsed .sidebar-section-label {\n  visibility: hidden;", sidebar_style)
         self.assertIn(".shell.is-sidebar-collapsed .sidebar-collapse-button {\n  display: none;", sidebar_style)
         self.assertIn(".sidebar-nav-action {\n  display: none;", sidebar_style)
-        self.assertIn("M12 3a9 9 0 100 18h1.5", editor_source)
-        self.assertIn('data-smart-image-action="export"', source)
-        self.assertIn("ai8video-smart-image-canvas-v2", source)
+        self.assertIn("M12 3l7 3v5c0 4.5", editor_source)
+        self.assertIn('data-smart-image-action="export-current"', source)
+        self.assertIn("ai8video-smart-image-studio-v1", source)
+        self.assertIn("jobs: AI8SmartImage.state.jobs.slice(-24)", source)
+        self.assertIn("上次关闭时任务尚未完成，请手动重试", source)
+        self.assertIn("job.remaining", source)
+        self.assertIn("sourceSessions: {}", editor_source)
+        self.assertIn("selectedJobId: ''", editor_source)
+        self.assertIn("deletedResultKeys: []", editor_source)
+        self.assertIn("deletedJobIds: []", editor_source)
+        self.assertIn("source.sourceKey = smartImageSourceKey(source)", canvas_source)
+        self.assertIn("smartImageRememberSourceSession();", canvas_source)
+        self.assertIn("smartImageActivateSourceSession(source)", canvas_source)
+        self.assertIn("已切回 ${source.sourceName}，恢复", canvas_source)
+        self.assertNotIn("deleteSmartImageResultFiles(AI8SmartImage.state.results", canvas_source)
+        self.assertIn("function smartImageRememberSourceSession()", history_source)
+        self.assertIn("sourceSessions: smartImageSerializableSessions(AI8SmartImage.state.sourceSessions)", history_source)
+        self.assertIn("AI8SmartImage.state.jobs = restoreSmartImageJobs(session.jobs, source)", history_source)
+        self.assertIn("resultIds: smartImageSerializableStringList(job.resultIds, 64)", history_source)
+        self.assertIn("selectedJobId: hierarchy.selectedJobId", history_source)
+        self.assertIn("jobId: job.id", source)
+        self.assertIn("删除这个任务及其", source)
+        self.assertIn("deletedResultKeys", source)
+        self.assertIn("deletedJobIds", source)
 
         canvas_style = (STATIC_ROOT / "styles" / "20a-smart-image-canvas.css").read_text(encoding="utf-8")
-        self.assertIn("#smartImageEditorModal .smart-image-canvas-viewport", canvas_style)
-        self.assertNotIn(".smart-image-canvas-viewport {", canvas_style.replace("#smartImageEditorModal .smart-image-canvas-viewport {", ""))
+        self.assertIn("已替换为单图任务工作台", canvas_style)
+        editor_style = (STATIC_ROOT / "styles" / "20-smart-image-editor.css").read_text(encoding="utf-8")
+        self.assertIn("#smartImageEditorModal .smart-image-studio-body", editor_style)
+        self.assertIn("#smartImageEditorModal .smart-image-compare", editor_style)
 
     def test_static_settings_entry_uses_gear_icon(self) -> None:
         source = read_static_source()
@@ -665,6 +734,209 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             {"custom_prompt": "自然增强人物照片", "max_concurrency": 1},
         )
 
+    def test_smart_image_project_rejects_stale_schema_overwrite(self) -> None:
+        project_path = self.root / "智能修图画布.json"
+        project_path.write_text(
+            json.dumps({"version": 7, "project": {"source": None, "results": [{"id": "kept"}]}}),
+            encoding="utf-8",
+        )
+        stale_payload = json.dumps({"version": 6, "project": {"source": None, "results": []}}).encode("utf-8")
+        fake_request = SimpleNamespace(method="PUT", body=io.BytesIO(stale_payload))
+        fake_response = SimpleNamespace(status=200)
+        request_backup = smart_image_routes.request
+        response_backup = smart_image_routes.response
+        smart_image_routes.request = fake_request
+        smart_image_routes.response = fake_response
+        try:
+            with patch.object(smart_image_routes, "SMART_IMAGE_PROJECT_PATH", project_path):
+                body = smart_image_routes.api_smart_image_project()
+        finally:
+            smart_image_routes.request = request_backup
+            smart_image_routes.response = response_backup
+
+        self.assertFalse(body["ok"])
+        self.assertEqual(fake_response.status, 409)
+        self.assertEqual(body["currentVersion"], 7)
+        self.assertEqual(json.loads(project_path.read_text(encoding="utf-8"))["project"]["results"][0]["id"], "kept")
+
+    def test_smart_image_project_preserves_results_from_same_version_stale_tab(self) -> None:
+        project_path = self.root / "智能修图画布.json"
+        source = {"sourceKey": "library:portrait.png", "sourceRelativePath": "portrait.png", "edits": {}}
+        kept_result = {"id": "kept", "url": "/smart-image-results/kept.png"}
+        current_session = {
+            "results": [kept_result],
+            "jobs": [{"id": "kept-job"}],
+            "selectedResultId": "kept",
+            "prompt": "拟人化",
+            "batchCount": 3,
+            "viewMode": "result",
+        }
+        project_path.write_text(
+            json.dumps(
+                {
+                    "version": 7,
+                    "project": {
+                        "source": source,
+                        "results": [kept_result],
+                        "sourceSessions": {"library:portrait.png": current_session},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        stale_payload = json.dumps(
+            {
+                "version": 7,
+                "project": {
+                    "source": source,
+                    "results": [],
+                    "jobs": [],
+                    "prompt": "默认描述",
+                    "sourceSessions": {"library:portrait.png": {"results": [], "jobs": [], "prompt": "默认描述"}},
+                },
+            }
+        ).encode("utf-8")
+        fake_request = SimpleNamespace(method="PUT", body=io.BytesIO(stale_payload))
+        fake_response = SimpleNamespace(status=200)
+        request_backup = smart_image_routes.request
+        response_backup = smart_image_routes.response
+        smart_image_routes.request = fake_request
+        smart_image_routes.response = fake_response
+        try:
+            with patch.object(smart_image_routes, "SMART_IMAGE_PROJECT_PATH", project_path):
+                body = smart_image_routes.api_smart_image_project()
+        finally:
+            smart_image_routes.request = request_backup
+            smart_image_routes.response = response_backup
+
+        saved = json.loads(project_path.read_text(encoding="utf-8"))["project"]
+        self.assertTrue(body["ok"])
+        self.assertEqual(saved["results"][0]["id"], "kept")
+        self.assertEqual(saved["prompt"], "拟人化")
+        self.assertEqual(saved["sourceSessions"]["library:portrait.png"]["jobs"][0]["id"], "kept-job")
+
+    def test_smart_image_project_merges_recent_library_history_by_latest_selection(self) -> None:
+        project_path = self.root / "智能修图画布.json"
+        current_history = [
+            {"path": "a.png", "selectedAt": "2026-08-02T12:00:00.000Z"},
+            {"path": "b.png", "selectedAt": "2026-08-02T11:00:00.000Z"},
+            {"path": "c.png", "selectedAt": "2026-08-02T10:00:00.000Z"},
+            {"path": "d.png", "selectedAt": "2026-08-02T09:00:00.000Z"},
+            {"path": "e.png", "selectedAt": "2026-08-02T08:00:00.000Z"},
+            {"path": "f.png", "selectedAt": "2026-08-02T07:00:00.000Z"},
+        ]
+        project_path.write_text(
+            json.dumps({"version": 7, "project": {"source": None, "recentLibraryHistory": current_history}}),
+            encoding="utf-8",
+        )
+        incoming_payload = json.dumps(
+            {
+                "version": 7,
+                "project": {
+                    "source": None,
+                    "recentLibraryHistory": [
+                        {"path": "g.png", "selectedAt": "2026-08-02T13:00:00.000Z"},
+                        {"path": "a.png", "selectedAt": "2026-08-02T06:00:00.000Z"},
+                    ],
+                },
+            }
+        ).encode("utf-8")
+        fake_request = SimpleNamespace(method="PUT", body=io.BytesIO(incoming_payload))
+        fake_response = SimpleNamespace(status=200)
+        request_backup = smart_image_routes.request
+        response_backup = smart_image_routes.response
+        smart_image_routes.request = fake_request
+        smart_image_routes.response = fake_response
+        try:
+            with patch.object(smart_image_routes, "SMART_IMAGE_PROJECT_PATH", project_path):
+                body = smart_image_routes.api_smart_image_project()
+        finally:
+            smart_image_routes.request = request_backup
+            smart_image_routes.response = response_backup
+
+        saved_history = json.loads(project_path.read_text(encoding="utf-8"))["project"]["recentLibraryHistory"]
+        self.assertTrue(body["ok"])
+        self.assertEqual([item["path"] for item in saved_history], ["g.png", "a.png", "b.png", "c.png", "d.png", "e.png"])
+        self.assertEqual(saved_history[1]["selectedAt"], "2026-08-02T12:00:00.000Z")
+
+    def test_smart_image_project_task_deletion_tombstones_prevent_stale_result_restore(self) -> None:
+        project_path = self.root / "智能修图画布.json"
+        source = {"sourceKey": "library:portrait.png", "sourceRelativePath": "portrait.png", "edits": {}}
+        kept_result = {"id": "kept", "jobId": "kept-job", "url": "/smart-image-results/kept.png"}
+        removed_result = {"id": "removed", "jobId": "removed-job", "url": "/smart-image-results/removed.png"}
+        current_session = {
+            "results": [kept_result, removed_result],
+            "jobs": [
+                {"id": "kept-job", "resultIds": ["kept"]},
+                {"id": "removed-job", "resultIds": ["removed"]},
+            ],
+            "selectedJobId": "removed-job",
+            "selectedResultId": "removed",
+        }
+        project_path.write_text(
+            json.dumps(
+                {
+                    "version": 7,
+                    "project": {
+                        "source": source,
+                        "results": [kept_result, removed_result],
+                        "jobs": current_session["jobs"],
+                        "sourceSessions": {"library:portrait.png": current_session},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        deletion_session = {
+            "results": [kept_result],
+            "jobs": [{"id": "kept-job", "resultIds": ["kept"]}],
+            "selectedJobId": "kept-job",
+            "selectedResultId": "kept",
+            "deletedResultKeys": [removed_result["url"]],
+            "deletedJobIds": ["removed-job"],
+        }
+        deletion_payload = json.dumps(
+            {
+                "version": 7,
+                "project": {
+                    "source": source,
+                    **deletion_session,
+                    "sourceSessions": {"library:portrait.png": deletion_session},
+                },
+            }
+        ).encode("utf-8")
+        stale_payload = json.dumps(
+            {
+                "version": 7,
+                "project": {
+                    "source": source,
+                    "results": [kept_result, removed_result],
+                    "jobs": current_session["jobs"],
+                    "sourceSessions": {"library:portrait.png": current_session},
+                },
+            }
+        ).encode("utf-8")
+        fake_response = SimpleNamespace(status=200)
+        request_backup = smart_image_routes.request
+        response_backup = smart_image_routes.response
+        smart_image_routes.response = fake_response
+        try:
+            with patch.object(smart_image_routes, "SMART_IMAGE_PROJECT_PATH", project_path):
+                smart_image_routes.request = SimpleNamespace(method="PUT", body=io.BytesIO(deletion_payload))
+                self.assertTrue(smart_image_routes.api_smart_image_project()["ok"])
+                smart_image_routes.request = SimpleNamespace(method="PUT", body=io.BytesIO(stale_payload))
+                self.assertTrue(smart_image_routes.api_smart_image_project()["ok"])
+        finally:
+            smart_image_routes.request = request_backup
+            smart_image_routes.response = response_backup
+
+        saved = json.loads(project_path.read_text(encoding="utf-8"))["project"]
+        self.assertEqual([item["id"] for item in saved["results"]], ["kept"])
+        self.assertEqual([item["id"] for item in saved["jobs"]], ["kept-job"])
+        self.assertEqual(saved["selectedJobId"], "kept-job")
+        self.assertIn(removed_result["url"], saved["deletedResultKeys"])
+        self.assertIn("removed-job", saved["deletedJobIds"])
+
     def test_smart_image_editor_submits_optional_local_mask(self) -> None:
         output_root = self.root / "smart-image-mask-results"
         output_root.mkdir()
@@ -717,6 +989,53 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 "不支持移除",
             ):
                 build_smart_image_edit_prompt(requirement)
+
+    def test_smart_image_prompt_optimizer_uses_llm_and_rechecks_rights(self) -> None:
+        llm = Mock(return_value="优化后的修图提示词：自然提亮人物，保留真实肤质、构图、Logo 与已有版权标识。")
+
+        optimized = smart_image_routes.optimize_smart_image_prompt("自然提亮人物", llm)
+
+        self.assertEqual(optimized, "自然提亮人物，保留真实肤质、构图、Logo 与已有版权标识。")
+        llm.assert_called_once()
+        with self.assertRaisesRegex(ReferenceImagePreprocessError, "不支持移除"):
+            smart_image_routes.optimize_smart_image_prompt(
+                "自然提亮人物",
+                Mock(return_value="自然提亮人物，并移除右下角水印。"),
+            )
+
+    def test_smart_image_prompt_optimizer_route_uses_configured_text_model(self) -> None:
+        fake_request = SimpleNamespace(method="POST", json={"prompt": "自然增强商品图"})
+        fake_response = SimpleNamespace(status=200)
+        fake_config = SimpleNamespace(
+            has_llm=lambda: True,
+            timeout_seconds=30,
+            llm_model="text-model-test",
+        )
+        llm = Mock(return_value="自然增强商品材质与光影，保留包装文字、Logo 和原始构图。")
+        request_backup = smart_image_routes.request
+        response_backup = smart_image_routes.response
+        smart_image_routes.request = fake_request
+        smart_image_routes.response = fake_response
+        try:
+            with (
+                patch.object(smart_image_routes.AI8VideoConfig, "from_env", return_value=fake_config),
+                patch.object(smart_image_routes, "build_openai_compat_llm", return_value=llm) as build_llm,
+            ):
+                body = smart_image_routes.api_optimize_smart_image_prompt()
+        finally:
+            smart_image_routes.request = request_backup
+            smart_image_routes.response = response_backup
+
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["model"], "text-model-test")
+        self.assertIn("保留包装文字", body["prompt"])
+        build_llm.assert_called_once_with(
+            fake_config,
+            timeout_seconds=90,
+            system_prompt="你是专业图片后期提示词编辑器，只改写用户要求，不执行图片编辑。",
+            stream=False,
+            transport_retry_count=1,
+        )
 
     def test_completed_extension_video_matches_saved_frame_source(self) -> None:
         result_root = self.root / "用户生成结果"
