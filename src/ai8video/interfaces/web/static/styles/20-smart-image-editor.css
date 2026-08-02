@@ -45,8 +45,13 @@
     #smartImageEditorModal .smart-image-brand { min-width: 0; display: flex; align-items: center; gap: 10px; }
     #smartImageEditorModal .smart-image-brand-mark {
       width: 34px; height: 34px; display: grid; place-items: center; border-radius: 11px; color: #fff;
-      font-size: 12px; font-weight: 900; background: linear-gradient(135deg, #536fff, #965cf5);
+      background: linear-gradient(135deg, #536fff, #965cf5);
       box-shadow: 0 8px 20px rgba(92, 78, 221, .28);
+    }
+    #smartImageEditorModal .smart-image-brand-mark::before {
+      width: 18px; height: 18px; content: ""; background: currentColor;
+      -webkit-mask: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/wand-magic-sparkles.svg") center / contain no-repeat;
+      mask: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/wand-magic-sparkles.svg") center / contain no-repeat;
     }
     #smartImageEditorModal .smart-image-brand div { min-width: 0; display: grid; gap: 2px; }
     #smartImageEditorModal .smart-image-brand strong { font-size: 15px; letter-spacing: .01em; }
@@ -69,7 +74,7 @@
     #smartImageEditorModal .smart-image-head-actions .smart-image-icon-button { width: 36px; padding: 0; }
 
     #smartImageEditorModal .smart-image-studio-body {
-      min-width: 0; min-height: 0; display: grid; grid-template-columns: 220px minmax(390px, 1fr) 304px;
+      min-width: 0; min-height: 0; display: grid; grid-template-columns: 286px minmax(390px, 1fr) 304px;
       background: #e9eef9;
     }
     #smartImageEditorModal .smart-image-studio-left, #smartImageEditorModal .smart-image-studio-right {
@@ -94,6 +99,8 @@
       color: #fff; font-size: 11px; font-weight: 800; background: #6071ed;
     }
     #smartImageEditorModal .smart-image-step-heading > div { min-width: 0; display: grid; gap: 2px; }
+    #smartImageEditorModal .smart-image-step-heading--inline > div { display: flex; align-items: baseline; gap: 6px; }
+    #smartImageEditorModal .smart-image-step-heading--inline small { white-space: nowrap; }
     #smartImageEditorModal .smart-image-step-heading strong { color: #202a50; font-size: 13px; }
     #smartImageEditorModal .smart-image-step-heading small { color: #737fa2; font-size: 10px; }
     #smartImageEditorModal .smart-image-step-card { display: grid; gap: 9px; }
@@ -107,7 +114,7 @@
     #smartImageEditorModal .smart-image-library-card:hover { border-color: rgba(79, 109, 255, .36); }
     #smartImageEditorModal .smart-image-library-card.is-selected { border-color: #5d70ef; background: rgba(79, 109, 255, .1); box-shadow: inset 0 0 0 1px rgba(79, 109, 255, .12); }
     #smartImageEditorModal .smart-image-library-card:focus-visible { outline: 2px solid #526fff; outline-offset: 2px; }
-    #smartImageEditorModal .smart-image-library-card img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; background: #e4e9f5; }
+    #smartImageEditorModal .smart-image-library-card img { width: 100%; aspect-ratio: 1; object-fit: contain; border-radius: 6px; background: #e4e9f5; }
     #smartImageEditorModal .smart-image-library-card span { min-width: 0; display: grid; gap: 1px; }
     #smartImageEditorModal .smart-image-library-card strong, #smartImageEditorModal .smart-image-library-card small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #smartImageEditorModal .smart-image-library-card strong { color: #59678f; font-size: 9px; }
@@ -144,17 +151,19 @@
     }
 
     #smartImageEditorModal .smart-image-studio-main {
-      min-width: 0; min-height: 0; padding: 12px; display: grid; grid-template-rows: 52px minmax(280px, 1fr) auto; gap: 10px;
+      min-width: 0; min-height: 0; padding: 12px; display: grid; grid-template-rows: 40px minmax(280px, 1fr) auto; gap: 6px;
       overflow: hidden; background:
         linear-gradient(rgba(79, 109, 255, .055) 1px, transparent 1px),
         linear-gradient(90deg, rgba(79, 109, 255, .055) 1px, transparent 1px), #edf2fc;
       background-size: 24px 24px;
     }
     #smartImageEditorModal .smart-image-preview-head { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-    #smartImageEditorModal .smart-image-preview-head > div:first-child { min-width: 0; display: grid; gap: 1px; }
-    #smartImageEditorModal .smart-image-preview-head .smart-image-eyebrow { color: #6574e9; font-size: 9px; font-weight: 800; letter-spacing: .08em; }
-    #smartImageEditorModal .smart-image-preview-head strong { overflow: hidden; color: #26345f; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-    #smartImageEditorModal .smart-image-preview-head span { color: #6e7b9f; font-size: 10px; }
+    #smartImageEditorModal .smart-image-preview-head > div:first-child { min-width: 0; display: flex; align-items: center; gap: 8px; overflow: hidden; white-space: nowrap; }
+    #smartImageEditorModal .smart-image-preview-head strong {
+      min-height: 29px; flex: 0 1 auto; display: inline-flex; align-items: center; overflow: hidden;
+      color: #26345f; font-size: 18px; font-weight: 800; line-height: 32px;
+      letter-spacing: .01em; text-overflow: ellipsis; white-space: nowrap;
+    }
     #smartImageEditorModal .smart-image-view-switch { padding: 3px; display: flex; gap: 2px; border: 1px solid rgba(95, 112, 178, .14); border-radius: 10px; background: rgba(255, 255, 255, .66); }
     #smartImageEditorModal .smart-image-view-switch button { min-height: 29px; padding: 0 10px; border: 0; border-radius: 7px; color: #6b779b; font-size: 11px; background: transparent; box-shadow: none; }
     #smartImageEditorModal .smart-image-view-switch button[aria-pressed="true"] { color: #fff; background: linear-gradient(135deg, #526fff, #8f5cf5); box-shadow: 0 4px 11px rgba(76, 87, 198, .2); }
@@ -208,7 +217,7 @@
     #smartImageEditorModal .smart-image-result-card.is-selected { border-color: #5d70ef; background: rgba(79, 109, 255, .1); box-shadow: inset 0 0 0 1px rgba(79, 109, 255, .12); }
     #smartImageEditorModal .smart-image-result-card:focus-visible { outline: 2px solid #526fff; outline-offset: 2px; }
     #smartImageEditorModal .smart-image-result-thumb { position: relative; display: block; }
-    #smartImageEditorModal .smart-image-result-thumb img { width: 100%; height: 49px; display: block; object-fit: cover; border-radius: 7px; background: #e4e9f5; }
+    #smartImageEditorModal .smart-image-result-thumb img { width: 100%; height: 49px; display: block; object-fit: contain; border-radius: 7px; background: #e4e9f5; }
     #smartImageEditorModal .smart-image-result-thumb i { position: absolute; left: 4px; top: 4px; padding: 2px 5px; border-radius: 999px; color: #fff; font-size: 9px; font-style: normal; background: rgba(28, 34, 61, .68); }
     #smartImageEditorModal .smart-image-result-card strong, #smartImageEditorModal .smart-image-result-card small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #smartImageEditorModal .smart-image-result-card strong { color: #3c4875; font-size: 10px; }
@@ -223,30 +232,22 @@
     #smartImageEditorModal .smart-image-job-select:focus-visible { outline: 2px solid #526fff; outline-offset: 1px; }
     #smartImageEditorModal .smart-image-job-state { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; color: #5d6fef; background: rgba(79, 109, 255, .1); }
     #smartImageEditorModal .smart-image-job-state svg { width: 13px; height: 13px; }
-    #smartImageEditorModal .smart-image-job-copy { min-width: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 7px; }
+    #smartImageEditorModal .smart-image-job-copy { min-width: 0; display: grid; grid-template-columns: 1fr; gap: 2px; }
     #smartImageEditorModal .smart-image-job strong { color: #354170; font-size: 11px; }
-    #smartImageEditorModal .smart-image-job-copy > span { justify-self: end; color: #67749b; font-size: 10px; }
-    #smartImageEditorModal .smart-image-job small { grid-column: 1 / -1; overflow: hidden; color: #7a86a7; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
     #smartImageEditorModal .smart-image-job-progress { grid-column: 1 / -1; height: 4px; overflow: hidden; border-radius: 999px; background: rgba(79, 109, 255, .12); }
     #smartImageEditorModal .smart-image-job-progress b { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #536fff, #925cf5); transition: width .2s ease; }
-    #smartImageEditorModal .smart-image-job-actions { display: flex; align-items: center; gap: 3px; }
-    #smartImageEditorModal .smart-image-job-actions button { min-width: 26px; height: 26px; padding: 0 7px; border: 1px solid rgba(93, 110, 176, .13); border-radius: 7px; color: #65739a; font-size: 10px; cursor: pointer; background: rgba(255, 255, 255, .8); }
+    #smartImageEditorModal .smart-image-job-actions { align-self: stretch; display: flex; align-items: center; gap: 3px; }
+    #smartImageEditorModal .smart-image-job-actions button { min-width: 26px; height: 26px; padding: 0 7px; display: inline-grid; place-items: center; border: 1px solid rgba(93, 110, 176, .13); border-radius: 7px; color: #65739a; font-size: 10px; cursor: pointer; background: rgba(255, 255, 255, .8); }
     #smartImageEditorModal .smart-image-job-actions svg { width: 11px; height: 11px; }
     #smartImageEditorModal .smart-image-sidebar-job-section { flex: 0 0 auto; background: rgba(255, 255, 255, .58); }
     #smartImageEditorModal .smart-image-sidebar-job-section .smart-image-section-title { align-items: flex-start; }
     #smartImageEditorModal .smart-image-sidebar-job-section .smart-image-section-title > div { flex-wrap: wrap; }
     #smartImageEditorModal .smart-image-sidebar-job-section .smart-image-job-list { max-height: min(300px, 36dvh); }
-    #smartImageEditorModal .smart-image-sidebar-job-section .smart-image-job { align-items: start; }
-    #smartImageEditorModal .smart-image-sidebar-job-section .smart-image-job-select { grid-template-columns: 24px minmax(0, 1fr); align-items: start; gap: 6px; }
+    #smartImageEditorModal .smart-image-sidebar-job-section .smart-image-job { align-items: center; }
+    #smartImageEditorModal .smart-image-sidebar-job-section .smart-image-job-select { grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 6px; }
     #smartImageEditorModal .smart-image-sidebar-job-section .smart-image-job-state { width: 24px; height: 24px; }
-    #smartImageEditorModal .smart-image-sidebar-job-section .smart-image-job-copy { grid-template-columns: 1fr; gap: 2px; }
-    #smartImageEditorModal .smart-image-sidebar-job-section .smart-image-job-copy > span { justify-self: start; }
-    #smartImageEditorModal .smart-image-sidebar-job-section .smart-image-job small {
-      grid-column: 1; display: -webkit-box; overflow: hidden; white-space: normal; line-height: 1.35;
-      -webkit-box-orient: vertical; -webkit-line-clamp: 2;
-    }
     #smartImageEditorModal .smart-image-sidebar-job-section .smart-image-job-progress { grid-column: 1; }
-    #smartImageEditorModal .smart-image-sidebar-job-section .smart-image-job-actions { align-self: start; }
+    #smartImageEditorModal .smart-image-sidebar-job-section .smart-image-job-actions { align-self: stretch; }
 
     #smartImageEditorModal .smart-image-studio-right > section {
       padding: 11px; border: 1px solid rgba(95, 112, 178, .14); border-radius: 13px; background: rgba(255, 255, 255, .58);
@@ -254,7 +255,6 @@
     }
     #smartImageEditorModal .smart-image-ai-card { border-color: rgba(79, 109, 255, .28); background: linear-gradient(145deg, rgba(255, 255, 255, .9), rgba(235, 240, 255, .78)); }
     #smartImageEditorModal .smart-image-step-card--primary .smart-image-step-heading > span { background: linear-gradient(135deg, #526fff, #8f5cf5); }
-    #smartImageEditorModal .smart-image-field-label { color: #5f6c93; font-size: 11px; font-weight: 700; }
     #smartImageEditorModal #smartImagePrompt {
       width: 100%; min-height: 120px; max-height: 210px; resize: vertical; padding: 10px; border: 1px solid rgba(91, 109, 174, .2);
       border-radius: 10px; color: #1d274c; font-size: 13px; line-height: 1.55; background: rgba(255, 255, 255, .82);
@@ -272,10 +272,9 @@
     #smartImageEditorModal .smart-image-prompt-actions svg, #smartImageEditorModal .smart-image-transform-row svg,
     #smartImageEditorModal .smart-image-export-actions svg { width: 13px; height: 13px; }
     #smartImageEditorModal select { width: 100%; min-height: 30px; padding: 0 6px; border: 1px solid rgba(91, 109, 174, .18); border-radius: 8px; color: #43517f; font-size: 11px; background: rgba(255, 255, 255, .86); }
-    #smartImageEditorModal .smart-image-generate-options { display: grid; grid-template-columns: 104px minmax(0, 1fr); align-items: end; gap: 8px; }
+    #smartImageEditorModal .smart-image-generate-options { display: grid; grid-template-columns: 104px; }
     #smartImageEditorModal .smart-image-generate-options label { display: grid; gap: 4px; color: #69769b; font-size: 10px; }
     #smartImageEditorModal .smart-image-generate-options label > span { font-weight: 700; }
-    #smartImageEditorModal .smart-image-call-hint { min-width: 0; padding-bottom: 7px; color: #7b5b1a; font-size: 10px; text-align: right; }
     #smartImageEditorModal .smart-image-generate-button,
     #smartImageEditorModal .smart-image-export-actions .primary {
       min-height: 42px; padding: 0 12px; display: flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-radius: 10px;
@@ -321,7 +320,7 @@
     #smartImageEditorModal #smartImageStatus[data-tone="success"] { color: #24785b; }
     #smartImageEditorModal #smartImageStatus[data-tone="error"] { color: #c5415a; }
     @media (max-width: 1180px) {
-      #smartImageEditorModal .smart-image-studio-body { grid-template-columns: 210px minmax(360px, 1fr) 292px; }
+      #smartImageEditorModal .smart-image-studio-body { grid-template-columns: 273px minmax(360px, 1fr) 292px; }
       #smartImageEditorModal .smart-image-studio-left, #smartImageEditorModal .smart-image-studio-right { padding: 9px; gap: 10px; }
       #smartImageEditorModal .smart-image-head-actions .smart-image-save-state { display: none; }
     }
@@ -329,7 +328,7 @@
       #smartImageEditorModal { padding: 6px; }
       #smartImageEditorModal .smart-image-studio { width: calc(100vw - 12px); height: calc(100dvh - 12px); border-radius: 16px; }
       #smartImageEditorModal .smart-image-studio-head { grid-template-columns: minmax(170px, 1fr) auto; }
-      #smartImageEditorModal .smart-image-studio-body { grid-template-columns: 196px minmax(340px, 1fr) 280px; overflow-x: auto; }
+      #smartImageEditorModal .smart-image-studio-body { grid-template-columns: 255px minmax(340px, 1fr) 280px; overflow-x: auto; }
     }
     @media (max-width: 720px) {
       #smartImageEditorModal .smart-image-studio { overflow: auto; grid-template-rows: 58px auto 34px; }

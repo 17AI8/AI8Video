@@ -98,11 +98,11 @@
       return `
         <aside class="smart-image-studio-left" aria-label="素材图片与其任务队列">
           <section class="smart-image-step-card smart-image-library-section" aria-label="最近选择的图片">
-            <div class="smart-image-step-heading"><span>1</span><div><strong>选择图片</strong><small>最近选择 · 最多 6 张</small></div></div>
+            <div class="smart-image-step-heading smart-image-step-heading--inline"><span>1</span><div><strong>选择图片</strong><small>最近选择 · 最多 6 张</small></div></div>
             <div id="smartImageLibraryList" class="smart-image-library-list"></div>
             <button type="button" class="smart-image-text-action" data-smart-image-action="manage-library">管理素材库</button>
           </section>
-          <section id="smartImageJobSection" class="smart-image-job-section smart-image-sidebar-job-section" aria-label="当前素材的任务队列"><div class="smart-image-section-title"><div><strong>任务队列</strong><span id="smartImageJobCount">0 项</span></div><small id="smartImageJobOwner">先选择素材图片</small></div><div id="smartImageJobList" class="smart-image-job-list"></div></section>
+          <section id="smartImageJobSection" class="smart-image-job-section smart-image-sidebar-job-section" aria-label="当前素材的任务队列"><div class="smart-image-section-title"><div><strong>任务队列</strong><span id="smartImageJobCount">0 项</span></div></div><div id="smartImageJobList" class="smart-image-job-list"></div></section>
         </aside>
       `;
     }
@@ -111,7 +111,7 @@
       return `
         <main class="smart-image-studio-main">
           <div class="smart-image-preview-head">
-            <div><small class="smart-image-eyebrow">预览与对比</small><strong id="smartImagePreviewTitle">等待导入图片</strong><span id="smartImagePreviewMeta">原图始终保留，不会被覆盖</span></div>
+            <div><strong id="smartImagePreviewTitle">等待导入图片</strong></div>
             <div class="smart-image-view-switch" role="group" aria-label="预览模式"><button type="button" data-smart-image-view="result" aria-pressed="false">结果</button><button type="button" data-smart-image-view="source" aria-pressed="true">原图</button><button type="button" data-smart-image-view="compare" aria-pressed="false">前后对比</button></div>
           </div>
           <section id="smartImagePreview" class="smart-image-preview" aria-live="polite"></section>
@@ -124,11 +124,10 @@
       return `
         <aside class="smart-image-studio-right" aria-label="描述、生成与导出">
           <section class="smart-image-ai-card smart-image-step-card smart-image-step-card--primary">
-            <div class="smart-image-step-heading"><span>2</span><div><strong>描述并生成</strong><small id="smartImagePresetSummary">按描述执行</small></div></div>
-            <label class="smart-image-field-label" for="smartImagePrompt">想把图片修成什么样？</label>
-            <textarea id="smartImagePrompt" maxlength="2000" rows="6" placeholder="例如：自然提亮人物，保留真实皮肤纹理，不改变五官和构图">${SMART_IMAGE_DEFAULT_PROMPT}</textarea>
+            <div class="smart-image-step-heading smart-image-step-heading--inline"><span>2</span><div><strong>描述并生成</strong><small id="smartImagePresetSummary">按描述执行</small></div></div>
+            <textarea id="smartImagePrompt" aria-label="图片修改描述" maxlength="2000" rows="6" placeholder="例如：自然提亮人物，保留真实皮肤纹理，不改变五官和构图">${SMART_IMAGE_DEFAULT_PROMPT}</textarea>
             <div class="smart-image-prompt-actions"><button type="button" data-smart-image-action="prompt-optimize">${smartImageIcon('sparkle')}AI 优化描述</button><button type="button" data-smart-image-action="prompt-reset">恢复建议</button></div>
-            <div class="smart-image-generate-options"><label for="smartImageBatchCount"><span>本次生成</span><select id="smartImageBatchCount" aria-label="生成结果数量"><option value="1">1 张</option><option value="2">2 张</option><option value="3">3 张</option><option value="4">4 张</option><option value="5">5 张</option><option value="6">6 张</option><option value="7">7 张</option><option value="8">8 张</option></select></label><div id="smartImageCallHint" class="smart-image-call-hint">预计调用图片模型 1 次</div></div>
+            <div class="smart-image-generate-options"><label for="smartImageBatchCount"><span>本次生成</span><select id="smartImageBatchCount" aria-label="生成结果数量"><option value="1">1 张</option><option value="2">2 张</option><option value="3">3 张</option><option value="4">4 张</option><option value="5">5 张</option><option value="6">6 张</option><option value="7">7 张</option><option value="8">8 张</option></select></label></div>
             <button type="button" class="smart-image-generate-button primary" data-smart-image-action="enqueue">${smartImageIcon('sparkle')}<span id="smartImageGenerateLabel">开始 AI 修图</span></button>
           </section>
 
@@ -138,7 +137,7 @@
           </details>
 
           <section id="smartImageFinishSection" class="smart-image-finish-card smart-image-step-card">
-            <div class="smart-image-step-heading"><span>3</span><div><strong>对比并导出</strong><small>导出为副本，不覆盖原图</small></div></div>
+            <div class="smart-image-step-heading smart-image-step-heading--inline"><span>3</span><div><strong>对比并导出</strong><small>导出为副本，不覆盖原图</small></div></div>
             <div class="smart-image-export-actions"><button type="button" class="primary" data-smart-image-action="export-current">${smartImageIcon('export')}导出当前</button><button type="button" data-smart-image-action="save-library">${smartImageIcon('library')}存入素材库</button></div>
             <details class="smart-image-export-settings"><summary><span>格式与质量</span>${smartImageIcon('chevron')}</summary><div class="smart-image-export-grid"><label for="smartImageExportFormat">格式<select id="smartImageExportFormat"><option value="png">PNG</option><option value="jpeg">JPEG</option><option value="webp">WebP</option></select></label><label id="smartImageExportQualityRow" for="smartImageExportQuality">质量 <b id="smartImageExportQualityValue">92</b><input id="smartImageExportQuality" type="range" min="60" max="100" value="92"></label></div></details>
           </section>
@@ -151,7 +150,7 @@
         <div id="smartImageEditorModal" class="modal-shell hidden" role="dialog" aria-modal="true" aria-labelledby="smartImageEditorTitle">
           <div class="smart-image-studio">
             <header class="smart-image-studio-head">
-              <div class="smart-image-brand"><span class="smart-image-brand-mark">AI</span><div><strong id="smartImageEditorTitle">智能修图</strong><span>选图、描述、生成，再对比导出</span></div></div>
+              <div class="smart-image-brand"><span class="smart-image-brand-mark" aria-hidden="true"></span><div><strong id="smartImageEditorTitle">智能修图</strong><span>选图、描述、生成，再对比导出</span></div></div>
               <div class="smart-image-head-actions"><span id="smartImageModelMeta" class="smart-image-model-badge">检查图片模型</span><span id="smartImageSaveState" class="smart-image-save-state" data-tone="saved">${smartImageIcon('save')}本地自动保存</span><button type="button" class="smart-image-icon-button" data-smart-image-action="close" aria-label="关闭智能修图">${smartImageIcon('close')}</button></div>
             </header>
             <div class="smart-image-studio-body">${smartImageLeftPanelMarkup()}${smartImageMainPanelMarkup()}${smartImageRightPanelMarkup()}</div>
@@ -175,15 +174,12 @@
         libraryList: modal.querySelector('#smartImageLibraryList'),
         preview: modal.querySelector('#smartImagePreview'),
         previewTitle: modal.querySelector('#smartImagePreviewTitle'),
-        previewMeta: modal.querySelector('#smartImagePreviewMeta'),
         resultList: modal.querySelector('#smartImageResultList'),
         resultCount: modal.querySelector('#smartImageResultCount'),
         jobList: modal.querySelector('#smartImageJobList'),
         jobCount: modal.querySelector('#smartImageJobCount'),
-        jobOwner: modal.querySelector('#smartImageJobOwner'),
         prompt: modal.querySelector('#smartImagePrompt'),
         batchCount: modal.querySelector('#smartImageBatchCount'),
-        callHint: modal.querySelector('#smartImageCallHint'),
         presetSummary: modal.querySelector('#smartImagePresetSummary'),
         generateLabel: modal.querySelector('#smartImageGenerateLabel'),
         modelMeta: modal.querySelector('#smartImageModelMeta'),

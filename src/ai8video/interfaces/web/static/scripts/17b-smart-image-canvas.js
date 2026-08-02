@@ -232,7 +232,6 @@
     function smartImageJobListMarkup() {
       const jobs = [...AI8SmartImage.state.jobs].reverse();
       if (!jobs.length) return '<div class="smart-image-empty-list">暂无任务。设置修图要求后点击“开始 AI 修图”。</div>';
-      const label = { queued: '等待中', running: '生成中', done: '已完成', partial: '部分完成', error: '失败' };
       return jobs.map((job) => {
         const selected = job.id === AI8SmartImage.state.selectedJobId;
         const attemptTotal = Math.max(1, Number(job.attemptTotal || job.total || 1));
@@ -241,7 +240,7 @@
         const removable = !['running'].includes(job.status);
         const resultCount = smartImageResultsForJob(job).length;
         const actions = removable ? `<span class="smart-image-job-actions">${['error', 'partial'].includes(job.status) ? `<button type="button" data-smart-image-retry-job="${job.id}">重试</button>` : ''}<button type="button" data-smart-image-remove-job="${job.id}" aria-label="删除任务及其 ${resultCount} 张结果" title="删除任务及其结果">${smartImageIcon('close')}</button></span>` : '';
-        return `<article class="smart-image-job${selected ? ' is-selected' : ''}" data-status="${job.status}"><button type="button" class="smart-image-job-select" data-smart-image-job="${job.id}" aria-pressed="${selected}"><span class="smart-image-job-state">${job.status === 'done' ? smartImageIcon('check') : smartImageIcon('sparkle')}</span><span class="smart-image-job-copy"><strong>修图任务 · 目标 ${job.total} 张</strong><span>${escapeHtml(label[job.status] || job.status)} · ${resultCount} 张结果${job.status === 'running' ? ` · 本轮 ${attemptDone}/${attemptTotal}` : ''}</span><small>${escapeHtml(job.error || job.prompt)}</small>${job.status === 'running' ? `<i class="smart-image-job-progress"><b style="width:${percent}%"></b></i>` : ''}</span></button>${actions}</article>`;
+        return `<article class="smart-image-job${selected ? ' is-selected' : ''}" data-status="${job.status}"><button type="button" class="smart-image-job-select" data-smart-image-job="${job.id}" aria-pressed="${selected}"><span class="smart-image-job-state">${job.status === 'done' ? smartImageIcon('check') : smartImageIcon('sparkle')}</span><span class="smart-image-job-copy"><strong>修图任务 · 目标 ${job.total} 张</strong>${job.status === 'running' ? `<i class="smart-image-job-progress"><b style="width:${percent}%"></b></i>` : ''}</span></button>${actions}</article>`;
       }).join('');
     }
 
@@ -256,12 +255,9 @@
       elements.resultCount.textContent = `${visibleResults.length} 张`;
       elements.jobList.innerHTML = smartImageJobListMarkup();
       elements.jobCount.textContent = `${AI8SmartImage.state.jobs.length} 项`;
-      if (elements.jobOwner) elements.jobOwner.textContent = source ? `${source.name} · 点击任务切换结果` : '先选择素材图片';
       elements.modal.querySelector('.smart-image-result-section')?.classList.toggle('is-empty', !visibleResults.length);
       elements.previewTitle.textContent = result ? `AI 结果 ${visibleResults.indexOf(result) + 1}` : source ? source.name : '等待导入图片';
-      elements.previewMeta.textContent = result ? `${result.model || '图片模型'} · 原图可随时对比` : source ? `${source.width} × ${source.height} · 原图始终保留` : '原图始终保留，不会被覆盖';
       elements.presetSummary.textContent = AI8SmartImage.state.selectedPresetId === 'custom' ? '自定义描述' : '建议描述';
-      elements.callHint.textContent = `本任务预计调用图片模型 ${AI8SmartImage.state.batchCount} 次${AI8SmartImage.state.promptOptimizing ? ' · 正在优化描述' : ''}`;
       elements.generateLabel.textContent = AI8SmartImage.state.processing ? '加入任务队列' : '开始 AI 修图';
       if (document.activeElement !== elements.prompt) elements.prompt.value = AI8SmartImage.state.prompt;
       elements.batchCount.value = String(AI8SmartImage.state.batchCount);
