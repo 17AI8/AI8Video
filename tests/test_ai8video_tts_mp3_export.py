@@ -142,7 +142,8 @@ class TtsMp3ExportTest(unittest.TestCase):
             filter_complex = commands[0][commands[0].index("-filter_complex") + 1]
             self.assertIn("[0:a:0]asplit=2[source0][source1]", filter_complex)
             self.assertIn("adelay=5000:all=1", filter_complex)
-            self.assertIn("atrim=duration=12.000", filter_complex)
+            self.assertIn("apad=whole_dur=12.000", filter_complex)
+            self.assertIn("atrim=end=12.000", filter_complex)
             self.assertIn("libmp3lame", commands[0])
 
     def test_export_falls_back_to_installed_lame_encoder(self) -> None:

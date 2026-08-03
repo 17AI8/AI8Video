@@ -223,6 +223,17 @@
     }
 
     function handleHtmlMotionChunkClick(event, element, duration) {
+      const lane = element.closest('.video-preview-html-motion-chunk-lane');
+      if (element.dataset.suppressHtmlMotionClick === 'true') {
+        delete element.dataset.suppressHtmlMotionClick;
+        event.stopPropagation();
+        return;
+      }
+      if (lane?.dataset.timelineIgnoreClick === 'true') {
+        delete lane.dataset.timelineIgnoreClick;
+        event.stopPropagation();
+        return;
+      }
       if (isHtmlMotionScissorMode()) {
         if (event.detail === 0) splitHtmlMotionTimelineAtPlayhead();
         else splitHtmlMotionTimelineAtPointer(event, element, duration);

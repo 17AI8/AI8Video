@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from threading import Event, Lock
 from typing import Callable
 
 from ai8video.assets.user_files import USER_FILE_ROOT
-from ai8video.core.models import ArchivedAsset, ParsedRequest, QuickVideoJob
+from ai8video.core.models import ArchivedAsset, ParsedRequest, QuickVideoJob, VideoPrompt
 from ai8video.generation.tail_frame_chaining import build_next_tail_frame_request
 
 
@@ -21,14 +21,20 @@ class ManualTailFrameGate:
     request: ParsedRequest
     previous_job: QuickVideoJob
     previous_archive: ArchivedAsset
+    next_video: VideoPrompt
     output_path: Path
     ready: Event
 
-    def refresh(self) -> ParsedRequest:
+    def refresh(self, predecessor_path: Path | None = None) -> ParsedRequest:
+        archive = (
+            replace(self.previous_archive, local_path=str(predecessor_path))
+            if predecessor_path is not None
+            else self.previous_archive
+        )
         self.request = build_next_tail_frame_request(
             self.request,
             self.previous_job,
-            self.previous_archive,
+            archive,
             self.output_path,
         )
         return self.request
@@ -46,6 +52,7 @@ def create_manual_tail_frame_gate(
     request: ParsedRequest,
     previous_job: QuickVideoJob,
     previous_archive: ArchivedAsset,
+    next_video: VideoPrompt,
 ) -> ManualTailFrameGate:
     output_dir = MANUAL_TAIL_FRAME_DIR / generation_batch_id
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -56,6 +63,7 @@ def create_manual_tail_frame_gate(
         request=request,
         previous_job=previous_job,
         previous_archive=previous_archive,
+        next_video=next_video,
         output_path=output_dir / f"video-{video_index}-reference.png",
         ready=Event(),
     )
@@ -86,10 +94,26 @@ def continue_manual_tail_frame(session_id: str, generation_batch_id: str, video_
     return _gate_status(gate)
 
 
-def refresh_manual_tail_frame(session_id: str, generation_batch_id: str, video_index: int) -> dict:
+def refresh_manual_tail_frame(
+    session_id: str,
+    generation_batch_id: str,
+    video_index: int,
+    predecessor_path: Path | None = None,
+) -> dict:
     gate = _get_gate(session_id, generation_batch_id, video_index)
-    gate.refresh()
+    gate.refresh(predecessor_path)
     return _gate_status(gate)
+
+
+def update_manual_tail_frame_prompt(
+    session_id: str, generation_batch_id: str, video_index: int, prompt: str
+) -> bool:
+    try:
+        gate = _get_gate(session_id, generation_batch_id, video_index)
+    except LookupError:
+        return False
+    gate.next_video.prompt = str(prompt)
+    return True
 
 
 def resolve_manual_tail_frame_preview(generation_batch_id: str, filename: str) -> Path:

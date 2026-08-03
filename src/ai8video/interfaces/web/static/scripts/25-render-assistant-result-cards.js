@@ -196,6 +196,13 @@
         : (motionOverlay.label ? `已生成 · ${motionOverlay.label}` : (isGeneratedResult(item) ? '已生成 · 点击播放' : '点击播放'));
       const mergeKey = userGeneratedKey || '';
       const selectionOrder = Array.isArray(options.selectedKeys) ? options.selectedKeys.indexOf(mergeKey) + 1 : 0;
+      const rollbackButton = !options.batchMerge && item?.__canTailFrameRollback && userGeneratedKey ? `
+        <button type="button" class="result-notify-rollback-button"
+          data-tail-frame-rollback="${Number(item.videoIndex || 0)}"
+          data-generation-batch-id="${escapeHtml(String(item.generationBatchId || ''))}"
+          data-user-generated-key="${escapeHtml(userGeneratedKey)}"
+          title="删除最新结果并回到等待继续状态">回退</button>
+      ` : '';
       const batchSelection = options.batchMerge && mergeKey ? `
         <button type="button" class="result-batch-merge-select${selectionOrder ? ' is-selected' : ''}"
           data-result-batch-merge-select="${escapeHtml(mergeKey)}" aria-pressed="${selectionOrder ? 'true' : 'false'}"
@@ -208,6 +215,7 @@
         <div class="result-notify-card ${resultNotifyRatioClass(item)}${selectionOrder ? ' is-batch-selected' : ''}">
           <div class="result-notify-preview">
             ${batchSelection}
+            ${rollbackButton}
             ${renderResultVideoPromptButton(item, index)}
             ${coverSrc
               ? `<img alt="${escapeHtml(title)}" src="${escapeHtml(coverSrc)}">`
@@ -491,6 +499,51 @@
       }
     }
 
+    async function rollbackLatestTailFrameResult(button) {
+      const videoIndex = Number(button?.getAttribute('data-tail-frame-rollback') || 0);
+      const generationBatchId = String(button?.getAttribute('data-generation-batch-id') || '').trim();
+      const userGeneratedKey = String(button?.getAttribute('data-user-generated-key') || '').trim();
+      const sessionId = String(state.activeId || '').trim();
+      if (!sessionId || !generationBatchId || !userGeneratedKey || videoIndex < 2 || button.disabled) return;
+      if (!window.confirm(`确认删除第 ${videoIndex} 条最新生成结果，并回到等待继续状态？`)) return;
+      button.disabled = true;
+      button.textContent = '回退中';
+      try {
+        const res = await fetch('/api/tail-frame-chain/rollback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, generationBatchId, videoIndex, userGeneratedKey }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.ok === false) throw new Error(data?.error || '回退失败');
+        const session = state.sessions.find((item) => item.id === sessionId);
+        if (session && data?.generationProgress) {
+          const incoming = {
+            status: 'pending',
+            phase: 'awaiting_tail_frame_continue',
+            generationBatchId,
+            generationProgress: data.generationProgress,
+          };
+          (session.messages || []).forEach((message) => {
+            if (message?.role !== 'assistant' || !message?.payload) return;
+            const messageBatchId = extractGenerationBatchId(message.payload);
+            if (messageBatchId && messageBatchId !== generationBatchId) return;
+            if (!message.payload.pendingStatus && !messageBatchId) return;
+            message.payload = mergeGenerationStatusPayload(message.payload, incoming, sessionId);
+          });
+          persistSessions();
+          render();
+        }
+        schedulePendingPoll(sessionId, 0);
+        void refreshAssets();
+        void refreshUserGeneratedResults();
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = '回退';
+        window.alert(error?.message || String(error));
+      }
+    }
+
     function resultVideoPrompt(item = {}, fallbackIndex = 0) {
       const direct = String(item.videoPrompt || item.prompt || '').trim();
       if (direct) return direct;
@@ -509,6 +562,7 @@
       return `<button type="button" class="result-video-prompt-button"
         data-result-video-prompt="${escapeHtml(encodeURIComponent(prompt))}"
         data-result-video-index="${videoIndex}"
+        data-generation-batch-id="${escapeHtml(String(item?.generationBatchId || ''))}"
         data-result-video-prompt-title="${escapeHtml(title)}"
         aria-label="查看${escapeHtml(title)}的视频提示词" title="查看视频提示词">•••</button>`;
     }
@@ -518,15 +572,23 @@
       const body = document.getElementById('resultVideoPromptBody');
       const title = document.getElementById('resultVideoPromptTitle');
       const copyButton = document.getElementById('resultVideoPromptCopyButton');
-      if (!modal || !body || !title || !copyButton) return;
+      const editButton = document.getElementById('resultVideoPromptEditButton');
+      const saveButton = document.getElementById('resultVideoPromptSaveButton');
+      if (!modal || !body || !title || !copyButton || !editButton || !saveButton) return;
       const encoded = String(button?.getAttribute('data-result-video-prompt') || '');
       let prompt = '';
       try { prompt = decodeURIComponent(encoded); } catch (_error) { prompt = encoded; }
       title.textContent = button?.getAttribute('data-result-video-prompt-title') || '视频提示词';
       body.textContent = prompt || '正在读取实际提交给视频模型的最终提示词…';
+      body.contentEditable = 'false';
       body.classList.toggle('is-empty', !prompt);
       copyButton.disabled = !prompt;
       copyButton.dataset.copyText = prompt;
+      editButton.disabled = !prompt;
+      saveButton.disabled = true;
+      modal.dataset.sessionId = String(state.activeId || '').trim();
+      modal.dataset.generationBatchId = String(button?.getAttribute('data-generation-batch-id') || '').trim();
+      modal.dataset.videoIndex = String(Number(button?.getAttribute('data-result-video-index') || 0));
       modal.classList.remove('hidden');
       if (prompt) return;
       const sessionId = String(state.activeId || '').trim();
@@ -540,6 +602,7 @@
         body.classList.remove('is-empty');
         copyButton.disabled = false;
         copyButton.dataset.copyText = prompt;
+        editButton.disabled = false;
         button.setAttribute('data-result-video-prompt', encodeURIComponent(prompt));
       } catch (error) {
         body.textContent = error?.message || '未找到该视频实际提交的最终提示词';
@@ -558,6 +621,59 @@
       const previous = button.textContent;
       button.textContent = '已复制';
       window.setTimeout(() => { button.textContent = previous; }, 1200);
+    }
+
+    function editResultVideoPrompt() {
+      const body = document.getElementById('resultVideoPromptBody');
+      const saveButton = document.getElementById('resultVideoPromptSaveButton');
+      if (!body || !saveButton || body.classList.contains('is-empty')) return;
+      body.contentEditable = 'true';
+      body.classList.add('is-editing');
+      saveButton.disabled = false;
+      body.focus();
+    }
+
+    async function saveResultVideoPrompt() {
+      const modal = document.getElementById('resultVideoPromptModal');
+      const body = document.getElementById('resultVideoPromptBody');
+      const saveButton = document.getElementById('resultVideoPromptSaveButton');
+      const copyButton = document.getElementById('resultVideoPromptCopyButton');
+      const sessionId = String(modal?.dataset?.sessionId || '').trim();
+      const generationBatchId = String(modal?.dataset?.generationBatchId || '').trim();
+      const videoIndex = Number(modal?.dataset?.videoIndex || 0);
+      const videoPrompt = String(body?.innerText || '').trim();
+      if (!modal || !body || !saveButton || !copyButton || !sessionId || !generationBatchId || videoIndex < 1 || !videoPrompt) return;
+      saveButton.disabled = true;
+      saveButton.textContent = '保存中';
+      try {
+        const res = await fetch('/api/generation/video-prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, generationBatchId, videoIndex, videoPrompt }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.ok === false) throw new Error(data?.error || '保存提示词失败');
+        body.textContent = videoPrompt;
+        body.contentEditable = 'false';
+        body.classList.remove('is-editing');
+        copyButton.dataset.copyText = videoPrompt;
+        document.querySelectorAll(`[data-result-video-index="${videoIndex}"][data-generation-batch-id="${CSS.escape(generationBatchId)}"]`).forEach((button) => {
+          button.setAttribute('data-result-video-prompt', encodeURIComponent(videoPrompt));
+        });
+        const session = state.sessions.find((item) => item.id === sessionId);
+        const items = session?.messages?.at?.(-1)?.payload?.pendingStatus?.generationProgress?.items;
+        if (Array.isArray(items)) {
+          const item = items.find((value) => Number(value?.videoIndex || 0) === videoIndex);
+          if (item) item.videoPrompt = videoPrompt;
+          persistSessions();
+        }
+        saveButton.textContent = '已保存';
+        window.setTimeout(() => { saveButton.textContent = '保存'; }, 1000);
+      } catch (error) {
+        saveButton.disabled = false;
+        saveButton.textContent = '保存';
+        window.alert(error?.message || String(error));
+      }
     }
 
     function showGenerationRetryPendingCard(button) {

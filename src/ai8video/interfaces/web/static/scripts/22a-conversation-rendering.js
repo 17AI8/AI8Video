@@ -452,6 +452,15 @@
       const progressItems = Array.isArray(progress.items)
         ? progress.items
         : [];
+      const latestSucceededIndex = progressItems.reduce((latest, item) => (
+        String(item?.status || '').trim() === 'succeeded'
+          ? Math.max(latest, Number(item?.videoIndex || 0))
+          : latest
+      ), 0);
+      const hasManualWaitAfterLatest = progressItems.some((item) => (
+        Number(item?.videoIndex || 0) > latestSucceededIndex
+        && String(item?.status || '').trim() === 'awaiting_tail_frame_continue'
+      ));
       const items = progressItems
         .map((item, index) => {
           const itemWithBatch = {
@@ -464,7 +473,13 @@
           const canMatchGeneratedMirror = itemStatus !== 'failed'
             || Boolean(String(itemWithBatch.jobId || '').trim());
           const mirror = canMatchGeneratedMirror ? findUserGeneratedMirror(itemWithBatch) : null;
-          if (mirror?.userGeneratedKey) return mirror;
+          if (mirror?.userGeneratedKey) return {
+            ...mirror,
+            videoPrompt: itemWithBatch.videoPrompt || mirror.videoPrompt || mirror.prompt || '',
+            generationBatchId: itemWithBatch.generationBatchId,
+            __canTailFrameRollback: hasManualWaitAfterLatest
+              && Number(itemWithBatch.videoIndex || 0) === latestSucceededIndex,
+          };
           return buildProgressStatusResultItem(itemWithBatch, index, progressItems);
         })
         .filter(Boolean);

@@ -305,12 +305,14 @@
       };
     }
 
-    function mergeGenerationProgressSnapshot(previousProgress = {}, nextProgress = {}) {
+    function mergeGenerationProgressSnapshot(previousProgress = {}, nextProgress = {}, options = {}) {
       if (!nextProgress || typeof nextProgress !== 'object') return nextProgress;
       const previousBatchId = String(previousProgress?.generationBatchId || '').trim();
       const nextBatchId = String(nextProgress?.generationBatchId || '').trim();
       const differentBatch = previousBatchId && nextBatchId && previousBatchId !== nextBatchId;
       const authoritativeRecovery = !!(
+        options.authoritative === true
+        ||
         nextProgress.readOnlyRecovery
         || nextProgress.statelessProgress
         || ['cancelled', 'canceled'].includes(String(nextProgress.status || '').trim())
@@ -341,18 +343,20 @@
       };
     }
 
-    function mergeGenerationStatusPayload(payload = {}, data = {}, sessionId = '') {
+    function mergeGenerationStatusPayload(payload = {}, data = {}, sessionId = '', options = {}) {
       const previousPending = payload?.pendingStatus || {};
       const incomingPending = extractPendingStatus(data, sessionId) || {};
       const incomingProgress = incomingPending.generationProgress;
       const authoritativeRecovery = !!(
+        options.authoritative === true
+        ||
         incomingPending.readOnlyRecovery
         || incomingPending.statelessProgress
         || incomingProgress?.readOnlyRecovery
         || incomingProgress?.statelessProgress
       );
       const generationProgress = incomingProgress
-        ? mergeGenerationProgressSnapshot(previousPending.generationProgress, incomingProgress)
+        ? mergeGenerationProgressSnapshot(previousPending.generationProgress, incomingProgress, options)
         : previousPending.generationProgress;
       const pendingBase = authoritativeRecovery ? {} : previousPending;
       const nextPayload = {
@@ -440,13 +444,9 @@
         const pendingMessage = [...(session?.messages || [])].reverse().find((message) => (
           message?.role === 'assistant'
           && (message?.payload?.pendingStatus || extractGenerationBatchId(message?.payload))
-          && !isConversationContinuationClosed(message.payload)
         ));
         if (pendingMessage) {
-          const targetMessage = [...(session?.messages || [])].reverse().find((message) => (
-            message?.role === 'assistant' && message?.payload
-          )) || pendingMessage;
-          const recovered = await reconcilePendingSessionAfterReload(session, targetMessage, pendingMessage);
+          const recovered = await reconcilePendingSessionAfterReload(session, pendingMessage, pendingMessage);
           if (recovered) changed = true;
           continue;
         }
@@ -483,7 +483,12 @@
           return true;
         }
         if (!data?.generationProgress) return false;
-        messageToUpdate.payload = mergeGenerationStatusPayload(messageToUpdate.payload, data, sessionId);
+        messageToUpdate.payload = mergeGenerationStatusPayload(
+          messageToUpdate.payload,
+          data,
+          sessionId,
+          { authoritative: true },
+        );
         return true;
       } catch (error) {
         console.error(error);

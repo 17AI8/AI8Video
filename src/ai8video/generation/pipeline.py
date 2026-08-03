@@ -459,6 +459,7 @@ class AI8VideoPipeline:
             request=active_request,
             previous_job=previous_job,
             previous_archive=previous_archive,
+            next_video=next_video,
         )
         preview_url = (
             f"/tail-frame-previews/{batch_id}/{gate.output_path.name}"

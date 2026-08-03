@@ -171,7 +171,7 @@
           const chunkElement = lane.querySelector(`[data-video-preview-html-motion-chunk][data-chunk-index="${entry.index}"]`);
           if (!chunkElement) return;
           chunkElement.style.left = `${entry.item.startSeconds / duration * 100}%`;
-          chunkElement.querySelector('small').textContent = `${entry.item.startSeconds.toFixed(1)}s`;
+          chunkElement.title = `起点 ${entry.item.startSeconds.toFixed(1)} 秒，释放后保存`;
         });
         timelineSyncSnapGuide(lane, duration, resolved.snap);
         const video = els.videoPreviewBody?.querySelector('video');
@@ -204,6 +204,7 @@
           return;
         }
         if (dragged) {
+          element.dataset.suppressHtmlMotionClick = 'true';
           const changed = recordTimelineHistory('html', `移动 ${selectedItems.length} 个动效片段`, historyBefore);
           if (!changed) return setHtmlMotionTimelineStatus('动效位置未变化');
           commitLocalHtmlMotionTimeline(`已移动 ${selectedItems.length} 个动效片段`);

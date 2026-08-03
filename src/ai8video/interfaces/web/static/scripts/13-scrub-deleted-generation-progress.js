@@ -3,6 +3,7 @@
       let changed = false;
       const items = progress.items.map((item) => {
         if (!itemMatchesDeletedUserGeneratedIdentity(item, identity)) return item;
+        if (String(item?.status || '').trim() !== 'succeeded') return item;
         changed = true;
         return markDeletedProgressItem(item);
       });
@@ -67,7 +68,10 @@
         state.generationProgress = {
           ...state.generationProgress,
           cards: (state.generationProgress.cards || []).map((item) => (
-            itemMatchesDeletedUserGeneratedIdentity(item, identity) ? markDeletedProgressItem(item) : item
+            itemMatchesDeletedUserGeneratedIdentity(item, identity)
+              && String(item?.status || '').trim() === 'succeeded'
+              ? markDeletedProgressItem(item)
+              : item
           )),
         };
       }
@@ -597,7 +601,9 @@
           if (!Array.isArray(progress?.items)) return;
           progress.items = progress.items.map((item) => {
             const result = bySessionVideo.get(`${session.id}:${Number(item?.videoIndex || 0)}`);
-            if (!result || String(item?.status || '').trim() === 'succeeded') return item;
+            const status = String(item?.status || '').trim();
+            const canonicalResult = String(result?.userGeneratedKey || '').startsWith('video/');
+            if (!result || !canonicalResult || status !== 'deleted') return item;
             changed = true;
             return {
               ...item,

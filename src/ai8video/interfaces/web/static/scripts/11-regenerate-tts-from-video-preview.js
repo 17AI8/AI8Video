@@ -71,8 +71,15 @@
       if (!video) return;
       const livePreviewUrl = String(overlay?.livePreviewUrl || '').trim();
       if (livePreviewUrl) {
-        if (previewUrl) {
-          video.src = `${previewUrl}${previewUrl.includes('?') ? '&' : '?'}v=${Date.now()}`;
+        const reviewId = String(overlay?.reviewId || '').trim();
+        const basePreviewUrl = String(
+          overlay?.basePreviewUrl
+          || (reviewId ? `/api/user-generated-results/html-motion-base/${encodeURIComponent(reviewId)}` : '')
+          || previewUrl
+          || '',
+        ).trim();
+        if (basePreviewUrl) {
+          video.src = `${basePreviewUrl}${basePreviewUrl.includes('?') ? '&' : '?'}v=${Date.now()}`;
           video.load();
         }
         if (state.videoPreviewModal) state.videoPreviewModal.htmlMotionLivePreviewUrl = livePreviewUrl;

@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import time
 from datetime import datetime
+from pathlib import Path
 from queue import Empty
 from queue import Queue
 from typing import Any, Callable
@@ -23,6 +24,7 @@ from ai8video.generation.generation_progress import (
     create_generation_batch_id,
     fail_generation_progress,
     fail_unsubmitted_generation_progress,
+    get_generation_batch_family_snapshot,
     get_generation_ledger_snapshot,
     get_generation_progress,
     mark_job_polling,
@@ -726,10 +728,14 @@ def get_chat_status_via_ai8video(session_id: str, generation_batch_id: str | Non
     if session is None:
         return _recover_chat_status_from_ledger(session_id, requested_generation_batch_id)
     status = session.snapshot_status()
-    if not requested_generation_batch_id:
-        return status
     current_generation_batch_id = _status_generation_batch_id(status)
-    if current_generation_batch_id == requested_generation_batch_id:
+    family = get_generation_batch_family_snapshot(
+        session_id,
+        requested_generation_batch_id or current_generation_batch_id,
+    )
+    if isinstance(family, dict) and family.get("childBatches"):
+        return _merge_live_status_with_generation_family(status, family)
+    if not requested_generation_batch_id or current_generation_batch_id == requested_generation_batch_id:
         return status
     return _unknown_generation_batch_status(
         session_id,
@@ -740,7 +746,7 @@ def get_chat_status_via_ai8video(session_id: str, generation_batch_id: str | Non
 
 def _recover_chat_status_from_ledger(session_id: str, generation_batch_id: str | None) -> dict:
     try:
-        ledger_snapshot = get_generation_ledger_snapshot(session_id, generation_batch_id)
+        ledger_snapshot = get_generation_batch_family_snapshot(session_id, generation_batch_id)
     except Exception as exc:
         body = _idle_chat_status(session_id, generation_batch_id)
         body["ledgerSnapshotError"] = str(exc)
@@ -772,16 +778,24 @@ def _recover_chat_status_from_ledger(session_id: str, generation_batch_id: str |
         "statelessProgress": True,
         "stalePending": True,
     }
+    asset_records: list[dict[str, Any]] = []
     try:
+        asset_records = JsonlAssetStore(AI8VideoConfig.from_env().asset_store_path).read_all()
         checkpoint = prepare_recovered_tail_frame_resume(
             session_id=session_id,
             source_batch_id=recovered_generation_batch_id,
             progress=recovered_progress,
-            asset_records=JsonlAssetStore(AI8VideoConfig.from_env().asset_store_path).read_all(),
+            asset_records=asset_records,
         )
     except (FileNotFoundError, LookupError, RuntimeError, ValueError):
         checkpoint = None
     if checkpoint is not None:
+        _restore_completed_recovery_items(
+            recovered_progress,
+            asset_records,
+            session_id,
+            checkpoint.next_video_index,
+        )
         for item in recovered_progress["items"]:
             video_index = int(item.get("videoIndex") or 0)
             if video_index == checkpoint.next_video_index:
@@ -827,6 +841,59 @@ def _recover_chat_status_from_ledger(session_id: str, generation_batch_id: str |
     if isinstance(result_reconciliation, dict):
         body["resultReconciliation"] = result_reconciliation
     return body
+
+
+def _merge_live_status_with_generation_family(status: dict, family: dict) -> dict:
+    progress = dict(family.get("progress") or {})
+    root_batch_id = str(family.get("generationBatchId") or "").strip()
+    active = str(progress.get("status") or "").strip() == "active"
+    return {
+        **status,
+        "status": "pending" if active else status.get("status"),
+        "phase": family.get("phase") or status.get("phase"),
+        "generationBatchId": root_batch_id,
+        "generationProgress": progress,
+        "generationBatchFamily": {
+            "rootGenerationBatchId": root_batch_id,
+            "children": family.get("childBatches") or [],
+        },
+    }
+
+
+def _restore_completed_recovery_items(
+    progress: dict[str, Any],
+    asset_records: list[dict[str, Any]],
+    session_id: str,
+    next_video_index: int,
+) -> None:
+    items = [dict(item) for item in progress.get("items") or [] if isinstance(item, dict)]
+    items_by_index = {int(item.get("videoIndex") or 0): item for item in items}
+    latest_records: dict[int, dict[str, Any]] = {}
+    for record in asset_records:
+        video_index = int(record.get("videoIndex") or 0)
+        if (
+            str(record.get("sessionId") or "") == session_id
+            and 0 < video_index < next_video_index
+            and str(record.get("generationStatus") or "") == "generated"
+            and Path(str(record.get("archiveLocalPath") or "")).is_file()
+        ):
+            latest_records[video_index] = record
+    for video_index, record in latest_records.items():
+        previous = items_by_index.get(video_index, {})
+        items_by_index[video_index] = {
+            **previous,
+            "videoIndex": video_index,
+            "title": str(previous.get("title") or record.get("videoTitle") or f"视频 {video_index}"),
+            "status": "succeeded",
+            "statusLabel": "已生成",
+            "jobId": record.get("jobId"),
+            "videoUrl": record.get("archiveUrl") or record.get("videoUrl"),
+            "assetRecord": record,
+            "hasLocalAsset": True,
+        }
+        items_by_index[video_index].pop("historicalSnapshot", None)
+        items_by_index[video_index].pop("error", None)
+    progress["items"] = [items_by_index[index] for index in sorted(items_by_index) if index > 0]
 
 
 def _recovered_manual_wait_events(events: Any, next_video_index: int) -> list[dict[str, Any]]:

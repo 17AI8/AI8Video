@@ -134,22 +134,20 @@
 
     function findUserGeneratedMirror(item) {
       const results = Array.isArray(state.userGeneratedResults) ? state.userGeneratedResults : [];
-      const requestedKey = String(item?.userGeneratedKey || '').trim();
+      const assetRecord = item?.assetRecord && typeof item.assetRecord === 'object' ? item.assetRecord : {};
+      const requestedKey = String(item?.userGeneratedKey || assetRecord.archiveKey || '').trim();
       if (requestedKey) {
         return results.find((result) => result.userGeneratedKey === requestedKey) || null;
       }
       const candidates = [
-        item?.jobId,
-        item?.archiveKey,
-        item?.archiveUrl,
-        item?.archiveLocalPath,
-        item?.localVideoPath,
-        item?.videoUrl,
+        item?.archiveKey || assetRecord.archiveKey,
+        item?.archiveUrl || assetRecord.archiveUrl,
+        item?.archiveLocalPath || assetRecord.archiveLocalPath,
+        item?.localVideoPath || assetRecord.localVideoPath,
+        item?.videoUrl || assetRecord.videoUrl,
       ].map(mediaKeyBasename).filter(Boolean);
-      if (!candidates.length) return null;
-      return results.find((result) => {
+      const exactMediaMatches = results.filter((result) => {
         const resultNames = [
-          result?.jobId,
           result?.userGeneratedKey,
           result?.archiveKey,
           result?.archiveUrl,
@@ -158,7 +156,17 @@
           result?.videoUrl,
         ].map(mediaKeyBasename).filter(Boolean);
         return resultNames.some((name) => candidates.includes(name));
-      }) || null;
+      });
+      const exactMediaMatch = exactMediaMatches.find((result) => (
+        String(result?.userGeneratedKey || '').startsWith('video/')
+      )) || exactMediaMatches[0];
+      if (exactMediaMatch) return exactMediaMatch;
+      const jobId = String(item?.jobId || assetRecord.jobId || '').trim();
+      if (!jobId) return null;
+      return results.find((result) => (
+        String(result?.jobId || '').trim() === jobId
+        && String(result?.userGeneratedKey || '').startsWith('video/')
+      )) || results.find((result) => String(result?.jobId || '').trim() === jobId) || null;
     }
 
     function itemRequiresUserGeneratedMirror(item) {

@@ -33,7 +33,12 @@ from ai8video.media import timeline_boundary
 from ai8video.media import tts_waveform
 from ai8video.media import video_timeline_review
 from ai8video.media.background_music_track import _merged_bgm_command, build_hidden_bgm_timeline
-from ai8video.media.merged_preview_tracks import merged_tts_chunks, merged_video_chunks
+from ai8video.media.merged_preview_tracks import (
+    edited_video_durations,
+    merged_edited_video_chunks,
+    merged_tts_chunks,
+    merged_video_chunks,
+)
 from ai8video.media.motion import html_motion_review
 from ai8video.media.motion import html_motion_merge
 from ai8video.media.motion import hyperframes_overlay_renderer
@@ -53,6 +58,88 @@ def read_static_source() -> str:
 
 
 class AI8VideoShortVideoWebTest(unittest.TestCase):
+    def test_rollback_latest_tail_frame_result_restores_wait_and_resets_downstream(self) -> None:
+        progress = {
+            "items": [
+                {"videoIndex": 1, "status": "succeeded"},
+                {"videoIndex": 2, "status": "succeeded"},
+                {
+                    "videoIndex": 3,
+                    "status": "succeeded",
+                    "videoPrompt": "third",
+                    "assetRecord": {"archiveKey": "video/third.mp4"},
+                },
+                {"videoIndex": 4, "status": "awaiting_tail_frame_continue", "tailFramePreviewUrl": "/old.png"},
+                {"videoIndex": 5, "status": "pending_submission"},
+            ]
+        }
+        checkpoint = SimpleNamespace(next_video_index=3, preview_url=lambda: "/video-3-reference.png")
+        ledger_writer = Mock()
+        with patch.object(
+            ai8video_web, "get_generation_batch_family_snapshot",
+            return_value={"progress": progress},
+        ), patch.object(
+            ai8video_web, "_delete_user_generated_video",
+            return_value={"deleted": ["video/third.mp4"]},
+        ), patch.object(JsonlAssetStore, "read_all", return_value=[]), patch.object(
+            ai8video_web, "prepare_rollback_tail_frame_resume", return_value=checkpoint,
+        ), patch.object(ai8video_web, "TaskLedger", return_value=ledger_writer):
+            result = ai8video_web._rollback_latest_tail_frame_result({
+                "sessionId": "session-1",
+                "generationBatchId": "batch-1",
+                "videoIndex": 3,
+                "userGeneratedKey": "video/third.mp4",
+            })
+
+        items = result["generationProgress"]["items"]
+        self.assertEqual(items[2]["status"], "awaiting_tail_frame_continue")
+        self.assertEqual(items[2]["tailFramePreviewUrl"], "/video-3-reference.png")
+        self.assertEqual(items[3]["status"], "pending_submission")
+        self.assertNotIn("tailFramePreviewUrl", items[3])
+        self.assertEqual(items[4]["status"], "pending_submission")
+        ledger_writer.upsert_generation_batch.assert_called_once()
+
+    def test_rollback_accepts_latest_result_from_child_batch(self) -> None:
+        progress = {
+            "items": [
+                {"videoIndex": 1, "status": "succeeded"},
+                {
+                    "videoIndex": 2,
+                    "status": "succeeded",
+                    "childGenerationBatchId": "child-2",
+                    "assetRecord": {"archiveKey": "video/second.mp4"},
+                },
+                {"videoIndex": 3, "status": "pending_submission"},
+            ]
+        }
+        child_ledger = {
+            "status": "completed",
+            "phase": "completed",
+            "progress": {"items": [{"videoIndex": 2, "status": "succeeded"}]},
+        }
+        checkpoint = SimpleNamespace(next_video_index=2, preview_url=lambda: "/video-2-reference.png")
+        ledger_writer = Mock()
+        with patch.object(
+            ai8video_web, "get_generation_batch_family_snapshot", return_value={"progress": progress},
+        ), patch.object(
+            ai8video_web, "get_generation_ledger_snapshot", return_value=child_ledger,
+        ), patch.object(
+            ai8video_web, "_delete_user_generated_video", return_value={"deleted": ["video/second.mp4"]},
+        ), patch.object(JsonlAssetStore, "read_all", return_value=[]), patch.object(
+            ai8video_web, "prepare_rollback_tail_frame_resume", return_value=checkpoint,
+        ), patch.object(ai8video_web, "TaskLedger", return_value=ledger_writer):
+            result = ai8video_web._rollback_latest_tail_frame_result({
+                "sessionId": "session-1",
+                "generationBatchId": "root-1",
+                "videoIndex": 2,
+                "userGeneratedKey": "video/second.mp4",
+            })
+
+        self.assertEqual(result["generationProgress"]["items"][1]["status"], "awaiting_tail_frame_continue")
+        child_write = ledger_writer.upsert_generation_batch.call_args_list[1].kwargs
+        self.assertEqual(child_write["generation_batch_id"], "child-2")
+        self.assertEqual(child_write["progress"]["items"][0]["status"], "awaiting_tail_frame_continue")
+
     def setUp(self) -> None:
         self.tempdir = tempfile.TemporaryDirectory()
         self.root = Path(self.tempdir.name)
@@ -1468,6 +1555,13 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn('function currentHtmlMotionSelectedChunkIndexes()', source)
         self.assertIn('excludeIndexes: selectedIndexes', source)
         self.assertIn('已移动 ${selectedItems.length} 个动效片段', source)
+        self.assertIn("chunkElement.title = `起点 ${entry.item.startSeconds.toFixed(1)} 秒，释放后保存`;", source)
+        html_drag_start = source.index('function beginHtmlMotionChunkDrag')
+        html_drag_end = source.index('function bindHtmlMotionChunkEndTrim', html_drag_start)
+        self.assertNotIn("chunkElement.querySelector('small').textContent", source[html_drag_start:html_drag_end])
+        self.assertIn("element.dataset.suppressHtmlMotionClick = 'true';", source)
+        self.assertIn("if (element.dataset.suppressHtmlMotionClick === 'true') {", source)
+        self.assertIn("if (lane?.dataset.timelineIgnoreClick === 'true') {", source)
 
     def test_tts_timeline_supports_marquee_and_batch_selection(self) -> None:
         source = read_static_source()
@@ -1483,9 +1577,29 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn('state.videoPreviewModal.ttsSelectedChunkIndexes = selectedIndexes;', source)
         self.assertIn("lane.addEventListener('click', (event) => {", source)
         self.assertIn("lane.addEventListener('lostpointercapture', end);", source)
+        self.assertIn("if (moved) lane.dataset.timelineIgnoreClick = 'true';", source)
+        self.assertIn("if (lane.dataset.timelineIgnoreClick === 'true') {", source)
         self.assertIn('delete element.dataset.suppressTtsClick;', source)
         self.assertIn("'/api/user-generated-results/delete-html-motion-review'", source)
         self.assertIn('selected.length === chunks.length', source)
+
+    def test_confirm_burn_does_not_replace_open_preview_source(self) -> None:
+        source = (STATIC_ROOT / "scripts" / "11d-timeline-boundary-and-burn.js").read_text(encoding="utf-8")
+        start = source.index("async function applyConfirmedBurn(data, button)")
+        end = source.index("async function confirmBurnFromVideoPreview", start)
+        apply_source = source[start:end]
+        self.assertNotIn("video.src", apply_source)
+        self.assertNotIn("officialSrc", apply_source)
+        self.assertNotIn("refreshUserGeneratedResults", apply_source)
+        self.assertNotIn("renderResultModal", apply_source)
+        self.assertNotIn("renderStatus", apply_source)
+
+    def test_html_motion_live_preview_uses_clean_base_instead_of_composited_candidate(self) -> None:
+        source = read_static_source()
+
+        self.assertIn("overlay?.basePreviewUrl", source)
+        self.assertIn("/api/user-generated-results/html-motion-base/${encodeURIComponent(reviewId)}", source)
+        self.assertIn("video.src = `${basePreviewUrl}", source)
 
     def test_timeline_ruler_click_moves_shared_playhead(self) -> None:
         source = read_static_source()
@@ -2931,6 +3045,30 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertEqual(progress["deletedCount"], 1)
         self.assertEqual(progress["items"][0]["status"], "deleted")
         self.assertFalse(progress["items"][0]["hasLocalAsset"])
+
+    def test_in_memory_progress_does_not_mark_active_retry_as_deleted(self) -> None:
+        video_path = self.root / "用户生成结果" / "video" / "old-retry.mp4"
+        body = {
+            "generationProgress": {
+                "items": [
+                    {
+                        "videoIndex": 6,
+                        "status": "polling",
+                        "statusLabel": "视频生成中",
+                        "jobId": "old-job-id",
+                        "assetRecord": {
+                            "jobId": "old-job-id",
+                            "archiveStatus": "archived",
+                            "archiveLocalPath": str(video_path),
+                        },
+                    }
+                ]
+            }
+        }
+
+        ai8video_web._apply_deleted_asset_progress_state(body)
+
+        self.assertEqual(body["generationProgress"]["items"][0]["status"], "polling")
 
     def test_in_memory_progress_marks_archived_local_asset_completed(self) -> None:
         video_path = self.root / "用户生成结果" / "video" / "memory-done.mp4"
@@ -5646,7 +5784,13 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             with patch.object(ai8video_web.AI8VideoConfig, "from_env", return_value=SimpleNamespace()), \
                  patch.object(ai8video_web, "_find_retryable_asset_record", return_value={}), \
                  patch.object(ai8video_web, "_build_retry_inputs", return_value=(retry_request, video, None)), \
+                 patch.object(ai8video_web, "get_generation_ledger_snapshot", return_value={
+                     "generationBatchId": "batch-old",
+                     "rootGenerationBatchId": "batch-old",
+                     "progress": {"items": [{"videoIndex": 1, "status": "failed"}]},
+                 }), \
                  patch.object(ai8video_web, "create_generation_batch_id", return_value="batch-retry"), \
+                 patch.object(ai8video_web, "register_generation_child_batch") as register_child, \
                  patch.object(ai8video_web, "clear_generation_progress") as clear_progress, \
                  patch.object(ai8video_web, "claim_generation_batch") as claim_batch, \
                  patch.object(ai8video_web, "start_generation_progress") as start_progress, \
@@ -5660,9 +5804,11 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         clear_progress.assert_called_once_with("session-1")
         claim_batch.assert_called_once_with("session-1", "batch-retry")
         start_progress.assert_called_once_with("session-1", [video], generation_batch_id="batch-retry")
+        register_child.assert_called_once()
         start_worker.assert_called_once()
         self.assertEqual(body["status"], "pending")
-        self.assertEqual(body["generationBatchId"], "batch-retry")
+        self.assertEqual(body["generationBatchId"], "batch-old")
+        self.assertEqual(body["childGenerationBatchId"], "batch-retry")
 
     def test_retry_inputs_restore_tail_frame_mode(self) -> None:
         record = {
@@ -5682,6 +5828,40 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertTrue(retry_request.tail_frame_chaining)
         self.assertFalse(retry_request.concurrent_generation)
         self.assertEqual(video.index, 2)
+
+    def test_retry_recovers_pre_submission_failure_from_progress_ledger(self) -> None:
+        config = SimpleNamespace(asset_store_path=self.root / "assets.jsonl")
+        JsonlAssetStore(config.asset_store_path).rewrite_all([{
+            "sessionId": "session-1",
+            "generationBatchId": "batch-1",
+            "videoIndex": 1,
+            "generationStatus": "generated",
+            "request": {
+                "mode": "batch_videos",
+                "durationSeconds": 10,
+                "ratio": "9:16",
+                "resolution": "720p",
+                "preset": "custom",
+                "tailFrameChaining": True,
+            },
+        }])
+        ledger = {"progress": {"items": [{
+            "videoIndex": 3,
+            "title": "第三条",
+            "videoPrompt": "已规划的第三条提示词",
+            "status": "failed",
+            "error": "上游连接中断",
+        }]}}
+
+        with patch.object(ai8video_web, "get_generation_ledger_snapshot", return_value=ledger):
+            record = ai8video_web._find_retryable_asset_record(
+                config, "session-1", "batch-1", 3,
+            )
+
+        self.assertEqual(record["videoIndex"], 3)
+        self.assertEqual(record["videoTitle"], "第三条")
+        self.assertEqual(record["prompt"], "已规划的第三条提示词")
+        self.assertEqual(record["request"]["resolution"], "720p")
 
     def test_tail_frame_retry_requires_successful_predecessor(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -5715,8 +5895,49 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                     2,
                     retry_request,
                 )
-
             self.assertEqual(source, str(predecessor))
+
+    def test_tail_frame_refresh_prefers_latest_video_timeline_candidate(self) -> None:
+        current = self.root / "current.mp4"
+        candidate = self.root / "candidate.mp4"
+        current.write_bytes(b"current")
+        candidate.write_bytes(b"edited-tail")
+        records = [{
+            "sessionId": "session-1",
+            "videoIndex": 1,
+            "userGeneratedKey": "video/current.mp4",
+            "archiveLocalPath": str(self.root / "archived.mp4"),
+        }]
+
+        with patch.object(
+            ai8video_web,
+            "_resolve_user_generated_video_key",
+            return_value=(current, "video/current.mp4"),
+        ), patch.object(
+            ai8video_web,
+            "_current_video_timeline_status",
+            return_value={"reviewId": "review-current", "pending": False, "timelineChunks": [{"index": 0}]},
+        ), patch.object(
+            ai8video_web,
+            "resolve_video_timeline_review_video",
+            return_value=candidate,
+        ):
+            source = ai8video_web._latest_edited_tail_frame_source(records, "session-1", 1)
+
+        self.assertEqual(source, candidate)
+
+    def test_tail_frame_refresh_does_not_fall_back_to_archived_video(self) -> None:
+        archived = self.root / "archived.mp4"
+        archived.write_bytes(b"initial-archive")
+        records = [{
+            "sessionId": "session-1",
+            "videoIndex": 1,
+            "archiveLocalPath": str(archived),
+        }]
+
+        source = ai8video_web._latest_edited_tail_frame_source(records, "session-1", 1)
+
+        self.assertIsNone(source)
 
     def test_tail_frame_retry_falls_back_to_archived_asset_when_ledger_status_is_stale(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -6487,6 +6708,24 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertEqual(tts_chunks[1]["sourceStartSeconds"], 8.5)
         self.assertEqual(tts_chunks[1]["startSeconds"], 9.0)
 
+    def test_merged_preview_preserves_source_video_cut_chunks(self) -> None:
+        statuses = [
+            {"timelineChunks": [
+                {"sourceStartSeconds": 1.0, "sourceEndSeconds": 3.0},
+                {"sourceStartSeconds": 5.0, "sourceEndSeconds": 7.0},
+            ]},
+            {"timelineChunks": [{"sourceStartSeconds": 2.0, "sourceEndSeconds": 6.0}]},
+        ]
+
+        chunks = merged_edited_video_chunks(statuses, [8.0, 10.0])
+
+        self.assertEqual(chunks, [
+            {"sourceStartSeconds": 1.0, "sourceEndSeconds": 3.0},
+            {"sourceStartSeconds": 5.0, "sourceEndSeconds": 7.0},
+            {"sourceStartSeconds": 10.0, "sourceEndSeconds": 14.0},
+        ])
+        self.assertEqual(edited_video_durations(statuses, [8.0, 10.0]), [4.0, 4.0])
+
     def test_merged_html_motion_offsets_scenes_and_renames_dom_ids(self) -> None:
         artifact = {"scenes": [{
             "start": 1.0,
@@ -6969,7 +7208,11 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("[1:a:0]asplit=2[source0][source1]", filter_complex)
         self.assertIn("[source0]atrim=start=0:end=4", filter_complex)
         self.assertIn("[source1]atrim=start=4:end=10", filter_complex)
+        self.assertIn("adelay=5000:all=1,asetpts=N/SR/TB[tts1]", filter_complex)
+        self.assertIn("apad=whole_dur=12.000", filter_complex)
+        self.assertIn("atrim=end=12.000", filter_complex)
         self.assertIn("asetpts=N/SR/TB[aout]", filter_complex)
+        self.assertEqual(tts_timeline_review.TTS_TIMELINE_PREVIEW_AUDIO_MODE, "tts-only-v3")
 
     def test_video_timeline_ripple_packs_chunks_and_remaps_tts(self) -> None:
         chunks = video_timeline_review.normalize_video_timeline_chunks(
@@ -7595,7 +7838,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertEqual(max(first["peaks"]), 1.0)
         run_ffmpeg.assert_called_once()
 
-    def test_confirm_burn_combines_pending_tts_and_html_before_replacing_video(self) -> None:
+    def test_confirm_burn_combines_pending_tts_and_html_into_extra_video(self) -> None:
         result_root = self.root / "用户生成结果"
         video_path = result_root / "video" / "demo.mp4"
         html_base = self.root / "html-base.mp4"
@@ -7630,7 +7873,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             ai8video_web,
             "adjust_html_motion_review_timeline",
             return_value={"reviewReady": True, "renderReused": True},
-        ), patch.object(
+        ) as adjust_html, patch.object(
             ai8video_web,
             "html_motion_review_base_path",
             return_value=html_base,
@@ -7697,10 +7940,12 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             body = ai8video_web._confirm_user_generated_burn("video/demo.mp4")
 
         self.assertTrue(body["ok"])
+        self.assertEqual(adjust_html.call_count, 1)
+        self.assertEqual(adjust_html.call_args.args, (video_path.resolve(), "video/demo.mp4", None))
         self.assertEqual(rendered_from, [b"clean"])
-        self.assertEqual(video_path.read_bytes(), b"combined")
-        self.assertEqual(body["htmlMotionOverlay"]["status"], "applied")
-        self.assertEqual(body["localTts"]["status"], "mixed")
+        self.assertEqual(video_path.read_bytes(), b"official")
+        self.assertEqual((result_root / "burned" / "video" / "demo.mp4").read_bytes(), b"combined")
+        self.assertEqual(body["burnedUserGeneratedKey"], "burned/video/demo.mp4")
 
     def test_confirm_burn_applies_video_crop_before_tts_composite(self) -> None:
         result_root = self.root / "用户生成结果"
@@ -7771,12 +8016,98 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
         self.assertTrue(body["ok"])
         self.assertEqual(render_order, ["crop", "tts"])
-        self.assertEqual(video_path.read_bytes(), b"composite")
-        self.assertEqual(body["videoTimeline"]["status"], "applied")
-        mark_crop.assert_called_once_with("video/crop.mp4")
-        saved_state = save_tts.call_args.args[2]
-        self.assertEqual(saved_state["durationSeconds"], 10.0)
-        self.assertEqual([item["startSeconds"] for item in saved_state["timelineChunks"]], [0])
+        self.assertEqual(video_path.read_bytes(), b"official")
+        self.assertEqual((result_root / "burned" / "video" / "crop.mp4").read_bytes(), b"composite")
+        mark_crop.assert_not_called()
+        save_tts.assert_not_called()
+
+    def test_confirm_burn_with_tts_uses_current_replaced_video_instead_of_stale_bgm_base(self) -> None:
+        result_root = self.root / "用户生成结果"
+        video_path = result_root / "video" / "current.mp4"
+        stale_base = result_root / ".media-tracks" / "bgm-base" / "video" / "current.mp4"
+        video_path.parent.mkdir(parents=True)
+        stale_base.parent.mkdir(parents=True)
+        video_path.write_bytes(b"current-replaced-video")
+        stale_base.write_bytes(b"stale-original-video")
+
+        with patch.object(ai8video_web, "ensure_user_generated_result_dir", return_value=result_root):
+            source = ai8video_web._confirmed_burn_source(
+                video_path,
+                "video/current.mp4",
+                False,
+                has_tts=True,
+            )
+
+        self.assertEqual(source, video_path)
+
+    def test_replace_video_updates_hidden_bgm_base_to_selected_variant(self) -> None:
+        result_root = self.root / "用户生成结果"
+        left = result_root / "video" / "original.mp4"
+        right = result_root / "extensions" / "video" / "selected.mp4"
+        left.parent.mkdir(parents=True)
+        right.parent.mkdir(parents=True)
+        left.write_bytes(b"old-video")
+        right.write_bytes(b"selected-variant")
+
+        with patch.object(ai8video_web, "ensure_user_generated_result_dir", return_value=result_root), patch.object(
+            ai8video_web, "generate_preview_for_video", return_value={"ok": True},
+        ), patch.object(
+            ai8video_web, "_delete_extension_state_assets", return_value={"ok": True, "deleted": []},
+        ):
+            body = ai8video_web._replace_user_generated_video(
+                "video/original.mp4",
+                "extensions/video/selected.mp4",
+            )
+
+        base = ai8video_web.hidden_bgm_base_path(result_root, "video/original.mp4")
+        self.assertTrue(body["ok"])
+        self.assertEqual(left.read_bytes(), b"selected-variant")
+        self.assertEqual(base.read_bytes(), b"selected-variant")
+
+    def test_replace_video_reapplies_current_tts_timeline_to_selected_visual(self) -> None:
+        result_root = self.root / "用户生成结果"
+        left = result_root / "video" / "original.mp4"
+        right = result_root / "extensions" / "video" / "selected.mp4"
+        audio = self.root / "tts.m4a"
+        left.parent.mkdir(parents=True)
+        right.parent.mkdir(parents=True)
+        left.write_bytes(b"old-video")
+        right.write_bytes(b"selected-visual")
+        audio.write_bytes(b"tts")
+        chunks = [{"startSeconds": 0.5, "durationSeconds": 1.0}]
+
+        def render(visual, audio_path, target, timeline_chunks, **kwargs):
+            self.assertEqual(visual.read_bytes(), b"selected-visual")
+            self.assertEqual(audio_path, audio)
+            self.assertEqual(timeline_chunks, chunks)
+            target.write_bytes(b"selected-visual-with-current-tts")
+
+        with patch.object(ai8video_web, "ensure_user_generated_result_dir", return_value=result_root), patch.object(
+            ai8video_web,
+            "_current_tts_timeline_status",
+            return_value={
+                "available": True,
+                "audioPath": str(audio),
+                "timelineChunks": chunks,
+                "ttsVolume": 1.0,
+            },
+        ), patch.object(
+            ai8video_web, "track_duration", return_value=7.7,
+        ), patch.object(
+            ai8video_web, "render_tts_timeline_video", side_effect=render,
+        ), patch.object(
+            ai8video_web, "generate_preview_for_video", return_value={"ok": True},
+        ), patch.object(
+            ai8video_web, "_delete_extension_state_assets", return_value={"ok": True, "deleted": []},
+        ):
+            ai8video_web._replace_user_generated_video(
+                "video/original.mp4",
+                "extensions/video/selected.mp4",
+            )
+
+        base = ai8video_web.hidden_bgm_base_path(result_root, "video/original.mp4")
+        self.assertEqual(left.read_bytes(), b"selected-visual-with-current-tts")
+        self.assertEqual(base.read_bytes(), b"selected-visual-with-current-tts")
 
     def test_regenerate_html_motion_uses_retained_video_prompt(self) -> None:
         result_root = self.root / "用户生成结果"
@@ -7904,7 +8235,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertEqual(manifest["htmlMotionOverlayRegeneration"]["status"], "preview_ready")
         self.assertNotIn("htmlMotionOverlay", manifest)
 
-    def test_confirm_html_motion_composites_prepared_layer_once(self) -> None:
+    def test_confirm_html_motion_writes_extra_burned_video_once(self) -> None:
         result_root = self.root / "用户生成结果"
         video_dir = result_root / "video"
         video_dir.mkdir(parents=True)
@@ -7972,12 +8303,16 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             body = ai8video_web._confirm_user_generated_html_motion("video/confirm.mp4")
 
         self.assertTrue(body["ok"])
-        self.assertEqual(video_path.read_bytes(), b"prepared-preview")
-        self.assertEqual(body["htmlMotionOverlay"]["status"], "applied")
+        self.assertEqual(video_path.read_bytes(), b"official")
+        self.assertEqual(body["burnedUserGeneratedKey"], "burned/video/confirm.mp4")
+        self.assertEqual(
+            (result_root / "burned" / "video" / "confirm.mp4").read_bytes(),
+            b"prepared-preview",
+        )
         stored = JsonlAssetStore(self.root / "assets.jsonl").read_all()[0]
-        self.assertEqual(stored["htmlMotionOverlay"]["status"], "applied")
+        self.assertNotIn("htmlMotionOverlay", stored)
         composite_layer.assert_called_once()
-        generate_preview.assert_called_once()
+        generate_preview.assert_not_called()
 
     def test_regenerate_html_motion_reports_deleted_video_prompt(self) -> None:
         result_root = self.root / "用户生成结果"

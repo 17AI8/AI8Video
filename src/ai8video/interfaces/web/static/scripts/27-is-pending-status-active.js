@@ -52,6 +52,13 @@
       ));
     }
 
+    function isSessionActiveReadOnlyRecovery(session) {
+      const pending = session?.messages?.at?.(-1)?.payload?.pendingStatus || {};
+      const progress = pending.generationProgress || {};
+      return !!(pending.readOnlyRecovery || progress.readOnlyRecovery)
+        && String(progress.status || '').trim() === 'active';
+    }
+
     function isSessionCollecting(session) {
       const last = session?.messages?.at?.(-1);
       return !!(last && last.role === 'assistant' && isCollectingPayload(last.payload));
@@ -101,7 +108,8 @@
       const activePendingIds = new Set();
       state.sessions.forEach((session) => {
         const recoverableTailFrame = isSessionRecoverableTailFrameFailure(session);
-        if (!isSessionPending(session) && !isSessionAwaitingTerminalReply(session) && !recoverableTailFrame) return;
+        const activeReadOnlyRecovery = isSessionActiveReadOnlyRecovery(session);
+        if (!isSessionPending(session) && !isSessionAwaitingTerminalReply(session) && !recoverableTailFrame && !activeReadOnlyRecovery) return;
         activePendingIds.add(session.id);
         if (!pendingPollTimers.has(session.id) && !pendingPollInflight.has(session.id)) {
           if (recoverableTailFrame && tailFrameRecoveryPollAttempted.has(session.id)) return;
@@ -205,6 +213,7 @@
         !isSessionPending(session)
         && !isSessionAwaitingTerminalReply(session)
         && !isSessionRecoverableTailFrameFailure(session)
+        && !isSessionActiveReadOnlyRecovery(session)
       ) {
         clearPendingPoll(sessionId);
         return;
@@ -225,6 +234,7 @@
           !isSessionPending(targetSession)
           && !isSessionAwaitingTerminalReply(targetSession)
           && !isSessionRecoverableTailFrameFailure(targetSession)
+          && !isSessionActiveReadOnlyRecovery(targetSession)
         ) {
           clearPendingPoll(sessionId);
           return;

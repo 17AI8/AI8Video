@@ -128,14 +128,20 @@ class AI8VideoGenerationModeTest(unittest.TestCase):
                 request=request,
                 previous_job=job,
                 previous_archive=archive,
+                next_video=VideoPrompt(index=2, title="视频 2", prompt="prompt 2"),
             )
             refreshed = manual_tail_frame_gate.refresh_manual_tail_frame("session-1", "batch-1", 2)
+            updated = manual_tail_frame_gate.update_manual_tail_frame_prompt(
+                "session-1", "batch-1", 2, "updated prompt"
+            )
             continued = manual_tail_frame_gate.continue_manual_tail_frame("session-1", "batch-1", 2)
             result = manual_tail_frame_gate.wait_for_manual_tail_frame_gate(
                 gate, cancel_check=lambda: None
             )
 
         self.assertEqual(build_request.call_count, 2)
+        self.assertTrue(updated)
+        self.assertEqual(gate.next_video.prompt, "updated prompt")
         self.assertTrue(refreshed["ok"])
         self.assertTrue(continued["ok"])
         self.assertEqual(result.reference_image, "refreshed-tail.png")

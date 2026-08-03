@@ -48,6 +48,8 @@
       if (continueButton) handleManualTailFrameAction(continueButton, 'continue');
       const refreshButton = event.target?.closest?.('[data-tail-frame-refresh]');
       if (refreshButton) handleManualTailFrameAction(refreshButton, 'refresh');
+      const rollbackButton = event.target?.closest?.('[data-tail-frame-rollback]');
+      if (rollbackButton) rollbackLatestTailFrameResult(rollbackButton);
     });
 
     els.messages?.addEventListener('click', (event) => {
@@ -75,10 +77,14 @@
       if (continueButton) handleManualTailFrameAction(continueButton, 'continue');
       const refreshButton = event.target?.closest?.('[data-tail-frame-refresh]');
       if (refreshButton) handleManualTailFrameAction(refreshButton, 'refresh');
+      const rollbackButton = event.target?.closest?.('[data-tail-frame-rollback]');
+      if (rollbackButton) rollbackLatestTailFrameResult(rollbackButton);
     });
 
     document.getElementById('resultVideoPromptCloseButton')?.addEventListener('click', closeResultVideoPromptModal);
     document.getElementById('resultVideoPromptCopyButton')?.addEventListener('click', () => void copyResultVideoPrompt());
+    document.getElementById('resultVideoPromptEditButton')?.addEventListener('click', editResultVideoPrompt);
+    document.getElementById('resultVideoPromptSaveButton')?.addEventListener('click', () => void saveResultVideoPrompt());
     document.getElementById('resultVideoPromptModal')?.addEventListener('click', (event) => {
       if (event.target === document.getElementById('resultVideoPromptModal')) closeResultVideoPromptModal();
     });

@@ -42,6 +42,7 @@ def prepare_recovered_tail_frame_resume(
     source_batch_id: str,
     progress: dict[str, Any],
     asset_records: list[dict[str, Any]],
+    reuse_existing_tail_frame: bool = False,
 ) -> RecoveredTailFrameResume | None:
     items = sorted(
         [dict(item) for item in progress.get("items") or [] if isinstance(item, dict)],
@@ -87,9 +88,59 @@ def prepare_recovered_tail_frame_resume(
         predecessor_path=Path(str(predecessor.get("archiveLocalPath"))),
         tail_frame_path=output_dir / f"video-{next_index}-recovered-reference.png",
     )
-    checkpoint.refresh()
+    if reuse_existing_tail_frame and checkpoint.tail_frame_path.is_file():
+        checkpoint.request = replace(checkpoint.request, reference_image=str(checkpoint.tail_frame_path))
+    else:
+        checkpoint.refresh()
     with _LOCK:
         _CHECKPOINTS[_key(session_id, source_batch_id, next_index)] = checkpoint
+    return checkpoint
+
+
+def prepare_rollback_tail_frame_resume(
+    *,
+    session_id: str,
+    source_batch_id: str,
+    video_index: int,
+    progress: dict[str, Any],
+    asset_records: list[dict[str, Any]],
+    target_record: dict[str, Any],
+) -> RecoveredTailFrameResume:
+    items = sorted(
+        [dict(item) for item in progress.get("items") or [] if isinstance(item, dict)],
+        key=lambda item: int(item.get("videoIndex") or 0),
+    )
+    remaining = _remaining_videos(items, video_index)
+    predecessor = _latest_predecessor_record(asset_records, session_id, video_index - 1)
+    if predecessor is None or not remaining:
+        raise LookupError("未找到回退所需的上一条视频或后续提示词")
+    output_dir = MANUAL_TAIL_FRAME_DIR / source_batch_id
+    output_dir.mkdir(parents=True, exist_ok=True)
+    target_first_frame = target_record.get("firstFrame") if isinstance(target_record.get("firstFrame"), dict) else {}
+    candidates = [
+        Path(str(target_first_frame.get("source") or "")),
+        output_dir / f"video-{video_index}-recovered-reference.png",
+        output_dir / f"video-{video_index}-reference.png",
+    ]
+    existing_reference = next((path for path in candidates if str(path) and path.is_file()), None)
+    tail_frame_path = output_dir / f"video-{video_index}-recovered-reference.png"
+    if existing_reference is not None and existing_reference != tail_frame_path:
+        tail_frame_path.write_bytes(existing_reference.read_bytes())
+    checkpoint = RecoveredTailFrameResume(
+        session_id=session_id,
+        source_batch_id=source_batch_id,
+        next_video_index=video_index,
+        request=_request_from_record(predecessor, len(remaining)),
+        videos=remaining,
+        predecessor_path=Path(str(predecessor.get("archiveLocalPath"))),
+        tail_frame_path=tail_frame_path,
+    )
+    if checkpoint.tail_frame_path.is_file():
+        checkpoint.request = replace(checkpoint.request, reference_image=str(checkpoint.tail_frame_path))
+    else:
+        checkpoint.refresh()
+    with _LOCK:
+        _CHECKPOINTS[_key(session_id, source_batch_id, video_index)] = checkpoint
     return checkpoint
 
 
@@ -132,6 +183,23 @@ def refresh_recovered_tail_frame_resume(
         "tailFramePreviewUrl": preview_url,
         "recoveredResume": True,
     }
+
+
+def update_recovered_tail_frame_prompt(
+    session_id: str, source_batch_id: str, video_index: int, prompt: str
+) -> bool:
+    with _LOCK:
+        checkpoints = [
+            checkpoint for key, checkpoint in _CHECKPOINTS.items()
+            if key[0] == str(session_id).strip() and key[1] == str(source_batch_id).strip()
+        ]
+    updated = False
+    for checkpoint in checkpoints:
+        for video in checkpoint.videos:
+            if int(video.index) == int(video_index):
+                video.prompt = str(prompt)
+                updated = True
+    return updated
 
 
 def _remaining_videos(items: list[dict[str, Any]], next_index: int) -> list[VideoPrompt]:

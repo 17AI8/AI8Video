@@ -115,6 +115,7 @@ def prepare_html_motion_review(
         "revision": 1,
         "preparedAt": prepared_at,
         "previewUrl": f"/api/user-generated-results/html-motion-preview/{review_id}",
+        "basePreviewUrl": f"/api/user-generated-results/html-motion-base/{review_id}",
         "livePreviewUrl": f"/api/user-generated-results/html-motion-live/{review_id}/composition.html",
         "timelineChunks": chunks,
         "timelineAdjustable": bool(chunks),

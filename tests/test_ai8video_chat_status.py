@@ -726,7 +726,7 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
         checkpoint = SimpleNamespace(next_video_index=2, preview_url=lambda: "/preview.png")
         with patch.object(
             ai8video_chat_service,
-            "get_generation_ledger_snapshot",
+            "get_generation_batch_family_snapshot",
             return_value={"generationBatchId": "batch-1", "progress": progress},
         ), patch.object(
             ai8video_chat_service,
@@ -742,6 +742,44 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
         self.assertEqual(items[2]["statusLabel"], "等待前序视频")
         self.assertEqual(items[2]["error"], "")
         self.assertEqual(status["generationProgress"]["waitingCount"], 2)
+
+    def test_recovered_manual_wait_restores_completed_local_video_cards(self) -> None:
+        progress = {
+            "items": [
+                {"videoIndex": 3, "status": "succeeded"},
+                {"videoIndex": 4, "status": "pending_submission", "videoPrompt": "next"},
+            ]
+        }
+        checkpoint = SimpleNamespace(next_video_index=4, preview_url=lambda: "/preview.png")
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            video_path = Path(temporary_directory) / "video-1.mp4"
+            video_path.write_bytes(b"video")
+            records = [{
+                "sessionId": "session-1",
+                "videoIndex": 1,
+                "videoTitle": "第一条",
+                "jobId": "job-1",
+                "generationStatus": "generated",
+                "archiveLocalPath": str(video_path),
+                "archiveUrl": "video/video-1.mp4",
+            }]
+            with patch.object(
+                ai8video_chat_service,
+                "get_generation_batch_family_snapshot",
+                return_value={"generationBatchId": "batch-1", "progress": progress},
+            ), patch.object(
+                ai8video_chat_service,
+                "prepare_recovered_tail_frame_resume",
+                return_value=checkpoint,
+            ), patch.object(JsonlAssetStore, "read_all", return_value=records):
+                status = ai8video_chat_service._recover_chat_status_from_ledger("session-1", "batch-1")
+
+        restored = status["generationProgress"]["items"][0]
+        self.assertEqual(restored["videoIndex"], 1)
+        self.assertEqual(restored["status"], "succeeded")
+        self.assertEqual(restored["jobId"], "job-1")
+        self.assertEqual(restored["assetRecord"]["archiveUrl"], "video/video-1.mp4")
+        self.assertTrue(restored["hasLocalAsset"])
 
     def test_get_chat_status_rejects_unknown_ledger_batch_without_memory_session(self) -> None:
         session_id = "session-status-ledger-unknown-batch"
@@ -908,7 +946,7 @@ class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
 
         with patch.object(
             ai8video_chat_service,
-            "get_generation_ledger_snapshot",
+            "get_generation_batch_family_snapshot",
             return_value=ledger_snapshot,
         ), patch.object(
             ai8video_chat_service,

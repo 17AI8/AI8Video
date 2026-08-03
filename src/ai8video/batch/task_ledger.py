@@ -93,6 +93,10 @@ class TaskLedger:
             "error_type": "TEXT",
             "error_message": "TEXT",
             "lease_expires_at": "TEXT",
+            "parent_generation_batch_id": "TEXT",
+            "root_generation_batch_id": "TEXT",
+            "batch_kind": "TEXT NOT NULL DEFAULT 'root'",
+            "target_video_index": "INTEGER",
         }
         for name, definition in columns.items():
             if name not in existing:
@@ -173,12 +177,66 @@ class TaskLedger:
                 {self._select_columns()}
                 FROM generation_batches
                 WHERE session_id = ?
+                  AND parent_generation_batch_id IS NULL
                 ORDER BY updated_at DESC, created_at DESC, rowid DESC
                 LIMIT 1
                 """,
                 (normalized_session_id,),
             ).fetchone()
         return _row_to_generation_batch(row)
+
+    def register_child_generation_batch(
+        self,
+        *,
+        session_id: str,
+        generation_batch_id: str,
+        parent_generation_batch_id: str,
+        batch_kind: str,
+        target_video_index: int | None = None,
+        task_type: str = "chat_generation",
+        request_snapshot: dict[str, Any] | None = None,
+    ) -> None:
+        parent = self.get_generation_batch(parent_generation_batch_id)
+        if not parent or parent.get("sessionId") != str(session_id or "").strip():
+            raise ValueError("parent generation batch not found for session")
+        root_batch_id = str(parent.get("rootGenerationBatchId") or parent["generationBatchId"])
+        self._insert_generation_batch_if_missing(
+            session_id=session_id,
+            generation_batch_id=generation_batch_id,
+            task_type=task_type,
+            request_snapshot=_safe_request_snapshot(request_snapshot),
+            parent_generation_batch_id=parent_generation_batch_id,
+            root_generation_batch_id=root_batch_id,
+            batch_kind=batch_kind,
+            target_video_index=target_video_index,
+        )
+        self.agent_tasks.create_task(
+            AgentTaskSpec(
+                task_id=generation_batch_id,
+                generation_batch_id=generation_batch_id,
+                session_id=session_id,
+                task_type=task_type,
+                agent_role="supervisor",
+                input_snapshot=dict(_safe_request_snapshot(request_snapshot) or {}),
+                idempotency_key=f"generation-batch:{generation_batch_id}",
+            )
+        )
+
+    def list_generation_batch_children(self, root_generation_batch_id: str) -> list[dict[str, Any]]:
+        normalized_root_id = _require_text(root_generation_batch_id, "root_generation_batch_id")
+        self.initialize()
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                {self._select_columns()}
+                FROM generation_batches
+                WHERE root_generation_batch_id = ?
+                  AND generation_batch_id != ?
+                ORDER BY created_at ASC, rowid ASC
+                """,
+                (normalized_root_id, normalized_root_id),
+            ).fetchall()
+        return [_row_to_generation_batch(row) for row in rows if row is not None]
 
     def list_active_generation_batches(self) -> list[dict[str, Any]]:
         self.initialize()
@@ -262,6 +320,10 @@ class TaskLedger:
         generation_batch_id: str,
         task_type: str,
         request_snapshot: dict[str, Any] | None,
+        parent_generation_batch_id: str | None = None,
+        root_generation_batch_id: str | None = None,
+        batch_kind: str = "root",
+        target_video_index: int | None = None,
     ) -> bool:
         normalized_session_id = _require_text(session_id, "session_id")
         normalized_batch_id = _require_text(generation_batch_id, "generation_batch_id")
@@ -272,8 +334,10 @@ class TaskLedger:
                 """
                 INSERT OR IGNORE INTO generation_batches (
                     generation_batch_id, session_id, status, phase, progress_json,
-                    created_at, updated_at, task_type, execution_state, request_json
-                ) VALUES (?, ?, 'queued', 'queued', '{}', ?, ?, ?, 'queued', ?)
+                    created_at, updated_at, task_type, execution_state, request_json,
+                    parent_generation_batch_id, root_generation_batch_id, batch_kind,
+                    target_video_index
+                ) VALUES (?, ?, 'queued', 'queued', '{}', ?, ?, ?, 'queued', ?, ?, ?, ?, ?)
                 """,
                 (
                     normalized_batch_id,
@@ -282,6 +346,10 @@ class TaskLedger:
                     now,
                     task_type,
                     _json_or_none(request_snapshot),
+                    str(parent_generation_batch_id or "").strip() or None,
+                    str(root_generation_batch_id or normalized_batch_id).strip(),
+                    str(batch_kind or "root").strip() or "root",
+                    int(target_video_index) if target_video_index is not None else None,
                 ),
             )
             return cursor.rowcount == 1
@@ -292,7 +360,8 @@ class TaskLedger:
             "SELECT generation_batch_id, session_id, status, phase, progress_json, "
             "created_at, updated_at, completed_at, task_type, execution_state, worker_id, "
             "cancel_requested, request_json, result_json, error_type, error_message, "
-            "lease_expires_at"
+            "lease_expires_at, parent_generation_batch_id, root_generation_batch_id, "
+            "batch_kind, target_video_index"
         )
 
     def _connect(self) -> sqlite3.Connection:
@@ -458,6 +527,10 @@ def _row_to_generation_batch(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "errorType": row["error_type"],
         "errorMessage": row["error_message"],
         "leaseExpiresAt": row["lease_expires_at"],
+        "parentGenerationBatchId": row["parent_generation_batch_id"],
+        "rootGenerationBatchId": row["root_generation_batch_id"] or row["generation_batch_id"],
+        "batchKind": row["batch_kind"] or "root",
+        "targetVideoIndex": row["target_video_index"],
     }
 
 

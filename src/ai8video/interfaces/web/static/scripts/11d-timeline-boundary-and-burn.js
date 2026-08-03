@@ -145,23 +145,25 @@
     }
 
     async function requestConfirmedBurn(key) {
-      const res = await fetch('/api/user-generated-results/confirm-burn', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userGeneratedKey: key,
-          htmlMotionChunks: state.videoPreviewModal?.htmlMotionTimelineChunks || [],
-        }),
-      });
+      let res;
+      try {
+        res = await fetch('/api/user-generated-results/confirm-burn', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userGeneratedKey: key,
+            htmlMotionChunks: state.videoPreviewModal?.htmlMotionTimelineChunks || [],
+          }),
+        });
+      } catch (error) {
+        throw new Error(`确认烧录请求未到达后端：${formatNetworkError(error)}`);
+      }
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data?.ok === false) throw buildRequestError(data);
       return data;
     }
 
     async function applyConfirmedBurn(data, button) {
-      await refreshUserGeneratedResults();
-      renderResultModal();
-      renderStatus();
       setVideoPreviewButtonLabel(button, '已烧录');
       setTimeout(() => setVideoPreviewButtonLabel(button, '确认烧录'), 1400);
     }
@@ -179,7 +181,8 @@
       button.setAttribute('aria-busy', 'true');
       setVideoPreviewButtonLabel(button, '烧录中');
       try {
-        await state.videoPreviewModal?.htmlMotionPersistChain;
+        const persisted = await state.videoPreviewModal?.htmlMotionPersistChain;
+        if (persisted === false) throw new Error('HTML 动效时间轴保存失败，未提交烧录');
         const data = await requestConfirmedBurn(key);
         await applyConfirmedBurn(data, button);
       } catch (error) {

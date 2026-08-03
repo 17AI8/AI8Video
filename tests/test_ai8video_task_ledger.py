@@ -155,6 +155,34 @@ class TaskLedgerTest(unittest.TestCase):
         self.assertEqual(record["sessionId"], "session-a")
         self.assertEqual(record["progress"]["items"][0]["status"], "polling")
 
+    def test_child_batch_keeps_root_as_latest_session_batch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            ledger = TaskLedger(Path(temporary_directory) / "task_ledger.sqlite3")
+            ledger.upsert_generation_batch(
+                session_id="session-family",
+                generation_batch_id="gb-root",
+                status="completed_with_error",
+                progress={"items": [{"videoIndex": 1, "status": "failed"}]},
+            )
+            ledger.register_child_generation_batch(
+                session_id="session-family",
+                generation_batch_id="gb-child",
+                parent_generation_batch_id="gb-root",
+                batch_kind="video_retry",
+                target_video_index=1,
+            )
+
+            latest = ledger.get_latest_generation_batch_for_session("session-family")
+            child = ledger.get_generation_batch("gb-child")
+            children = ledger.list_generation_batch_children("gb-root")
+
+        self.assertEqual(latest["generationBatchId"], "gb-root")
+        self.assertEqual(child["parentGenerationBatchId"], "gb-root")
+        self.assertEqual(child["rootGenerationBatchId"], "gb-root")
+        self.assertEqual(child["batchKind"], "video_retry")
+        self.assertEqual(child["targetVideoIndex"], 1)
+        self.assertEqual([item["generationBatchId"] for item in children], ["gb-child"])
+
     def test_upsert_generation_batch_rejects_missing_identity(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             ledger = TaskLedger(Path(temporary_directory) / "task_ledger.sqlite3")

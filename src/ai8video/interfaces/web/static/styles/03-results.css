@@ -273,6 +273,22 @@
       cursor: pointer;
     }
 
+    .result-notify-rollback-button {
+      position: absolute;
+      top: 7px;
+      right: 7px;
+      z-index: 4;
+      min-height: 24px;
+      padding: 0 8px;
+      border: 1px solid rgba(255, 255, 255, 0.65);
+      border-radius: 7px;
+      background: rgba(20, 31, 50, 0.86);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
     .result-video-prompt-button {
       position: absolute;
       top: 7px;
@@ -313,10 +329,45 @@
     }
 
     .result-video-prompt-body.is-empty { color: #7b87a6; }
+    .result-video-prompt-body.is-editing {
+      border-color: #6b63ff;
+      background: #fff;
+      box-shadow: 0 0 0 3px rgba(107, 99, 255, 0.12);
+      outline: none;
+    }
 
     .result-video-prompt-actions {
       display: flex;
       justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .result-video-prompt-edit-group {
+      display: inline-flex;
+    }
+
+    .result-video-prompt-edit-group button {
+      min-height: 40px;
+      padding: 0 16px;
+      border: 1px solid rgba(79, 88, 208, 0.3);
+      background: #fff;
+      color: #4f58d0;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .result-video-prompt-edit-group button:first-child {
+      border-radius: 12px 0 0 12px;
+    }
+
+    .result-video-prompt-edit-group button:last-child {
+      margin-left: -1px;
+      border-radius: 0 12px 12px 0;
+    }
+
+    .result-video-prompt-edit-group button:disabled {
+      cursor: default;
+      opacity: 0.45;
     }
 
     .result-notify-card.failed .result-notify-preview::after {

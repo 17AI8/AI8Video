@@ -25,6 +25,7 @@ TTS_TIMELINE_REVIEW_ROOT = (USER_FILE_ROOT / "TTS" / "reviews").resolve()
 MAX_TTS_TIMELINE_CHUNKS = 64
 MIN_TTS_TIMELINE_CHUNK_SECONDS = 0.12
 TTS_TIMELINE_TOLERANCE_SECONDS = 0.08
+TTS_TIMELINE_PREVIEW_AUDIO_MODE = "tts-only-v3"
 
 
 def tts_timeline_review_status(
@@ -136,7 +137,7 @@ def render_tts_timeline_candidate(
     )
     temporary.replace(candidate)
     state["candidateName"] = candidate.name
-    state["previewAudioMode"] = "tts-only-v1"
+    state["previewAudioMode"] = TTS_TIMELINE_PREVIEW_AUDIO_MODE
     state["renderedAt"] = datetime.now(timezone.utc).isoformat()
     state["visualSignature"] = _file_signature(visual_source)
     _write_json(review_dir / "review.json", state)
@@ -200,7 +201,7 @@ def tts_timeline_candidate_needs_render(visual_source: Path, relative_key: str) 
     return (
         not candidate.is_file()
         or state.get("visualSignature") != _file_signature(visual_source)
-        or state.get("previewAudioMode") != "tts-only-v1"
+        or state.get("previewAudioMode") != TTS_TIMELINE_PREVIEW_AUDIO_MODE
     )
 
 
@@ -356,7 +357,8 @@ def build_tts_timeline_audio_filter(
         delay_ms = max(0, round(float(item["startSeconds"]) * 1000))
         filters.append(
             f"{source_labels[index]}atrim=start={item['sourceStartSeconds']}:end={item['sourceEndSeconds']},"
-            f"asetpts=PTS-STARTPTS,volume={tts_volume:.6g},adelay={delay_ms}:all=1[{label}]"
+            f"asetpts=PTS-STARTPTS,volume={tts_volume:.6g},adelay={delay_ms}:all=1,"
+            f"asetpts=N/SR/TB[{label}]"
         )
         output_labels.append(f"[{label}]")
     mixed = output_labels[0]
@@ -366,8 +368,10 @@ def build_tts_timeline_audio_filter(
             "duration=longest:dropout_transition=0:normalize=0[mixed]"
         )
         mixed = "[mixed]"
+    target_duration = float(duration_seconds)
     filters.append(
-        f"{mixed}apad,atrim=duration={float(duration_seconds):.3f},asetpts=N/SR/TB[aout]"
+        f"{mixed}apad=whole_dur={target_duration:.3f},"
+        f"atrim=end={target_duration:.3f},asetpts=N/SR/TB[aout]"
     )
     return ";".join(filters)
 

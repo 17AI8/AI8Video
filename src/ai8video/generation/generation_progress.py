@@ -106,6 +106,27 @@ def record_generation_execution(
         _mark_task_ledger_error(normalized_session_id, exc)
 
 
+def register_generation_child_batch(
+    *,
+    session_id: str,
+    generation_batch_id: str,
+    parent_generation_batch_id: str,
+    batch_kind: str,
+    target_video_index: int | None = None,
+    task_type: str = "chat_generation",
+    request_snapshot: dict[str, Any] | None = None,
+) -> None:
+    _TASK_LEDGER.register_child_generation_batch(
+        session_id=session_id,
+        generation_batch_id=generation_batch_id,
+        parent_generation_batch_id=parent_generation_batch_id,
+        batch_kind=batch_kind,
+        target_video_index=target_video_index,
+        task_type=task_type,
+        request_snapshot=request_snapshot,
+    )
+
+
 def get_generation_ledger_snapshot(
     session_id: str | None,
     generation_batch_id: str | None = None,
@@ -125,6 +146,84 @@ def get_generation_ledger_snapshot(
             return None
         return record
     return _TASK_LEDGER.get_latest_generation_batch_for_session(normalized_session_id)
+
+
+def get_generation_batch_family_snapshot(
+    session_id: str | None,
+    generation_batch_id: str | None = None,
+) -> dict[str, Any] | None:
+    record = get_generation_ledger_snapshot(session_id, generation_batch_id)
+    if not isinstance(record, dict):
+        return None
+    root_batch_id = str(record.get("rootGenerationBatchId") or record.get("generationBatchId") or "").strip()
+    root = _TASK_LEDGER.get_generation_batch(root_batch_id)
+    if not isinstance(root, dict):
+        return record
+    children = _TASK_LEDGER.list_generation_batch_children(root_batch_id)
+    progress = dict(root.get("progress") or {})
+    items = [
+        {**_normalize_family_item(item), "generationBatchId": root_batch_id}
+        for item in progress.get("items") or []
+        if isinstance(item, dict)
+    ]
+    progress.update(
+        generationBatchId=root_batch_id,
+        items=items,
+        childBatches=[
+            {
+                "generationBatchId": child.get("generationBatchId"),
+                "parentGenerationBatchId": child.get("parentGenerationBatchId"),
+                "batchKind": child.get("batchKind"),
+                "targetVideoIndex": child.get("targetVideoIndex"),
+                "status": child.get("status"),
+                "phase": child.get("phase"),
+            }
+            for child in children
+        ],
+    )
+    _refresh_family_progress_counts(progress)
+    return {
+        **root,
+        "generationBatchId": root_batch_id,
+        "status": root.get("status"),
+        "phase": root.get("phase"),
+        "progress": progress,
+        "childBatches": progress["childBatches"],
+    }
+
+
+def _normalize_family_item(item: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(item)
+    status = str(normalized.get("status") or "").strip()
+    asset_record = normalized.get("assetRecord")
+    has_archived_asset = isinstance(asset_record, dict) and bool(
+        str(asset_record.get("archiveKey") or asset_record.get("archiveLocalPath") or "").strip()
+    )
+    if has_archived_asset and status not in {"succeeded", "deleted"}:
+        normalized.update(status="succeeded", statusLabel="已生成", providerProgress=100)
+    return normalized
+
+
+def _refresh_family_progress_counts(progress: dict[str, Any]) -> None:
+    items = [item for item in progress.get("items") or [] if isinstance(item, dict)]
+    statuses = [str(item.get("status") or "").strip() for item in items]
+    progress["totalRequested"] = max(int(progress.get("totalRequested") or 0), len(items))
+    progress["succeededCount"] = statuses.count("succeeded")
+    progress["failedCount"] = statuses.count("failed")
+    progress["skippedCount"] = statuses.count("skipped")
+    progress["deletedCount"] = statuses.count("deleted")
+    progress["runningCount"] = sum(status in {
+        "preparing_first_frame", "preparing_tail_frame", "submitting", "submitted", "polling", "archiving"
+    } for status in statuses)
+    progress["waitingCount"] = sum(status in {
+        "pending_submission", "awaiting_tail_frame_continue"
+    } for status in statuses)
+    if progress["runningCount"] or progress["waitingCount"]:
+        progress["status"] = "active"
+    elif progress["failedCount"] or progress["skippedCount"]:
+        progress["status"] = "completed_with_error" if progress["succeededCount"] else "failed"
+    else:
+        progress["status"] = "completed"
 
 
 def start_generation_progress(
@@ -1005,12 +1104,47 @@ def _persist_progress_snapshot(progress_snapshot: dict[str, Any] | None) -> None
     if not session_id or not generation_batch_id or not status:
         return
     try:
+        batch_record = _TASK_LEDGER.get_generation_batch(generation_batch_id)
+        root_batch_id = str(
+            (batch_record or {}).get("rootGenerationBatchId")
+            or (batch_record or {}).get("generationBatchId")
+            or generation_batch_id
+        ).strip()
+        persisted_progress = _with_counts(progress_snapshot)
+        if root_batch_id != generation_batch_id:
+            root_record = _TASK_LEDGER.get_generation_batch(root_batch_id) or {}
+            root_progress = dict(root_record.get("progress") or {})
+            root_items = {
+                int(item.get("videoIndex") or 0): dict(item)
+                for item in root_progress.get("items") or []
+                if isinstance(item, dict) and int(item.get("videoIndex") or 0) > 0
+            }
+            for child_item in persisted_progress.get("items") or []:
+                if not isinstance(child_item, dict):
+                    continue
+                video_index = int(child_item.get("videoIndex") or 0)
+                if video_index <= 0:
+                    continue
+                canonical_prompt = str(root_items.get(video_index, {}).get("videoPrompt") or "").strip()
+                merged_item = {**root_items.get(video_index, {}), **child_item}
+                merged_item["generationBatchId"] = root_batch_id
+                merged_item.pop("childGenerationBatchId", None)
+                if canonical_prompt:
+                    merged_item["videoPrompt"] = canonical_prompt
+                root_items[video_index] = merged_item
+            persisted_progress = {
+                **root_progress,
+                **persisted_progress,
+                "generationBatchId": root_batch_id,
+                "items": [root_items[index] for index in sorted(root_items)],
+            }
+            persisted_progress = _with_counts(persisted_progress)
         _TASK_LEDGER.upsert_generation_batch(
             session_id=session_id,
-            generation_batch_id=generation_batch_id,
+            generation_batch_id=root_batch_id,
             status=status,
             phase=str(progress_snapshot.get("phase") or "").strip() or None,
-            progress=_with_counts(progress_snapshot),
+            progress=persisted_progress,
         )
     except Exception as exc:
         _mark_task_ledger_error(session_id, exc)

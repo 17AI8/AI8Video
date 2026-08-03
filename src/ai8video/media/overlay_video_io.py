@@ -44,7 +44,15 @@ def composite_transparent_layer(
     append_video_postprocess_encoding_args(command)
     command.extend(["-c:a", "copy", "-movflags", "+faststart", str(target)])
     try:
-        run(command, check=True, capture_output=True, text=True, timeout=120)
+        try:
+            run(command, check=True, capture_output=True, text=True, timeout=120)
+        except subprocess.CalledProcessError as exc:
+            detail = str(exc.stderr or exc.stdout or "").strip()
+            if len(detail) > 1200:
+                detail = detail[-1200:]
+            raise RuntimeError(
+                f"HTML 动效叠加失败：{detail or f'FFmpeg 退出码 {exc.returncode}'}"
+            ) from exc
         if not target.is_file() or target.stat().st_size <= 0:
             raise RuntimeError("HTML 动效叠加输出为空")
         if before_replace is not None:

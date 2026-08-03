@@ -102,11 +102,16 @@ from ai8video.generation.manual_tail_frame_gate import (
     continue_manual_tail_frame,
     refresh_manual_tail_frame,
     resolve_manual_tail_frame_preview,
+    update_manual_tail_frame_prompt,
 )
 from ai8video.generation.recovered_tail_frame_resume import (
+    prepare_recovered_tail_frame_resume,
+    prepare_rollback_tail_frame_resume,
     refresh_recovered_tail_frame_resume,
     take_recovered_tail_frame_resume,
+    update_recovered_tail_frame_prompt,
 )
+from ai8video.batch.task_ledger import TaskLedger
 from ai8video.media.motion.html_motion_overlay import (
     HTML_MOTION_DIR,
     apply_html_motion_overlay,
@@ -156,7 +161,9 @@ from ai8video.generation.generation_progress import (
     claim_generation_batch,
     create_generation_batch_id,
     fail_generation_progress,
+    get_generation_batch_family_snapshot,
     get_generation_ledger_snapshot,
+    register_generation_child_batch,
     record_generation_execution,
     settle_stale_first_frame_progress,
     start_generation_progress,
@@ -219,9 +226,10 @@ from ai8video.media.video_timeline_review import (
     video_timeline_review_status,
 )
 from ai8video.media.merged_preview_tracks import (
+    edited_video_durations,
     merge_tts_audio,
+    merged_edited_video_chunks,
     merged_tts_chunks,
-    merged_video_chunks,
 )
 from ai8video.media.video_merge_mode import (
     load_video_merge_mode,
@@ -1395,20 +1403,40 @@ def api_tail_frame_chain_refresh():
     if request.method == "OPTIONS":
         return HTTPResponse(status=204)
     payload = request.json or {}
+    session_id = str(payload.get("sessionId") or "").strip()
+    video_index = int(payload.get("videoIndex") or 0)
+    config = AI8VideoConfig.from_env()
+    asset_records = JsonlAssetStore(config.asset_store_path).read_all()
+    predecessor_path = _latest_edited_tail_frame_source(asset_records, session_id, video_index - 1)
+    if predecessor_path is None:
+        response.status = 409
+        return {"ok": False, "error": "未找到上一条视频的最新编辑结果，不使用初始归档视频兜底"}
     try:
         result = refresh_manual_tail_frame(
-            str(payload.get("sessionId") or "").strip(),
+            session_id,
             str(payload.get("generationBatchId") or "").strip(),
-            int(payload.get("videoIndex") or 0),
+            video_index,
+            predecessor_path,
         )
     except LookupError:
         try:
-            config = AI8VideoConfig.from_env()
+            if predecessor_path is not None:
+                adjusted_records = []
+                for record in asset_records:
+                    item = dict(record)
+                    if (
+                        str(item.get("sessionId") or "") == session_id
+                        and int(item.get("videoIndex") or 0) == video_index - 1
+                    ):
+                        item["archiveLocalPath"] = str(predecessor_path)
+                    adjusted_records.append(item)
+            else:
+                adjusted_records = asset_records
             result = refresh_recovered_tail_frame_resume(
-                str(payload.get("sessionId") or "").strip(),
+                session_id,
                 str(payload.get("generationBatchId") or "").strip(),
-                int(payload.get("videoIndex") or 0),
-                JsonlAssetStore(config.asset_store_path).read_all(),
+                video_index,
+                adjusted_records,
             )
         except (ValueError, LookupError) as exc:
             response.status = 409
@@ -1425,12 +1453,199 @@ def api_tail_frame_chain_refresh():
     return result
 
 
+def _latest_edited_tail_frame_source(
+    records: list[dict[str, Any]],
+    session_id: str,
+    predecessor_index: int,
+) -> Path | None:
+    matches = [
+        record for record in records
+        if str(record.get("sessionId") or "") == str(session_id or "")
+        and int(record.get("videoIndex") or 0) == int(predecessor_index)
+    ]
+    for record in reversed(matches):
+        for field in ("userGeneratedKey", "archiveKey"):
+            key = str(record.get(field) or "").strip()
+            if not key:
+                continue
+            try:
+                video_path, relative_key = _resolve_user_generated_video_key(key)
+            except (FileNotFoundError, ValueError):
+                continue
+            video_state = _current_video_timeline_status(video_path, relative_key)
+            review_id = str(video_state.get("reviewId") or "").strip()
+            if video_state.get("timelineChunks") and review_id:
+                try:
+                    return resolve_video_timeline_review_video(review_id)
+                except (FileNotFoundError, ValueError):
+                    pass
+            return video_path
+    return None
+
+
+@app.route("/api/tail-frame-chain/rollback", method=["POST", "OPTIONS"])
+def api_tail_frame_chain_rollback():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    try:
+        return _rollback_latest_tail_frame_result(request.json or {})
+    except FileNotFoundError as exc:
+        response.status = 404
+        return {"ok": False, "error": str(exc)}
+    except (LookupError, RuntimeError, ValueError) as exc:
+        response.status = 409
+        return {"ok": False, "error": str(exc)}
+
+
+def _rollback_latest_tail_frame_result(payload: dict[str, Any]) -> dict[str, Any]:
+    session_id = str(payload.get("sessionId") or "").strip()
+    generation_batch_id = str(payload.get("generationBatchId") or "").strip()
+    video_index = int(payload.get("videoIndex") or 0)
+    user_generated_key = str(payload.get("userGeneratedKey") or "").strip()
+    if not session_id or not generation_batch_id or video_index < 2 or not user_generated_key:
+        raise ValueError("回退参数不完整")
+    ledger = get_generation_batch_family_snapshot(session_id, generation_batch_id)
+    progress = dict(ledger.get("progress") or {}) if isinstance(ledger, dict) else {}
+    items = [dict(item) for item in progress.get("items") or [] if isinstance(item, dict)]
+    target = next((item for item in items if int(item.get("videoIndex") or 0) == video_index), None)
+    if target is None or str(target.get("status") or "") != "succeeded":
+        raise LookupError("当前视频不是可回退的最新生成结果")
+    if any(
+        int(item.get("videoIndex") or 0) > video_index
+        and str(item.get("status") or "") == "succeeded"
+        for item in items
+    ):
+        raise ValueError("只能回退最新生成结果")
+    target_record = target.get("assetRecord") if isinstance(target.get("assetRecord"), dict) else {}
+    expected_key = str(target_record.get("archiveKey") or target.get("userGeneratedKey") or "").strip()
+    if expected_key and expected_key != user_generated_key:
+        raise ValueError("回退目标与当前生成结果不一致")
+    asset_records = JsonlAssetStore(AI8VideoConfig.from_env().asset_store_path).read_all()
+    checkpoint = prepare_rollback_tail_frame_resume(
+        session_id=session_id,
+        source_batch_id=generation_batch_id,
+        video_index=video_index,
+        progress={**progress, "items": items},
+        asset_records=asset_records,
+        target_record=target_record,
+    )
+    original_progress = {**progress, "items": [dict(item) for item in items]}
+    for item in items:
+        index = int(item.get("videoIndex") or 0)
+        if index == video_index:
+            item.update(
+                status="awaiting_tail_frame_continue",
+                statusLabel="已回退，等待继续",
+                jobId=None,
+                tailFramePreviewUrl=checkpoint.preview_url(),
+                generationBatchId=generation_batch_id,
+            )
+            for field in ("assetRecord", "videoUrl", "hasLocalAsset", "providerStatus", "providerProgress", "error"):
+                item.pop(field, None)
+        elif index > video_index:
+            item.update(
+                status="pending_submission",
+                statusLabel="等待前序视频",
+                jobId=None,
+                providerProgress=0,
+                generationBatchId=generation_batch_id,
+            )
+            for field in ("tailFramePreviewUrl", "assetRecord", "videoUrl", "hasLocalAsset", "error"):
+                item.pop(field, None)
+    progress.update(
+        status="active",
+        items=items,
+        succeededCount=sum(str(item.get("status") or "") == "succeeded" for item in items),
+        runningCount=1,
+        waitingCount=sum(
+            str(item.get("status") or "") in {"awaiting_tail_frame_continue", "pending_submission"}
+            for item in items
+        ),
+    )
+    task_ledger = TaskLedger()
+    task_ledger.upsert_generation_batch(
+        session_id=session_id,
+        generation_batch_id=generation_batch_id,
+        status="active",
+        phase="awaiting_tail_frame_continue",
+        progress=progress,
+    )
+    child_batch_id = str(target.get("childGenerationBatchId") or "").strip()
+    child_ledger = get_generation_ledger_snapshot(session_id, child_batch_id) if child_batch_id else None
+    child_original_progress = None
+    if isinstance(child_ledger, dict):
+        child_progress = dict(child_ledger.get("progress") or {})
+        child_items = [
+            dict(item) for item in child_progress.get("items") or [] if isinstance(item, dict)
+        ]
+        child_original_progress = {**child_progress, "items": [dict(item) for item in child_items]}
+        family_items = {int(item.get("videoIndex") or 0): item for item in items}
+        for child_item in child_items:
+            family_item = family_items.get(int(child_item.get("videoIndex") or 0))
+            if family_item is not None:
+                child_item.clear()
+                child_item.update(family_item)
+                child_item.pop("childGenerationBatchId", None)
+                child_item["generationBatchId"] = child_batch_id
+        child_progress.update(status="active", items=child_items)
+        task_ledger.upsert_generation_batch(
+            session_id=session_id,
+            generation_batch_id=child_batch_id,
+            status="active",
+            phase="awaiting_tail_frame_continue",
+            progress=child_progress,
+        )
+    try:
+        deleted = _delete_user_generated_video(user_generated_key)
+    except Exception:
+        task_ledger.upsert_generation_batch(
+            session_id=session_id,
+            generation_batch_id=generation_batch_id,
+            status=str(original_progress.get("status") or "active"),
+            phase=str(ledger.get("phase") or "").strip() or None,
+            progress=original_progress,
+        )
+        if isinstance(child_ledger, dict) and child_original_progress is not None:
+            task_ledger.upsert_generation_batch(
+                session_id=session_id,
+                generation_batch_id=child_batch_id,
+                status=str(child_ledger.get("status") or "active"),
+                phase=str(child_ledger.get("phase") or "").strip() or None,
+                progress=child_original_progress,
+            )
+        raise
+    return {
+        "ok": True,
+        "sessionId": session_id,
+        "generationBatchId": generation_batch_id,
+        "videoIndex": video_index,
+        "tailFramePreviewUrl": checkpoint.preview_url(),
+        "deleted": deleted.get("deleted") or [],
+        "generationProgress": progress,
+    }
+
+
 def _start_recovered_tail_frame_resume(payload: dict) -> dict:
     session_id = str(payload.get("sessionId") or "").strip()
     source_batch_id = str(payload.get("generationBatchId") or "").strip()
     video_index = int(payload.get("videoIndex") or 0)
     checkpoint = take_recovered_tail_frame_resume(session_id, source_batch_id, video_index)
+    source_ledger = get_generation_ledger_snapshot(session_id, source_batch_id)
+    root_batch_id = str(
+        (source_ledger or {}).get("rootGenerationBatchId")
+        or (source_ledger or {}).get("generationBatchId")
+        or source_batch_id
+    ).strip()
     batch_id = create_generation_batch_id(session_id)
+    register_generation_child_batch(
+        session_id=session_id,
+        generation_batch_id=batch_id,
+        parent_generation_batch_id=source_batch_id,
+        batch_kind="tail_frame_resume",
+        target_video_index=video_index,
+        task_type="recovered_tail_frame_resume",
+        request_snapshot={"sourceBatchId": source_batch_id, "videoIndex": video_index},
+    )
     clear_generation_progress(session_id)
     claim_generation_batch(session_id, batch_id)
     start_generation_progress(session_id, checkpoint.videos, generation_batch_id=batch_id)
@@ -1449,7 +1664,8 @@ def _start_recovered_tail_frame_resume(payload: dict) -> dict:
     return {
         "ok": True,
         "status": "pending",
-        "generationBatchId": batch_id,
+        "generationBatchId": root_batch_id,
+        "childGenerationBatchId": batch_id,
         "videoIndex": video_index,
         "workerId": task.worker_id,
         "recoveredResume": True,
@@ -2019,7 +2235,10 @@ def _user_generated_result_items(limit: int = 50) -> list[dict]:
         if not source.is_file() or source.suffix.lower() not in USER_GENERATED_VIDEO_EXTENSIONS:
             continue
         relative_key = source.relative_to(root).as_posix()
-        if relative_key.startswith("extensions/video/"):
+        if (
+            relative_key.startswith("extensions/video/")
+            or relative_key.startswith(".media-tracks/")
+        ):
             continue
         restored_record = load_restored_result_metadata(root, relative_key)
         asset_record = asset_by_archive_key.get(relative_key) or asset_by_archive_name.get(source.name) or {}
@@ -2046,6 +2265,10 @@ def _user_generated_result_items(limit: int = 50) -> list[dict]:
         }
         cover_key = _find_user_generated_cover_key(root, relative_key)
         preview_key = find_preview_key(root, relative_key)
+        if not preview_key and relative_key.startswith("video/"):
+            generated_preview = generate_preview_for_video(source, root, relative_key)
+            if generated_preview.get("ok"):
+                preview_key = str(generated_preview.get("previewKey") or "").strip()
         if preview_key:
             item["userGeneratedPreviewKey"] = preview_key
             item["userGeneratedPreviewLocalPath"] = str((root / preview_key).resolve())
@@ -2343,14 +2566,29 @@ def _replace_user_generated_video(left_key: object, right_key: object) -> dict[s
     right_path, relative_right_key = _resolve_user_generated_video_key(right_key)
     if left_path.resolve() == right_path.resolve():
         raise ValueError("替换源视频与目标视频不能相同")
+    current_tts = _current_tts_timeline_status(left_path, relative_left_key)
     temporary = left_path.with_name(f".{left_path.stem}.replacing{left_path.suffix}")
+    remixed = left_path.with_name(f".{left_path.stem}.replacing-tts{left_path.suffix}")
     temporary.unlink(missing_ok=True)
+    remixed.unlink(missing_ok=True)
     try:
         shutil.copy2(right_path, temporary)
+        if current_tts.get("available") is True and current_tts.get("timelineChunks"):
+            render_tts_timeline_video(
+                temporary,
+                Path(str(current_tts["audioPath"])),
+                remixed,
+                current_tts["timelineChunks"],
+                duration_seconds=track_duration(temporary),
+                tts_volume=float(current_tts.get("ttsVolume") or 1.0),
+            )
+            remixed.replace(temporary)
         os.replace(temporary, left_path)
     except Exception:
         temporary.unlink(missing_ok=True)
+        remixed.unlink(missing_ok=True)
         raise
+    save_hidden_bgm_base(left_path, ensure_user_generated_result_dir(), relative_left_key)
     try:
         preview = generate_preview_for_video(left_path, ensure_user_generated_result_dir(), relative_left_key)
     except Exception as exc:
@@ -2684,7 +2922,9 @@ def _prepare_batch_merge_context(raw_keys: object) -> dict[str, Any]:
         _batch_merge_visual_source(path, key, fallback)
         for (path, key), fallback in zip(resolved_items, track_sources)
     ]
-    durations = [track_duration(path) for path in merge_sources]
+    source_durations = [track_duration(path) for path in merge_sources]
+    video_statuses = [_current_video_timeline_status(path, key) for path, key in resolved_items]
+    durations = edited_video_durations(video_statuses, source_durations)
     tts_statuses = [_current_tts_timeline_status(path, key) for path, key in resolved_items]
     return {
         "root": root,
@@ -2696,7 +2936,9 @@ def _prepare_batch_merge_context(raw_keys: object) -> dict[str, Any]:
         "narration": "\n".join(text for text in narrations if text),
         "tracks": tracks,
         "mergeSources": merge_sources,
+        "sourceDurations": source_durations,
         "durations": durations,
+        "videoChunks": merged_edited_video_chunks(video_statuses, source_durations),
         "ttsStatuses": tts_statuses,
         "ttsChunks": merged_tts_chunks(tts_statuses, durations),
         "htmlSources": [html_motion_merge_source(key) for _, key in resolved_items],
@@ -2730,7 +2972,7 @@ def _install_batch_merge_result(
                 raise RuntimeError("合并视频预览图生成失败")
         created.append(preview_target)
         created.append(VIDEO_TIMELINE_REVIEW_ROOT / review_id)
-        save_video_timeline_review(target, relative_key, merged_video_chunks(context["durations"]))
+        save_video_timeline_review(target, relative_key, context["videoChunks"])
         if merged_tts.is_file() and context["ttsChunks"]:
             tts_target = local_tts_output_dir() / f"{target.stem}-merged-preview.m4a"
             tts_target.parent.mkdir(parents=True, exist_ok=True)
@@ -2779,7 +3021,7 @@ def _batch_merge_user_generated_videos(raw_keys: object) -> dict[str, Any]:
         merged_tts = work / "merged-tts.m4a"
         merge_result = concat_videos(context["mergeSources"], candidate)
         shutil.copy2(candidate, merged_base)
-        context["mergedBgm"] = merge_hidden_bgm_tracks(candidate, context["tracks"], context["durations"])
+        context["mergedBgm"] = merge_hidden_bgm_tracks(candidate, context["tracks"], context["sourceDurations"])
         merge_tts_audio(context["ttsStatuses"], merged_tts)
         offsets = []
         cursor = 0.0
@@ -3524,15 +3766,26 @@ def _pending_burn_context(
     html_status = html_motion_review_status(relative_key)
     video_state = pending_video_timeline_review(relative_key, video_path)
     video_duration = float(video_state.get("outputDurationSeconds") or 0)
-    submitted_html_chunks = html_chunks if isinstance(html_chunks, list) and html_chunks else None
-    if video_state and html_status.get("reviewReady") is True and submitted_html_chunks:
-        ensure_timeline_chunks_within_video(video_duration, html_motion_chunks=submitted_html_chunks)
-    if html_status.get("reviewReady") is True:
-        adjust_html_motion_review_timeline(video_path, relative_key, submitted_html_chunks)
-        html_status = html_motion_review_status(relative_key)
     pending_tts_state = pending_tts_timeline_review(relative_key)
     tts_state = pending_tts_state
     html_pending = html_status.get("reviewReady") is True
+    if html_pending:
+        effective_html_chunks = (
+            html_chunks
+            if isinstance(html_chunks, list) and html_chunks
+            else html_status.get("timelineChunks")
+        )
+        if video_state and isinstance(effective_html_chunks, list) and effective_html_chunks:
+            ensure_timeline_chunks_within_video(
+                video_duration,
+                html_motion_chunks=effective_html_chunks,
+            )
+        html_status = adjust_html_motion_review_timeline(
+            video_path,
+            relative_key,
+            effective_html_chunks,
+        )
+        html_pending = html_status.get("reviewReady") is True
     if video_state:
         tts_for_boundary = tts_state or _current_tts_timeline_status(video_path, relative_key)
         if not tts_state and tts_for_boundary.get("available") is True:
@@ -3589,15 +3842,22 @@ def _render_confirmed_tts_layer(
     tts_output.replace(working)
 
 
-def _confirmed_burn_source(video_path: Path, relative_key: str, html_pending: bool) -> Path:
+def _confirmed_burn_source(
+    video_path: Path,
+    relative_key: str,
+    html_pending: bool,
+    *,
+    has_tts: bool = False,
+) -> Path:
     if html_pending:
         return html_motion_review_base_path(video_path, relative_key)
+    if has_tts:
+        return video_path
     base = hidden_bgm_base_path(ensure_user_generated_result_dir(), relative_key)
     return base if base.is_file() else video_path
 
 
 def _mix_confirmed_background_music(working: Path, relative_key: str) -> dict[str, Any]:
-    save_hidden_bgm_base(working, ensure_user_generated_result_dir(), relative_key)
     result = mix_background_music(
         working,
         preserve_original_audio_override=True,
@@ -3610,18 +3870,25 @@ def _mix_confirmed_background_music(working: Path, relative_key: str) -> dict[st
 
 def _render_confirmed_burn(
     video_path: Path,
+    output_path: Path,
     tts_state: dict[str, Any],
     video_state: dict[str, Any],
     html_pending: bool,
     relative_key: str,
 ) -> dict:
-    suffix = video_path.suffix or ".mp4"
-    working = video_path.with_name(f".{video_path.stem}.burn-confirming{suffix}")
-    tts_output = video_path.with_name(f".{video_path.stem}.burn-tts{suffix}")
+    suffix = output_path.suffix or ".mp4"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    working = output_path.with_name(f".{output_path.stem}.burn-confirming{suffix}")
+    tts_output = output_path.with_name(f".{output_path.stem}.burn-tts{suffix}")
     working.unlink(missing_ok=True)
     tts_output.unlink(missing_ok=True)
     try:
-        visual_source = _confirmed_burn_source(video_path, relative_key, html_pending)
+        visual_source = _confirmed_burn_source(
+            video_path,
+            relative_key,
+            html_pending,
+            has_tts=bool(tts_state),
+        )
         _render_confirmed_video_layer(
             visual_source,
             working,
@@ -3637,7 +3904,7 @@ def _render_confirmed_burn(
                 resolve_ffmpeg_bin(),
             )
         background_music_result = _mix_confirmed_background_music(working, relative_key)
-        os.replace(working, video_path)
+        os.replace(working, output_path)
     except Exception:
         working.unlink(missing_ok=True)
         tts_output.unlink(missing_ok=True)
@@ -3687,37 +3954,30 @@ def _persist_confirmed_burn(
 
 def _confirm_user_generated_burn(raw_key: object, html_chunks: object = None) -> dict:
     video_path, relative_key = _resolve_user_generated_video_key(raw_key)
-    tts_state, video_state, html_pending, tts_review_pending = _pending_burn_context(
+    tts_state, video_state, html_pending, _tts_review_pending = _pending_burn_context(
         video_path,
         relative_key,
         html_chunks,
     )
+    result_root = ensure_user_generated_result_dir().resolve()
+    output_path = (result_root / "burned" / relative_key).resolve()
+    if not _is_within(result_root, output_path):
+        raise ValueError("烧录输出路径不合法")
     background_music_result = _render_confirmed_burn(
         video_path,
+        output_path,
         tts_state,
         video_state,
         html_pending,
         relative_key,
     )
-    persisted = _persist_confirmed_burn(
-        video_path,
-        relative_key,
-        tts_state,
-        video_state,
-        html_pending,
-        tts_review_pending=tts_review_pending,
-    )
-    preview = generate_preview_for_video(video_path, ensure_user_generated_result_dir(), relative_key)
-    review_audio = sync_html_motion_review_audio(video_path, relative_key)
+    output_key = output_path.relative_to(result_root).as_posix()
     return {
         "ok": True,
         "userGeneratedKey": relative_key,
-        "videoUrl": f"/user-generated-results/{relative_key}",
-        **persisted,
+        "burnedUserGeneratedKey": output_key,
+        "videoUrl": f"/user-generated-results/{output_key}",
         "backgroundMusic": background_music_result,
-        "htmlMotionReviewAudio": review_audio,
-        "previewGeneration": preview,
-        "burnReview": _burn_review_payload(video_path, relative_key, refresh_tts=False),
     }
 
 
@@ -6276,6 +6536,11 @@ def api_polish_user_generated_tts_narration():
     except RuntimeError as exc:
         response.status = 500
         return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        logger.exception("确认烧录发生未分类异常")
+        response.status = 500
+        message = str(exc).strip() or exc.__class__.__name__
+        return {"ok": False, "error": f"确认烧录失败：{message}"}
     except ValueError as exc:
         response.status = 400
         return {"ok": False, "error": str(exc)}
@@ -7397,10 +7662,37 @@ def _guard_chat_status_pending_freshness(body: dict | None, *, pending_since: da
     return stale_pending or body
 
 
-@app.route("/api/generation/video-prompt", method=["GET", "OPTIONS"])
+@app.route("/api/generation/video-prompt", method=["GET", "POST", "OPTIONS"])
 def api_generation_video_prompt():
     if request.method == "OPTIONS":
         return HTTPResponse(status=204)
+    if request.method == "POST":
+        payload = request.json or {}
+        session_id = str(payload.get("sessionId") or "").strip()
+        generation_batch_id = str(payload.get("generationBatchId") or "").strip()
+        video_index = _coerce_video_index(payload.get("videoIndex"))
+        video_prompt = str(payload.get("videoPrompt") or "").strip()
+        if not session_id or not generation_batch_id or video_index <= 0 or not video_prompt:
+            response.status = 400
+            return {"ok": False, "error": "sessionId, generationBatchId, videoIndex and videoPrompt are required"}
+        ledger = get_generation_batch_family_snapshot(session_id, generation_batch_id)
+        progress = dict(ledger.get("progress") or {}) if isinstance(ledger, dict) else {}
+        items = [dict(item) for item in progress.get("items") or [] if isinstance(item, dict)]
+        target = next((item for item in items if int(item.get("videoIndex") or 0) == video_index), None)
+        if target is None:
+            response.status = 404
+            return {"ok": False, "error": "未找到当前视频提示词"}
+        target_batch_id = str(target.get("childGenerationBatchId") or generation_batch_id).strip()
+        _overwrite_family_video_prompt(session_id, ledger, video_index, video_prompt)
+        update_manual_tail_frame_prompt(session_id, target_batch_id, video_index, video_prompt)
+        update_recovered_tail_frame_prompt(session_id, target_batch_id, video_index, video_prompt)
+        return {
+            "ok": True,
+            "sessionId": session_id,
+            "generationBatchId": generation_batch_id,
+            "videoIndex": video_index,
+            "videoPrompt": video_prompt,
+        }
     session_id = str(request.query.get("sessionId") or "").strip()
     video_index = _coerce_video_index(request.query.get("videoIndex"))
     if not session_id or video_index <= 0:
@@ -7413,6 +7705,49 @@ def api_generation_video_prompt():
         response.status = 404
         return {"error": "未找到该视频实际提交的最终提示词"}
     return {"ok": True, "sessionId": session_id, "videoIndex": video_index, "videoPrompt": prompt}
+
+
+def _overwrite_family_video_prompt(
+    session_id: str,
+    family: dict[str, Any],
+    video_index: int,
+    video_prompt: str,
+) -> None:
+    root_batch_id = str(family.get("generationBatchId") or "").strip()
+    if not root_batch_id:
+        raise LookupError("未找到提示词所属主批次")
+    task_ledger = TaskLedger()
+    batch_ids = [root_batch_id]
+    batch_ids.extend(
+        str(child.get("generationBatchId") or "").strip()
+        for child in family.get("childBatches") or []
+        if isinstance(child, dict) and str(child.get("generationBatchId") or "").strip()
+    )
+    found = False
+    for batch_id in batch_ids:
+        record = get_generation_ledger_snapshot(session_id, batch_id)
+        if not isinstance(record, dict):
+            continue
+        progress = dict(record.get("progress") or {})
+        items = [dict(item) for item in progress.get("items") or [] if isinstance(item, dict)]
+        target = next((item for item in items if int(item.get("videoIndex") or 0) == video_index), None)
+        if target is None:
+            continue
+        if batch_id == root_batch_id:
+            target["videoPrompt"] = video_prompt
+            found = True
+        else:
+            target.pop("videoPrompt", None)
+        progress["items"] = items
+        task_ledger.upsert_generation_batch(
+            session_id=session_id,
+            generation_batch_id=batch_id,
+            status=str(record.get("status") or progress.get("status") or "active"),
+            phase=str(record.get("phase") or "").strip() or None,
+            progress=progress,
+        )
+    if not found:
+        raise LookupError("未找到当前视频提示词")
 
 
 def _final_video_prompt_from_full_trace(session_id: str, video_index: int) -> str:
@@ -7464,7 +7799,24 @@ def api_retry_failed_generation():
         source_ledger = get_generation_ledger_snapshot(session_id, generation_batch_id)
         if isinstance(source_ledger, dict) and isinstance(source_ledger.get("progress"), dict):
             display_progress = dict(source_ledger["progress"])
+        parent_batch_id = str(
+            (source_ledger or {}).get("rootGenerationBatchId")
+            or (source_ledger or {}).get("generationBatchId")
+            or generation_batch_id
+            or ""
+        ).strip()
+        if not parent_batch_id:
+            raise ValueError("未找到当前会话的主批次，无法创建重试子批次")
         retry_batch_id = create_generation_batch_id(session_id)
+        register_generation_child_batch(
+            session_id=session_id,
+            generation_batch_id=retry_batch_id,
+            parent_generation_batch_id=parent_batch_id,
+            batch_kind="video_retry",
+            target_video_index=video.index,
+            task_type="generation_retry",
+            request_snapshot={"videoIndex": video.index, "sourceBatchId": generation_batch_id},
+        )
         clear_generation_progress(session_id)
         claim_generation_batch(session_id, retry_batch_id)
         start_generation_progress(session_id, [video], generation_batch_id=retry_batch_id)
@@ -7493,7 +7845,8 @@ def api_retry_failed_generation():
         return {
             "ok": True,
             "status": "pending",
-            "generationBatchId": retry_batch_id,
+            "generationBatchId": parent_batch_id,
+            "childGenerationBatchId": retry_batch_id,
             "workerId": task.worker_id,
             "videoIndex": video.index,
             **({"displayGenerationProgress": display_progress} if display_progress else {}),
@@ -7600,6 +7953,36 @@ def _find_retryable_asset_record(
         and str(item.get("generationStatus") or "") == "failed"
     ]
     if not matches:
+        ledger = get_generation_ledger_snapshot(session_id, generation_batch_id)
+        progress = ledger.get("progress") if isinstance(ledger, dict) else {}
+        failed_item = next((
+            dict(item) for item in progress.get("items") or []
+            if isinstance(item, dict)
+            and int(item.get("videoIndex") or 0) == video_index
+            and str(item.get("status") or "") in {"failed", "error"}
+        ), None)
+        siblings = [
+            item for item in records
+            if str(item.get("sessionId") or "") == session_id
+            and (
+                not generation_batch_id
+                or str(item.get("generationBatchId") or "") == generation_batch_id
+            )
+            and isinstance(item.get("request"), dict)
+        ]
+        if failed_item and siblings:
+            template = dict(siblings[-1])
+            template.update({
+                "generationStatus": "failed",
+                "status": "failed",
+                "videoIndex": video_index,
+                "videoTitle": str(failed_item.get("title") or f"视频 {video_index}"),
+                "prompt": str(failed_item.get("videoPrompt") or "").strip(),
+                "jobId": failed_item.get("jobId"),
+                "firstFrame": failed_item.get("firstFrame") if isinstance(failed_item.get("firstFrame"), dict) else None,
+            })
+            if template["prompt"]:
+                return template
         raise ValueError("未找到当前会话的视频失败记录，无法重试")
     return matches[-1]
 
@@ -8384,7 +8767,7 @@ def _apply_deleted_asset_progress_state(body: dict) -> None:
                 if segment_status:
                     item["segmentStatus"] = segment_status
             changed = True
-        elif archive_status == "archived" and local_exists is False:
+        elif archive_status == "archived" and local_exists is False and status == "succeeded":
             item["status"] = "deleted"
             item["statusLabel"] = "已生成，文件已删除"
             item["providerStatus"] = "deleted"

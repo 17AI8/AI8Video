@@ -140,6 +140,7 @@
             lane.releasePointerCapture(event.pointerId);
           }
           if (marquee) marquee.hidden = true;
+          if (moved) lane.dataset.timelineIgnoreClick = 'true';
           if (!moved && !additive) setTtsSelectedChunkIndexes([]);
           const count = currentTtsSelectedChunkIndexes().length;
           setTtsTimelineStatus(count
@@ -152,6 +153,10 @@
         lane.addEventListener('lostpointercapture', end);
       });
       lane.addEventListener('click', (event) => {
+        if (lane.dataset.timelineIgnoreClick === 'true') {
+          delete lane.dataset.timelineIgnoreClick;
+          return;
+        }
         const interactive = event.target.closest?.('[data-video-preview-tts-chunk], [data-video-preview-tts-playhead], [data-timeline-trim-handle]');
         if (interactive || event.shiftKey || event.metaKey || event.ctrlKey || isTtsScissorMode()) return;
         setTtsSelectedChunkIndexes([]);

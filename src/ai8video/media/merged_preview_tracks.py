@@ -18,6 +18,52 @@ def merged_video_chunks(durations: list[float]) -> list[dict[str, float]]:
     return chunks
 
 
+def merged_edited_video_chunks(
+    statuses: list[dict[str, Any]],
+    source_durations: list[float],
+) -> list[dict[str, float]]:
+    chunks: list[dict[str, float]] = []
+    source_offset = 0.0
+    for status, source_duration in zip(statuses, source_durations):
+        timeline_chunks = status.get("timelineChunks") or []
+        if not timeline_chunks:
+            timeline_chunks = [{"sourceStartSeconds": 0.0, "sourceEndSeconds": source_duration}]
+        for item in timeline_chunks:
+            start = max(0.0, float(item.get("sourceStartSeconds") or 0))
+            end = min(max(0.0, source_duration), float(item.get("sourceEndSeconds") or 0))
+            if end <= start:
+                continue
+            chunks.append({
+                "sourceStartSeconds": round(source_offset + start, 3),
+                "sourceEndSeconds": round(source_offset + end, 3),
+            })
+        source_offset += max(0.0, source_duration)
+    return chunks
+
+
+def edited_video_durations(
+    statuses: list[dict[str, Any]],
+    source_durations: list[float],
+) -> list[float]:
+    durations: list[float] = []
+    for status, source_duration in zip(statuses, source_durations):
+        timeline_chunks = status.get("timelineChunks") or []
+        if not timeline_chunks:
+            durations.append(max(0.0, source_duration))
+            continue
+        duration = sum(
+            max(
+                0.0,
+                min(max(0.0, source_duration), float(item.get("sourceEndSeconds") or 0))
+                - max(0.0, float(item.get("sourceStartSeconds") or 0)),
+            )
+            for item in timeline_chunks
+            if isinstance(item, dict)
+        )
+        durations.append(duration)
+    return durations
+
+
 def merged_tts_chunks(statuses: list[dict[str, Any]], video_durations: list[float]) -> list[dict[str, float]]:
     chunks: list[dict[str, float]] = []
     audio_offset = 0.0
