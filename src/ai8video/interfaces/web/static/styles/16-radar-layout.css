@@ -229,6 +229,11 @@
       cursor: pointer;
     }
 
+    .hot-radar-search-button .fa-icon {
+      width: 16px;
+      height: 16px;
+    }
+
     .hot-radar-search-button:hover {
       color: #3b52d6;
       background: rgba(239, 243, 255, 0.96);

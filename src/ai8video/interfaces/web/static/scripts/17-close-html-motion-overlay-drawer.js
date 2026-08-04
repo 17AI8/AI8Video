@@ -454,6 +454,7 @@
         icon: 'recycle',
         title: '回收站',
         meta: `${count} 个失败任务`,
+        count,
         actionLabel: '查看回收站',
         attrs: 'data-show-recycle-bin',
       });

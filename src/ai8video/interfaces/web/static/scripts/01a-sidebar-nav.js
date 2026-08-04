@@ -17,16 +17,28 @@
       actionLabel,
       attrs = '',
       extraClass = '',
+      count = null,
     }) {
       const safeTitle = escapeHtml(title || '');
       const safeMeta = escapeHtml(meta || '');
       const safeAction = escapeHtml(actionLabel || '');
       const iconName = SIDEBAR_NAV_ICON_NAMES.has(icon) ? icon : 'progress';
+      const numericCount = count === null || count === '' ? null : Number(count);
+      const normalizedCount = Number.isFinite(numericCount) ? Math.max(0, Math.trunc(numericCount)) : null;
+      const safeCount = normalizedCount === null ? '' : escapeHtml(String(normalizedCount));
+      const countedClass = normalizedCount === null ? '' : ' sidebar-nav-item--counted';
+      const tooltip = safeMeta ? `${safeTitle}，${safeMeta}` : safeTitle;
+      const countMarkup = normalizedCount === null
+        ? ''
+        : `<span class="sidebar-nav-count" aria-hidden="true">${safeCount}</span>`;
       return `
-        <button type="button" class="sidebar-nav-item material-card ${extraClass}" ${attrs} title="${safeTitle}">
+        <button type="button" class="sidebar-nav-item material-card${countedClass} ${extraClass}" ${attrs} title="${tooltip}">
           <span class="sidebar-nav-icon" data-icon="${iconName}" aria-hidden="true"><span class="sidebar-nav-icon-glyph"></span></span>
           <span class="sidebar-nav-copy">
-            <span class="sidebar-nav-title">${safeTitle}</span>
+            <span class="sidebar-nav-title-row">
+              <span class="sidebar-nav-title">${safeTitle}</span>
+              ${countMarkup}
+            </span>
             <span class="sidebar-nav-meta">${safeMeta}</span>
           </span>
           <span class="sidebar-nav-action" aria-hidden="true">${safeAction}</span>

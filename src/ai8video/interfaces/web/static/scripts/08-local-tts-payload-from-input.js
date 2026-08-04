@@ -349,7 +349,7 @@
       const volumePercent = normalizeBackgroundMusicVolumePercent(music.volumePercent ?? ((music.volume ?? 0.28) * 100));
       return `
         <button type="button" class="material-option background-music-option${selected ? ' selected' : ''}" data-select-background-music="${escapeHtml(id)}" data-background-music-selected="${selected ? '1' : '0'}">
-          <span class="material-option-thumb" aria-hidden="true">🎵</span>
+          <span class="material-option-thumb" aria-hidden="true">${fontAwesomeIconMarkup('music')}</span>
           <span>
             <span class="material-title-row">
               <span class="material-title">${escapeHtml(name)}</span>
@@ -455,7 +455,7 @@
       const name = String(item?.name || relativePath || '参考图');
       return `
         <button type="button" class="material-option background-music-option${selected ? ' selected' : ''}" data-select-default-reference="${escapeHtml(relativePath)}" data-default-reference-selected="${selected ? '1' : '0'}">
-          ${item.url ? `<img class="material-option-thumb" src="${escapeHtml(item.url)}" alt="">` : '<span class="material-option-thumb">图</span>'}
+          ${item.url ? `<img class="material-option-thumb" src="${escapeHtml(item.url)}" alt="">` : `<span class="material-option-thumb">${fontAwesomeIconMarkup('images')}</span>`}
           <span>
             <span class="material-title-row">
               <span class="material-title">${escapeHtml(name)}</span>

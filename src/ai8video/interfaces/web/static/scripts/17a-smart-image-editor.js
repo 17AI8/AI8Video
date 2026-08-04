@@ -71,27 +71,19 @@
     }
 
     function smartImageIcon(name) {
-      const paths = {
-        upload: '<path d="M12 16V4m0 0L7 9m5-5l5 5"/><path d="M4 15v5h16v-5"/>',
-        sparkle: '<path d="M12 2l1.6 5.1L19 9l-5.4 1.9L12 16l-1.6-5.1L5 9l5.4-1.9L12 2z"/><path d="M19 15l.8 2.4L22 18l-2.2.6L19 21l-.8-2.4L16 18l2.2-.6L19 15z"/>',
-        portrait: '<circle cx="12" cy="8" r="4"/><path d="M4 21c.8-5 3.5-7 8-7s7.2 2 8 7"/>',
-        product: '<path d="M4 8l8-4 8 4v9l-8 4-8-4V8z"/><path d="M4 8l8 4 8-4M12 12v9"/>',
-        restore: '<path d="M4 7V3m0 0h4M4 3l4 4"/><path d="M5 13a7 7 0 107-7H8"/><path d="M12 9v4l3 2"/>',
-        food: '<path d="M4 13h16a8 8 0 01-16 0z"/><path d="M7 9c0-2 2-2 2-4M12 9c0-2 2-2 2-4M17 9c0-2 2-2 2-4"/>',
-        scene: '<path d="M4 19l5-6 3 3 3-4 5 7H4z"/><circle cx="7" cy="7" r="2"/>',
-        compare: '<path d="M12 3v18"/><path d="M3 12a9 9 0 0118 0 9 9 0 01-18 0z"/>',
-        export: '<path d="M12 3v12m0 0l-5-5m5 5l5-5"/><path d="M4 19v2h16v-2"/>',
-        library: '<path d="M4 5h16v14H4z"/><path d="M7 15l3-3 2 2 3-4 3 5"/><circle cx="8" cy="9" r="1"/>',
-        shield: '<path d="M12 3l7 3v5c0 4.5-2.8 8-7 10-4.2-2-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-5"/>',
-        close: '<path d="M5 5l14 14M19 5L5 19"/>',
-        trash: '<path d="M4 7h16M9 7V4h6v3m3 0l-1 14H7L6 7"/>',
-        rotate: '<path d="M4 7V3m0 0h4M4 3l4 4"/><path d="M5 13a7 7 0 107-7H8"/>',
-        flip: '<path d="M12 3v18M4 6l6 6-6 6M20 6l-6 6 6 6"/>',
-        save: '<path d="M5 4h12l2 2v14H5V4z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/>',
-        check: '<path d="M5 12l4 4L19 6"/>',
-        chevron: '<path d="M7 10l5 5 5-5"/>',
+      const iconNames = {
+        sparkle: 'wand-magic-sparkles',
+        export: 'download',
+        library: 'images',
+        close: 'xmark',
+        trash: 'trash-can',
+        rotate: 'rotate-right',
+        flip: 'left-right',
+        save: 'floppy-disk',
+        check: 'check',
+        chevron: 'chevron-down',
       };
-      return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.sparkle}</svg>`;
+      return fontAwesomeIconMarkup(iconNames[name] || 'wand-magic-sparkles', 'smart-image-icon');
     }
 
     function smartImageLeftPanelMarkup() {

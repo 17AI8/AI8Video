@@ -19,7 +19,7 @@
 | PyAV / FFmpeg libraries | `>=11`（faster-whisper 间接依赖） | BSD-3-Clause / LGPL-3.0-or-later | 音视频解码；PyPI wheel 会携带 FFmpeg 动态库 |
 | Systran faster-whisper-base | 运行时按需下载 | MIT | 默认台词识别模型权重 |
 | Electron | `43.2.0` | MIT | 桌面客户端运行时 |
-| Font Awesome Free Desktop | `7.3.1` | CC BY 4.0（SVG 图标）/ MIT（许可证文本） | 仅分发界面实际引用的 16 个 Solid SVG 图标与许可证 |
+| Font Awesome Free Desktop | `7.3.1` | CC BY 4.0（SVG 图标）/ MIT（许可证文本） | 仅分发界面实际引用的 37 个 Solid SVG 图标与许可证 |
 | Source Han Serif SC Bold / Heavy | 当前仓内版本 | SIL OFL-1.1 | 可选本地字幕与花字渲染字体 |
 | PyInstaller | `6.21.0` | GPL-2.0-or-later，带 Bootloader Exception | 将 Python 后端冻结为桌面发行运行时 |
 | electron-builder | `26.15.3` | MIT | DMG 与 NSIS 安装包构建 |

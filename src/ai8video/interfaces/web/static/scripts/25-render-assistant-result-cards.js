@@ -207,7 +207,7 @@
         <button type="button" class="result-batch-merge-select${selectionOrder ? ' is-selected' : ''}"
           data-result-batch-merge-select="${escapeHtml(mergeKey)}" aria-pressed="${selectionOrder ? 'true' : 'false'}"
           aria-label="${selectionOrder ? `取消第 ${selectionOrder} 个合并视频` : '选择这个视频进行合并'}">
-          <span class="result-batch-merge-checkbox" aria-hidden="true">${selectionOrder ? '✓' : ''}</span>
+          <span class="result-batch-merge-checkbox" aria-hidden="true">${selectionOrder ? fontAwesomeIconMarkup('check') : ''}</span>
           ${selectionOrder ? `<span class="result-batch-merge-order">${selectionOrder}</span>` : ''}
         </button>
       ` : '';

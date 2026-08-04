@@ -115,6 +115,10 @@
       `;
     }
 
+    function getResultFolderCompletedCount(gallery) {
+      return getPlayableResultItems(gallery).length;
+    }
+
     function renderProgress() {
       const session = getActiveSession();
       const model = buildProgressModel(session);
@@ -124,10 +128,12 @@
         return;
       }
       if (els.sidebarResultsSection) els.sidebarResultsSection.hidden = false;
+      const resultCount = getResultFolderCompletedCount(buildResultFolderGalleryModel(session));
       els.progressPanel.innerHTML = buildSidebarNavItemMarkup({
         icon: 'progress',
         title: '查看结果',
-        meta: '查看所有结果',
+        meta: `${resultCount} 个结果`,
+        count: resultCount,
         actionLabel: '查看结果',
         attrs: 'data-show-result-modal="1"',
         extraClass: 'progress-card',
@@ -359,7 +365,7 @@
       const visible = !!state.resultModal.visible;
       els.resultModal.classList.toggle('hidden', !visible);
       const gallery = buildResultFolderGalleryModel(getActiveSession());
-      const completedCount = getPlayableResultItems(gallery).length;
+      const completedCount = getResultFolderCompletedCount(gallery);
       els.resultModalTitle.textContent = '全部生成结果';
       els.resultModalSub.textContent = completedCount
         ? `结果目录中 ${completedCount} 个成片`
@@ -400,25 +406,26 @@
       renderResultModal();
     }
 
-    const VIDEO_PREVIEW_ICONS = {
-      mic: '<path d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 18v3"/><path d="M8.5 21h7"/>',
-      edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>',
-      crop: '<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M2 6h14a2 2 0 0 1 2 2v14"/>',
-      scissors: '<circle cx="6" cy="7" r="3"/><path d="M8.7 8.3 19 14"/><path d="m8.7 15.7 10.8-6.2"/><circle cx="6" cy="17" r="3"/>',
-      chevron: '<path d="m6 9 6 6 6-6"/>',
-      sparkles: '<path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/><path d="m5.6 5.6 2.1 2.1"/><path d="m16.3 16.3 2.1 2.1"/><path d="m16.3 5.6-2.1 2.1"/><path d="m5.6 16.3 2.1-2.1"/><circle cx="12" cy="12" r="2.2"/>',
-      check: '<path d="M20 7 9.5 17.5 4 12"/>',
-      undo: '<path d="M9 7H4V2"/><path d="M4 7c2-3 5-4 8-4a8 8 0 1 1 0 16h-2"/>',
-      redo: '<path d="M15 7h5V2"/><path d="M20 7c-2-3-5-4-8-4a8 8 0 1 0 0 16h2"/>',
-      trash: '<path d="M3 6h18"/><path d="M8 6V4.8A1.8 1.8 0 0 1 9.8 3h4.4A1.8 1.8 0 0 1 16 4.8V6"/><path d="M19 6v13.2A1.8 1.8 0 0 1 17.2 21H6.8A1.8 1.8 0 0 1 5 19.2V6"/><path d="M10 10.5v6"/><path d="M14 10.5v6"/>',
+    const VIDEO_PREVIEW_ICON_NAMES = {
+      mic: 'microphone',
+      edit: 'pen-to-square',
+      crop: 'crop-simple',
+      scissors: 'scissors',
+      chevron: 'chevron-down',
+      sparkles: 'wand-magic-sparkles',
+      check: 'check',
+      undo: 'rotate-left',
+      redo: 'rotate-right',
+      trash: 'trash-can',
+      regenerate: 'arrows-rotate',
+      extend: 'arrow-right-long',
     };
 
     function videoPreviewIconSvg(iconKey) {
-      if (iconKey === 'regenerate' || iconKey === 'extend') {
-        return `<span class="video-preview-button-icon video-preview-fontawesome-icon is-${iconKey}" aria-hidden="true"></span>`;
-      }
-      const paths = VIDEO_PREVIEW_ICONS[iconKey] || '';
-      return `<svg class="video-preview-button-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths}</svg>`;
+      return fontAwesomeIconMarkup(
+        VIDEO_PREVIEW_ICON_NAMES[iconKey] || 'triangle-exclamation',
+        'video-preview-button-icon',
+      );
     }
 
     function videoPreviewButtonInnerHtml(iconKey, label) {

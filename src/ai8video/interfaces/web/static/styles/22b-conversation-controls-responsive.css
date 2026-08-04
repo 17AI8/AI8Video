@@ -1,33 +1,50 @@
 .shell.is-sidebar-collapsed .conversation-sidebar-section .sidebar-section-heading,
 .shell.is-sidebar-collapsed .conversation-sidebar-section .session-delete-button,
-.shell.is-sidebar-collapsed .conversation-sidebar-section .session-select > :not(.session-mode-badge) {
+.shell.is-sidebar-collapsed .conversation-sidebar-section .session-select > :not(.session-conversation-icon) {
   display: none;
 }
 
 body > .shell.is-sidebar-collapsed > aside.sidebar .sidebar-conversation-list .session-item {
   grid-template-columns: 1fr;
   min-height: 52px;
-  padding: 8px;
-  place-items: center;
+  padding: 4px;
+  place-items: stretch;
 }
 
-.shell.is-sidebar-collapsed .conversation-sidebar-section .session-select { place-items: center; }
-
-.shell.is-sidebar-collapsed .conversation-sidebar-section .session-mode-badge {
-  width: 34px;
-  height: 34px;
+.shell.is-sidebar-collapsed .conversation-sidebar-section .session-select {
+  width: 100%;
+  min-height: 44px;
   padding: 0;
-  display: grid;
   place-items: center;
-  font-size: 0;
+  border-radius: 11px;
 }
 
-.shell.is-sidebar-collapsed .conversation-sidebar-section .session-mode-badge::after {
-  content: "标";
-  font-size: 11px;
+.shell.is-sidebar-collapsed .conversation-sidebar-section .session-select:focus-visible {
+  outline: 2px solid rgba(49, 88, 226, 0.72);
+  outline-offset: 1px;
 }
 
-.shell.is-sidebar-collapsed .conversation-sidebar-section .session-mode-badge[data-mode="agent"]::after { content: "A"; }
+.shell.is-sidebar-collapsed .conversation-sidebar-section .session-conversation-icon {
+  width: 44px;
+  height: 44px;
+  display: inline-grid;
+  place-items: center;
+}
+
+.shell.is-sidebar-collapsed .conversation-sidebar-section .session-conversation-glyph {
+  width: 28px;
+  height: 28px;
+}
+
+body > .shell.is-sidebar-collapsed > aside.sidebar .sidebar-conversation-list .session-item.active {
+  border-color: #3158e2;
+  background: #3158e2;
+  box-shadow: 0 9px 20px rgba(49, 88, 226, 0.24);
+}
+
+body > .shell.is-sidebar-collapsed > aside.sidebar .sidebar-conversation-list .session-item.active .session-conversation-icon {
+  color: #fff;
+}
 
 .shell.is-sidebar-collapsed .sidebar-new-conversation-control .new-conversation-mode-switch {
   display: none;
@@ -47,12 +64,18 @@ body > .shell.is-sidebar-collapsed > aside.sidebar .sidebar-conversation-list .s
   border-radius: 13px;
 }
 
+.shell.is-sidebar-collapsed .sidebar-new-conversation-control .new-conversation-button:hover,
+.shell.is-sidebar-collapsed .sidebar-new-conversation-control .new-conversation-button:focus-visible {
+  color: #fff;
+}
+
 .shell.is-sidebar-collapsed .sidebar-new-conversation-control .new-conversation-button-label {
   display: none;
 }
 
 .shell.is-sidebar-collapsed .sidebar-new-conversation-control .new-conversation-button-plus {
-  font-size: 20px;
+  width: 26px;
+  height: 26px;
 }
 
 @media (max-width: 900px) {

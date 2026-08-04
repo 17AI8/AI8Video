@@ -411,8 +411,21 @@ body > .shell > aside.sidebar .material-add-button {
 }
 
 body > .shell > aside.sidebar #settingsEntryButton.settings-entry-button {
-  min-height: 52px !important;
-  grid-template-columns: 36px minmax(0, 1fr) !important;
+  min-height: 44px !important;
+  grid-template-columns: 32px minmax(0, 1fr) !important;
+  padding: 4px 10px !important;
+  border-radius: 14px !important;
+}
+
+body > .shell > aside.sidebar #settingsEntryButton.settings-entry-button .sidebar-nav-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+}
+
+body > .shell > aside.sidebar #settingsEntryButton.settings-entry-button .sidebar-nav-icon-glyph {
+  width: 26px;
+  height: 26px;
 }
 
 body > .shell > aside.sidebar [data-open-smart-image-editor-entry].is-active {

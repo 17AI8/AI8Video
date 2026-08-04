@@ -721,6 +721,11 @@
       font-size: 15px;
     }
 
+    .viral-transcript-drag-handle .fa-icon {
+      width: 12px;
+      height: 12px;
+    }
+
     .viral-transcript-audio-state {
       flex: 1 1 auto;
       color: #72805f;
@@ -741,6 +746,11 @@
       color: #5368d8;
       font: 700 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
       white-space: nowrap;
+    }
+
+    .viral-transcript-time-button .fa-icon {
+      width: 9px;
+      height: 9px;
     }
 
     .viral-transcript-time-button:hover {
@@ -1204,13 +1214,18 @@
       z-index: 1;
       width: 34px;
       height: 34px;
+      display: inline-grid;
+      place-items: center;
       color: #fff;
-      font-size: 24px;
-      line-height: 1;
       border: 0;
       border-radius: 50%;
       background: rgba(8, 13, 24, 0.82);
       cursor: pointer;
+    }
+
+    .viral-breakdown-frame-lightbox-close .fa-icon {
+      width: 15px;
+      height: 15px;
     }
 
     @keyframes viral-breakdown-lightbox-fade-in {

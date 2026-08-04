@@ -376,10 +376,7 @@
                 </div>
                 <textarea id="flowerTextEditor" class="flower-text-editor" spellcheck="false" rows="1" placeholder="在这里输入要一直显示在视频里的花字" ${enabled ? '' : 'disabled'} style="left: ${textX}%; top: ${textY}%; color: ${escapeHtml(textColor)}; -webkit-text-stroke: ${Math.max(0, Math.round(previewFontSize * strokeWidth / 100))}px ${escapeHtml(strokeColor)}; font-family: ${escapeHtml(editorFontFamily)}; font-size: ${previewFontSize}px; font-weight: ${fontWeight};">${escapeHtml(text)}</textarea>
                 <button id="flowerTextDragHandle" class="flower-text-drag-handle" type="button" aria-label="拖动花字" draggable="true" style="left: ${textX}%; top: ${textY}%;">
-                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                    <path d="M12 3v18M3 12h18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-                    <path d="m12 3-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
+                  ${fontAwesomeIconMarkup('up-down-left-right', 'flower-text-drag-icon')}
                 </button>
                 ${watermarkImage ? `<button id="flowerTextWatermarkDragHandle" class="flower-text-watermark-drag-handle" type="button" aria-label="拖动水印" ${watermarkEnabled ? '' : 'hidden'} style="left: ${watermarkX}%; top: ${watermarkY}%; --flower-watermark-size: ${watermarkSize}%; --flower-watermark-opacity: ${Math.min(1, Math.max(0.05, watermarkOpacity / 100))};"><img src="${escapeHtml(watermarkPreviewUrl || flowerTextWatermarkUrl(watermarkImage))}" alt="${escapeHtml(watermarkItem?.name || '水印图片')}"></button>` : ''}
                 ${watermark2Image ? `<button id="flowerTextWatermark2DragHandle" class="flower-text-watermark-drag-handle" type="button" aria-label="拖动水印2" ${watermark2Enabled ? '' : 'hidden'} style="left: ${watermark2X}%; top: ${watermark2Y}%; --flower-watermark-size: ${watermark2Size}%; --flower-watermark-opacity: ${Math.min(1, Math.max(0.05, watermark2Opacity / 100))};"><img src="${escapeHtml(watermark2PreviewUrl || flowerTextWatermarkUrl(watermark2Image))}" alt="${escapeHtml(watermark2Item?.name || '水印图片')}"></button>` : ''}

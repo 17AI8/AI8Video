@@ -217,10 +217,15 @@
     }
 
     .pinned-progress-summary-chip::before {
-      content: "⌛";
+      content: "";
+      width: 15px;
+      height: 15px;
+      display: block;
+      flex: 0 0 auto;
       color: #3158e2;
-      font-size: 15px;
-      line-height: 1;
+      background: currentColor;
+      -webkit-mask: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/hourglass-half.svg") center / contain no-repeat;
+      mask: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/hourglass-half.svg") center / contain no-repeat;
     }
 
     .pinned-progress-note {
@@ -248,9 +253,14 @@
     }
 
     .pinned-progress-note::after {
-      content: "›";
-      font-size: 16px;
-      line-height: 1;
+      content: "";
+      width: 10px;
+      height: 10px;
+      display: block;
+      flex: 0 0 auto;
+      background: currentColor;
+      -webkit-mask: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/chevron-right.svg") center / contain no-repeat;
+      mask: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/chevron-right.svg") center / contain no-repeat;
     }
 
     .bubble p { margin: 0 0 10px; }

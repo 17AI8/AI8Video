@@ -621,7 +621,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertNotIn('class="hot-radar-sidebar-footer"', modal_source)
         self.assertNotIn('id="hotRadarFetchRouteBadge"', modal_source)
         self.assertIn('id="hotRadarSourceManagerModal"', source)
-        self.assertIn('value="__add_source__">＋ 新增数据源…', source)
+        self.assertIn('value="__add_source__">新增数据源…', source)
+        self.assertNotIn('value="__add_source__">＋', source)
         self.assertIn("selectedValue === '__add_source__'", source)
         self.assertIn("async function saveHotRadarCustomSources()", source)
         self.assertNotIn('id="hotRadarSourceList"', modal_source)
@@ -750,7 +751,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn('id="sidebarBrandToggle"', source)
         self.assertIn("[button, brandButton].filter(Boolean)", source)
         self.assertIn("title: '查看结果'", source)
-        self.assertIn("meta: '查看所有结果'", source)
+        self.assertIn("meta: `${resultCount} 个结果`", source)
+        self.assertIn("count: resultCount", source)
         sidebar_style = (STATIC_ROOT / "styles" / "21-sidebar-nav.css").read_text(encoding="utf-8")
         self.assertIn("fontawesome-free-7.3.1-desktop/svgs-full/solid/wand-magic-sparkles.svg", sidebar_style)
         self.assertIn("fontawesome-free-7.3.1-desktop/svgs-full/solid/tower-broadcast.svg", sidebar_style)
@@ -767,7 +769,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn(".shell.is-sidebar-collapsed .sidebar-section-label {\n  visibility: hidden;", sidebar_style)
         self.assertIn(".shell.is-sidebar-collapsed .sidebar-collapse-button {\n  display: none;", sidebar_style)
         self.assertIn(".sidebar-nav-action {\n  display: none;", sidebar_style)
-        self.assertIn("M12 3l7 3v5c0 4.5", editor_source)
+        self.assertIn("fontAwesomeIconMarkup(iconNames[name] || 'wand-magic-sparkles'", editor_source)
+        self.assertNotIn("M12 3l7 3v5c0 4.5", editor_source)
         self.assertIn('data-smart-image-action="export-current"', source)
         self.assertIn("ai8video-smart-image-studio-v1", source)
         self.assertIn("jobs: AI8SmartImage.state.jobs.slice(-24)", source)
@@ -801,14 +804,118 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
     def test_static_settings_entry_uses_gear_icon(self) -> None:
         source = read_static_source()
         sidebar_style = (STATIC_ROOT / "styles" / "21-sidebar-nav.css").read_text(encoding="utf-8")
+        workbench_style = (STATIC_ROOT / "workbench.css").read_text(encoding="utf-8")
 
+        self.assertIn('aria-label="打开设置"', source)
         self.assertIn('data-icon="settings"', source)
         self.assertIn('sidebar-nav-icon-glyph', source)
+        self.assertIn('<span class="sidebar-nav-copy"><span class="sidebar-nav-title">设置</span></span>', source)
+        self.assertNotIn("模型、接口与系统偏好", source)
         self.assertIn("fontawesome-free-7.3.1-desktop/svgs-full/solid/gear.svg", sidebar_style)
+        self.assertIn("#settingsEntryButton.settings-entry-button", sidebar_style)
+        self.assertIn("min-height: 44px !important", sidebar_style)
+        self.assertIn("grid-template-columns: 32px minmax(0, 1fr) !important", sidebar_style)
+        self.assertIn("padding: 4px 10px !important", sidebar_style)
+        self.assertIn("border-radius: 14px !important", sidebar_style)
+        self.assertIn("#settingsEntryButton.settings-entry-button .sidebar-nav-icon", sidebar_style)
+        self.assertIn("#settingsEntryButton.settings-entry-button .sidebar-nav-icon-glyph", sidebar_style)
+        self.assertIn("width: 26px;\n  height: 26px;", sidebar_style)
+        self.assertIn('21-sidebar-nav.css?v=20260804-3', workbench_style)
         self.assertTrue(
             (STATIC_ROOT / "vendor" / "fontawesome-free-7.3.1-desktop" / "svgs-full" / "solid" / "gear.svg").is_file()
         )
         self.assertNotIn('M12 1v2M12 21v2', source)
+
+    def test_sidebar_resource_counts_use_numeric_badges(self) -> None:
+        nav_source = (STATIC_ROOT / "scripts" / "01a-sidebar-nav.js").read_text(encoding="utf-8")
+        material_source = (STATIC_ROOT / "scripts" / "19-render-viral-breakdown-workbench.js").read_text(encoding="utf-8")
+        recycle_source = (STATIC_ROOT / "scripts" / "17-close-html-motion-overlay-drawer.js").read_text(encoding="utf-8")
+        badge_style = (STATIC_ROOT / "styles" / "21a-sidebar-count-badge.css").read_text(encoding="utf-8")
+        workbench_style = (STATIC_ROOT / "workbench.css").read_text(encoding="utf-8")
+
+        self.assertIn("count = null", nav_source)
+        self.assertIn('class="sidebar-nav-count"', nav_source)
+        self.assertIn('aria-hidden="true">${safeCount}</span>', nav_source)
+        self.assertIn("meta: `${items.length} 个文件`,", material_source)
+        self.assertIn("count: items.length,", material_source)
+        self.assertNotIn("'暂无文件'", material_source)
+        self.assertIn("meta: `${count} 个失败任务`,", recycle_source)
+        self.assertNotIn("countTone", nav_source)
+        self.assertNotIn("countTone", recycle_source)
+        self.assertIn('class="sidebar-nav-title-row"', nav_source)
+        self.assertLess(nav_source.index('class="sidebar-nav-title"'), nav_source.index('${countMarkup}'))
+        self.assertIn(".sidebar-nav-title-row", badge_style)
+        self.assertIn("display: flex", badge_style)
+        self.assertIn("align-items: center", badge_style)
+        self.assertIn("justify-content: space-between", badge_style)
+        self.assertIn("margin-left: auto", badge_style)
+        self.assertIn("#sidebarResourceList .sidebar-nav-item--counted", badge_style)
+        self.assertIn("min-height: 44px !important", badge_style)
+        self.assertIn("padding: 4px 10px !important", badge_style)
+        self.assertIn("width: 32px", badge_style)
+        self.assertIn("color: #fff", badge_style)
+        self.assertIn("background: #2f9e6f", badge_style)
+        self.assertNotIn('data-tone="danger"', badge_style)
+        self.assertIn("clip-path: inset(50%)", badge_style)
+        self.assertNotIn("position: absolute;\n  top: 4px", badge_style)
+        self.assertIn("width: 26px;\n  height: 26px;", badge_style)
+        self.assertIn('21a-sidebar-count-badge.css?v=20260804-7', workbench_style)
+
+    def test_sidebar_tools_hide_meta_and_use_compact_rows(self) -> None:
+        tool_source = (
+            STATIC_ROOT / "scripts" / "17-close-html-motion-overlay-drawer.js"
+        ).read_text(encoding="utf-8")
+        nav_source = (STATIC_ROOT / "scripts" / "01a-sidebar-nav.js").read_text(encoding="utf-8")
+        tool_style = (STATIC_ROOT / "styles" / "21b-sidebar-tool-compact.css").read_text(encoding="utf-8")
+        workbench_style = (STATIC_ROOT / "workbench.css").read_text(encoding="utf-8")
+
+        for description in (
+            "导入、描述、对比并导出副本",
+            "聚合公开热点数据并生成选题摘要",
+            "一键预填拆解提示词，直接进入对话分析",
+        ):
+            self.assertIn(description, tool_source)
+        self.assertIn("const tooltip = safeMeta ? `${safeTitle}，${safeMeta}` : safeTitle;", nav_source)
+        self.assertIn("#assistantToolsList > .sidebar-nav-item", tool_style)
+        self.assertIn("min-height: 44px !important", tool_style)
+        self.assertIn("padding: 4px 10px !important", tool_style)
+        self.assertIn("width: 32px", tool_style)
+        self.assertIn("clip-path: inset(50%)", tool_style)
+        self.assertIn("width: 26px;\n  height: 26px;", tool_style)
+        self.assertIn('21b-sidebar-tool-compact.css?v=20260804-3', workbench_style)
+
+    def test_sidebar_progress_uses_single_title_compact_row(self) -> None:
+        progress_source = (
+            STATIC_ROOT / "scripts" / "10-render-flower-text-color-control.js"
+        ).read_text(encoding="utf-8")
+        progress_style = (
+            STATIC_ROOT / "styles" / "21c-sidebar-progress-inline.css"
+        ).read_text(encoding="utf-8")
+        workbench_style = (STATIC_ROOT / "workbench.css").read_text(encoding="utf-8")
+
+        self.assertIn("title: '查看结果'", progress_source)
+        self.assertNotIn("查看所有结果", progress_source)
+        self.assertIn("function getResultFolderCompletedCount(gallery)", progress_source)
+        self.assertIn("return getPlayableResultItems(gallery).length", progress_source)
+        self.assertIn(
+            "const resultCount = getResultFolderCompletedCount(buildResultFolderGalleryModel(session))",
+            progress_source,
+        )
+        self.assertIn("const completedCount = getResultFolderCompletedCount(gallery)", progress_source)
+        self.assertNotIn("function getProgressResultCount", progress_source)
+        self.assertNotIn("generatedMetric", progress_source)
+        self.assertIn("meta: `${resultCount} 个结果`", progress_source)
+        self.assertIn("count: resultCount", progress_source)
+        self.assertIn("#progressPanel > .sidebar-nav-item", progress_style)
+        self.assertIn("min-height: 44px !important", progress_style)
+        self.assertIn("padding: 4px 10px !important", progress_style)
+        self.assertIn("width: 32px", progress_style)
+        self.assertIn(".sidebar-nav-copy", progress_style)
+        self.assertIn("gap: 0", progress_style)
+        self.assertNotIn("clip-path", progress_style)
+        self.assertNotIn("display: none !important", progress_style)
+        self.assertIn("width: 26px;\n  height: 26px;", progress_style)
+        self.assertIn('21c-sidebar-progress-inline.css?v=20260804-5', workbench_style)
 
     def test_smart_image_editor_calls_configured_image_model(self) -> None:
         output_root = self.root / "smart-image-results"
@@ -8871,7 +8978,10 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn('id="newConversationButton"', html)
         self.assertIn('>标准模式</button>', html)
         self.assertIn('>Agent 模式 <span class="new-conversation-mode-badge">Beta</span></button>', html)
-        self.assertIn('class="new-conversation-button-plus" aria-hidden="true">+</span>', html)
+        self.assertIn(
+            'class="new-conversation-button-plus fa-icon" data-fa-icon="plus" aria-hidden="true"></span>',
+            html,
+        )
         self.assertIn('class="new-conversation-button-label" data-new-conversation-label>新建标准对话</span>', html)
         self.assertIn('class="new-conversation-control sidebar-new-conversation-control"', html)
         self.assertIn('class="conversation-controlbar mobile-conversation-controlbar"', html)
@@ -8887,6 +8997,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("const createLabel = newConversationMode === 'agent' ? '新建 Agent 对话' : '新建标准对话';", html)
         self.assertIn("buttonLabel.textContent = visibleLabel;", html)
         self.assertIn("button.setAttribute('aria-disabled', String(state.conversationSyncing));", html)
+        self.assertIn("if (!locked) {\n        renderStatus();\n        return;\n      }", html)
         self.assertIn(".sidebar-new-conversation-control {\n  width: 100%;\n  min-width: 0;\n  flex-direction: column;", html)
         self.assertIn(".sidebar-new-conversation-control .new-conversation-button {\n  width: calc(100% - 8px);", html)
         self.assertIn("margin: 4px;\n  padding-inline: 12px;\n  box-sizing: border-box;", html)
@@ -8908,9 +9019,130 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("至少保留一个可用对话；最后一个对话不能删除。", html)
         self.assertIn('<span class="session-delete-icon" aria-hidden="true"></span>', html)
         self.assertIn('.session-delete-icon {', html)
+        self.assertIn('width: 24px;\n  height: 24px;', html)
+        self.assertIn('opacity: 0;\n  visibility: hidden;', html)
+        self.assertIn('.session-item:hover .session-delete-button,', html)
+        self.assertIn('.session-item:focus-within .session-delete-button {\n  opacity: 1;\n  visibility: visible;', html)
         self.assertIn('fontawesome-free-7.3.1-desktop/svgs-full/solid/trash-can.svg', html)
         self.assertNotIn('.session-delete-button svg {', html)
         self.assertNotIn('M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5', html)
+
+    def test_collapsed_sidebar_sessions_show_clickable_conversation_bubbles(self) -> None:
+        renderer_source = (
+            STATIC_ROOT / "scripts" / "21-humanize-recycle-bin-reason.js"
+        ).read_text(encoding="utf-8")
+        conversation_state_source = (
+            STATIC_ROOT / "scripts" / "01b-conversation-state.js"
+        ).read_text(encoding="utf-8")
+        controls_style = (
+            STATIC_ROOT / "styles" / "22a-conversation-controls.css"
+        ).read_text(encoding="utf-8")
+        responsive_style = (
+            STATIC_ROOT / "styles" / "22b-conversation-controls-responsive.css"
+        ).read_text(encoding="utf-8")
+        collapsed_icon_style = (
+            STATIC_ROOT / "styles" / "21d-sidebar-collapsed-icon-scale.css"
+        ).read_text(encoding="utf-8")
+        workbench_style = (STATIC_ROOT / "workbench.css").read_text(encoding="utf-8")
+        index_source = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
+
+        self.assertIn('data-select-conversation="${escapeHtml(session.id)}"', renderer_source)
+        self.assertIn('class="session-conversation-icon" aria-hidden="true"', renderer_source)
+        self.assertIn('aria-label="${escapeHtml(`切换到会话 ${sessionTitle}`)}"', renderer_source)
+        self.assertIn('title="${escapeHtml(sessionTitle)}"', renderer_source)
+        self.assertIn("fontAwesomeIconMarkup('comment-alt', 'session-conversation-glyph')", renderer_source)
+        self.assertNotIn('viewBox="0 0 24 24"', renderer_source)
+        self.assertIn("event.target.closest('[data-select-conversation]')", conversation_state_source)
+        self.assertIn(
+            "void setActiveConversation(selectButton.dataset.selectConversation || '');",
+            conversation_state_source,
+        )
+        self.assertIn(".session-conversation-icon {", controls_style)
+        self.assertIn(".session-item.active .session-conversation-icon", controls_style)
+        self.assertIn(".session-item.active {\n  border-color: #3158e2;", controls_style)
+        self.assertIn("inset 0 0 0 1px #3158e2", controls_style)
+        self.assertIn(".new-conversation-button.is-limit:hover,", controls_style)
+        self.assertIn(".new-conversation-button.is-limit:focus-visible {\n  color: #fff;", controls_style)
+        self.assertNotIn("border: 1px solid rgba(79, 109, 255, 0.16);", controls_style)
+        self.assertNotIn("background: linear-gradient(145deg, #5875ff, #3158e2);", controls_style)
+        self.assertNotIn("box-shadow: 0 6px 14px rgba(49, 88, 226, 0.24);", controls_style)
+        self.assertIn(".session-select > :not(.session-conversation-icon)", responsive_style)
+        self.assertNotIn(".session-select > :not(.session-mode-badge)", responsive_style)
+        self.assertIn("min-height: 44px;", responsive_style)
+        self.assertIn(".session-conversation-icon {", responsive_style)
+        self.assertIn("display: inline-grid;", responsive_style)
+        self.assertIn("width: 44px;\n  height: 44px;", responsive_style)
+        self.assertIn("width: 28px;\n  height: 28px;", responsive_style)
+        self.assertIn("width: 26px;\n  height: 26px;", responsive_style)
+        self.assertIn(".session-item.active {\n  border-color: #3158e2;\n  background: #3158e2;", responsive_style)
+        self.assertIn(".session-item.active .session-conversation-icon {\n  color: #fff;", responsive_style)
+        self.assertIn(".new-conversation-button:hover,\n.shell.is-sidebar-collapsed", responsive_style)
+        self.assertIn(".new-conversation-button:focus-visible {\n  color: #fff;", responsive_style)
+        self.assertIn("width: 44px !important;", collapsed_icon_style)
+        self.assertIn("height: 44px !important;", collapsed_icon_style)
+        self.assertIn("width: 26px !important;", collapsed_icon_style)
+        self.assertIn("padding: 4px !important;", collapsed_icon_style)
+        self.assertIn('22a-conversation-controls.css?v=20260804-14', workbench_style)
+        self.assertIn('22b-conversation-controls-responsive.css?v=20260804-11', workbench_style)
+        self.assertIn('21d-sidebar-collapsed-icon-scale.css?v=20260804-1', workbench_style)
+        self.assertIn('/static/workbench.css?v=20260804-32', index_source)
+        self.assertIn('/static/workbench.js?v=20260804-14', index_source)
+
+    def test_runtime_ui_icons_use_local_fontawesome_svg_system(self) -> None:
+        source = read_static_source()
+        icon_style = (
+            STATIC_ROOT / "styles" / "00a-fontawesome-icons.css"
+        ).read_text(encoding="utf-8")
+        icon_script = (
+            STATIC_ROOT / "scripts" / "01aa-fontawesome-icons.js"
+        ).read_text(encoding="utf-8")
+        notices = (STATIC_ROOT.parents[4] / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
+
+        self.assertIn('00a-fontawesome-icons.css?v=20260804-2', source)
+        self.assertIn("function fontAwesomeIconMarkup(iconName, className = '')", icon_script)
+        self.assertIn('.fa-icon {', icon_style)
+        for icon_name in (
+            'plus',
+            'xmark',
+            'magnifying-glass',
+            'comment-alt',
+            'up-down-left-right',
+            'eye-slash',
+            'microphone',
+            'pen-to-square',
+            'crop-simple',
+            'scissors',
+            'chevron-down',
+            'rotate-left',
+            'rotate-right',
+            'download',
+            'left-right',
+            'floppy-disk',
+            'music',
+            'grip-vertical',
+            'play',
+            'chevron-right',
+            'triangle-exclamation',
+        ):
+            self.assertIn(f'data-fa-icon="{icon_name}"', icon_style)
+            self.assertTrue(
+                (
+                    STATIC_ROOT
+                    / "vendor"
+                    / "fontawesome-free-7.3.1-desktop"
+                    / "svgs-full"
+                    / "solid"
+                    / f"{icon_name}.svg"
+                ).is_file()
+            )
+
+        self.assertEqual(source.count('<svg'), 1)
+        self.assertIn('class="video-preview-tts-waveform"', source)
+        self.assertNotIn('const VIDEO_PREVIEW_ICONS =', source)
+        self.assertNotIn('return `<svg viewBox', source)
+        for character_icon in ('🎵', '⌛', '⌄', '⠿', '▶', '✓', '>×</button>', '>+</span>'):
+            self.assertNotIn(character_icon, source)
+        self.assertIn('37 个 Solid SVG', notices)
 
     def test_static_session_cache_compacts_and_never_breaks_user_actions(self) -> None:
         html = read_static_source()

@@ -79,7 +79,7 @@
       if (item.kind === 'image') {
         return `
           <button type="button" class="${className}" ${pickAttr}>
-            ${item.url ? `<img class="material-option-thumb" src="${escapeHtml(item.url)}" alt="">` : '<span class="material-option-thumb">图</span>'}
+            ${item.url ? `<img class="material-option-thumb" src="${escapeHtml(item.url)}" alt="">` : `<span class="material-option-thumb">${fontAwesomeIconMarkup('images')}</span>`}
             <span>
               <span class="material-title-row">
                 <span class="material-title">@${escapeHtml(name)}</span>
@@ -92,7 +92,7 @@
       }
       return `
         <button type="button" class="${className}" ${pickAttr}>
-          <span class="material-option-thumb">文</span>
+          <span class="material-option-thumb">${fontAwesomeIconMarkup('file-lines')}</span>
           <span>
             <span class="material-title-row">
               <span class="material-title">@${escapeHtml(name)}</span>
@@ -353,19 +353,23 @@
       state.sessions.forEach((session) => {
         const item = document.createElement('div');
         item.className = 'session-item' + (session.id === state.activeId ? ' active' : '');
+        const sessionTitle = session.title || NEW_SESSION_TITLE;
         const deleteDisabled = onlyConversation
           || state.conversationSyncing
           || conversationIsBusy(session)
           || session.canDelete === false;
         item.innerHTML = `
-          <button type="button" class="session-select" data-select-conversation="${escapeHtml(session.id)}">
-            <span class="session-title">${escapeHtml(session.title || NEW_SESSION_TITLE)}</span>
+          <button type="button" class="session-select" data-select-conversation="${escapeHtml(session.id)}" aria-label="${escapeHtml(`切换到会话 ${sessionTitle}`)}" title="${escapeHtml(sessionTitle)}">
+            <span class="session-conversation-icon" aria-hidden="true">
+              ${fontAwesomeIconMarkup('comment-alt', 'session-conversation-glyph')}
+            </span>
+            <span class="session-title">${escapeHtml(sessionTitle)}</span>
             <span class="session-meta-row">
               <span class="session-mode-badge" data-mode="${escapeHtml(session.executionMode === 'agent' ? 'agent' : 'workflow')}">${escapeHtml(conversationModeLabel(session))}</span>
               <span class="session-state-label">${escapeHtml(conversationLifecycleLabel(session))}</span>
             </span>
           </button>
-          <button type="button" class="session-delete-button" data-delete-conversation="${escapeHtml(session.id)}" aria-label="删除对话 ${escapeHtml(session.title || NEW_SESSION_TITLE)}" title="${deleteDisabled ? (onlyConversation ? '至少保留一个对话' : '运行中的对话不能删除') : '删除对话；不会删除视频、素材和任务记录'}" ${deleteDisabled ? 'disabled' : ''}>
+          <button type="button" class="session-delete-button" data-delete-conversation="${escapeHtml(session.id)}" aria-label="删除对话 ${escapeHtml(sessionTitle)}" title="${deleteDisabled ? (onlyConversation ? '至少保留一个对话' : '运行中的对话不能删除') : '删除对话；不会删除视频、素材和任务记录'}" ${deleteDisabled ? 'disabled' : ''}>
             <span class="session-delete-icon" aria-hidden="true"></span>
           </button>
         `;

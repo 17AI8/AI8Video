@@ -1,0 +1,34 @@
+/* 工具区仅显示标题；详细说明继续用于读屏与悬浮提示。 */
+body > .shell > aside.sidebar #assistantToolsList > .sidebar-nav-item {
+  min-height: 44px !important;
+  padding: 4px 10px !important;
+  border-radius: 14px !important;
+}
+
+body > .shell > aside.sidebar #assistantToolsList > .sidebar-nav-item .sidebar-nav-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+}
+
+body > .shell > aside.sidebar #assistantToolsList > .sidebar-nav-item .sidebar-nav-icon-glyph {
+  width: 26px;
+  height: 26px;
+}
+
+body > .shell > aside.sidebar #assistantToolsList > .sidebar-nav-item .sidebar-nav-copy {
+  gap: 0;
+}
+
+body > .shell > aside.sidebar #assistantToolsList > .sidebar-nav-item .sidebar-nav-meta {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}

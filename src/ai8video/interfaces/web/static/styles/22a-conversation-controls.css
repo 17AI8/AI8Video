@@ -179,10 +179,9 @@
 }
 
 .new-conversation-button-plus {
+  width: 14px;
+  height: 14px;
   flex: 0 0 auto;
-  font-size: 16px;
-  font-weight: 700;
-  line-height: 1;
 }
 
 .new-conversation-button-label {
@@ -203,6 +202,11 @@
   border-left-color: rgba(106, 116, 148, 0.16);
   background: rgba(255, 255, 255, 0.74);
   box-shadow: none;
+}
+
+.new-conversation-button.is-limit:hover,
+.new-conversation-button.is-limit:focus-visible {
+  color: #fff;
 }
 
 .conversation-notice {
@@ -281,9 +285,11 @@ body > .shell > aside.sidebar .sidebar-conversation-list .session-item:hover {
 }
 
 body > .shell > aside.sidebar .sidebar-conversation-list .session-item.active {
-  border-color: rgba(79, 109, 255, 0.4);
+  border-color: #3158e2;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(222, 233, 255, 0.76));
-  box-shadow: 0 11px 24px rgba(79, 109, 255, 0.13);
+  box-shadow:
+    inset 0 0 0 1px #3158e2,
+    0 11px 24px rgba(79, 109, 255, 0.13);
 }
 
 .session-select {
@@ -303,6 +309,23 @@ body > .shell > aside.sidebar .sidebar-conversation-list .session-item.active {
 .session-select:focus-visible {
   background: transparent;
   box-shadow: none;
+}
+
+.session-conversation-icon {
+  width: 34px;
+  height: 34px;
+  display: none;
+  place-items: center;
+  color: #3158e2;
+}
+
+.session-conversation-glyph {
+  width: 19px;
+  height: 19px;
+}
+
+body > .shell > aside.sidebar .sidebar-conversation-list .session-item.active .session-conversation-icon {
+  color: #3158e2;
 }
 
 .session-meta-row {
@@ -350,11 +373,25 @@ body > .shell > aside.sidebar .sidebar-conversation-list .session-item.active {
   background: transparent;
   box-shadow: none;
   cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 160ms ease,
+    visibility 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.session-item:hover .session-delete-button,
+.session-item:focus-within .session-delete-button {
+  opacity: 1;
+  visibility: visible;
 }
 
 .session-delete-icon {
-  width: 14px;
-  height: 14px;
+  width: 24px;
+  height: 24px;
   display: block;
   flex: 0 0 auto;
   background: currentColor;

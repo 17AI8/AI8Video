@@ -27,9 +27,8 @@
     #smartImageEditorModal button, #smartImageEditorModal input, #smartImageEditorModal textarea, #smartImageEditorModal select { font: inherit; }
     #smartImageEditorModal button { cursor: pointer; }
     #smartImageEditorModal button:disabled { cursor: not-allowed; opacity: .46; }
-    #smartImageEditorModal svg {
-      width: 17px; height: 17px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.8;
-      stroke-linecap: round; stroke-linejoin: round; pointer-events: none;
+    #smartImageEditorModal .smart-image-icon {
+      width: 17px; height: 17px; flex: 0 0 auto; pointer-events: none;
     }
     #smartImageEditorModal button:focus-visible, #smartImageEditorModal input:focus-visible,
     #smartImageEditorModal textarea:focus-visible, #smartImageEditorModal select:focus-visible,
@@ -63,7 +62,7 @@
     #smartImageEditorModal .smart-image-model-badge[data-tone="ok"] { color: #24785b; background: rgba(41, 172, 119, .09); }
     #smartImageEditorModal .smart-image-model-badge[data-tone="error"], #smartImageEditorModal .smart-image-save-state[data-tone="error"] { color: #c5415a; background: rgba(225, 67, 91, .08); }
     #smartImageEditorModal .smart-image-save-state[data-tone="pending"] { color: #8b631d; background: rgba(230, 166, 47, .1); }
-    #smartImageEditorModal .smart-image-save-state svg { width: 13px; height: 13px; }
+    #smartImageEditorModal .smart-image-save-state .smart-image-icon { width: 13px; height: 13px; }
     #smartImageEditorModal .smart-image-head-actions { min-width: 0; display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
     #smartImageEditorModal .smart-image-head-actions button {
       min-height: 34px; padding: 0 11px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
@@ -134,16 +133,16 @@
     }
     #smartImageEditorModal .smart-image-disclosure > summary::-webkit-details-marker { display: none; }
     #smartImageEditorModal .smart-image-disclosure > summary > span:first-child { min-width: 0; display: flex; align-items: center; gap: 8px; }
-    #smartImageEditorModal .smart-image-disclosure > summary > span:first-child > svg { width: 16px; height: 16px; color: #5c6fee; }
+    #smartImageEditorModal .smart-image-disclosure > summary > span:first-child > .smart-image-icon { width: 16px; height: 16px; color: #5c6fee; }
     #smartImageEditorModal .smart-image-disclosure > summary > span:first-child > span { min-width: 0; display: grid; gap: 2px; }
     #smartImageEditorModal .smart-image-disclosure > summary strong { color: #344274; font-size: 11px; }
     #smartImageEditorModal .smart-image-disclosure > summary small { color: #7a86a7; font-size: 9px; }
-    #smartImageEditorModal .smart-image-disclosure > summary > svg:last-child,
-    #smartImageEditorModal .smart-image-export-settings > summary > svg {
+    #smartImageEditorModal .smart-image-disclosure > summary > .smart-image-icon:last-child,
+    #smartImageEditorModal .smart-image-export-settings > summary > .smart-image-icon {
       width: 14px; height: 14px; transition: transform .2s ease;
     }
-    #smartImageEditorModal .smart-image-disclosure[open] > summary > svg:last-child,
-    #smartImageEditorModal .smart-image-export-settings[open] > summary > svg { transform: rotate(180deg); }
+    #smartImageEditorModal .smart-image-disclosure[open] > summary > .smart-image-icon:last-child,
+    #smartImageEditorModal .smart-image-export-settings[open] > summary > .smart-image-icon { transform: rotate(180deg); }
     #smartImageEditorModal .smart-image-disclosure-body { padding: 0 10px 10px; display: grid; gap: 8px; }
     #smartImageEditorModal .smart-image-text-action {
       min-height: 30px; border: 1px solid rgba(91, 109, 174, .15); border-radius: 8px; color: #5869df;
@@ -175,7 +174,7 @@
     }
     #smartImageEditorModal .smart-image-preview-empty { width: min(390px, calc(100% - 40px)); display: grid; justify-items: center; gap: 9px; color: #66749b; text-align: center; }
     #smartImageEditorModal .smart-image-preview-empty > span { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 17px; color: #6575ee; background: linear-gradient(135deg, rgba(79, 109, 255, .14), rgba(139, 92, 246, .11)); }
-    #smartImageEditorModal .smart-image-preview-empty > span svg { width: 26px; height: 26px; }
+    #smartImageEditorModal .smart-image-preview-empty > span .smart-image-icon { width: 26px; height: 26px; }
     #smartImageEditorModal .smart-image-preview-empty strong { color: #2f3b68; font-size: 15px; }
     #smartImageEditorModal .smart-image-preview-empty p { max-width: 340px; margin: 0; font-size: 11px; line-height: 1.6; }
     #smartImageEditorModal .smart-image-preview-empty button { min-height: 38px; padding: 0 18px; border: 0; border-radius: 10px; color: #fff; font-size: 12px; font-weight: 700; background: linear-gradient(135deg, #526fff, #8f5cf5); box-shadow: 0 8px 18px rgba(76, 87, 198, .2); }
@@ -204,7 +203,8 @@
     #smartImageEditorModal .smart-image-compare-label.before { left: 10px; }
     #smartImageEditorModal .smart-image-compare-label.after { right: 10px; }
     #smartImageEditorModal .smart-image-compare-handle { position: absolute; left: var(--compare-position); top: 0; bottom: 0; z-index: 6; width: 2px; transform: translateX(-1px); background: #fff; box-shadow: 0 0 0 1px rgba(35, 42, 78, .28); pointer-events: none; }
-    #smartImageEditorModal .smart-image-compare-handle::after { content: "↔"; position: absolute; left: 50%; top: 50%; width: 32px; height: 32px; display: grid; place-items: center; transform: translate(-50%, -50%); border: 2px solid #fff; border-radius: 50%; color: #fff; font-size: 13px; background: rgba(64, 75, 137, .72); box-shadow: 0 5px 14px rgba(24, 31, 66, .28); }
+    #smartImageEditorModal .smart-image-compare-handle::before { content: ""; position: absolute; left: 50%; top: 50%; width: 32px; height: 32px; transform: translate(-50%, -50%); border: 2px solid #fff; border-radius: 50%; background: rgba(64, 75, 137, .72); box-shadow: 0 5px 14px rgba(24, 31, 66, .28); }
+    #smartImageEditorModal .smart-image-compare-handle .fa-icon { position: absolute; left: 50%; top: 50%; z-index: 1; width: 13px; height: 13px; transform: translate(-50%, -50%); color: #fff; }
     #smartImageEditorModal .smart-image-compare input { position: absolute; inset: 0; z-index: 8; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; }
 
     #smartImageEditorModal .smart-image-result-section, #smartImageEditorModal .smart-image-job-section { min-width: 0; padding: 10px; display: grid; gap: 7px; border: 1px solid rgba(94, 111, 177, .14); border-radius: 13px; background: rgba(255, 255, 255, .68); }
@@ -231,14 +231,14 @@
     #smartImageEditorModal .smart-image-job-select:hover { background: rgba(79, 109, 255, .05); }
     #smartImageEditorModal .smart-image-job-select:focus-visible { outline: 2px solid #526fff; outline-offset: 1px; }
     #smartImageEditorModal .smart-image-job-state { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; color: #5d6fef; background: rgba(79, 109, 255, .1); }
-    #smartImageEditorModal .smart-image-job-state svg { width: 13px; height: 13px; }
+    #smartImageEditorModal .smart-image-job-state .smart-image-icon { width: 13px; height: 13px; }
     #smartImageEditorModal .smart-image-job-copy { min-width: 0; display: grid; grid-template-columns: 1fr; gap: 2px; }
     #smartImageEditorModal .smart-image-job strong { color: #354170; font-size: 11px; }
     #smartImageEditorModal .smart-image-job-progress { grid-column: 1 / -1; height: 4px; overflow: hidden; border-radius: 999px; background: rgba(79, 109, 255, .12); }
     #smartImageEditorModal .smart-image-job-progress b { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #536fff, #925cf5); transition: width .2s ease; }
     #smartImageEditorModal .smart-image-job-actions { align-self: stretch; display: flex; align-items: center; gap: 3px; }
     #smartImageEditorModal .smart-image-job-actions button { min-width: 26px; height: 26px; padding: 0 7px; display: inline-grid; place-items: center; border: 1px solid rgba(93, 110, 176, .13); border-radius: 7px; color: #65739a; font-size: 10px; cursor: pointer; background: rgba(255, 255, 255, .8); }
-    #smartImageEditorModal .smart-image-job-actions svg { width: 11px; height: 11px; }
+    #smartImageEditorModal .smart-image-job-actions .smart-image-icon { width: 11px; height: 11px; }
     #smartImageEditorModal .smart-image-sidebar-job-section { flex: 0 0 auto; background: rgba(255, 255, 255, .58); }
     #smartImageEditorModal .smart-image-sidebar-job-section .smart-image-section-title { align-items: flex-start; }
     #smartImageEditorModal .smart-image-sidebar-job-section .smart-image-section-title > div { flex-wrap: wrap; }
@@ -269,8 +269,8 @@
       background: rgba(255, 255, 255, .7); box-shadow: none;
     }
     #smartImageEditorModal .smart-image-prompt-actions button:first-child { flex: 1; color: #5365dc; background: rgba(79, 109, 255, .08); }
-    #smartImageEditorModal .smart-image-prompt-actions svg, #smartImageEditorModal .smart-image-transform-row svg,
-    #smartImageEditorModal .smart-image-export-actions svg { width: 13px; height: 13px; }
+    #smartImageEditorModal .smart-image-prompt-actions .smart-image-icon, #smartImageEditorModal .smart-image-transform-row .smart-image-icon,
+    #smartImageEditorModal .smart-image-export-actions .smart-image-icon { width: 13px; height: 13px; }
     #smartImageEditorModal select { width: 100%; min-height: 30px; padding: 0 6px; border: 1px solid rgba(91, 109, 174, .18); border-radius: 8px; color: #43517f; font-size: 11px; background: rgba(255, 255, 255, .86); }
     #smartImageEditorModal .smart-image-generate-options { display: grid; grid-template-columns: 104px; }
     #smartImageEditorModal .smart-image-generate-options label { display: grid; gap: 4px; color: #69769b; font-size: 10px; }

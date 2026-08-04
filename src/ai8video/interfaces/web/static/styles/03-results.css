@@ -131,12 +131,12 @@
     .result-notify-play span::before {
       content: "";
       display: block;
-      width: 0;
-      height: 0;
-      margin-left: 3px;
-      border-top: 8px solid transparent;
-      border-bottom: 8px solid transparent;
-      border-left: 12px solid currentColor;
+      width: 14px;
+      height: 14px;
+      margin-left: 2px;
+      background: currentColor;
+      -webkit-mask: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/play.svg") center / contain no-repeat;
+      mask: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/play.svg") center / contain no-repeat;
     }
 
     .result-notify-play[aria-hidden="true"] {
@@ -147,6 +147,9 @@
       width: 14px;
       height: 14px;
       margin-left: 0;
+      background: transparent;
+      -webkit-mask: none;
+      mask: none;
       border: 2px solid rgba(41, 76, 157, 0.35);
       border-top-color: #294c9d;
       border-radius: 999px;
@@ -168,6 +171,8 @@
       content: "";
       width: 18px;
       height: 18px;
+      border: 0;
+      animation: none;
       background: #294c9d;
       mask: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/clock-rotate-left.svg") center / contain no-repeat;
       -webkit-mask: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/clock-rotate-left.svg") center / contain no-repeat;

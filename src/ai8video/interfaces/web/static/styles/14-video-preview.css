@@ -321,32 +321,6 @@
       flex: 0 0 auto;
       display: block;
       pointer-events: none;
-      stroke: currentColor;
-      fill: none;
-      stroke-width: 1.8;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
-
-    .video-preview-fontawesome-icon {
-      background: currentColor;
-      stroke: none;
-      mask-position: center;
-      mask-repeat: no-repeat;
-      mask-size: contain;
-      -webkit-mask-position: center;
-      -webkit-mask-repeat: no-repeat;
-      -webkit-mask-size: contain;
-    }
-
-    .video-preview-fontawesome-icon.is-regenerate {
-      mask-image: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/arrows-rotate.svg");
-      -webkit-mask-image: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/arrows-rotate.svg");
-    }
-
-    .video-preview-fontawesome-icon.is-extend {
-      mask-image: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/arrow-right-long.svg");
-      -webkit-mask-image: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/arrow-right-long.svg");
     }
 
     .video-preview-button.is-spinning .video-preview-button-icon {

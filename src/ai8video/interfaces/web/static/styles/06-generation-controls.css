@@ -80,6 +80,11 @@
       box-shadow: 0 2px 8px rgba(15, 28, 55, 0.28);
     }
 
+    .result-batch-merge-checkbox .fa-icon {
+      width: 11px;
+      height: 11px;
+    }
+
     .result-batch-merge-select.is-selected .result-batch-merge-checkbox {
       border-color: #4d74ff;
       background: #4d74ff;

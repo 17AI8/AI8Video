@@ -28,9 +28,18 @@
 
     .html-motion-smart-beat-button {
       min-width: 112px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
       border-left: 1px solid var(--line);
       border-radius: 0;
       padding: 0 12px;
+    }
+
+    .html-motion-smart-beat-button .fa-icon {
+      width: 12px;
+      height: 12px;
     }
 
     .html-motion-smart-beat-status {
@@ -121,14 +130,9 @@
       justify-content: center;
     }
 
-    .settings-secret-toggle svg {
+    .settings-secret-icon {
       width: 16px;
       height: 16px;
-      stroke: currentColor;
-      fill: none;
-      stroke-width: 1.8;
-      stroke-linecap: round;
-      stroke-linejoin: round;
     }
 
     .local-tts-voice-control {

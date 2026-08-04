@@ -276,7 +276,7 @@
           const available = source.available !== false;
           const disabled = available ? '' : ' disabled';
           return `<option value="${escapeHtml(String(source.id || ''))}"${disabled}>${escapeHtml(String(source.name || source.id || '未知源'))}</option>`;
-        }).join('') + '<option value="__add_source__">＋ 新增数据源…</option>';
+        }).join('') + '<option value="__add_source__">新增数据源…</option>';
         sourceSelect.value = String(hotRadar.selectedSourceId || '');
         sourceSelect.disabled = !!hotRadar.loading;
       }

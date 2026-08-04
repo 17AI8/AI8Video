@@ -220,6 +220,11 @@
       font-weight: 900;
     }
 
+    .material-wall-icon .fa-icon {
+      width: 28px;
+      height: 28px;
+    }
+
     .material-wall-doc-preview {
       width: 100%;
       min-height: 96px;

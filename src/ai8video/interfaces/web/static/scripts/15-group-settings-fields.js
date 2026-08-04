@@ -86,7 +86,7 @@
             ${smart
               ? '<div class="settings-value html-motion-smart-beat-status">已切换为智能模式</div>'
               : `<input class="settings-value settings-row-select" type="number" min="1" max="30" step="0.1" value="${seconds}" data-html-motion-beat-interval aria-label="HTML 动效每拍间隔秒数" />`}
-            <button type="button" class="settings-segmented-button html-motion-smart-beat-button${smart ? ' active' : ''}" data-html-motion-smart-beat aria-pressed="${smart ? 'true' : 'false'}">✓ 智能模式</button>
+            <button type="button" class="settings-segmented-button html-motion-smart-beat-button${smart ? ' active' : ''}" data-html-motion-smart-beat aria-pressed="${smart ? 'true' : 'false'}">${fontAwesomeIconMarkup('check')}智能模式</button>
           </div>
         `;
       }

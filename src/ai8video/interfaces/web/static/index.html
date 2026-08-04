@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" href="/static/images/ai8video-avatar.png?v=20260727-1">
   <link rel="stylesheet" href="/static/script-knowledge.css?v=20260724-18">
   <!-- Updated: 2026-06-23 15:17 CST - 花字调色预览连体按钮圆角修正 -->
-  <link rel="stylesheet" href="/static/workbench.css?v=20260804-8">
+  <link rel="stylesheet" href="/static/workbench.css?v=20260804-32">
 </head>
 <body>
   <div class="shell">
@@ -37,7 +37,7 @@
               <button id="newConversationAgentModeButton" type="button" class="new-conversation-mode-button" data-new-conversation-mode="agent" aria-pressed="false" title="下一条新对话使用 Agent 模式 Beta">Agent 模式 <span class="new-conversation-mode-badge">Beta</span></button>
             </div>
             <button id="newConversationButton" type="button" class="new-conversation-button" data-create-conversation>
-              <span class="new-conversation-button-plus" aria-hidden="true">+</span>
+              <span class="new-conversation-button-plus fa-icon" data-fa-icon="plus" aria-hidden="true"></span>
               <span class="new-conversation-button-label" data-new-conversation-label>新建标准对话</span>
             </button>
           </div>
@@ -63,7 +63,7 @@
       <div class="sidebar-footer">
         <button id="settingsEntryButton" type="button" class="sidebar-nav-item settings-entry-button" aria-label="打开设置" title="设置">
           <span class="sidebar-nav-icon" data-icon="settings" aria-hidden="true"><span class="sidebar-nav-icon-glyph"></span></span>
-          <span class="sidebar-nav-copy"><span class="sidebar-nav-title">设置</span><span class="sidebar-nav-meta">模型、接口与系统偏好</span></span>
+          <span class="sidebar-nav-copy"><span class="sidebar-nav-title">设置</span></span>
         </button>
       </div>
     </aside>
@@ -81,7 +81,7 @@
                 <button id="mobileNewConversationAgentModeButton" type="button" class="new-conversation-mode-button" data-new-conversation-mode="agent" aria-pressed="false" title="下一条新对话使用 Agent 模式 Beta">Agent <span class="new-conversation-mode-badge">Beta</span></button>
               </div>
               <button id="mobileNewConversationButton" type="button" class="new-conversation-button" data-create-conversation>
-                <span class="new-conversation-button-plus" aria-hidden="true">+</span>
+                <span class="new-conversation-button-plus fa-icon" data-fa-icon="plus" aria-hidden="true"></span>
                 <span class="new-conversation-button-label" data-new-conversation-label>新建标准对话</span>
               </button>
             </div>
@@ -186,7 +186,7 @@
         </div>
         <div class="material-actions">
           <button id="materialLibraryOpenFolderButton" type="button" class="button-secondary">打开文件夹</button>
-          <button id="materialLibraryCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+          <button id="materialLibraryCloseButton" type="button" class="modal-close" aria-label="关闭"><span class="fa-icon" data-fa-icon="xmark" aria-hidden="true"></span></button>
         </div>
       </div>
       <div id="scriptKnowledgeToolbar" class="script-knowledge-toolbar hidden">
@@ -212,7 +212,7 @@
           <button id="recycleBinSelectAllButton" type="button" class="button-secondary">一键全选</button>
           <button id="recycleBinBatchDeleteButton" type="button" class="button-danger" disabled>批量删除</button>
           <button id="recycleBinOpenFolderButton" type="button" class="button-secondary">打开文件夹</button>
-          <button id="recycleBinCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+          <button id="recycleBinCloseButton" type="button" class="modal-close" aria-label="关闭"><span class="fa-icon" data-fa-icon="xmark" aria-hidden="true"></span></button>
         </div>
       </div>
       <div id="recycleBinWall" class="material-wall"></div>
@@ -225,7 +225,7 @@
           <strong id="viralBreakdownTitle">爆款拆解工作台</strong>
         </div>
         <div id="viralBreakdownStatusText" class="viral-breakdown-status"></div>
-        <button id="viralBreakdownCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+        <button id="viralBreakdownCloseButton" type="button" class="modal-close" aria-label="关闭"><span class="fa-icon" data-fa-icon="xmark" aria-hidden="true"></span></button>
       </div>
       <div class="viral-breakdown-toolbar">
         <div class="viral-breakdown-toolbar-bar">
@@ -381,7 +381,7 @@
           <strong id="viralBreakdownLibraryTitle">爆款拆解素材库</strong>
           <div id="viralBreakdownLibraryMeta" class="modal-sub">管理已上传视频及其全部拆解产物</div>
         </div>
-        <button id="viralBreakdownLibraryCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+        <button id="viralBreakdownLibraryCloseButton" type="button" class="modal-close" aria-label="关闭"><span class="fa-icon" data-fa-icon="xmark" aria-hidden="true"></span></button>
       </div>
       <div class="viral-breakdown-library-actions">
         <button id="viralBreakdownOpenFolderButton" type="button" class="button-secondary">打开文件夹</button>
@@ -398,7 +398,7 @@
       <div class="hot-radar-modal-actions">
         <span id="hotRadarListMeta" class="hot-radar-update-pill">等待同步</span>
         <button id="hotRadarRefreshButton" type="button" class="hot-radar-action-button">刷新</button>
-        <button id="hotRadarCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+        <button id="hotRadarCloseButton" type="button" class="modal-close" aria-label="关闭"><span class="fa-icon" data-fa-icon="xmark" aria-hidden="true"></span></button>
       </div>
       <div class="hot-radar-app-shell">
         <aside class="hot-radar-sidebar">
@@ -426,10 +426,7 @@
                   <div class="hot-radar-search-group">
                     <input id="hotRadarKeywordInput" class="hot-radar-search-input" placeholder="搜索热点，例如 AI / 出海 / 短视频">
                     <button id="hotRadarSearchButton" type="button" class="hot-radar-search-button" aria-label="搜索热点" title="搜索">
-                      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
-                        <circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"></circle>
-                        <path d="M16.2 16.2 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
-                      </svg>
+                      <span class="fa-icon" data-fa-icon="magnifying-glass" aria-hidden="true"></span>
                     </button>
                   </div>
                   <button id="hotRadarClearButton" type="button" class="hot-radar-ghost-button">清空筛选</button>
@@ -450,7 +447,7 @@
           <div id="hotRadarSourceManagerTitle" class="material-title">新增数据源</div>
           <div class="material-meta">添加 RSS/Atom 订阅源，保存后自动参与热点刷新。</div>
         </div>
-        <button id="hotRadarSourceManagerCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+        <button id="hotRadarSourceManagerCloseButton" type="button" class="modal-close" aria-label="关闭"><span class="fa-icon" data-fa-icon="xmark" aria-hidden="true"></span></button>
       </div>
       <div id="hotRadarSourceManagerList" class="hot-radar-source-manager-list"></div>
       <div class="hot-radar-source-manager-form">
@@ -476,7 +473,7 @@
           </div>
           <div id="progressModalSub" class="modal-sub"></div>
         </div>
-        <button id="progressModalCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+        <button id="progressModalCloseButton" type="button" class="modal-close" aria-label="关闭"><span class="fa-icon" data-fa-icon="xmark" aria-hidden="true"></span></button>
       </div>
       <div id="progressModalBody"></div>
     </div>
@@ -495,7 +492,7 @@
           </div>
           <button id="resultModalRefreshButton" type="button" class="button-secondary">刷新</button>
           <button id="resultModalOpenFolderButton" type="button" class="button-secondary" title="打开最终烧录成片文件夹">打开成片文件夹</button>
-          <button id="resultModalCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+          <button id="resultModalCloseButton" type="button" class="modal-close" aria-label="关闭"><span class="fa-icon" data-fa-icon="xmark" aria-hidden="true"></span></button>
         </div>
       </div>
       <div id="resultModalBody"></div>
@@ -511,7 +508,7 @@
         </div>
         <div class="video-preview-header-actions">
           <button id="videoPreviewOpenBurnedFolderButton" type="button" class="button-secondary" aria-label="在文件夹中打开当前视频的烧录结果" title="打开烧录结果所在文件夹并选中文件">在文件夹中打开</button>
-          <button id="videoPreviewCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+          <button id="videoPreviewCloseButton" type="button" class="modal-close" aria-label="关闭"><span class="fa-icon" data-fa-icon="xmark" aria-hidden="true"></span></button>
         </div>
       </div>
       <div id="videoPreviewBody"></div>
@@ -524,7 +521,7 @@
           <strong id="resultVideoPromptTitle">视频提示词</strong>
           <div class="modal-sub">即将或已经提交给视频模型的最终提示词。</div>
         </div>
-        <button id="resultVideoPromptCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+        <button id="resultVideoPromptCloseButton" type="button" class="modal-close" aria-label="关闭"><span class="fa-icon" data-fa-icon="xmark" aria-hidden="true"></span></button>
       </div>
       <div id="resultVideoPromptBody" class="result-video-prompt-body"></div>
       <div class="result-video-prompt-actions">
@@ -544,7 +541,7 @@
           <span id="settingsSaveBadge" class="settings-save-badge" aria-live="polite">已保存</span>
           <div id="settingsModalSub" class="modal-sub">实际使用的鉴权与生成设置。</div>
         </div>
-        <button id="settingsModalCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+        <button id="settingsModalCloseButton" type="button" class="modal-close" aria-label="关闭"><span class="fa-icon" data-fa-icon="xmark" aria-hidden="true"></span></button>
       </div>
       <div id="settingsModalBody"></div>
     </div>
@@ -557,7 +554,7 @@
           <div id="videoParamsModalSub" class="modal-sub">默认 480p，可按当前模型支持项选择。</div>
           <div id="videoParamsSaveStatus" class="video-params-save-status" aria-live="polite"></div>
         </div>
-        <button id="videoParamsModalCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+        <button id="videoParamsModalCloseButton" type="button" class="modal-close" aria-label="关闭"><span class="fa-icon" data-fa-icon="xmark" aria-hidden="true"></span></button>
       </div>
       <div id="videoParamsModalBody"></div>
     </div>
@@ -569,7 +566,7 @@
           <strong id="systemPromptModalTitle">系统提示词</strong>
           <div id="systemPromptModalSub" class="modal-sub"></div>
         </div>
-        <button id="systemPromptModalCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+        <button id="systemPromptModalCloseButton" type="button" class="modal-close" aria-label="关闭"><span class="fa-icon" data-fa-icon="xmark" aria-hidden="true"></span></button>
       </div>
       <div id="systemPromptModalBody"></div>
     </div>
@@ -581,7 +578,7 @@
           <strong id="supervisorConfigTitle">配置值守</strong>
           <div id="supervisorConfigSub" class="modal-sub">设置自动排期、生成目标和告警阈值。</div>
         </div>
-        <button id="supervisorConfigCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+        <button id="supervisorConfigCloseButton" type="button" class="modal-close" aria-label="关闭"><span class="fa-icon" data-fa-icon="xmark" aria-hidden="true"></span></button>
       </div>
       <form id="supervisorConfigForm" class="modal-form">
         <div class="modal-grid">
@@ -623,6 +620,6 @@
       </form>
     </div>
   </div>
-    <script src="/static/workbench.js?v=20260804-7"></script>
+  <script src="/static/workbench.js?v=20260804-14"></script>
 </body>
 </html>

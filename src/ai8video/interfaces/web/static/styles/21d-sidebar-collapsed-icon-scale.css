@@ -1,0 +1,23 @@
+/* 折叠图标轨：图标底板尽量贴合 52px 外层卡片，仅保留 4px 安全边距。 */
+body > .shell.is-sidebar-collapsed > aside.sidebar .sidebar-nav-item,
+body > .shell.is-sidebar-collapsed > aside.sidebar :is(
+    #progressPanel,
+    #imageMaterialList,
+    #scriptMaterialList,
+    #recycleBinList,
+    #assistantToolsList
+  ) > .sidebar-nav-item,
+body > .shell.is-sidebar-collapsed > aside.sidebar #settingsEntryButton.settings-entry-button {
+  padding: 4px !important;
+}
+
+body > .shell.is-sidebar-collapsed > aside.sidebar .sidebar-nav-icon {
+  width: 44px !important;
+  height: 44px !important;
+  border-radius: 13px !important;
+}
+
+body > .shell.is-sidebar-collapsed > aside.sidebar .sidebar-nav-icon-glyph {
+  width: 26px !important;
+  height: 26px !important;
+}

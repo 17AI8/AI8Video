@@ -1,0 +1,43 @@
+.fa-icon {
+  --fa-icon-url: none;
+  width: 1em;
+  height: 1em;
+  display: inline-block;
+  flex: 0 0 auto;
+  color: inherit;
+  background-color: currentColor;
+  -webkit-mask: var(--fa-icon-url) center / contain no-repeat;
+  mask: var(--fa-icon-url) center / contain no-repeat;
+  pointer-events: none;
+}
+
+.fa-icon[data-fa-icon="plus"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/plus.svg"); }
+.fa-icon[data-fa-icon="xmark"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/xmark.svg"); }
+.fa-icon[data-fa-icon="magnifying-glass"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/magnifying-glass.svg"); }
+.fa-icon[data-fa-icon="comment-alt"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/comment-alt.svg"); }
+.fa-icon[data-fa-icon="up-down-left-right"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/up-down-left-right.svg"); }
+.fa-icon[data-fa-icon="eye"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/eye.svg"); }
+.fa-icon[data-fa-icon="eye-slash"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/eye-slash.svg"); }
+.fa-icon[data-fa-icon="microphone"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/microphone.svg"); }
+.fa-icon[data-fa-icon="pen-to-square"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/pen-to-square.svg"); }
+.fa-icon[data-fa-icon="crop-simple"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/crop-simple.svg"); }
+.fa-icon[data-fa-icon="scissors"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/scissors.svg"); }
+.fa-icon[data-fa-icon="chevron-down"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/chevron-down.svg"); }
+.fa-icon[data-fa-icon="wand-magic-sparkles"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/wand-magic-sparkles.svg"); }
+.fa-icon[data-fa-icon="check"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/check.svg"); }
+.fa-icon[data-fa-icon="rotate-left"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/rotate-left.svg"); }
+.fa-icon[data-fa-icon="rotate-right"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/rotate-right.svg"); }
+.fa-icon[data-fa-icon="trash-can"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/trash-can.svg"); }
+.fa-icon[data-fa-icon="arrows-rotate"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/arrows-rotate.svg"); }
+.fa-icon[data-fa-icon="arrow-right-long"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/arrow-right-long.svg"); }
+.fa-icon[data-fa-icon="download"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/download.svg"); }
+.fa-icon[data-fa-icon="images"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/images.svg"); }
+.fa-icon[data-fa-icon="file-lines"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/file-lines.svg"); }
+.fa-icon[data-fa-icon="left-right"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/left-right.svg"); }
+.fa-icon[data-fa-icon="floppy-disk"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/floppy-disk.svg"); }
+.fa-icon[data-fa-icon="music"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/music.svg"); }
+.fa-icon[data-fa-icon="hourglass-half"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/hourglass-half.svg"); }
+.fa-icon[data-fa-icon="grip-vertical"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/grip-vertical.svg"); }
+.fa-icon[data-fa-icon="play"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/play.svg"); }
+.fa-icon[data-fa-icon="chevron-right"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/chevron-right.svg"); }
+.fa-icon[data-fa-icon="triangle-exclamation"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/triangle-exclamation.svg"); }

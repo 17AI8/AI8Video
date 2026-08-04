@@ -105,7 +105,10 @@
         || !!state.conversationError
         || state.conversationSyncing
         || conversationIsBusy(session);
-      if (!locked) return;
+      if (!locked) {
+        renderStatus();
+        return;
+      }
       els.sendButton.disabled = true;
       els.composer.classList.add('locked');
       els.messageEditor.contentEditable = 'false';

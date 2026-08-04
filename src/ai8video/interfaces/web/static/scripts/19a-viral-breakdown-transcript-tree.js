@@ -40,9 +40,9 @@
       return `
         <article class="viral-transcript-chunk${deleted ? ' is-deleted' : ''}" data-transcript-chunk-index="${index}">
           <div class="viral-transcript-chunk-top">
-            <button type="button" class="viral-transcript-drag-handle" data-transcript-drag-handle="${index}" title="拖拽换位" aria-label="拖拽换位">⠿</button>
+            <button type="button" class="viral-transcript-drag-handle" data-transcript-drag-handle="${index}" title="拖拽换位" aria-label="拖拽换位">${fontAwesomeIconMarkup('grip-vertical')}</button>
             <button type="button" class="viral-transcript-time-button" data-transcript-seek="${Number(segment.start) || 0}" data-transcript-end="${Number(segment.end) || 0}" data-transcript-index="${index}" title="播放该时间段">
-              <span aria-hidden="true">▶</span>${formatViralBreakdownTime(segment.start)} → ${formatViralBreakdownTime(segment.end)}
+              ${fontAwesomeIconMarkup('play')}${formatViralBreakdownTime(segment.start)} → ${formatViralBreakdownTime(segment.end)}
             </button>
             <span class="viral-transcript-audio-state${audioReady ? ' is-ready' : ''}">${audioReady ? '已重新配音' : ''}</span>
             <button type="button" class="viral-transcript-chunk-action" data-transcript-tts="${index}" ${deleted ? 'disabled' : ''}>重新配音</button>

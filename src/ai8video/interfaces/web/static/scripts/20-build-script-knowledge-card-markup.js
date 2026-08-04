@@ -302,7 +302,7 @@
         return `
           <article class="material-wall-entry">
             <button type="button" class="material-wall-card" data-pick-material="${escapeHtml(name)}">
-              ${item.url ? `<img class="material-wall-thumb" src="${escapeHtml(item.url)}" alt="">` : '<span class="material-wall-icon">图</span>'}
+              ${item.url ? `<img class="material-wall-thumb" src="${escapeHtml(item.url)}" alt="">` : `<span class="material-wall-icon">${fontAwesomeIconMarkup('images')}</span>`}
               <span class="material-title">@${escapeHtml(name)}</span>
               <span class="material-meta">${escapeHtml(meta)}</span>
             </button>
@@ -539,7 +539,7 @@
             </label>
             <button type="button" class="recycle-bin-restore-button" data-restore-recycle-bin-folder="${escapeHtml(folder)}" ${!folder || restoring ? 'disabled' : ''}>${restoring ? '恢复中...' : '恢复到生成结果'}</button>
           </div>
-          ${firstVideo?.url ? `<video class="recycle-video-preview" controls preload="metadata" src="${escapeHtml(firstVideo.url)}"></video>` : '<span class="material-wall-icon">!</span>'}
+          ${firstVideo?.url ? `<video class="recycle-video-preview" controls preload="metadata" src="${escapeHtml(firstVideo.url)}"></video>` : `<span class="material-wall-icon">${fontAwesomeIconMarkup('triangle-exclamation')}</span>`}
           ${meta ? `<span class="material-meta">${escapeHtml(meta)}</span>` : ''}
           <span class="material-wall-doc-preview recycle-bin-failure-reason" tabindex="0">${escapeHtml(reason)}</span>
         </article>

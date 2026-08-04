@@ -62,7 +62,7 @@
       const root = document.createElement('div');
       root.id = 'viralBreakdownFrameLightbox';
       root.className = 'viral-breakdown-frame-lightbox';
-      root.innerHTML = `<div class="viral-breakdown-frame-lightbox-panel" role="dialog" aria-modal="true" aria-label="截图 ${frameIndex} 大图预览"><button type="button" class="viral-breakdown-frame-lightbox-close" aria-label="关闭">×</button><img src="/api/viral-breakdown/file?key=${encodeURIComponent(key)}&v=${Date.now()}" alt="截图 ${frameIndex}"><strong>截图 ${frameIndex} / ${Number(item.frameCount || 0)}</strong></div>`;
+      root.innerHTML = `<div class="viral-breakdown-frame-lightbox-panel" role="dialog" aria-modal="true" aria-label="截图 ${frameIndex} 大图预览"><button type="button" class="viral-breakdown-frame-lightbox-close" aria-label="关闭">${fontAwesomeIconMarkup('xmark')}</button><img src="/api/viral-breakdown/file?key=${encodeURIComponent(key)}&v=${Date.now()}" alt="截图 ${frameIndex}"><strong>截图 ${frameIndex} / ${Number(item.frameCount || 0)}</strong></div>`;
       const close = () => root.remove();
       root.addEventListener('click', (event) => { if (event.target === root) close(); });
       root.querySelector('button')?.addEventListener('click', close);
@@ -420,11 +420,11 @@
     function renderMaterialLibrary(container, kind, items, title, emptyText) {
       if (!container) return;
       const openLabel = kind === 'script' ? '打开知识库' : '打开素材库';
-      const meta = items.length ? `${items.length} 个文件` : '暂无文件';
       container.innerHTML = buildSidebarNavItemMarkup({
         icon: kind === 'script' ? 'script' : 'image',
         title,
-        meta,
+        meta: `${items.length} 个文件`,
+        count: items.length,
         actionLabel: openLabel,
         attrs: `data-show-user-materials="${escapeHtml(kind)}"`,
       });

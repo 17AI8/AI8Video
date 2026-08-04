@@ -90,22 +90,7 @@
     }
 
     function settingsSecretIconMarkup(visible) {
-      if (visible) {
-        return `
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6Z"></path>
-            <circle cx="12" cy="12" r="3"></circle>
-          </svg>
-        `;
-      }
-      return `
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M3 3l18 18"></path>
-          <path d="M10.6 5.2A11.1 11.1 0 0 1 12 5c6.4 0 10 7 10 7a17.2 17.2 0 0 1-3.1 3.9"></path>
-          <path d="M6.7 6.7C4.1 8.5 2 12 2 12s3.6 6 10 6a10.5 10.5 0 0 0 5.3-1.4"></path>
-          <path d="M9.9 9.9A3 3 0 0 0 14.1 14.1"></path>
-        </svg>
-      `;
+      return fontAwesomeIconMarkup(visible ? 'eye' : 'eye-slash', 'settings-secret-icon');
     }
 
     async function openSettingsModal() {

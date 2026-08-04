@@ -200,7 +200,7 @@
       const position = smartImageClamp(AI8SmartImage.state.comparePosition, 0, 100);
       const ratio = smartImagePreviewRatio(result || source);
       const beforeStyle = smartImagePreviewStyle(result || source, false);
-      return `<div class="smart-image-compare" style="--compare-position:${position}%;--preview-ratio:${ratio}"><img class="smart-image-compare-before" src="${escapeHtml(source.dataUrl)}" alt="原图" style="${beforeStyle}"><div class="smart-image-compare-after"><img src="${escapeHtml(result.url)}" alt="AI 修图结果" style="${smartImagePreviewStyle(result)}"></div><span class="smart-image-compare-label before">原图</span><span class="smart-image-compare-label after">AI 结果</span><i class="smart-image-compare-handle"></i><input id="smartImageCompareRange" type="range" min="0" max="100" value="${position}" aria-label="调整原图与结果的对比位置"></div>`;
+      return `<div class="smart-image-compare" style="--compare-position:${position}%;--preview-ratio:${ratio}"><img class="smart-image-compare-before" src="${escapeHtml(source.dataUrl)}" alt="原图" style="${beforeStyle}"><div class="smart-image-compare-after"><img src="${escapeHtml(result.url)}" alt="AI 修图结果" style="${smartImagePreviewStyle(result)}"></div><span class="smart-image-compare-label before">原图</span><span class="smart-image-compare-label after">AI 结果</span><i class="smart-image-compare-handle">${fontAwesomeIconMarkup('left-right')}</i><input id="smartImageCompareRange" type="range" min="0" max="100" value="${position}" aria-label="调整原图与结果的对比位置"></div>`;
     }
 
     function smartImagePreviewMarkup() {

@@ -445,6 +445,11 @@
       font-size: 12px;
     }
 
+    .material-option-thumb .fa-icon {
+      width: 18px;
+      height: 18px;
+    }
+
     .progress-card, .progress-detail-card {
       border: 1px solid var(--line);
       border-radius: var(--radius);
