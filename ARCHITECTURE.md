@@ -1,153 +1,234 @@
-# AI8video Agent 架构与边界
+# AI8video 架构与运行边界
 
-AI8video 是面向短视频生产的自研有界垂直 Agent，也是一个本地有界单体：一个 Python 进程承载意图理解、上下文状态、工作流决策、能力调用、观察反馈和媒体处理，Web、CLI 与 Electron 只负责接入。源码统一放在 `src/ai8video/`，避免根目录散落模块和同一能力存在多个入口实现。
+AI8video 是本地优先的有界短视频单体。Python 应用层是控制面和业务真值；Web、CLI 与 Electron 只是入口，Pi Agent 与 HyperFrames 以受控 Node Sidecar 参与特定能力，不拥有产品状态。
 
-AI8video 的 Agent 身份来自完整运行闭环，而不是某个第三方框架：项目在 `application/` 中实现自己的 Agent Runtime，并把自主决策限制在短视频生产能力集合内。
+核心约束：
 
-## Agent 运行闭环
+- Python 掌握会话、业务规则、凭据来源、成本、任务状态、媒体处理、持久化和恢复。
+- 标准模式与 Agent 模式共享业务服务和资源配置，但保持独立的对话与运行状态。
+- 模型只获得显式工具面，不开放 Shell、任意文件访问或通用网络工具。
+- 外部模型、FFmpeg、PostgreSQL、对象存储或 Sidecar 失败时显式报错，不返回伪成功。
 
-```mermaid
-flowchart TB
-    Goal["用户目标 / 多轮指令"] --> Interface["Web / CLI / Electron\n入口适配器"] --> Intent
+## 总体拓扑
 
-    subgraph AgentRuntime["AI8video Agent Runtime · application/"]
-        direction TB
-        Intent["1. 意图理解\nRequest Interpreter"]
-        Context["2. 上下文组装\n会话 / 素材 / 历史任务"]
-        Controller["3. Agent Controller\nConversation Controller"]
-        Decision{"4. 能力与下一步决策"}
-        Guard["5. 执行护栏\n校验 / 额度 / 幂等 / 超时"]
-
-        Intent --> Context --> Controller --> Decision --> Guard
-    end
-
-    Decision -. "信息不足" .-> Clarify["追问与约束补全"] --> Await["等待用户补充后进入下一轮"]
-    Guard --> Script
-    Guard --> Knowledge
-    Guard --> Radar
-    Guard --> Generate
-    Guard --> Media
-    Guard --> Asset
-
-    subgraph Capability["6. Short-video Tool Layer · 有界能力集合"]
-        direction LR
-        Script["脚本生成与拆分\ngeneration/"]
-        Knowledge["剧本知识库\nknowledge/"]
-        Radar["热点与爆款拆解\nradar/ + breakdown/"]
-        Generate["图片 / 视频 / 批量任务\ngeneration/ + batch/"]
-        Media["TTS / 字幕 / 合并 / 动效\nmedia/"]
-        Asset["素材 / 归档 / 回收站\nassets/"]
-    end
-
-    Script --> Boundary["模型 API / FFmpeg / HyperFrames\nPostgreSQL / 文件系统"]
-    Knowledge --> Boundary
-    Radar --> Boundary
-    Generate --> Boundary
-    Media --> Boundary
-    Asset --> Boundary
-    Boundary --> Observation["7. Observation\n结果 / 错误 / 进度 / 产物"]
-    Observation --> Evaluate{"Agent Controller\n评估 Observation"}
-    Evaluate -->|继续| Continue["↺ 写回状态并进入下一轮决策"]
-    Evaluate -->|完成| Delivery["8. 结果交付"] --> Result["短视频 / 脚本 / 任务报告 / 可继续会话"]
-    Evaluate -->|失败| Failure["显式错误 / 重试 / 停止"]
-
-    State[("Agent State & Memory\nConversationState / TaskLedger\n剧本知识库 / 结果目录")] -. "读取与写入" .-> Controller
-
-    classDef agent fill:#eef2ff,stroke:#6366f1,color:#111827,stroke-width:1.5px
-    classDef decision fill:#f5f3ff,stroke:#7c3aed,color:#111827,stroke-width:2px
-    classDef tool fill:#ecfeff,stroke:#0891b2,color:#0f172a
-    classDef state fill:#fff7ed,stroke:#ea580c,color:#431407
-    classDef external fill:#f8fafc,stroke:#64748b,color:#0f172a
-    class Intent,Context,Controller,Guard,Observation,Evaluate,Clarify,Continue,Delivery,Failure agent
-    class Decision,Evaluate decision
-    class Script,Knowledge,Radar,Generate,Media,Asset tool
-    class State state
-    class Goal,Interface,Boundary,Result,Await external
-    style AgentRuntime fill:#f8fafc,stroke:#6366f1,stroke-width:2px
-    style Capability fill:#f0fdfa,stroke:#0891b2,stroke-width:1.5px
+```text
+Web / CLI / Electron
+          |
+          v
+Application Facade + Conversation Store
+          |
+   +------+-------------------+
+   |                          |
+workflow                   agent
+   |                          |
+AI8VideoConversation      AI8VideoMainAgent
+Controller                   |
+   |                       Pi JSONL Sidecar
+   |                          |
+   +-------------+------------+
+                 v
+       Shared Business Services
+ generation / batch / media / knowledge
+ assets / radar / breakdown / integrations
+                 |
+                 v
+ Models / FFmpeg / HyperFrames / PostgreSQL
+ Local Files / Optional S3
 ```
 
-这个闭环表达的是当前真实行为：模型负责理解意图和结构化信息，`AI8VideoConversationController` 依据上下文选择内置能力，本地 Python 执行工具顺序与安全护栏，再把执行结果作为 Observation（观察）送回控制器。它不是无限自主循环；信息不足时追问用户，任务完成、失败或触发护栏时停止。
+`workflow` 和 `agent` 是 Conversation Store 中的执行模式标识，不是两套重复的媒体流水线。
 
-## 多 Agent 演进边界
+## 对话与模式边界
 
-当前已接入本地有界多 Agent 调度：
+新建对话时选择标准或 Agent 模式；首次消息进入服务端后，Conversation Store 原子完成以下操作：
 
-1. `generation_batches` 中的现有生成批次会同步为 `supervisor` 根任务，保持旧接口和运行行为兼容。
-2. `agent_tasks`、`agent_task_edges` 和 `agent_task_events` 分别保存任务事实、DAG（有向无环图）依赖和不可变审计事件。
-3. 新任务通过幂等键创建，执行器使用 CAS（比较并交换）版本抢占和续租，避免两个 worker 同时接管同一任务。
-4. 租约过期只进入 `recovery_required`，不会盲目重放模型提交、视频生成或归档等有外部副作用的步骤。
-5. Planner 和 Reviewer 已作为根任务的一层 Specialist Agent 接入；Reviewer 依赖 Planner，但两者都直接以 `supervisor` 为父任务，任务图深度固定为 1。
-6. 当前 Specialist 只复用既有规划输出、后审核结果和确定性检查证据，不增加模型请求、不改变提示词或视频结果；任务账本故障采用 fail-open（失败开放），不能阻断真实生成。
-7. 子任务快照只保存数量、状态、字段存在性和摘要哈希，不保存完整提示词、模型原始响应、URL 或绝对路径。
-8. 每条独立视频后续仍可演进为并行 `VideoTask` Worker；FFmpeg、TTS、轮询和归档继续作为确定性工具，不包装成自治 Agent。
-9. 单进程 `AgentTaskScheduler` 先取得本地并发容量再原子认领 SQLite 任务；取消中的 handler 在真实退出前继续占用槽位，避免突破并发上限。
-10. 每次认领使用唯一 worker ID 作为 fencing（栅栏）令牌；续租和终态提交必须同时满足所有权、当前状态及租约未过期，迟到 worker 不能覆盖恢复后的结果。
-11. 启动恢复默认拒绝自动重放；只有 handler 注册表明确标记为 `replay_safe` 的纯观察任务可以从 `recovery_required` 重新排队。模型调用、视频创建、媒体后处理和归档仍停留在人工对账边界。
-12. 失败或取消的依赖会把尚未执行的下游任务收敛为 `cancelled`，不再永久停留在 queued。
-13. 取消请求是 sticky（粘性）的：一旦进入 `cancel_requested`，迟到的成功或失败结果只能收敛为 `cancelled`，不能重新解锁依赖或进入重试。
-14. 根任务和 Agent 子任务都采用 terminal first-wins（终态首次写入获胜）；任何迟到终态、结果、worker 或错误信息都不能覆盖首个终态事实。
-15. 调度器关闭是一次性的完整状态迁移：关闭与入队按同一周期锁排序，账本持久化异常会显式记录但不能阻止 dispatcher、线程池和本机运行态停止；轮询周期必须短于心跳周期，心跳周期必须短于租约。
-16. 多 Agent 调度不改写普通生成参数：视频数量、时长、并发方式和合并模式继续以用户请求与本机配置为准，不额外施加条数上限、固定时长或强制串行策略。
+1. 校验客户端携带的 `revision`，避免过期页面覆盖新状态。
+2. 锁定 `execution_mode`，已有对话不能再切换模式。
+3. 增加消息计数并保存用户消息。
+4. 绑定当前模型 Profile 的非敏感快照、指纹和版本。
+5. Agent 模式同时创建独立的 Run；标准模式继续进入原控制器。
 
-Planner 的真实视频规划结果与 Reviewer 的媒体审核影子证据均由单进程调度器登记，最大并发为 2，并在 Web 启动时完成安全恢复扫描。智能分集正式归属 Planner；真实生成根任务尚未迁移到该调度器。只有出现真实的进程隔离、故障域或独立扩缩容需求，才替换执行 transport，不先引入微服务或第三方通用 Agent 框架。
+Conversation Store 使用 SQLite/WAL，核心实体为：
 
-当前消息与用户可编辑业务提示词共同构成单次任务的内容真值。提示词改写和最终后审核必须合并两者全部能够共存的主题、主体、人物、产品、显式核心关键词、风格和镜头约束；主题保留门禁防止历史模板删掉当前输入，真正无法共存的直接矛盾才由当前消息处理。
+| 实体 | 作用 |
+|---|---|
+| Conversation | 标题、模式、锁定状态、revision、epoch、当前 Run 和模型绑定 |
+| Message | 按 Conversation 与 epoch 保存用户/助手消息，支持客户端幂等 ID |
+| Agent Run | 决策次数、成本、等待状态、终态和错误 |
+| Agent Action | 工具、幂等键、副作用、重放策略、批准与尝试次数 |
+| Agent Context | 本轮目标、方案、批次、用户确认和最终交付快照 |
+| Observation | 审核、运行终态、错误或可交付结果等有业务意义的观察 |
 
-## 工程分层
+API 更新使用 Revision/CAS；重置对话会进入新的 `epoch`，避免旧页面或旧消息污染新一轮。API Key 等敏感凭据不写入 Conversation Store。
 
-```mermaid
-flowchart LR
-    Interfaces["interfaces/\nWeb / CLI"] --> Application["application/\nAgent Runtime"]
-    Desktop["desktop/electron/\n桌面壳"] --> Interfaces
-    Application --> Domains["generation / batch / assets\nknowledge / media / radar / breakdown"]
-    Domains --> Integrations["integrations/\n模型与 HTTP 适配"]
-    Domains --> Runtime["FFmpeg / HyperFrames\nPostgreSQL / 文件系统"]
-    Domains --> Results["用户生成结果\n最终结果事实源"]
+删除对话只改变对话可见性与生命周期，不代表删除用户素材、生成结果、任务账本或审计记录。
+
+## 标准模式
+
+标准模式完整保留原有 `AI8VideoConversationController`：
+
+- 负责意图判断、缺失信息追问、智能分集确认、改写与批量请求。
+- 通过确定性分支调用既有规划、生成、媒体和资产服务。
+- 保存自己的对话状态和确认卡，不读取 Agent Run/Action/Observation 作为决策依据。
+- Agent 功能关闭、Pi Sidecar 不可用或 Agent 模型缺失时，标准模式仍可按原能力独立运行。
+
+标准模式不是 Agent 模式的“简化开关”，也不会因为全局模式选择器变化而改写已有对话。
+
+## Agent 模式
+
+Agent 模式由五个边界清晰的组件组成：
+
+| 组件 | 职责 |
+|---|---|
+| `AI8VideoMainAgent` | 读取服务端快照，在关键节点选择唯一下一步 |
+| Pi Agent Core / Pi AI `0.80.10` | 执行一次模型与工具轮次 |
+| JSONL Sidecar | 在 Node 与 Python 间传递 decision、tool call 和 result |
+| 6 个复合工具 | 把模型选择映射到项目内置的高层能力 |
+| Python Runtime | 执行提交、轮询、下载、校验、后处理、归档和恢复 |
+
+Pi 是 AI8video Agent 的内部执行组件，可以理解为受约束的“决策员工”；它不是完整产品、不是业务真值，也不接管标准模式。
+
+### 固定工具面
+
+Main Agent 每次只能选择一个工具：
+
+| 工具 | 作用 | 主要副作用 |
+|---|---|---|
+| `prepare_video_plan` | 把用户目标转换为结构化视频方案 | 模型规划 |
+| `review_video_plan` | 审核并修正最新方案 | 模型审核 |
+| `generate_video_batch` | 提交已审核方案给 Runtime | 可能产生付费生成 |
+| `inspect_generation_result` | 汇总真实终态、成功资产和失败原因 | 只读 |
+| `archive_and_deliver` | 整理可交付结果，不向外部平台发布 | 本地交付快照 |
+| `task_user` | 遇到歧义、额外成本或高风险选择时暂停 | 等待用户 |
+
+工具由 `ActionPolicyGuard` 校验数量、成本、副作用、重放安全性和批准边界。相同动作使用稳定幂等键；额外付费重试需要明确批准，单个动作有尝试上限。
+
+Pi Sidecar 不提供 Shell、文件系统、浏览器、代码执行或通用 HTTP 工具。它一次只处理一个 decision，请求中的工具按顺序执行，完成一个工具后立即把控制权交还 Python。
+
+### 两层循环
+
+```text
+主 Agent 决策循环
+用户目标 / 关键 Observation
+          |
+          v
+     Main Agent 决策
+          |
+          v
+       一个复合工具
+          |
+          +-------------------------+
+                                    |
+Runtime 执行循环                    v
+提交 -> 轮询 -> 下载 -> 校验 -> 后处理 -> 归档
+  ^                                      |
+  +----------- 机械进度事件 -------------+
+                                         |
+                              生成终态 / 用户检查点
+                                         |
+                                         +--> 新 Observation
 ```
+
+Runtime 的等待时间、百分比、轮询次数和普通下载进度不会触发新的模型调用。以下事件才会唤醒 Main Agent：
+
+- 方案审核结论；
+- 用户补充、确认或拒绝；
+- 额外付费重试批准；
+- 生成成功、失败或部分成功终态；
+- 尾帧连续生成等需要用户选择的检查点；
+- 已形成可交付结果。
+
+生成进入 `pending` 后，Main Agent 立即停止本轮决策。Runtime 完成真实工作并记录终态 Observation，再异步恢复对应 Run。
+
+### 恢复与失败语义
+
+- Run、Action、Context 与 Observation 持久化到 Conversation Store，不依赖浏览器标签页存活。
+- 视频任务的提交与终态以本地生成批次和任务账本为准，页面刷新只读取真实状态。
+- 已成功动作可按幂等记录读取结果；不确定的付费副作用不得在断连后盲目重放。
+- 相同高层动作失败后最多进入受控重试；已经计费或会新增成本的重试转为等待批准。
+- 无进展、成本上限、决策上限、业务歧义和部分成功交付都会显式暂停或终止。
+- 最终交付只整理已由 Runtime 证明存在的资产，不自动发布到外部平台。
+
+### Skills 与专项能力
+
+`agent_skills/` 中的 Skills 继续承载 Planner、知识建树、知识审核、镜头语言和剧本重建等专项策略。它们不是主对话中的并列自治 Agent，也不组成 Supervisor → Planner → Reviewer 的持续接力。
+
+复合工具可以在内部复用这些策略和既有服务，但字段校验、幂等、成本、取消、副作用顺序和持久化始终由程序负责。
+
+## 共享业务层
+
+标准与 Agent 模式都复用同一套领域实现：
+
+| 区域 | 负责 |
+|---|---|
+| `generation/` | 脚本拆分、图片/视频生成、连续尾帧、审核与结果组装 |
+| `batch/` | 任务账本、调度、租约、取消、监督器、报告和告警 |
+| `media/` | FFmpeg、MiMo TTS、时间轴、合并和 HTML 动效 |
+| `knowledge/` | 文档建树、审核、BM25、模糊召回和重排 |
+| `assets/` | 用户素材、结果、归档和回收站 |
+| `radar/`、`breakdown/` | 热点聚合、视频拆解和脚本重建 |
+| `integrations/` | 文本、图片、视频模型与 HTTP 协议适配 |
+
+不得为 Agent 模式复制第二套视频生成、TTS、知识库或归档实现。
+
+## 数据与事实源
+
+| 位置 | 事实与恢复边界 |
+|---|---|
+| `用户文件夹/用户素材/` | 用户原始素材 |
+| `用户文件夹/用户生成结果/` | 最终视频、封面、manifest 和恢复元数据 |
+| `用户文件夹/*/reviews/` | 视频、TTS、HTML 动效等非破坏编辑草稿 |
+| `temp/ai8video/` | Conversation Store、Agent Journal、生成任务账本和运行恢复状态 |
+| PostgreSQL | 剧本文档元数据、审核叶节点和可重建检索索引 |
+| `media_resources/ai8video/` | 可选本地归档、批次报告和告警 |
+| S3 兼容存储 | 只有显式配置后才保存指定归档产物 |
+
+`temp/ai8video/` 不是普通可丢弃缓存。任务运行或恢复期间手动清空会破坏对话、Agent 与任务账本的一致性。
+
+原始用户文档和媒体是主事实源；数据库索引、预览缓存和透明动效层属于可重建派生数据。
 
 ## 源码布局
 
 ```text
 src/ai8video/
-├── core/          产品身份、配置、路径和基础数据模型
-├── application/   Agent Runtime：意图、上下文、决策、会话与应用门面
-├── generation/    脚本拆分、生成流水线、任务与结果审核
-├── batch/         批量任务、报告、告警、账本和守护进程
-├── assets/        用户素材、生成结果、归档和回收站
-├── knowledge/     剧本知识库、查询、重排和文本处理
-├── media/         FFmpeg、配音、字幕、合并与 HTML 动效
-├── integrations/  文本、图片、视频模型及 HTTP 适配器
-├── radar/         热点聚合与摘要
-├── breakdown/     爆款视频拆解
-└── interfaces/    Web、CLI 和演示入口
+├── core/           配置、路径和基础模型
+├── application/    会话门面、标准控制器、Main Agent、Store 与恢复
+├── agent_runtime/  Pi 适配、复合工具、策略护栏和终态观察
+├── agent_skills/   带版本与能力绑定的专项 Skills
+├── generation/     规划、图片/视频生成和结果审核
+├── batch/          任务账本、调度、监督、报告与告警
+├── media/          FFmpeg、TTS、精剪和 HTML 动效
+├── knowledge/      剧本知识库、BM25、查询和重排
+├── assets/         素材、结果、归档和回收站
+├── radar/          热点聚合与摘要
+├── breakdown/      爆款视频拆解
+├── integrations/   模型、数据库和 HTTP 适配
+└── interfaces/     Web 与 CLI
 
-desktop/electron/  可选桌面壳
-tests/             离线质量门禁，不进入运行包
+desktop/electron/   Electron 桌面壳
+desktop/runtime/    冻结后端与发行运行时工具
+tests/              离线质量门禁，不进入运行包
 ```
 
 ## 强制依赖规则
 
-1. `interfaces/` 可以依赖 `application/` 和具体功能模块；核心模块不得反向导入 `interfaces/`。
-2. 跨功能的会话、配置、资产和批量用例优先通过 `application/facade.py` 暴露，CLI 不复制业务流程。
-3. `core/` 只放稳定基础概念，不依赖业务领域、入口或外部系统。
-4. 模型 API、FFmpeg、HyperFrames、PostgreSQL 和文件系统属于边界资源；失败必须显式返回真实错误，不伪造成功。
-5. `用户文件夹/用户生成结果/` 是最终结果事实源；`temp/ai8video/` 只保存可丢弃、可重建的过程状态。
-6. 产品显示名统一为 `AI8video`，Python 包和命令统一为 `ai8video`，环境变量统一为 `AI8VIDEO_`。旧名称只允许存在于迁移兼容代码中，读取后只写新名称。
-7. `ai8video_cli/`、`frontends/` 和 `tools/ai8video/` 已移除，不得重新建立第二套入口或核心包。
-8. `media/local_tts.py` 是 TTS 稳定门面，只负责编排和兼容入口；设置、文本、MiMo 与 FFmpeg 实现分别放在对应的 `local_tts_*` 模块，不在 Web、桌面端或测试中复制另一套 TTS 逻辑。
+1. `interfaces/` 可以调用 `application/`；核心业务模块不得反向依赖 Web 或 Electron。
+2. 跨领域用例通过应用门面和共享服务编排，CLI、Web、标准模式与 Agent 模式不得各复制一套流程。
+3. `core/` 只保存稳定基础概念，不依赖入口、业务领域或外部系统。
+4. Pi、模型 API、FFmpeg、HyperFrames、PostgreSQL、文件系统和对象存储都是边界资源，适配器不得成为第二业务真值。
+5. 第三方 Agent 库只能藏在受控适配层后；不得暴露其通用系统工具、会话存储或产品身份。
+6. 产品显示名统一为 `AI8video`，Python 包和命令统一为 `ai8video`，环境变量统一使用 `AI8VIDEO_` 前缀。
+7. `media/local_tts.py` 是 TTS 稳定门面；设置、文本、MiMo 请求和 FFmpeg 处理分别保留在对应 `local_tts_*` 模块。
+8. 用户数据与恢复账本不得因 UI 删除、缓存清理或模式切换被隐式级联删除。
 
-上述依赖方向、旧入口残留和重复核心路由由 `tests/test_ai8video_architecture.py` 持续检查。
+相关结构约束由 `tests/test_ai8video_architecture.py` 等最小测试持续检查。
 
-## 模块职责
+## 演进原则
 
-| 区域 | 负责 | 不负责 |
-|---|---|---|
-| `interfaces/` | HTTP、命令参数、输入校验、序列化、进程启动 | 核心状态与业务规则 |
-| `application/` | Agent Runtime、会话、请求解释、能力决策和跨领域编排 | 页面样式、模型协议细节 |
-| `generation/`、`batch/` | 生成与批量任务生命周期 | 浏览器或桌面窗口 |
-| `assets/`、`knowledge/`、`media/`、`radar/`、`breakdown/` | 各自领域能力 | 跨领域总流程 |
-| `integrations/` | 外部模型和 HTTP 协议适配 | 产品交互决策 |
-| `desktop/electron/` | 桌面窗口和 Python 服务拉起 | 短视频业务实现 |
+- 只有出现真实独立部署、故障域或扩缩容需求时，才把领域执行拆成远程服务。
+- 只有出现第二个真实实现时，才为检索、模型或工具增加接口、工厂和策略层。
+- 新增 Agent 工具前必须先定义副作用、幂等键、成本、批准、重放和终态 Observation。
+- 新增轮询或进度事件不得默认唤醒 Main Agent；先判断它是否改变下一步业务决策。
+- 标准模式的公共契约和行为必须作为独立兼容基线保留。
 
-当前保持单进程、自研 Agent Runtime 和轻量 CLI；除非出现独立部署、独立扩缩容或明确的多实现需求，不引入微服务、第三方通用 Agent 框架或额外抽象层。
+运行配置见[配置说明](docs/configuration.md)，知识检索见[知识库说明](docs/knowledge-base.md)，桌面构建与发布见[桌面发行说明](docs/desktop-release.md)。
