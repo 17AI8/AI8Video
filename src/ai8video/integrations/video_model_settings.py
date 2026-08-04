@@ -16,6 +16,7 @@ from ai8video.integrations.model_profiles import active_model_profile
 
 VIDEO_MODEL_SETTINGS_DIR = (USER_FILE_ROOT / "视频模型").resolve()
 VIDEO_MODEL_SETTINGS_PATH = VIDEO_MODEL_SETTINGS_DIR / "settings.json"
+_PROFILE_UNSET = object()
 
 
 SUPPORTED_VIDEO_TEMPLATES = (
@@ -89,7 +90,12 @@ class VideoModelSettings:
         return payload
 
 
-def load_video_model_settings(*, llm_base_url: str | None = None, llm_api_key: str | None = None) -> VideoModelSettings:
+def load_video_model_settings(
+    *,
+    llm_base_url: str | None = None,
+    llm_api_key: str | None = None,
+    profile: dict[str, Any] | None | object = _PROFILE_UNSET,
+) -> VideoModelSettings:
     env_settings = _load_from_env()
     file_settings = _load_from_file()
     source = "default"
@@ -109,19 +115,22 @@ def load_video_model_settings(*, llm_base_url: str | None = None, llm_api_key: s
         data.update(file_settings)
         source = _merge_source(source, "user_file")
 
-    profile = active_model_profile("video")
-    if profile:
+    selected_profile = active_model_profile("video") if profile is _PROFILE_UNSET else profile
+    if selected_profile:
         data.update({
             key: value
             for key, value in {
-                "base_url": profile.get("baseUrl"),
-                "api_key": profile.get("apiKey"),
-                "model": profile.get("model"),
-                "template": profile.get("template"),
+                "base_url": selected_profile.get("baseUrl"),
+                "api_key": selected_profile.get("apiKey"),
+                "model": selected_profile.get("model"),
+                "template": selected_profile.get("template"),
             }.items()
             if value
         })
-        source = _merge_source(source, "model_profile")
+        source = _merge_source(
+            source,
+            "model_profile" if profile is _PROFILE_UNSET else "bound_model_profile",
+        )
 
     settings = normalize_video_model_settings(data, source=source)
     if not settings.api_key and llm_api_key:

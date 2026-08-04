@@ -152,7 +152,8 @@
       const temporary = buildViralBreakdownTemporaryKnowledgeReference(currentItem);
       const scriptText = getViralBreakdownComposerScript(currentItem);
       if (!temporary || !scriptText) throw new Error('临时知识库或剧本骨架不可用，请重新猜剧本');
-      const session = getActiveSession() || createSession('新会话');
+      const session = getActiveSession() || await createSession(NEW_SESSION_TITLE);
+      if (!session) throw new Error('无法创建对话，请先删除一个不再需要的对话后重试');
       state.activeId = session.id;
       session.temporaryScriptKnowledge = temporary;
       persistSessions();

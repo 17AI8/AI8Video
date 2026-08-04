@@ -747,37 +747,12 @@
     }
 
     function renderStatus() {
-      const parts = [];
       const activeSession = getActiveSession();
       const activePending = isSessionPending(activeSession);
       const unavailableReason = getGenerationBlockingReason();
       const unavailable = !!unavailableReason;
-      if (state.health) {
-        parts.push(pill(state.health.hasLLM ? '文本鉴权已配置' : '文本鉴权缺失', state.health.hasLLM ? 'ok' : 'bad'));
-        parts.push(pill(state.health.hasVideoModel ? '视频鉴权已配置' : '视频鉴权缺失', state.health.hasVideoModel ? 'ok' : 'bad'));
-        if (unavailableReason) {
-          parts.push(pill(unavailableReason, 'bad'));
-        }
-        const archiveBackendLabel = state.health.archiveResolvedBackend || state.health.archiveBackend;
-        parts.push(pill(state.health.archiveEnabled ? `归档：${archiveBackendLabel}` : '归档未开启', state.health.archiveEnabled ? 'ok' : 'info'));
-        const guard = state.health.realGenerationGuard;
-        if (guard?.enabled && !state.health.dryRun) {
-          parts.push(
-            pill(
-              `生成额度：本窗口剩余 ${guard.remainingInWindow}/${guard.maxJobsPerWindow} 条`,
-              guard.remainingInWindow > 0 ? 'warn' : 'bad'
-            )
-          );
-        }
-      }
-      if (state.busy) {
-        parts.push(pill('正在生成中', 'warn'));
-      }
-      if (activePending) {
-        parts.push(pill('后台继续执行中', 'info'));
-      }
-      els.statusBar.innerHTML = parts.join('');
       els.sendButton.disabled = state.busy || activePending || unavailable;
+      els.sendButton.title = unavailableReason || (state.busy || activePending ? '当前任务正在处理中' : '');
       const locked = state.busy || activePending || unavailable;
       els.composer.classList.toggle('locked', locked);
       els.messageEditor.contentEditable = locked ? 'false' : 'true';

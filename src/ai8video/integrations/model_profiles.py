@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import secrets
 from pathlib import Path
@@ -49,6 +50,48 @@ def active_model_profile(category: str) -> dict[str, Any] | None:
     if not bucket:
         return None
     return next((item for item in bucket["profiles"] if item["id"] == bucket["activeId"]), None)
+
+
+def model_profile_by_id(category: str, profile_id: str) -> dict[str, Any] | None:
+    bucket = load_model_profiles()["categories"].get(category)
+    if not bucket:
+        return None
+    identifier = str(profile_id or "").strip()
+    return next((item for item in bucket["profiles"] if item["id"] == identifier), None)
+
+
+def model_profile_binding_snapshot() -> dict[str, Any]:
+    store = load_model_profiles()
+    categories: dict[str, dict[str, Any]] = {}
+    for category in MODEL_PROFILE_CATEGORIES:
+        bucket = store["categories"].get(category) or {}
+        profile_id = str(bucket.get("activeId") or "")
+        profile = next(
+            (item for item in bucket.get("profiles", []) if item.get("id") == profile_id),
+            None,
+        )
+        categories[category] = _profile_binding(profile)
+    revision = _fingerprint(categories)
+    return {"version": 1, "configurationRevision": revision, "categories": categories}
+
+
+def resolve_model_profile_binding(binding: dict[str, Any]) -> dict[str, dict[str, Any] | None]:
+    raw_categories = binding.get("categories") if isinstance(binding, dict) else None
+    categories = raw_categories if isinstance(raw_categories, dict) else {}
+    resolved: dict[str, dict[str, Any] | None] = {}
+    for category in MODEL_PROFILE_CATEGORIES:
+        expected = categories.get(category) if isinstance(categories.get(category), dict) else {}
+        profile_id = str(expected.get("profileId") or "")
+        if not profile_id:
+            resolved[category] = None
+            continue
+        profile = model_profile_by_id(category, profile_id)
+        if profile is None:
+            raise ValueError(f"{category} 模型配置已不存在，请重置对话后重试。")
+        if str(expected.get("fingerprint") or "") != _profile_fingerprint(profile):
+            raise ValueError(f"{category} 模型配置已变更，请重置对话后重新绑定。")
+        resolved[category] = profile
+    return resolved
 
 
 def create_model_profile(category: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -152,6 +195,43 @@ def _normalize_profile(value: dict[str, Any]) -> dict[str, Any]:
         "model": str(value.get("model") or "").strip(),
         "template": template,
     }
+
+
+def _profile_binding(profile: dict[str, Any] | None) -> dict[str, Any]:
+    if not profile:
+        return {
+            "profileId": "",
+            "name": "",
+            "baseUrl": "",
+            "model": "",
+            "template": "",
+            "hasApiKey": False,
+            "fingerprint": "",
+        }
+    return {
+        "profileId": str(profile.get("id") or ""),
+        "name": str(profile.get("name") or ""),
+        "baseUrl": str(profile.get("baseUrl") or ""),
+        "model": str(profile.get("model") or ""),
+        "template": str(profile.get("template") or ""),
+        "hasApiKey": bool(profile.get("apiKey")),
+        "fingerprint": _profile_fingerprint(profile),
+    }
+
+
+def _profile_fingerprint(profile: dict[str, Any]) -> str:
+    return _fingerprint({
+        "id": str(profile.get("id") or ""),
+        "baseUrl": str(profile.get("baseUrl") or ""),
+        "apiKey": str(profile.get("apiKey") or ""),
+        "model": str(profile.get("model") or ""),
+        "template": str(profile.get("template") or ""),
+    })
+
+
+def _fingerprint(value: Any) -> str:
+    payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _new_profile_id() -> str:

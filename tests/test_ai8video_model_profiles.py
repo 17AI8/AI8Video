@@ -7,7 +7,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ai8video.integrations import model_profiles
+from ai8video.agent_runtime.bound_runtime import _bound_config
 from ai8video.core import config as core_config
+from ai8video.core.config import AI8VideoConfig
 from ai8video.integrations import video_model_settings
 
 
@@ -83,6 +85,68 @@ class ModelProfilesTest(unittest.TestCase):
         payload = model_profiles.public_model_profiles(store)
         self.assertEqual(payload["llm"]["profiles"][0]["apiKey"], "")
         self.assertTrue(payload["llm"]["profiles"][0]["hasApiKey"])
+
+    def test_binding_snapshot_contains_ids_and_fingerprints_but_no_secret(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with patch.object(model_profiles, "MODEL_PROFILES_DIR", root), patch.object(
+                model_profiles, "MODEL_PROFILES_PATH", root / "model_profiles.json"
+            ):
+                store = model_profiles.ensure_model_profiles({
+                    "llm": {
+                        "baseUrl": "https://llm.example",
+                        "apiKey": "never-return-me",
+                        "model": "model-1",
+                    },
+                })
+                profile_id = store["categories"]["llm"]["activeId"]
+
+                binding = model_profiles.model_profile_binding_snapshot()
+                resolved = model_profiles.resolve_model_profile_binding(binding)
+
+                self.assertEqual(binding["categories"]["llm"]["profileId"], profile_id)
+                self.assertEqual(resolved["llm"]["apiKey"], "never-return-me")
+                self.assertNotIn("never-return-me", repr(binding))
+                self.assertEqual(len(binding["configurationRevision"]), 64)
+
+    def test_binding_detects_profile_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with patch.object(model_profiles, "MODEL_PROFILES_DIR", root), patch.object(
+                model_profiles, "MODEL_PROFILES_PATH", root / "model_profiles.json"
+            ):
+                store = model_profiles.ensure_model_profiles({"llm": {"model": "model-1"}})
+                profile_id = store["categories"]["llm"]["activeId"]
+                binding = model_profiles.model_profile_binding_snapshot()
+                model_profiles.update_model_profile("llm", profile_id, {"model": "model-2"})
+
+                with self.assertRaisesRegex(ValueError, "模型配置已变更"):
+                    model_profiles.resolve_model_profile_binding(binding)
+
+    def test_bound_runtime_never_falls_back_to_current_global_models(self) -> None:
+        base = AI8VideoConfig(
+            llm_base_url="https://global-llm.example",
+            llm_api_key="global-llm-key",
+            llm_model="global-llm",
+            multimodal_base_url="https://global-mm.example",
+            multimodal_api_key="global-mm-key",
+            multimodal_model="global-mm",
+            image_base_url="https://global-image.example",
+            image_api_key="global-image-key",
+            image_model="global-image",
+        )
+        bound = _bound_config(base, {
+            "llm": {"baseUrl": "https://bound-llm.example", "apiKey": "bound-llm-key", "model": "bound-llm"},
+            "multimodal": {"baseUrl": "https://bound-mm.example", "apiKey": "bound-mm-key", "model": "bound-mm"},
+            "image": {"baseUrl": "https://bound-image.example", "apiKey": "bound-image-key", "model": "bound-image"},
+        })
+
+        self.assertEqual(bound.llm_model, "bound-llm")
+        self.assertEqual(bound.multimodal_model, "bound-mm")
+        self.assertEqual(bound.image_model, "bound-image")
+        self.assertEqual(bound.llm_source, "conversation_binding")
+        with self.assertRaisesRegex(ValueError, "没有绑定"):
+            _bound_config(base, {})
 
     def test_core_config_uses_active_profiles(self) -> None:
         profiles = {

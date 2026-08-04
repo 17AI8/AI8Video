@@ -22,6 +22,7 @@ from urllib.parse import unquote, urlsplit
 from bottle import Bottle, HTTPResponse, request, response, run, static_file
 
 from ai8video.agent_skills import discover_agent_skills, list_agent_skill_slots
+from ai8video.agent_runtime.composite_tools import AGENT_COMPOSITE_TOOL_NAMES
 from ai8video.agent_runtime.planning_capability import PLANNING_CAPABILITY_NAME
 from ai8video.application.facade import (
     CHAT_BACKEND,
@@ -357,6 +358,17 @@ from ai8video.interfaces.web.routes.hot_topics import (
     register_hot_topic_routes,
 )
 from ai8video.interfaces.web.routes.smart_image_editor import register_smart_image_editor_routes
+from ai8video.interfaces.web.routes.conversations import (
+    agent_mode_enabled,
+    append_assistant_message,
+    bound_conversations_for_model_profile,
+    get_agent_journal,
+    get_conversation_store,
+    lock_conversation_for_chat,
+    register_conversation_routes,
+)
+from ai8video.application.agent_controller import get_main_agent
+from ai8video.application.conversation_store import ConversationStoreError
 from ai8video.integrations.video_model_settings import (
     load_video_model_settings,
     pull_model_catalog,
@@ -638,6 +650,7 @@ def api_delete_viral_breakdown_videos():
 
 register_hot_topic_routes(app)
 register_smart_image_editor_routes(app)
+register_conversation_routes(app)
 
 
 @app.route("/api/viral-breakdown/file", method=["GET", "OPTIONS"])
@@ -5467,6 +5480,24 @@ def _agent_skill_settings_payload() -> dict[str, object]:
     }
 
 
+def _agent_architecture_settings_payload() -> dict[str, object]:
+    return {
+        "enabled": agent_mode_enabled(),
+        "controller": "AI8VideoMainAgent",
+        "decisionPolicy": "key_nodes",
+        "runtimeOwner": "python",
+        "compositeTools": list(AGENT_COMPOSITE_TOOL_NAMES),
+        "standardMode": {
+            "controller": "AI8VideoConversationController",
+            "isolated": True,
+        },
+        "modelBinding": {
+            "strategy": "first_message_snapshot",
+            "source": "model_profiles",
+        },
+    }
+
+
 @app.route("/api/auth-settings", method=["GET", "OPTIONS"])
 def api_auth_settings():
     if request.method == "OPTIONS":
@@ -5692,6 +5723,7 @@ def api_auth_settings():
         "fields": fields,
         "localTts": tts,
         "archiveArtifacts": archive_artifacts,
+        "agentArchitecture": _agent_architecture_settings_payload(),
         "agentSkills": _agent_skill_settings_payload(),
         "modelCatalogs": load_model_catalogs(),
         "modelProfiles": public_model_profiles(model_profiles),
@@ -5716,10 +5748,28 @@ def api_model_profiles():
         elif action == "duplicate":
             store = duplicate_model_profile(category, profile_id)
         elif action == "update":
+            conflicts = bound_conversations_for_model_profile(category, profile_id)
+            if conflicts:
+                response.status = 409
+                return {
+                    "ok": False,
+                    "code": "MODEL_PROFILE_BOUND",
+                    "error": "该模型配置已绑定到已开始的对话，请先完成或删除相关对话，再编辑配置。",
+                    "conversations": conflicts,
+                }
             store = update_model_profile(category, profile_id, profile)
         elif action == "activate":
             store = activate_model_profile(category, profile_id)
         elif action == "delete":
+            conflicts = bound_conversations_for_model_profile(category, profile_id)
+            if conflicts:
+                response.status = 409
+                return {
+                    "ok": False,
+                    "code": "MODEL_PROFILE_BOUND",
+                    "error": "该模型配置仍被已开始的对话引用，不能删除。",
+                    "conversations": conflicts,
+                }
             store = delete_model_profile(category, profile_id)
         else:
             raise ValueError("不支持这个模型配置操作")
@@ -7373,6 +7423,7 @@ def api_chat():
         return HTTPResponse(status=204)
     payload = request.json or {}
     message = (payload.get("message") or "").strip()
+    conversation_message = message
     session_id = (payload.get("sessionId") or "default").strip() or "default"
     refresh = bool(payload.get("refresh", False))
     if not message:
@@ -7429,7 +7480,50 @@ def api_chat():
                 "AI8VIDEO_VIDEO_TEMPLATE",
             ],
         }
+    try:
+        locked_conversation = lock_conversation_for_chat(
+            session_id,
+            conversation_message,
+            payload if isinstance(payload, dict) else {},
+        )
+    except ConversationStoreError as exc:
+        response.status = exc.status
+        return {
+            "ok": False,
+            "code": exc.code.upper(),
+            "error": str(exc),
+            "details": exc.details,
+        }
+    conversation = locked_conversation["conversation"]
     clear_generation_progress(session_id)
+    if conversation.get("executionMode") == "agent" and agent_mode_enabled():
+        run = locked_conversation.get("agentRun") or {}
+        run_id = str(run.get("id") or "")
+        if not run_id:
+            response.status = 500
+            return {
+                "ok": False,
+                "code": "AGENT_RUN_MISSING",
+                "error": "Agent 对话没有创建运行记录。",
+            }
+        try:
+            body = get_main_agent(
+                get_conversation_store(),
+                get_agent_journal(),
+            ).handle_message(
+                conversation=conversation,
+                run_id=run_id,
+                message=conversation_message,
+            )
+            return append_assistant_message(session_id, body)
+        except Exception as exc:
+            logger.exception("AI8video main Agent path failed")
+            response.status = 502
+            return {
+                "error": f"Agent 运行失败：{str(exc).strip() or exc.__class__.__name__}",
+                "code": "AI8VIDEO_AGENT_FAILED",
+                "chatBackend": "ai8video-main-agent",
+            }
     try:
         body = handle_chat_via_ai8video(
             session_id=session_id,
@@ -7439,7 +7533,7 @@ def api_chat():
         )
         body.setdefault("chatBackend", CHAT_BACKEND)
         _apply_deleted_asset_progress_state(body)
-        return body
+        return append_assistant_message(session_id, body)
     except TimeoutError as exc:
         logger.exception("AI8video chat timed out before payload returned")
         pending_status = get_chat_status_via_ai8video(session_id=session_id)

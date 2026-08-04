@@ -347,19 +347,28 @@
     }
 
     function renderSessions() {
+      if (!els.sessionList) return;
       els.sessionList.innerHTML = '';
+      const onlyConversation = state.sessions.length <= 1;
       state.sessions.forEach((session) => {
-        const item = document.createElement('button');
-        item.type = 'button';
+        const item = document.createElement('div');
         item.className = 'session-item' + (session.id === state.activeId ? ' active' : '');
+        const deleteDisabled = onlyConversation
+          || state.conversationSyncing
+          || conversationIsBusy(session)
+          || session.canDelete === false;
         item.innerHTML = `
-          <div class="session-title">${escapeHtml(session.title)}</div>
-          <div class="session-sub">${escapeHtml(summarizeSessionSub(session))}</div>
+          <button type="button" class="session-select" data-select-conversation="${escapeHtml(session.id)}">
+            <span class="session-title">${escapeHtml(session.title || NEW_SESSION_TITLE)}</span>
+            <span class="session-meta-row">
+              <span class="session-mode-badge" data-mode="${escapeHtml(session.executionMode === 'agent' ? 'agent' : 'workflow')}">${escapeHtml(conversationModeLabel(session))}</span>
+              <span class="session-state-label">${escapeHtml(conversationLifecycleLabel(session))}</span>
+            </span>
+          </button>
+          <button type="button" class="session-delete-button" data-delete-conversation="${escapeHtml(session.id)}" aria-label="删除对话 ${escapeHtml(session.title || NEW_SESSION_TITLE)}" title="${deleteDisabled ? (onlyConversation ? '至少保留一个对话' : '运行中的对话不能删除') : '删除对话；不会删除视频、素材和任务记录'}" ${deleteDisabled ? 'disabled' : ''}>
+            <span class="session-delete-icon" aria-hidden="true"></span>
+          </button>
         `;
-        item.addEventListener('click', () => {
-          state.activeId = session.id;
-          render();
-        });
         els.sessionList.appendChild(item);
       });
     }
@@ -464,9 +473,13 @@
 
     function renderMessages() {
       const session = getActiveSession();
+      if (!session) {
+        els.messages.dataset.renderedSessionId = '';
+        els.messages.innerHTML = `<div class="empty">${escapeHtml(state.conversationError || '正在准备对话，请稍候。')}</div>`;
+        return;
+      }
       repairRecoveredSmartSplitFailure(session);
       if (stripStaleWelcomeMessages(session)) persistSessions();
-      renderClearConversationButton(session);
       const sessionId = String(session?.id || '');
       const renderedSessionId = String(els.messages.dataset.renderedSessionId || '');
       const renderedMessageCount = renderedSessionId === sessionId
@@ -538,67 +551,6 @@
       }
     }
 
-    function renderClearConversationButton(session = getActiveSession()) {
-      if (!els.clearConversationButton) return;
-      const count = countTextOnlyMessages(session);
-      els.clearConversationButton.disabled = count <= 0;
-      els.clearConversationButton.title = count > 0
-        ? `清空当前对话窗口中的 ${count} 条对话消息，不影响任务、结果和媒体资源。`
-        : '当前没有可清空的对话消息。';
-    }
-
-    function countTextOnlyMessages(session) {
-      return (session?.messages || []).length;
-    }
-
-    function openClearConversationConfirmModal() {
-      const session = getActiveSession();
-      const count = countTextOnlyMessages(session);
-      if (count <= 0) {
-        renderClearConversationButton(session);
-        return;
-      }
-      if (els.clearConversationConfirmCount) {
-        els.clearConversationConfirmCount.textContent = `将清空 ${count} 条对话消息。`;
-      }
-      state.clearConversationModal.visible = true;
-      els.clearConversationConfirmModal?.classList.remove('hidden');
-      window.requestAnimationFrame(() => {
-        els.clearConversationConfirmCancelButton?.focus();
-      });
-    }
-
-    function closeClearConversationConfirmModal() {
-      state.clearConversationModal.visible = false;
-      els.clearConversationConfirmModal?.classList.add('hidden');
-    }
-
-    function playMessageBubbleLeaveAnimation() {
-      const messageNodes = Array.from(els.messages?.children || [])
-        .filter((node) => node.classList?.contains('message'));
-      if (!messageNodes.length || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        return Promise.resolve();
-      }
-      messageNodes.forEach((node) => node.classList.add('is-bubble-leaving'));
-      return new Promise((resolve) => window.setTimeout(resolve, 240));
-    }
-
-    async function clearActiveConversationTextMessages() {
-      const session = getActiveSession();
-      if (!session) return;
-      const before = Array.isArray(session.messages) ? session.messages.length : 0;
-      if (before <= 0) {
-        renderClearConversationButton(session);
-        return;
-      }
-      await playMessageBubbleLeaveAnimation();
-      session.messages = [];
-      session.title = NEW_SESSION_TITLE;
-      persistSessions();
-      renderMessages();
-      renderStatus();
-    }
-
     function isTextOnlyConversationMessage(message) {
       if (!message || typeof message !== 'object') return false;
       if (message.role === 'user') {
@@ -611,11 +563,4 @@
       }
       if (hasNonTextConversationPayload(payload)) return false;
       return !!String(payload.text || '').trim();
-    }
-
-    function hasClearableConversationText(message) {
-      if (isTextOnlyConversationMessage(message)) return true;
-      if (!message || typeof message !== 'object' || message.textCleared) return false;
-      const payload = message.payload;
-      return !!(payload && typeof payload === 'object' && hasNonTextConversationPayload(payload));
     }

@@ -1,0 +1,130 @@
+.shell.is-sidebar-collapsed .conversation-sidebar-section .sidebar-section-heading,
+.shell.is-sidebar-collapsed .conversation-sidebar-section .session-delete-button,
+.shell.is-sidebar-collapsed .conversation-sidebar-section .session-select > :not(.session-mode-badge) {
+  display: none;
+}
+
+body > .shell.is-sidebar-collapsed > aside.sidebar .sidebar-conversation-list .session-item {
+  grid-template-columns: 1fr;
+  min-height: 52px;
+  padding: 8px;
+  place-items: center;
+}
+
+.shell.is-sidebar-collapsed .conversation-sidebar-section .session-select { place-items: center; }
+
+.shell.is-sidebar-collapsed .conversation-sidebar-section .session-mode-badge {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 0;
+}
+
+.shell.is-sidebar-collapsed .conversation-sidebar-section .session-mode-badge::after {
+  content: "标";
+  font-size: 11px;
+}
+
+.shell.is-sidebar-collapsed .conversation-sidebar-section .session-mode-badge[data-mode="agent"]::after { content: "A"; }
+
+.shell.is-sidebar-collapsed .sidebar-new-conversation-control .new-conversation-mode-switch {
+  display: none;
+}
+
+.shell.is-sidebar-collapsed .sidebar-new-conversation-control {
+  width: 100%;
+  border-radius: 14px;
+}
+
+.shell.is-sidebar-collapsed .sidebar-new-conversation-control .new-conversation-button {
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 13px;
+}
+
+.shell.is-sidebar-collapsed .sidebar-new-conversation-control .new-conversation-button-label {
+  display: none;
+}
+
+.shell.is-sidebar-collapsed .sidebar-new-conversation-control .new-conversation-button-plus {
+  font-size: 20px;
+}
+
+@media (max-width: 900px) {
+  .conversation-controlbar-secondary { justify-content: space-between; }
+}
+
+@media (max-width: 760px) {
+  .mobile-conversation-controlbar {
+    display: grid;
+    top: 6px;
+    margin-bottom: 10px;
+    padding: 10px;
+    gap: 8px;
+    border-radius: 14px;
+  }
+
+  .conversation-controlbar-secondary {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .new-conversation-control { width: 100%; }
+
+  .new-conversation-mode-switch { flex: 1 1 auto; }
+
+  .new-conversation-mode-button {
+    flex: 1 1 50%;
+    min-width: 0;
+    min-height: 44px;
+  }
+
+  .conversation-mobile-select-wrap {
+    min-width: 0;
+    flex: 1 1 auto;
+    display: grid;
+    gap: 3px;
+    color: #6a7494;
+    font-size: 9px;
+    font-weight: 800;
+  }
+
+  .conversation-mobile-select-wrap select {
+    width: 100%;
+    min-height: 34px;
+    padding: 0 8px;
+    border-radius: 9px;
+    font-size: 11px;
+  }
+
+  .new-conversation-button {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding-inline: 12px;
+  }
+
+  .conversation-actions {
+    top: 8px;
+    gap: 6px;
+  }
+
+  .mobile-settings-entry-button {
+    min-width: 72px;
+    padding-inline: 10px;
+  }
+
+  .agent-run-panel {
+    padding: 10px;
+    border-radius: 14px;
+  }
+
+  .conversation-main-notice {
+    margin-bottom: 10px;
+  }
+}

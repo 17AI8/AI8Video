@@ -4,7 +4,8 @@
     async function init() {
       document.title = `${BRAND_NAME} 工作台`;
       bindSidebarCollapse();
-      bindMainBackgroundSwitcher();
+      bindConversationControls();
+      bindAgentRunControls();
 
       if (els.brandName) {
         els.brandName.textContent = BRAND_NAME;
@@ -16,10 +17,7 @@
         removeProductStorageEntry(SESSION_STORAGE_KEY);
         history.replaceState(null, '', location.pathname);
       }
-      if (!state.sessions.length) {
-        createSession(NEW_SESSION_TITLE);
-      }
-      state.activeId = state.sessions[0].id;
+      await initializeConversations();
       pruneSettledPendingProgressFromSessions();
       persistSessions();
       await refreshHealth(); await refreshUserGeneratedResults();
@@ -228,29 +226,6 @@
 
     els.htmlMotionOverlayButton?.addEventListener('click', async () => {
       await openHtmlMotionOverlayDrawer();
-    });
-
-    els.clearConversationButton?.addEventListener('click', () => {
-      openClearConversationConfirmModal();
-    });
-
-    els.clearConversationConfirmCloseButton?.addEventListener('click', () => {
-      closeClearConversationConfirmModal();
-    });
-
-    els.clearConversationConfirmCancelButton?.addEventListener('click', () => {
-      closeClearConversationConfirmModal();
-    });
-
-    els.clearConversationConfirmModal?.addEventListener('click', (event) => {
-      if (event.target === els.clearConversationConfirmModal) {
-        closeClearConversationConfirmModal();
-      }
-    });
-
-    els.clearConversationConfirmSubmitButton?.addEventListener('click', () => {
-      closeClearConversationConfirmModal();
-      clearActiveConversationTextMessages();
     });
 
     els.messageEditor.addEventListener('focus', () => {

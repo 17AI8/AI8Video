@@ -120,8 +120,10 @@
       const model = buildProgressModel(session);
       if (!model) {
         els.progressPanel.innerHTML = '';
+        if (els.sidebarResultsSection) els.sidebarResultsSection.hidden = true;
         return;
       }
+      if (els.sidebarResultsSection) els.sidebarResultsSection.hidden = false;
       els.progressPanel.innerHTML = buildSidebarNavItemMarkup({
         icon: 'progress',
         title: '查看结果',

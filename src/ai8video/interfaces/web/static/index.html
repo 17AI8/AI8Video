@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" href="/static/images/ai8video-avatar.png?v=20260727-1">
   <link rel="stylesheet" href="/static/script-knowledge.css?v=20260724-18">
   <!-- Updated: 2026-06-23 15:17 CST - 花字调色预览连体按钮圆角修正 -->
-  <link rel="stylesheet" href="/static/workbench.css?v=20260802-10">
+  <link rel="stylesheet" href="/static/workbench.css?v=20260804-8">
 </head>
 <body>
   <div class="shell">
@@ -26,7 +26,27 @@
         </button>
       </div>
       <div class="sidebar-body">
-        <div id="progressPanel" class="sidebar-progress"></div>
+        <section class="sidebar-section conversation-sidebar-section" aria-labelledby="sidebarConversationsLabel">
+          <div class="sidebar-section-heading">
+            <h3 id="sidebarConversationsLabel" class="sidebar-section-label">对话</h3>
+            <span id="sidebarConversationCount" class="sidebar-section-count">0/3</span>
+          </div>
+          <div class="new-conversation-control sidebar-new-conversation-control" role="group" aria-label="选择模式并新建对话">
+            <div class="new-conversation-mode-switch" role="group" aria-label="新对话模式；仅影响下一条新对话">
+              <button id="newConversationWorkflowModeButton" type="button" class="new-conversation-mode-button is-active" data-new-conversation-mode="workflow" aria-pressed="true" title="下一条新对话使用标准模式">标准模式</button>
+              <button id="newConversationAgentModeButton" type="button" class="new-conversation-mode-button" data-new-conversation-mode="agent" aria-pressed="false" title="下一条新对话使用 Agent 模式 Beta">Agent 模式 <span class="new-conversation-mode-badge">Beta</span></button>
+            </div>
+            <button id="newConversationButton" type="button" class="new-conversation-button" data-create-conversation>
+              <span class="new-conversation-button-plus" aria-hidden="true">+</span>
+              <span class="new-conversation-button-label" data-new-conversation-label>新建标准对话</span>
+            </button>
+          </div>
+          <div id="sessionList" class="session-list sidebar-conversation-list"></div>
+        </section>
+        <section id="sidebarResultsSection" class="sidebar-section" aria-labelledby="sidebarResultsLabel" hidden>
+          <h3 id="sidebarResultsLabel" class="sidebar-section-label">结果</h3>
+          <div id="progressPanel" class="sidebar-progress"></div>
+        </section>
         <section class="sidebar-section" aria-labelledby="sidebarResourcesLabel">
           <h3 id="sidebarResourcesLabel" class="sidebar-section-label">资源</h3>
           <div id="sidebarResourceList" class="sidebar-section-list">
@@ -48,22 +68,30 @@
       </div>
     </aside>
     <main class="main">
-      <header class="topbar">
-        <div class="title-wrap">
-          <h2>对话</h2>
-          <p>输入提示词、脚本素材、批量视频需求或参考图路径，系统会规划独立视频、传图、创建任务并归档结果。</p>
-        </div>
-        <div id="statusBar" class="status-bar"></div>
-      </header>
       <section class="conversation">
+        <div class="conversation-controlbar mobile-conversation-controlbar" aria-label="移动端对话管理">
+          <div class="conversation-controlbar-secondary">
+            <label class="conversation-mobile-select-wrap" for="conversationMobileSelect">
+              <span>当前对话</span>
+              <select id="conversationMobileSelect" aria-label="切换对话"></select>
+            </label>
+            <div class="new-conversation-control" role="group" aria-label="选择模式并新建对话">
+              <div class="new-conversation-mode-switch" role="group" aria-label="新对话模式；仅影响下一条新对话">
+                <button id="mobileNewConversationWorkflowModeButton" type="button" class="new-conversation-mode-button is-active" data-new-conversation-mode="workflow" aria-pressed="true" title="下一条新对话使用标准模式">标准</button>
+                <button id="mobileNewConversationAgentModeButton" type="button" class="new-conversation-mode-button" data-new-conversation-mode="agent" aria-pressed="false" title="下一条新对话使用 Agent 模式 Beta">Agent <span class="new-conversation-mode-badge">Beta</span></button>
+              </div>
+              <button id="mobileNewConversationButton" type="button" class="new-conversation-button" data-create-conversation>
+                <span class="new-conversation-button-plus" aria-hidden="true">+</span>
+                <span class="new-conversation-button-label" data-new-conversation-label>新建标准对话</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div id="conversationNotice" class="conversation-notice conversation-main-notice" role="status" aria-live="polite" hidden></div>
         <div class="conversation-actions">
           <button id="mobileSettingsEntryButton" type="button" class="mobile-settings-entry-button">设置</button>
-          <button id="clearConversationButton" type="button" class="clear-conversation-button">清空对话</button>
-          <button id="mainBackgroundButton" type="button" class="main-background-button" aria-label="当前为网格背景，点击切换背景">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 4v16"/></svg>
-            <span data-main-background-label>背景</span>
-          </button>
         </div>
+        <div id="agentRunPanel" class="agent-run-panel hidden" aria-live="polite"></div>
         <div id="messages" class="messages"></div>
       </section>
       <div class="composer-wrap">
@@ -595,24 +623,6 @@
       </form>
     </div>
   </div>
-  <div id="clearConversationConfirmModal" class="modal-shell hidden" role="dialog" aria-modal="true" aria-labelledby="clearConversationConfirmTitle">
-    <div class="modal-panel">
-      <div class="modal-head">
-        <div class="modal-title">
-          <strong id="clearConversationConfirmTitle">确认清空对话？</strong>
-          <div class="modal-sub">只会清空当前窗口里的文字对话，不会删除任务、结果、素材或媒体文件。</div>
-        </div>
-        <button id="clearConversationConfirmCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
-      </div>
-      <div class="modal-note">
-        <div id="clearConversationConfirmCount" class="modal-note-line"></div>
-      </div>
-      <div class="modal-actions">
-        <button id="clearConversationConfirmCancelButton" type="button" class="button-secondary">取消</button>
-        <button id="clearConversationConfirmSubmitButton" type="button" class="button-danger">确认清空</button>
-      </div>
-    </div>
-  </div>
-    <script src="/static/workbench.js?v=20260802-10"></script>
+    <script src="/static/workbench.js?v=20260804-7"></script>
 </body>
 </html>

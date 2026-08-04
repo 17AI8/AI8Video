@@ -195,6 +195,18 @@
         title: session.title,
         messages: (session.messages || []).slice(-messageLimit),
         temporaryScriptKnowledge: session.temporaryScriptKnowledge || null,
+        executionMode: session.executionMode === 'agent' ? 'agent' : 'workflow',
+        modeLocked: !!session.modeLocked,
+        modeSwitchAllowed: session.modeSwitchAllowed !== false,
+        lifecycleState: String(session.lifecycleState || ''),
+        revision: Number(session.revision || 0) || 0,
+        messageCount: Number(session.messageCount || 0) || 0,
+        activeRunId: session.activeRunId || null,
+        agentRunState: session.agentRunState || null,
+        canDelete: session.canDelete !== false,
+        canReset: session.canReset !== false,
+        createdAt: session.createdAt || null,
+        updatedAt: session.updatedAt || null,
       }));
     }
 
@@ -236,7 +248,6 @@
       }
       return false;
     }
-
 
 
 

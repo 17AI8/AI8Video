@@ -1,109 +1,85 @@
-    const multiAgentRoleDefinitions = [
+    const agentArchitectureSections = [
+      { key: 'overview', label: '总览' },
+      { key: 'main-agent', label: 'Main Agent' },
+      { key: 'composite-tools', label: '复合工具' },
+      { key: 'runtime', label: 'Runtime' },
+      { key: 'standard-mode', label: '标准模式' },
+      { key: 'special-capabilities', label: '专项能力' },
+    ];
+    const agentArchitectureConfigSections = [
+      { key: 'model-binding', label: '模型绑定' },
+    ];
+    const agentCompositeToolDetails = {
+      prepare_video_plan: {
+        title: '准备视频方案',
+        description: '把用户目标解析成可追踪的视频计划，复用现有规划流水线。',
+        tag: '规划',
+        tone: 'runtime',
+      },
+      review_video_plan: {
+        title: '审核视频方案',
+        description: '审核并修正待生成方案，在提交生成前形成明确结论。',
+        tag: '审核',
+        tone: 'runtime',
+      },
+      generate_video_batch: {
+        title: '提交批量生成',
+        description: '按用户明确数量提交生成；额外付费重试必须先取得批准。',
+        tag: '成本动作',
+        tone: 'cost',
+      },
+      inspect_generation_result: {
+        title: '检查生成结果',
+        description: '读取终态观察，区分成功、失败与部分成功，不负责持续轮询。',
+        tag: '终态',
+        tone: 'runtime',
+      },
+      archive_and_deliver: {
+        title: '归档并交付',
+        description: '整理已确认结果并交付，不自动发布到外部平台。',
+        tag: '交付动作',
+        tone: 'delivery',
+      },
+      task_user: {
+        title: '询问用户',
+        description: '遇到实质歧义、额外成本或部分成功取舍时暂停并等待用户。',
+        tag: '暂停等待',
+        tone: 'wait',
+      },
+    };
+    const agentSpecialCapabilityDefinitions = [
       {
-        key: 'overview',
-        label: '总览',
+        agentId: 'knowledge-base',
+        title: '知识建树',
+        description: '把单份文档规划为可检索的知识树，并由程序确定性提取原文。',
+        boundary: '属于知识入库功能，不参与主对话调度。',
       },
       {
-        key: 'supervisor',
-        label: 'Supervisor',
-        mark: 'S',
-        status: '已接入',
-        tone: 'live',
-        description: '统一接收根任务并维护真实运行态。',
-        responsibilities: [
-          '执行意图判断 Agent 的结构化路由决策',
-          '维护根任务、子任务、租约、恢复与终态保护',
-          '让取消请求、后台状态与界面进度保持一致',
-        ],
-        boundary: '不自行猜测用户意图，不重写用户要求的风格、数量、时长。',
+        agentId: 'reviewer',
+        title: '知识审核',
+        description: '审核知识叶子的原子性、覆盖度、层级和检索价值。',
+        boundary: '只审核知识入库，不代表 Agent 模式的视频方案审核。',
       },
       {
-        key: 'intent-agent',
-        label: '意图判断',
-        mark: 'I',
-        status: '已接入',
-        tone: 'live',
-        description: '负责识别新任务、会话跟进、重新分集与改写意图。',
-        responsibilities: [
-          '输出新任务、继续会话、确认卡跟进、重新分集或改写等结构化路由',
-          '结合当前 awaiting 与完成状态判断是否需要重置会话',
-        ],
-        boundary: '只判断意图和路由；不修改会话、不决定分集数量、不规划或生成内容。',
+        agentId: 'viral-shot-language',
+        title: '镜头语言分析',
+        description: '从代表帧和识别台词中提取构图、动作、节奏与视觉钩子。',
+        boundary: '属于爆款拆解功能，不触发视频生成。',
       },
       {
-        key: 'planner',
-        label: 'Planner',
-        mark: 'P',
-        status: 'Capability 已接入',
-        tone: 'live',
-        description: '负责智能分集与视频任务规划。',
-        responsibilities: [
-          '理解全文并判断合理的分集数量与内容边界',
-          '为每集生成独立主题、提示词与可追踪规划结果',
-          '通过类型化 Capability 执行并记录 start、end、error 事件',
-        ],
-        boundary: '只负责内容规划与智能分集，不提交视频模型、不审核成片、不归档结果。',
-      },
-      {
-        key: 'reviewer',
-        label: 'Reviewer',
-        mark: 'R',
-        status: '知识库已接入',
-        tone: 'live',
-        shadow: '媒体影子',
-        description: '知识入库语义审核已接入；媒体审核仍为影子模式。',
-        responsibilities: [
-          '审核知识叶子的原子性、覆盖度、层级与检索价值',
-          '返回 accept、revise 或 reject，并提供可验证的返工证据',
-        ],
-        boundary: '最多要求一次知识建树返工；暂不审看 MP4，不直接写库或自行重跑生成。',
-      },
-      {
-        key: 'knowledge-base',
-        label: '知识库 Agent',
-        mark: 'K',
-        status: '已接入',
-        tone: 'live',
-        description: '负责单份文档的知识树规划与原文单元归属。',
-        responsibilities: [
-          '把原始文档规划为最多三层的可检索知识树',
-          '只选择原文单元编号，正文由程序确定性提取',
-        ],
-        boundary: '不审核自己的结果、不生成知识正文；只读单份文档，不改业务提示词、生成参数或媒体结果。',
-      },
-      {
-        key: 'viral-shot-language',
-        label: '镜头语言 Agent',
-        mark: 'V',
-        status: '已接入',
-        tone: 'live',
-        description: '基于代表帧与识别台词提取可复用的镜头语言证据。',
-        responsibilities: [
-          '分析代表帧中的构图、主体动作、镜头节奏与视觉钩子',
-          '把观察结果组织为猜剧本可直接复用的结构化证据',
-        ],
-        boundary: '只分析已有代表帧与台词证据；不重复识别台词、不猜剧本、不触发视频生成。',
-      },
-      {
-        key: 'viral-script-reconstruction',
-        label: '猜剧本 Agent',
-        mark: 'G',
-        status: '已接入',
-        tone: 'live',
-        description: '使用镜头语言与识别台词重建爆款视频的剧本框架。',
-        responsibilities: [
-          '融合镜头语言证据与识别台词，恢复叙事结构和内容节奏',
-          '输出可复用的剧本框架，供后续生成准备使用',
-        ],
-        boundary: '只消费已有分析结果；不再调用旧画面分析流程、不改原视频或素材。',
+        agentId: 'viral-script-reconstruction',
+        title: '剧本重建',
+        description: '融合镜头语言证据与识别台词，恢复可复用的剧本框架。',
+        boundary: '只消费已有拆解结果，不改原视频或主对话状态。',
       },
     ];
-    const multiAgentConfigDefinitions = [
-      {
-        key: 'shared-model',
-        label: '共享模型',
-      },
+    const agentModelBindingCategories = [
+      { key: 'llm', label: '文本规划' },
+      { key: 'multimodal', label: '多模态' },
+      { key: 'image', label: '图片' },
+      { key: 'video', label: '视频' },
     ];
+
     function renderSettingsModal() {
       if (!els.settingsModal) return;
       const visible = !!state.settingsModal.visible;
@@ -180,7 +156,7 @@
       )));
       const labelledBy = `settings-category-tab-${activeIndex}`;
       if (group.label === 'AI8video') {
-        return buildMultiAgentSettingsMarkup(group, labelledBy);
+        return buildAgentArchitectureSettingsMarkup(group, labelledBy);
       }
       if (group.label === '图床') {
         return buildImageHostSettingsMarkup(labelledBy);
@@ -212,75 +188,372 @@
       `;
     }
 
-    function buildMultiAgentSettingsMarkup(group, labelledBy) {
-      const activeRole = resolveActiveMultiAgentRole();
-      const sharedModelReady = isMultiAgentSharedModelConfigured(group.fields);
+    function currentAgentArchitecture() {
+      const payload = state.authSettings?.agentArchitecture || {};
+      const compositeTools = Array.isArray(payload.compositeTools) && payload.compositeTools.length
+        ? payload.compositeTools.map((name) => String(name || '').trim()).filter(Boolean)
+        : Object.keys(agentCompositeToolDetails);
+      return {
+        enabled: payload.enabled !== false && state.agentModeEnabled !== false,
+        controller: String(payload.controller || 'AI8VideoMainAgent'),
+        decisionPolicy: String(payload.decisionPolicy || 'key_nodes'),
+        runtimeOwner: String(payload.runtimeOwner || 'python'),
+        compositeTools,
+        standardMode: payload.standardMode || {
+          controller: 'AI8VideoConversationController',
+          isolated: true,
+        },
+        modelBinding: payload.modelBinding || {
+          strategy: 'first_message_snapshot',
+          source: 'model_profiles',
+        },
+      };
+    }
+
+    function buildAgentArchitectureSettingsMarkup(group, labelledBy) {
+      const activeSection = resolveActiveAgentSettingsSection();
       return `
-        <section id="settings-category-panel" class="multi-agent-settings" role="tabpanel" aria-labelledby="${labelledBy}">
-          <nav class="multi-agent-nav" aria-label="Multi-Agent 角色">
-            <div class="multi-agent-nav-group" role="tablist" aria-label="角色与总览">
-              ${multiAgentRoleDefinitions.map((role) => buildMultiAgentNavItemMarkup(role, activeRole)).join('')}
+        <section id="settings-category-panel" class="multi-agent-settings agent-architecture-settings" role="tabpanel" aria-labelledby="${labelledBy}">
+          <nav class="multi-agent-nav agent-architecture-nav" aria-label="Agent 架构">
+            <div class="multi-agent-nav-group" role="tablist" aria-label="运行架构">
+              ${agentArchitectureSections.map((section) => buildAgentArchitectureNavItemMarkup(section, activeSection)).join('')}
             </div>
-            <div class="multi-agent-nav-group is-config" role="tablist" aria-label="基础配置">
-              ${multiAgentConfigDefinitions.map((item) => buildMultiAgentNavItemMarkup(item, activeRole, true)).join('')}
+            <div class="multi-agent-nav-group is-config" role="tablist" aria-label="绑定配置">
+              ${agentArchitectureConfigSections.map((section) => buildAgentArchitectureNavItemMarkup(section, activeSection, true)).join('')}
             </div>
           </nav>
-          <div id="multi-agent-role-panel" class="multi-agent-panel" role="tabpanel" aria-labelledby="multi-agent-role-tab-${escapeHtml(activeRole)}" tabindex="0">
-            ${buildMultiAgentRolePanel(activeRole, group, sharedModelReady)}
+          <div id="agent-settings-section-panel" class="multi-agent-panel agent-architecture-panel" role="tabpanel" aria-labelledby="agent-settings-section-tab-${escapeHtml(activeSection)}" tabindex="0">
+            ${buildAgentArchitecturePanel(activeSection, group)}
           </div>
         </section>
       `;
     }
 
-    function buildMultiAgentNavItemMarkup(item, activeRole, isConfig = false) {
-      const active = item.key === activeRole;
+    function buildAgentArchitectureNavItemMarkup(section, activeSection, isConfig = false) {
+      const active = section.key === activeSection;
+      const status = agentArchitectureSectionStatus(section.key);
       const className = `multi-agent-nav-item${isConfig ? ' is-config' : ''}${active ? ' active' : ''}`;
-      const status = item.status
-        ? `<span class="multi-agent-nav-status is-${escapeHtml(item.tone || 'live')}${item.shadow ? ' has-shadow' : ''}" aria-hidden="true"></span>`
-        : '';
-      return `<button type="button" id="multi-agent-role-tab-${escapeHtml(item.key)}" class="${className}" data-agent-settings-role="${escapeHtml(item.key)}" role="tab" aria-selected="${active ? 'true' : 'false'}" aria-controls="multi-agent-role-panel" tabindex="${active ? '0' : '-1'}"><span>${escapeHtml(item.label)}</span>${status}</button>`;
-    }
-
-    function buildMultiAgentRolePanel(activeRole, group, sharedModelReady) {
-      if (activeRole === 'shared-model') {
-        return buildMultiAgentSharedModelPanel(group, sharedModelReady);
-      }
-      if (activeRole === 'overview') {
-        return buildMultiAgentOverviewPanel();
-      }
-      const role = multiAgentRoleDefinitions.find((item) => item.key === activeRole);
-      return role ? buildMultiAgentDetailPanel(role) : buildMultiAgentOverviewPanel();
-    }
-
-    function buildMultiAgentRoleStatusMarkup(role) {
-      const main = `<span class="multi-agent-role-status is-${escapeHtml(role.tone || 'live')}">${escapeHtml(role.status)}</span>`;
-      if (!role.shadow) return main;
-      return `${main}<span class="multi-agent-role-status is-shadow">${escapeHtml(role.shadow)}</span>`;
-    }
-
-    function buildMultiAgentOverviewPanel() {
-      const flowKeys = ['intent-agent', 'supervisor', 'planner', 'knowledge-base', 'reviewer'];
-      const roles = flowKeys
-        .map((key) => multiAgentRoleDefinitions.find((role) => role.key === key))
-        .filter(Boolean);
       return `
-        <div class="multi-agent-overview">
-          <p class="multi-agent-lede">Planner 已按 Skill 策略层 + Capability 执行层运行；Python 会话和任务账本继续保持唯一真值，媒体审核仍为影子模式。</p>
-          <ol class="multi-agent-flow">
-            ${roles.map((role, index) => `
+        <button type="button" id="agent-settings-section-tab-${escapeHtml(section.key)}" class="${className}" data-agent-settings-section="${escapeHtml(section.key)}" role="tab" aria-selected="${active ? 'true' : 'false'}" aria-controls="agent-settings-section-panel" tabindex="${active ? '0' : '-1'}">
+          <span>${escapeHtml(section.label)}</span>
+          ${status ? `<span class="multi-agent-nav-status is-${escapeHtml(status.tone)}" title="${escapeHtml(status.label)}" aria-label="${escapeHtml(status.label)}"></span>` : ''}
+        </button>
+      `;
+    }
+
+    function agentArchitectureSectionStatus(sectionKey) {
+      const architecture = currentAgentArchitecture();
+      if (sectionKey === 'overview') return null;
+      if (sectionKey === 'main-agent') {
+        return architecture.enabled
+          ? { label: 'Agent 模式已启用', tone: 'live' }
+          : { label: 'Agent 模式已关闭', tone: 'shadow' };
+      }
+      if (sectionKey === 'composite-tools') {
+        return architecture.compositeTools.length
+          ? { label: `${architecture.compositeTools.length} 个复合工具`, tone: 'live' }
+          : { label: '没有可用工具', tone: 'shadow' };
+      }
+      if (sectionKey === 'runtime') {
+        return { label: '确定性执行层', tone: architecture.enabled ? 'live' : 'neutral' };
+      }
+      if (sectionKey === 'standard-mode') {
+        return { label: '原有工作流保持独立', tone: 'neutral' };
+      }
+      if (sectionKey === 'special-capabilities') {
+        const count = agentSpecialCapabilityDefinitions.filter((item) => enabledAgentSkills(item.agentId).length).length;
+        return count
+          ? { label: `${count} 项专项能力`, tone: 'live' }
+          : { label: '专项能力未启用', tone: 'neutral' };
+      }
+      if (sectionKey === 'model-binding') {
+        const summaries = agentModelProfileSummaries();
+        const readyCount = summaries.filter((item) => item.ready).length;
+        return {
+          label: `${readyCount}/${summaries.length} 类模型就绪`,
+          tone: readyCount === summaries.length ? 'live' : 'shadow',
+        };
+      }
+      return null;
+    }
+
+    function buildAgentArchitecturePanel(activeSection, group) {
+      if (activeSection === 'main-agent') return buildMainAgentPanel();
+      if (activeSection === 'composite-tools') return buildAgentCompositeToolsPanel();
+      if (activeSection === 'runtime') return buildAgentRuntimePanel();
+      if (activeSection === 'standard-mode') return buildStandardModePanel();
+      if (activeSection === 'special-capabilities') return buildAgentSpecialCapabilitiesPanel();
+      if (activeSection === 'model-binding') return buildAgentModelBindingPanel(group);
+      return buildAgentArchitectureOverviewPanel();
+    }
+
+    function agentStatusMarkup(label, tone = 'live') {
+      return `<span class="multi-agent-role-status is-${escapeHtml(tone)}">${escapeHtml(label)}</span>`;
+    }
+
+    function buildAgentArchitectureOverviewPanel() {
+      const architecture = currentAgentArchitecture();
+      const flow = [
+        {
+          section: 'main-agent',
+          title: 'Main Agent 决策',
+          description: '只在规划、审核、终态、确认和交付等关键节点选择下一步。',
+          status: architecture.enabled ? '已启用' : '已关闭',
+          tone: architecture.enabled ? 'live' : 'shadow',
+        },
+        {
+          section: 'composite-tools',
+          title: '调用复合工具',
+          description: '通过类型化高层动作进入既有能力，不直接操作文件、网络或底层模型。',
+          status: `${architecture.compositeTools.length} 个工具`,
+          tone: 'live',
+        },
+        {
+          section: 'runtime',
+          title: 'Runtime 确定性执行',
+          description: '负责提交、轮询、下载、后处理、恢复与归档，运行中不反复调用模型。',
+          status: '确定性',
+          tone: 'neutral',
+        },
+        {
+          section: 'runtime',
+          title: '关键事件重新唤醒',
+          description: '只有审核结论、用户输入、生成终态或交付结果才重新交给 Main Agent。',
+          status: '事件驱动',
+          tone: 'live',
+        },
+      ];
+      return `
+        <div class="multi-agent-overview agent-architecture-overview">
+          <header class="agent-overview-head">
+            <div>
+              <span class="agent-overview-eyebrow">当前运行架构</span>
+              <h3>单一 Main Agent，关键节点决策</h3>
+              <p>Agent 负责判断下一步，Runtime 负责把已决定的动作稳定执行完成。</p>
+            </div>
+            ${agentStatusMarkup(architecture.enabled ? 'Agent 模式可用' : 'Agent 模式已关闭', architecture.enabled ? 'live' : 'shadow')}
+          </header>
+          <div class="agent-summary-pills" aria-label="架构摘要">
+            <span>Main Agent</span>
+            <span>${escapeHtml(String(architecture.compositeTools.length))} 个复合工具</span>
+            <span>关键节点决策</span>
+            <span>标准模式隔离</span>
+          </div>
+          <ol class="multi-agent-flow agent-runtime-flow" aria-label="Agent 运行循环">
+            ${flow.map((item, index) => `
               <li>
-                <button type="button" class="multi-agent-flow-item" data-agent-settings-role="${escapeHtml(role.key)}">
+                <button type="button" class="multi-agent-flow-item" data-agent-settings-section="${escapeHtml(item.section)}">
                   <span class="multi-agent-flow-index" aria-hidden="true">${index + 1}</span>
                   <span class="multi-agent-flow-copy">
-                    <strong>${escapeHtml(role.label)}</strong>
-                    <span>${escapeHtml(role.description)}</span>
+                    <strong>${escapeHtml(item.title)}</strong>
+                    <span>${escapeHtml(item.description)}</span>
                   </span>
-                  <span class="multi-agent-role-flags">${buildMultiAgentRoleStatusMarkup(role)}</span>
+                  <span class="multi-agent-role-flags">${agentStatusMarkup(item.status, item.tone)}</span>
                 </button>
               </li>
             `).join('')}
           </ol>
-          <p class="multi-agent-footnote">模型与鉴权在对应设置页配置；已接入 Skill 显示在所属 Agent 详情中。</p>
+          <section class="agent-mode-boundary" aria-label="模式边界">
+            <article class="agent-mode-card is-agent">
+              <div class="agent-mode-card-head">
+                <div><span>Agent 模式</span><strong>Main Agent + Runtime</strong></div>
+                ${agentStatusMarkup('关键节点', 'live')}
+              </div>
+              <p>使用对话绑定模型和 Agent 运行账本，执行路径独立于标准模式。</p>
+              <button type="button" data-agent-settings-section="main-agent">查看 Agent 边界</button>
+            </article>
+            <article class="agent-mode-card is-standard">
+              <div class="agent-mode-card-head">
+                <div><span>标准模式</span><strong>原有确定性工作流</strong></div>
+                ${agentStatusMarkup('保持原样', 'neutral')}
+              </div>
+              <p>继续使用原来的会话控制器、意图判断和视频流水线，不被 Agent 改写。</p>
+              <button type="button" data-agent-settings-section="standard-mode">查看模式边界</button>
+            </article>
+          </section>
+          <p class="multi-agent-footnote">两种模式只共享媒体资源和配置来源；对话执行模式与运行状态分别维护。</p>
+        </div>
+      `;
+    }
+
+    function buildMainAgentPanel() {
+      const architecture = currentAgentArchitecture();
+      return `
+        <div class="multi-agent-detail">
+          <header class="multi-agent-detail-head">
+            <div class="multi-agent-detail-copy">
+              <div class="multi-agent-role-head">
+                <div>
+                  <span class="agent-overview-eyebrow">决策层</span>
+                  <h3>AI8Video Main Agent</h3>
+                </div>
+                <span class="multi-agent-role-flags">${agentStatusMarkup(architecture.enabled ? '已启用' : '已关闭', architecture.enabled ? 'live' : 'shadow')}</span>
+              </div>
+              <p>围绕用户明确的视频目标做少量决策，每次只选择一个高层工具。</p>
+            </div>
+          </header>
+          <div class="agent-fact-grid" aria-label="Main Agent 运行事实">
+            <div class="agent-fact"><span>控制器</span><strong>${escapeHtml(architecture.controller)}</strong></div>
+            <div class="agent-fact"><span>决策策略</span><strong>关键节点</strong></div>
+            <div class="agent-fact"><span>高层工具</span><strong>${escapeHtml(String(architecture.compositeTools.length))} 个</strong></div>
+          </div>
+          <div class="multi-agent-detail-grid">
+            <section class="multi-agent-detail-block">
+              <h4>负责什么</h4>
+              <ul>
+                <li>理解用户目标并选择下一项高层动作。</li>
+                <li>根据审核结论、生成终态和交付状态重新决策。</li>
+                <li>在实质歧义、额外成本或部分成功取舍时询问用户。</li>
+              </ul>
+            </section>
+            <section class="multi-agent-detail-block">
+              <h4>明确边界</h4>
+              <ul>
+                <li>不直接访问文件、Shell、网络或外部平台。</li>
+                <li>不负责后台轮询、下载和后处理。</li>
+                <li>不增加用户未要求的数量、付费重试或外部发布。</li>
+              </ul>
+            </section>
+          </div>
+          <p class="multi-agent-footnote">工具状态和 Python 运行账本是事实真值；模型回复不能覆盖未确认的业务状态。</p>
+        </div>
+      `;
+    }
+
+    function buildAgentCompositeToolsPanel() {
+      const architecture = currentAgentArchitecture();
+      return `
+        <div class="multi-agent-detail">
+          <header class="multi-agent-detail-head">
+            <div class="multi-agent-detail-copy">
+              <div class="multi-agent-role-head">
+                <div>
+                  <span class="agent-overview-eyebrow">高层动作</span>
+                  <h3>复合工具</h3>
+                </div>
+                <span class="multi-agent-role-flags">${agentStatusMarkup(`${architecture.compositeTools.length} 个已接入`, architecture.compositeTools.length ? 'live' : 'shadow')}</span>
+              </div>
+              <p>Main Agent 只调用这些受控入口；每个入口内部复用现有确定性能力。</p>
+            </div>
+          </header>
+          <ol class="agent-tool-grid" aria-label="Main Agent 复合工具">
+            ${architecture.compositeTools.map((toolName, index) => {
+              const details = agentCompositeToolDetails[toolName] || {
+                title: toolName,
+                description: '由 Runtime 提供的受控高层动作。',
+                tag: '工具',
+                tone: 'runtime',
+              };
+              return `
+                <li class="agent-tool-card">
+                  <div class="agent-tool-card-head">
+                    <span class="agent-tool-index" aria-hidden="true">${index + 1}</span>
+                    <span class="agent-tool-tag is-${escapeHtml(details.tone)}">${escapeHtml(details.tag)}</span>
+                  </div>
+                  <strong>${escapeHtml(details.title)}</strong>
+                  <code>${escapeHtml(toolName)}</code>
+                  <p>${escapeHtml(details.description)}</p>
+                </li>
+              `;
+            }).join('')}
+          </ol>
+          <p class="multi-agent-footnote">工具列表来自当前后端架构数据；页面不再把 Planner、Reviewer 等内部能力伪装成并列自治 Agent。</p>
+        </div>
+      `;
+    }
+
+    function buildAgentRuntimePanel() {
+      return `
+        <div class="multi-agent-detail">
+          <header class="multi-agent-detail-head">
+            <div class="multi-agent-detail-copy">
+              <div class="multi-agent-role-head">
+                <div>
+                  <span class="agent-overview-eyebrow">执行层</span>
+                  <h3>Runtime</h3>
+                </div>
+                <span class="multi-agent-role-flags">${agentStatusMarkup('确定性执行', 'neutral')}</span>
+              </div>
+              <p>接管长耗时和可重复的执行工作，让 Main Agent 在 pending 期间保持静默。</p>
+            </div>
+          </header>
+          <div class="multi-agent-detail-grid">
+            <section class="multi-agent-detail-block">
+              <h4>执行职责</h4>
+              <ul>
+                <li>提交生成任务并维护真实运行状态。</li>
+                <li>后台轮询、下载、后处理、恢复和归档。</li>
+                <li>把成功、失败和部分成功整理为结构化终态观察。</li>
+              </ul>
+            </section>
+            <section class="multi-agent-detail-block">
+              <h4>运行边界</h4>
+              <ul>
+                <li>pending 期间不反复请求模型决定是否继续轮询。</li>
+                <li>不擅自扩大生成数量、重试次数或外部副作用。</li>
+                <li>所有状态变更写入 Python 会话和任务账本。</li>
+              </ul>
+            </section>
+          </div>
+          <section class="agent-runtime-events" aria-label="重新决策事件">
+            <h4>这些事件才会重新交给 Main Agent</h4>
+            <div>
+              <span>方案审核结论</span>
+              <span>用户确认或补充</span>
+              <span>生成终态成功</span>
+              <span>终态失败或部分成功</span>
+              <span>归档与交付结果</span>
+            </div>
+          </section>
+        </div>
+      `;
+    }
+
+    function buildStandardModePanel() {
+      const architecture = currentAgentArchitecture();
+      const standardController = String(architecture.standardMode?.controller || 'AI8VideoConversationController');
+      return `
+        <div class="multi-agent-detail">
+          <header class="multi-agent-detail-head">
+            <div class="multi-agent-detail-copy">
+              <div class="multi-agent-role-head">
+                <div>
+                  <span class="agent-overview-eyebrow">独立执行入口</span>
+                  <h3>标准模式保持原有工作流</h3>
+                </div>
+                <span class="multi-agent-role-flags">${agentStatusMarkup('保持原样', 'neutral')}</span>
+              </div>
+              <p>Agent 升级不会重写标准模式的对话控制、意图判断或视频流水线。</p>
+            </div>
+          </header>
+          <div class="agent-mode-comparison">
+            <article>
+              <span>标准模式</span>
+              <strong>${escapeHtml(standardController)}</strong>
+              <ul>
+                <li>沿用原有 IntentAgent 和确定性 Pipeline。</li>
+                <li>继续使用原来的确认卡、分集和生成流程。</li>
+                <li>不会创建或复用 Agent Run。</li>
+              </ul>
+            </article>
+            <article>
+              <span>Agent 模式</span>
+              <strong>AI8VideoMainAgent</strong>
+              <ul>
+                <li>使用 Main Agent、复合工具和 Agent Run。</li>
+                <li>只在关键业务节点重新决策。</li>
+                <li>Runtime 执行长耗时确定性任务。</li>
+              </ul>
+            </article>
+          </div>
+          <section class="agent-shared-boundary">
+            <div>
+              <span>共享范围</span>
+              <strong>媒体资源与配置来源</strong>
+            </div>
+            <p>图片、脚本、生成结果、回收站和模型配置可以共享；对话模式、消息状态和运行账本互不覆盖。</p>
+          </section>
+          <p class="multi-agent-footnote">对话开始执行后模式会锁定；切换新建模式只影响下一次新建的对话。</p>
         </div>
       `;
     }
@@ -293,119 +566,163 @@
       return agent.skills.filter((skill) => !!skill?.enabled);
     }
 
-    function buildAgentSkillSectionMarkup(role) {
-      const skills = enabledAgentSkills(role.key);
-      if (!skills.length) return '';
-      return `
-        <section class="multi-agent-detail-block multi-agent-role-skills" aria-label="已接入 Skills">
-          <h4>Skills</h4>
-          <ul class="multi-agent-role-skill-list">
-            ${skills.map((skill) => `
-              <li class="multi-agent-role-skill-item">
-                <div>
-                  <code>${escapeHtml(skill.name || '')}</code>
-                  <p>${escapeHtml(skill.description || '暂无说明')}</p>
-                  <small>${escapeHtml(skill.runtimeActive ? '执行能力已绑定' : '仅策略指令')}${skill.version ? ` · v${escapeHtml(skill.version)}` : ''}</small>
-                </div>
-                ${skill.builtIn ? '<span title="内置 Skill 不可删除">内置</span>' : ''}
-              </li>
-            `).join('')}
-          </ul>
-        </section>
-      `;
-    }
-
-    function buildMultiAgentDetailPanel(role) {
+    function buildAgentSpecialCapabilitiesPanel() {
       return `
         <div class="multi-agent-detail">
           <header class="multi-agent-detail-head">
             <div class="multi-agent-detail-copy">
               <div class="multi-agent-role-head">
-                <h3>${escapeHtml(role.label)}</h3>
-                <span class="multi-agent-role-flags">${buildMultiAgentRoleStatusMarkup(role)}</span>
+                <div>
+                  <span class="agent-overview-eyebrow">功能域能力</span>
+                  <h3>专项能力</h3>
+                </div>
+                <span class="multi-agent-role-flags">${agentStatusMarkup('不属于主调度链', 'neutral')}</span>
               </div>
-              <p>${escapeHtml(role.description)}</p>
+              <p>知识入库和爆款拆解中的模型能力独立展示，不再冒充 Main Agent 的并列同事。</p>
             </div>
           </header>
-          <div class="multi-agent-detail-grid">
-            <section class="multi-agent-detail-block">
-              <h4>当前职责</h4>
-              <ul>${role.responsibilities.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
-            </section>
-            <section class="multi-agent-detail-block">
-              <h4>行为边界</h4>
-              <p>${escapeHtml(role.boundary)}</p>
-            </section>
+          <div class="agent-capability-grid">
+            ${agentSpecialCapabilityDefinitions.map((capability) => {
+              const skills = enabledAgentSkills(capability.agentId);
+              const runtimeActive = skills.some((skill) => !!skill.runtimeActive);
+              const status = skills.length
+                ? (runtimeActive ? '执行能力' : '专项 Skill')
+                : '未启用';
+              const tone = skills.length ? 'live' : 'neutral';
+              return `
+                <article class="agent-capability-card">
+                  <header>
+                    <div>
+                      <strong>${escapeHtml(capability.title)}</strong>
+                      <span>${escapeHtml(capability.agentId)}</span>
+                    </div>
+                    ${agentStatusMarkup(status, tone)}
+                  </header>
+                  <p>${escapeHtml(capability.description)}</p>
+                  ${skills.length ? `
+                    <ul>
+                      ${skills.map((skill) => `
+                        <li>
+                          <code>${escapeHtml(skill.name || '')}</code>
+                          <span>${escapeHtml(skill.description || '暂无说明')}</span>
+                        </li>
+                      `).join('')}
+                    </ul>
+                  ` : '<p class="agent-capability-empty">当前没有启用的 Skill。</p>'}
+                  <small>${escapeHtml(capability.boundary)}</small>
+                </article>
+              `;
+            }).join('')}
           </div>
-          ${buildAgentSkillSectionMarkup(role)}
+          <p class="multi-agent-footnote">内置 Skill 仍由原功能模块使用；本页只纠正它们在产品架构中的层级和命名。</p>
         </div>
       `;
     }
 
-    function buildMultiAgentSharedModelPanel(group, sharedModelReady) {
+    function agentModelProfileSummaries() {
+      const profiles = state.authSettings?.modelProfiles || {};
+      return agentModelBindingCategories.map((category) => {
+        const bucket = profiles?.[category.key] || {};
+        const items = Array.isArray(bucket.profiles) ? bucket.profiles : [];
+        const active = items.find((item) => item?.id === bucket.activeId) || null;
+        const ready = !!(
+          active
+          && String(active.model || '').trim()
+          && String(active.baseUrl || '').trim()
+          && active.hasApiKey
+        );
+        return { ...category, active, ready };
+      });
+    }
+
+    function buildAgentModelBindingPanel(group) {
+      const architecture = currentAgentArchitecture();
+      const summaries = agentModelProfileSummaries();
+      const readyCount = summaries.filter((item) => item.ready).length;
       return `
-        <div class="multi-agent-shared-note">
-          <div>
-            <h3>共享核心模型</h3>
-            <p>意图、Planner、知识库与 Reviewer 复用 AI8video 核心模型；Supervisor 不调用模型。</p>
-          </div>
-          <span class="multi-agent-role-status is-${sharedModelReady ? 'live' : 'shadow'}">${sharedModelReady ? '配置完整' : '等待补齐'}</span>
-        </div>
-        <div class="settings-panel is-embedded">
-          <header class="settings-panel-head">
-            <h3 class="settings-section-title">连接与模型</h3>
+        <div class="multi-agent-detail agent-model-binding-detail">
+          <header class="multi-agent-detail-head">
+            <div class="multi-agent-detail-copy">
+              <div class="multi-agent-role-head">
+                <div>
+                  <span class="agent-overview-eyebrow">对话模型快照</span>
+                  <h3>模型绑定</h3>
+                </div>
+                <span class="multi-agent-role-flags">${agentStatusMarkup(`${readyCount}/${summaries.length} 类就绪`, readyCount === summaries.length ? 'live' : 'shadow')}</span>
+              </div>
+              <p>对话在第一条消息提交时固化当前模型配置快照；之后切换全局当前配置，不会改写已运行对话。</p>
+            </div>
           </header>
-          <div class="settings-row-list">
-            ${group.fields.map((field) => buildSettingsRowMarkup(field)).join('')}
+          <div class="agent-model-profile-grid" aria-label="当前模型配置">
+            ${summaries.map((item) => `
+              <article class="agent-model-profile-card${item.ready ? ' is-ready' : ''}">
+                <div>
+                  <span>${escapeHtml(item.label)}</span>
+                  ${agentStatusMarkup(item.ready ? '已就绪' : '待补齐', item.ready ? 'live' : 'shadow')}
+                </div>
+                <strong>${escapeHtml(item.active?.name || '未启用配置')}</strong>
+                <code>${escapeHtml(item.active?.model || '尚未填写模型')}</code>
+              </article>
+            `).join('')}
           </div>
+          <div class="agent-model-actions">
+            <div>
+              <strong>模型连接在“模型设置”统一维护</strong>
+              <span>标准模式与 Agent 模式可以读取同一配置来源，但各自保存独立的对话运行状态。</span>
+            </div>
+            <button type="button" class="settings-action-button" data-settings-category="模型设置">打开模型设置</button>
+          </div>
+          <section class="settings-panel is-embedded agent-legacy-model-settings" aria-label="兼容模型回退">
+            <header class="settings-panel-head">
+              <div class="agent-legacy-model-title">
+                <h3 class="settings-section-title">兼容模型回退</h3>
+                <p>保留 mykey.py 作为旧配置回退；它不代表所有能力共享同一个自治 Agent 模型。</p>
+              </div>
+              <span class="settings-archive-total">${escapeHtml(architecture.modelBinding?.source || 'model_profiles')}</span>
+            </header>
+            <div class="settings-row-list">
+              ${group.fields.map((field) => buildSettingsRowMarkup(field)).join('')}
+            </div>
+          </section>
         </div>
       `;
     }
 
-    function resolveActiveMultiAgentRole() {
-      const validRoles = [...multiAgentRoleDefinitions, ...multiAgentConfigDefinitions].map((item) => item.key);
-      const activeRole = String(state.settingsModal.activeAgentRole || 'overview');
-      if (validRoles.includes(activeRole)) return activeRole;
-      state.settingsModal.activeAgentRole = 'overview';
+    function resolveActiveAgentSettingsSection() {
+      const validSections = [...agentArchitectureSections, ...agentArchitectureConfigSections].map((item) => item.key);
+      const activeSection = String(state.settingsModal.activeAgentSection || 'overview');
+      if (validSections.includes(activeSection)) return activeSection;
+      state.settingsModal.activeAgentSection = 'overview';
       return 'overview';
     }
 
-    function isMultiAgentSharedModelConfigured(fields) {
-      const requiredFields = new Set(['mykey.py apibase', 'mykey.py apikey', 'mykey.py model']);
-      const configuredFields = new Set(
-        fields.filter((field) => field.configured && requiredFields.has(String(field.envName || '')))
-          .map((field) => String(field.envName || '')),
-      );
-      return Array.from(requiredFields).every((envName) => configuredFields.has(envName));
-    }
-
     function settingsCategoryDisplayLabel(label) {
-      return label === 'AI8video' ? 'Multi-Agent' : label;
+      return label === 'AI8video' ? 'Agent 架构' : label;
     }
 
-    function selectMultiAgentSettingsRole(roleKey, focusTab = false) {
-      const validItems = [...multiAgentRoleDefinitions, ...multiAgentConfigDefinitions];
-      if (!validItems.some((item) => item.key === roleKey)) return;
-      state.settingsModal.activeAgentRole = roleKey;
+    function selectAgentSettingsSection(sectionKey, focusTab = false) {
+      const validItems = [...agentArchitectureSections, ...agentArchitectureConfigSections];
+      if (!validItems.some((item) => item.key === sectionKey)) return;
+      state.settingsModal.activeAgentSection = sectionKey;
       renderSettingsModal();
       if (!focusTab) return;
-      requestAnimationFrame(() => document.getElementById(`multi-agent-role-tab-${roleKey}`)?.focus());
+      requestAnimationFrame(() => document.getElementById(`agent-settings-section-tab-${sectionKey}`)?.focus());
     }
 
     document.addEventListener('click', (event) => {
-      const trigger = event.target.closest('[data-agent-settings-role]');
+      const trigger = event.target.closest('[data-agent-settings-section]');
       if (!trigger) return;
       event.preventDefault();
-      selectMultiAgentSettingsRole(trigger.getAttribute('data-agent-settings-role') || 'overview');
+      selectAgentSettingsSection(trigger.getAttribute('data-agent-settings-section') || 'overview');
     });
 
     document.addEventListener('keydown', (event) => {
-      const trigger = event.target.closest('.multi-agent-nav-item[role="tab"][data-agent-settings-role]');
+      const trigger = event.target.closest('.agent-architecture-nav .multi-agent-nav-item[role="tab"][data-agent-settings-section]');
       if (!trigger) return;
       const keys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'];
       if (!keys.includes(event.key)) return;
-      const root = trigger.closest('.multi-agent-nav');
-      const tabs = Array.from(root?.querySelectorAll('.multi-agent-nav-item[role="tab"][data-agent-settings-role]') || []);
+      const root = trigger.closest('.agent-architecture-nav');
+      const tabs = Array.from(root?.querySelectorAll('.multi-agent-nav-item[role="tab"][data-agent-settings-section]') || []);
       if (!tabs.length) return;
       event.preventDefault();
       const currentIndex = Math.max(0, tabs.indexOf(trigger));
@@ -413,7 +730,7 @@
       const nextIndex = event.key === 'Home' ? 0
         : event.key === 'End' ? tabs.length - 1
           : (currentIndex + delta + tabs.length) % tabs.length;
-      selectMultiAgentSettingsRole(tabs[nextIndex].getAttribute('data-agent-settings-role') || 'overview', true);
+      selectAgentSettingsSection(tabs[nextIndex].getAttribute('data-agent-settings-section') || 'overview', true);
     });
 
     const settingsCategoryOrder = ['运行模式', 'TTS', 'AI8video', '文本/视频规划模型', '多模态模型', '图片模型', '视频模型', '图床', 'HTML 动效', '归档', '其他'];

@@ -54,27 +54,17 @@
       meta: { operation: 'welcome' },
     };
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     const state = {
       sessions: RESET_SESSIONS ? [] : loadSessions(),
       activeId: null,
+      conversationLimit: 3,
+      canCreateConversation: true,
+      overLimit: false,
+      agentModeEnabled: true,
+      newConversationMode: 'workflow',
+      conversationSyncing: false,
+      conversationError: '',
+      conversationNotice: { text: '', tone: 'info' },
       health: null,
       assets: [],
       userGeneratedResults: [],
@@ -373,9 +363,6 @@
         error: '',
         draftSource: '',
       },
-      clearConversationModal: {
-        visible: false,
-      },
       materialModal: {
         visible: false,
         kind: 'image',
@@ -428,6 +415,7 @@
       brandSlug: document.getElementById('brandSlug'),
       sidebarCollapseButton: document.getElementById('sidebarCollapseButton'),
       progressPanel: document.getElementById('progressPanel'),
+      sidebarResultsSection: document.getElementById('sidebarResultsSection'),
       settingsEntryButton: document.getElementById('settingsEntryButton'),
       mobileSettingsEntryButton: document.getElementById('mobileSettingsEntryButton'),
       systemPromptButton: document.getElementById('systemPromptButton'),
@@ -448,14 +436,13 @@
       batchAlertList: document.getElementById('batchAlertList'),
       batchReportList: document.getElementById('batchReportList'),
       sessionList: document.getElementById('sessionList'),
-      statusBar: document.getElementById('statusBar'),
+      sidebarConversationCount: document.getElementById('sidebarConversationCount'),
+      newConversationModeButtons: Array.from(document.querySelectorAll('[data-new-conversation-mode]')),
+      conversationMobileSelect: document.getElementById('conversationMobileSelect'),
+      newConversationButtons: Array.from(document.querySelectorAll('[data-create-conversation]')),
+      conversationNotice: document.getElementById('conversationNotice'),
+      agentRunPanel: document.getElementById('agentRunPanel'),
       messages: document.getElementById('messages'),
-      clearConversationButton: document.getElementById('clearConversationButton'),
-      clearConversationConfirmModal: document.getElementById('clearConversationConfirmModal'),
-      clearConversationConfirmCloseButton: document.getElementById('clearConversationConfirmCloseButton'),
-      clearConversationConfirmCancelButton: document.getElementById('clearConversationConfirmCancelButton'),
-      clearConversationConfirmSubmitButton: document.getElementById('clearConversationConfirmSubmitButton'),
-      clearConversationConfirmCount: document.getElementById('clearConversationConfirmCount'),
       composer: document.getElementById('composer'),
       messageInput: document.getElementById('messageInput'),
       messageEditor: document.getElementById('messageEditor'),

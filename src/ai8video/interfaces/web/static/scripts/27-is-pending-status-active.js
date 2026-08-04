@@ -107,6 +107,7 @@
     function ensurePendingPolls() {
       const activePendingIds = new Set();
       state.sessions.forEach((session) => {
+        if (session?.executionMode === 'agent') return;
         const recoverableTailFrame = isSessionRecoverableTailFrameFailure(session);
         const activeReadOnlyRecovery = isSessionActiveReadOnlyRecovery(session);
         if (!isSessionPending(session) && !isSessionAwaitingTerminalReply(session) && !recoverableTailFrame && !activeReadOnlyRecovery) return;
@@ -209,6 +210,10 @@
     async function pollPendingSession(sessionId) {
       if (pendingPollInflight.has(sessionId)) return;
       const session = state.sessions.find((item) => item.id === sessionId);
+      if (session?.executionMode === 'agent') {
+        clearPendingPoll(sessionId);
+        return;
+      }
       if (
         !isSessionPending(session)
         && !isSessionAwaitingTerminalReply(session)

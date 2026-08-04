@@ -35,6 +35,7 @@ DOUBAO_CREATE_TIMEOUT_SECONDS = 420
 class AI8VideoModelClient:
     def __init__(self, config: AI8VideoConfig | None = None, settings: VideoModelSettings | None = None):
         self.config = config or AI8VideoConfig.from_env()
+        self._settings_pinned = settings is not None
         self.settings = settings or load_video_model_settings(
             llm_base_url=self.config.llm_base_url,
             llm_api_key=self.config.llm_api_key,
@@ -275,11 +276,16 @@ class AI8VideoModelClient:
         raise TimeoutError(f"Polling timed out for direct video model job {job.job_id}")
 
     def _load_current_settings(self) -> VideoModelSettings:
+        if self._settings_pinned:
+            return self.settings
         self.settings = load_video_model_settings(
             llm_base_url=self.config.llm_base_url,
             llm_api_key=self.config.llm_api_key,
         )
         return self.settings
+
+    def current_settings(self) -> VideoModelSettings:
+        return self._load_current_settings()
 
     def _settings_for_job(self, job_id: str) -> VideoModelSettings:
         return self._settings_by_job_id.get(job_id) or self._load_current_settings()

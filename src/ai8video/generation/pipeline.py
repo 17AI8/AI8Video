@@ -167,10 +167,7 @@ class AI8VideoPipeline:
         return registry
 
     def _effective_video_duration_seconds(self, requested: int | None) -> int:
-        settings = load_video_model_settings(
-            llm_base_url=getattr(self.config, "llm_base_url", None),
-            llm_api_key=getattr(self.config, "llm_api_key", None),
-        )
+        settings = self.client.current_settings()
         duration = settings.seconds if requested in (None, 10) else int(requested)
         guard = getattr(getattr(self, "client", None), "guard", None)
         if not self.config.dry_run and guard and guard.forced_duration_seconds > 0:

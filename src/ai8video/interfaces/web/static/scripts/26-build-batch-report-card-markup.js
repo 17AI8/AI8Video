@@ -340,17 +340,6 @@
       return state.sessions.find((item) => item.id === state.activeId);
     }
 
-    function createSession(title) {
-      const session = {
-        id: 's-' + Math.random().toString(36).slice(2, 10),
-        title,
-        messages: [{ role: 'assistant', welcome: true, payload: { ...WELCOME_PAYLOAD } }],
-      };
-      state.sessions.unshift(session);
-      persistSessions();
-      return session;
-    }
-
     function isWelcomeMessage(message) {
       if (!message || message.role !== 'assistant') return false;
       if (message.welcome) return true;

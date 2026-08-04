@@ -256,6 +256,7 @@
       renderHtmlMotionOverlayDrawer();
       renderMessages();
       renderStatus();
+      renderConversationShell();
       renderAssets();
       renderProgressModal();
       renderResultModal();

@@ -55,7 +55,7 @@ AI8video 是一个开源、本地优先的 AI 短视频生产工作台。它面�
 
 | 本地可控 | 端到端生产 | 有界 Agent | 可继续编辑 |
 |---|---|---|---|
-| 用户素材、项目状态和最终结果默认保存在本机 | 从热点、知识、脚本到生成、精剪和归档是一条完整链路 | Skill 提供策略，类型化 Capability 约束输入输出、取消、生命周期和副作用顺序 | 视频、TTS、HTML 动效与背景音乐采用非破坏性分层预览，保留源边界并在确认后烧录 |
+| 用户素材、项目状态和最终结果默认保存在本机 | 从热点、知识、脚本到生成、精剪和归档是一条完整链路 | Main Agent 只在关键节点决策，复合工具与 Runtime 执行受控动作，不开放通用系统权限 | 视频、TTS、HTML 动效与背景音乐采用非破坏性分层预览，保留源边界并在确认后烧录 |
 
 | 批量监督 | 多模型接入 | 失败可恢复 | 多入口复用 |
 |---|---|---|---|
@@ -118,12 +118,15 @@ ai8video serve --port 0
 
 ### 1. 对话式策划与生成
 
-- 识别新任务、会话跟进、改写、重新分集和信息补全；
+- 每个对话在新建时选择标准模式或 Agent 模式；模式只影响新建对话，首次发送消息后锁定，已有对话不会被切换按钮改写；
+- 工作台最多保留 3 个可用对话；历史数据超过上限时原样保留，只阻止继续新建，不会自动删除或覆盖；
+- 标准模式完整保留原有确定性会话控制、意图判断、智能分集、确认卡和视频流水线，是 Agent 功能关闭时的回退基线；
+- Agent 模式使用独立的 `AI8VideoMainAgent`，只调用 `prepare_video_plan`、`review_video_plan`、`generate_video_batch`、`inspect_generation_result`、`archive_and_deliver` 和 `task_user` 六个高层工具；
+- Main Agent 只在规划、审核、用户确认、生成终态、付费重试批准和可交付归档等关键节点重新决策；提交、轮询、下载、后处理、恢复和归档由 Python Runtime 确定性执行；
+- SQLite Conversation Store 持久化对话、消息、Agent Run、Action、Context 和 Observation；Revision/CAS 防止过期页面覆盖模式或状态，任务恢复以本地账本为准；
 - 支持普通生成、智能分集和手动批量；
 - 智能分集以结构化 JSON 同时生成可直接提交的视频提示词与纯台词，计划可展开、编辑、保存并在刷新后恢复；
-- 确认智能分集后直接进入视频与音频生成，不再重复调用 Planner 改写已确认内容；
-- Planner 已通过 `planner.plan-video-content` 类型化 Capability 接入真实执行层，运行上下文携带会话、批次、Trace、取消检查和生命周期事件；
-- Skill 与 Capability 分层：Skill 只提供策略，程序继续控制字段、业务门禁、可重放性和副作用顺序；设置页会明确区分“执行能力已绑定”和“仅策略指令”；
+- 原有 Planner 与审核能力由复合工具内部复用，不再被展示成多个并列自治 Agent；Skill 继续提供专项策略，程序负责字段、业务门禁、幂等、成本、取消和副作用顺序；
 - 支持单段视频与 2 段、4 段连续生成，使用尾帧衔接保持连贯；传尾帧可选择自动连续推进，或逐条预览尾帧并手动确认继续；
 - 真实提交、轮询、下载、校验、后处理与归档均展示明确状态；
 - 任务状态持久化到本地账本，页面刷新后可继续跟踪远端任务；同一轮生成始终以主批次为展示与恢复真值，单条续生成、重试和回退产生的子批次会异步归并到主批次，不会拆成多套互相覆盖的状态；
@@ -265,15 +268,18 @@ flowchart LR
 | 能力 | 行为 |
 |---|---|
 | 可折叠玻璃侧栏 | 展开时展示品牌、资源和工具信息；点击品牌标识即可折叠为统一图标轨，并记忆本地状态 |
+| 新建对话与模式 | 标准 / Agent 模式选择器与“新建对话”组成一个控制区并置顶于对话列表；选择只作用于下一次新建，默认标准模式 |
+| 对话生命周期 | 对话列表显示模式和运行状态；删除前明确确认，最后一个对话以及运行中、等待用户的受保护对话不能删除 |
 | 统一工具入口 | 当前进度、图片素材、剧本知识、回收站、智能修图、热点雷达和爆款拆解使用同一导航语言 |
 | 内置图标资源 | 离线内置 Font Awesome Free 7.3.1，侧栏、状态卡与工具弹窗无需从第三方 CDN 加载图标 |
 | 五阶段任务链与结果卡 | 依次展示理解需求、规划任务、提交生成、生成视频和归档结果；提交后将紧凑视频卡独立展示在步骤卡下方 |
 | 结果卡操作 | 按视频横竖比例展示预览，支持播放、失败重试、最新结果回退，以及查看、编辑并覆盖保存实际提交给视频模型的最终提示词；批量合并时回退按钮自动让位给勾选框 |
 | 三轨精剪 | 视频、TTS 和 HTML 动效使用同一刻度与播放时钟，可完成裁剪、恢复、吸附、撤销和重做 |
 | 后台任务跟踪 | 页面从本地 worker 任务账本恢复真实状态，持续回填等待时间、远端任务事件和生成结果，可明确终止 |
-| 三种背景 | 网格、点阵和纯色背景可循环切换并持久化 |
-| 对话动效 | 新消息淡入，清空对话时气泡淡出，并遵循系统减少动态效果偏好 |
-| 本地设置 | 文本规划、多模态、图片和视频模型按类型管理；每类可保存多套连接配置、切换当前配置，并集中维护该类型的通用参数 |
+| 固定网格背景 | 主工作区统一使用 24px 网格背景，不提供背景切换器，减少对话界面的非业务状态 |
+| 对话动效 | 新消息和 Agent 执行卡使用克制的状态过渡，并遵循系统减少动态效果偏好 |
+| Agent 架构设置 | 真实展示 Main Agent、六个复合工具、Runtime、标准模式边界、专项能力和模型绑定，不再使用旧 Multi-Agent 接力图 |
+| 本地模型设置 | 文本规划、多模态、图片和视频模型按类型管理；每类可保存多套连接配置、切换当前配置，并集中维护该类型的通用参数 |
 
 ## 模型与运行环境
 
@@ -313,6 +319,8 @@ export AI8VIDEO_HYPERFRAMES_RENDER_WORKERS=1
 | 归档 | 本地目录；可选 S3 兼容对象存储 |
 
 工作台的模型设置按文本规划、多模态、图片和视频四类分栏。每类均可新建、复制和保存多套连接配置，明确标记当前使用项，并在独立的类型通用配置区维护共享参数；API Key 留空保存时会保留已有密钥。
+
+标准模式与 Agent 模式可以读取同一套模型配置来源，但不会共享对话运行状态。对话第一次发送消息时会保存当前模型 Profile ID、非敏感字段、指纹和配置版本；API Key 等凭据仍只保存在模型配置存储中。已绑定对话检测到 Profile 漂移时会明确报错，不会静默切换到新的全局当前模型。
 
 推荐通过环境变量配置核心模型：
 
@@ -433,27 +441,33 @@ macOS 与 Linux 可使用根目录的 `AI8video` 启动器；Windows 使用 `AI8
 
 ```mermaid
 flowchart LR
-    Interfaces["Web / CLI / Electron"] --> Runtime["Python Agent Runtime"]
-    Runtime --> Conversation["Conversation Controller"]
-    Runtime --> Scheduler["Agent Task Scheduler"]
-    Conversation --> Domains["Generation · Knowledge · Radar · Breakdown"]
-    Scheduler --> Domains
-    Domains --> Media["FFmpeg · TTS · HTML Motion"]
-    Domains --> Models["Text · Image · Video APIs"]
+    Interfaces["Web / CLI / Electron"] --> Store["Conversation Store"]
+    Profiles["Model Profiles"] --> Store
+    Store -->|Standard| Workflow["Conversation Controller"]
+    Store -->|Agent| Main["AI8Video Main Agent"]
+    Main --> Tools["6 Composite Tools"]
+    Tools --> Runtime["Deterministic Runtime"]
+    Runtime --> Observation["Meaningful Observation"]
+    Observation --> Main
+    Workflow --> Domains["Shared Business Services"]
+    Runtime --> Domains
+    Domains --> Media["Generation · FFmpeg · TTS · HTML Motion"]
     Domains --> Storage["Local Files · PostgreSQL · Optional S3"]
     Media --> Results["用户生成结果"]
     Storage --> Results
 ```
 
-核心原则：**Python 是会话、任务状态、业务规则、媒体处理和持久化的唯一真值来源。** Web、CLI 与 Electron 只负责接入；外部资源失败时返回真实错误，不伪造成功。
+核心原则：**Python 是会话、任务状态、业务规则、成本、媒体处理和持久化的唯一真值来源。** 标准模式与 Agent 模式共享同一套业务服务，不复制第二条视频流水线；Main Agent 只做关键节点决策，机械事件不会触发新的模型调用。Web、CLI 与 Electron 只负责接入；外部资源失败时返回真实错误，不伪造成功。
 
 ### Agent Runtime 与 Skills
 
-AI8video 将策略与执行分开：Skill 描述某个 Agent 应遵守的策略，Capability 定义真正可执行的输入、输出、取消、生命周期事件、可重放性和副作用边界。
+Agent 模式由一个 `AI8VideoMainAgent`、受控复合工具和确定性 Runtime 组成。Pi Agent Core / Pi AI `0.80.10` 运行在一个长驻 JSONL Sidecar 中，只负责模型与工具轮次；Python 继续掌握策略、凭据、成本、持久化、任务账本、业务工具和恢复真值。
 
-`CapabilityRegistry` 会校验输入输出类型；有副作用的能力只能串行执行，并在执行前后检查取消状态。目前 `planner.plan-video-content` 是首个真正绑定执行层的 Capability，其他 Skill 会明确标记为策略能力或预留槽位，不把提示词文件冒充成已经接入的 Runtime。
+Main Agent 的工具面固定为 `prepare_video_plan`、`review_video_plan`、`generate_video_batch`、`inspect_generation_result`、`archive_and_deliver` 和 `task_user`。每次只选择一个工具；生成进入 pending 后立即停止决策，由 Runtime 完成提交、轮询、下载、后处理和归档。只有审核结论、用户输入、付费重试批准、生成终态、尾帧检查点或可交付归档才会形成新的 Observation 并唤醒 Main Agent。
 
-Skill 元数据支持版本、许可证、类型、能力绑定和来源；正文按需加载，并拒绝可破坏宿主提示词边界的保留标记。
+`ActionPolicyGuard` 为每个高层动作声明副作用、可重放性、成本和批准边界；额外付费重试必须显式批准，重复观察和单次运行决策数都有硬上限。断连后不会自动重放不确定的付费生成，恢复逻辑必须从任务账本证明真实终态。
+
+Skill 仍用于 Planner、知识建树、知识审核、镜头语言和剧本重建等策略或专项能力，但它们不是主对话中的并列自治 Agent。设置页的“Agent 架构”会按 Main Agent、复合工具、Runtime、标准模式、专项能力和模型绑定分别展示真实层级。
 
 ### 工程分层
 
@@ -461,8 +475,8 @@ Skill 元数据支持版本、许可证、类型、能力绑定和来源；正�
 AI8Video/
 ├── src/ai8video/
 │   ├── core/           # 配置、路径和基础模型
-│   ├── agent_runtime/  # 类型化 Capability、执行上下文、事件与副作用边界
-│   ├── application/    # 会话、应用门面和跨领域编排
+│   ├── agent_runtime/  # 复合工具、动作策略、模型绑定、终态观察与 Pi Sidecar
+│   ├── application/    # Conversation Store、Agent Run、恢复、会话门面和跨领域编排
 │   ├── agent_skills/   # 带版本和能力绑定的策略型 / 工作流型 Skills
 │   ├── interfaces/     # Web、CLI
 │   ├── integrations/   # 模型、数据库和 HTTP 适配器
@@ -501,7 +515,7 @@ AI8Video/
 | `用户文件夹/HTML动效/reviews/` | 基础视频、候选视频、动效 artifact、实时 composition、透明层、渲染指纹和确认状态 |
 | `用户文件夹/图床/settings.json` | 当前图床选择与自定义上传接口；可能包含本地保存的鉴权令牌 |
 | `media_resources/ai8video/` | 可选归档、批次报告和告警 |
-| `temp/ai8video/` | 可丢弃、可重建的任务账本和运行时状态 |
+| `temp/ai8video/` | Conversation Store、Agent Run / Action / Observation、任务账本和可恢复运行状态；任务运行时不要手动清空 |
 | `mykey.py`、`.env` | 本地密钥和配置，不会提交到仓库 |
 
 ## 测试

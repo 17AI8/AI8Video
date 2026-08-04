@@ -166,10 +166,6 @@
         closeSupervisorConfigModal();
         return;
       }
-      if (event.key === 'Escape' && state.clearConversationModal.visible) {
-        event.preventDefault();
-        closeClearConversationConfirmModal();
-      }
     });
 
     async function refreshHealth() {

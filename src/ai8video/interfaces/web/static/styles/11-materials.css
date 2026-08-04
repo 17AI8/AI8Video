@@ -517,31 +517,6 @@
       pointer-events: none;
     }
 
-    .clear-conversation-button {
-      pointer-events: auto;
-      min-width: 112px;
-      min-height: 34px;
-      padding: 0 16px;
-      border-radius: 6px;
-      border: 1px solid rgba(37, 99, 235, 0.24);
-      background: rgba(255, 255, 255, 0.94);
-      color: #24549f;
-      box-shadow: 0 8px 20px rgba(47, 109, 183, 0.12);
-      font-size: 13px;
-      font-weight: 900;
-    }
-
-    .clear-conversation-button:hover:not(:disabled) {
-      background: #f8fbff;
-      border-color: rgba(37, 99, 235, 0.42);
-    }
-
-    .clear-conversation-button:disabled {
-      cursor: default;
-      opacity: 0.46;
-      box-shadow: none;
-    }
-
     .mobile-settings-entry-button {
       display: none;
       pointer-events: auto;

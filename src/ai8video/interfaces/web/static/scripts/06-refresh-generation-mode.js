@@ -61,6 +61,19 @@
       }
 
       const session = getActiveSession();
+      if (!session) {
+        showConversationNotice(state.conversationError || '对话尚未准备完成，请稍后重试。', 'error');
+        return;
+      }
+      if (conversationIsBusy(session)) {
+        showConversationNotice('当前对话还有任务正在运行，请等待关键结果返回。', 'error');
+        return;
+      }
+      const expectedExecutionMode = session.executionMode === 'agent' ? 'agent' : 'workflow';
+      const expectedRevision = Number(session.revision || 0) || 0;
+      const clientMessageId = newClientMessageId();
+      const previousMessages = [...(session.messages || [])];
+      const previousTitle = session.title;
       const confirmedSmartSplitVideos = getConfirmedSmartSplitVideos(session, value);
       const temporaryKnowledge = buildTemporaryScriptKnowledgeChatPayload();
       const useDefaultKnowledgeReference = !!temporaryKnowledge
@@ -78,7 +91,7 @@
       clearMessageEditor();
       hideMaterialMentionPicker();
       state.busy = true;
-      startGenerationProgress(session.id, value);
+      if (expectedExecutionMode === 'workflow') startGenerationProgress(session.id, value);
       render();
 
       try {
@@ -91,10 +104,21 @@
             confirmedSmartSplitVideos,
             temporaryKnowledge,
             useDefaultKnowledgeReference,
+            expectedExecutionMode,
+            expectedRevision,
+            clientMessageId,
           }),
         });
         const data = await res.json();
         if (!res.ok) {
+          const requestError = buildRequestError(data);
+          if (isConversationConflict(requestError)) {
+            session.messages = previousMessages;
+            session.title = previousTitle;
+            await refreshConversationInventory({ hydrateActive: true, renderAfter: false }).catch(() => null);
+            showConversationNotice(requestError.message, 'error', 0);
+            return;
+          }
           const recovered = await tryRecoverTimedOutChat(session, value, data);
           if (recovered) {
             clearGenerationProgress();
@@ -110,9 +134,13 @@
             render();
             return;
           }
-          throw buildRequestError(data);
+          throw requestError;
         }
         replaceLocalPendingPayload(session, buildAssistantPayload(data, session.id));
+        syncConversationFromResponse(data, session);
+        if (expectedExecutionMode === 'agent') {
+          session.agentLatestResponseSignature = agentResponseSignature(data);
+        }
         clearGenerationProgress();
         persistSessions();
         await refreshHealth();
@@ -440,6 +468,7 @@
       const sessions = Array.isArray(state.sessions) ? state.sessions : [];
       let changed = false;
       for (const session of sessions) {
+        if (session?.executionMode === 'agent') continue;
         const last = session?.messages?.at?.(-1);
         const pendingMessage = [...(session?.messages || [])].reverse().find((message) => (
           message?.role === 'assistant'

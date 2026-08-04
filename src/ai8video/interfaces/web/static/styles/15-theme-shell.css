@@ -81,7 +81,6 @@
     }
 
     .button-secondary,
-    .clear-conversation-button,
     .mobile-settings-entry-button,
     .material-add-button,
     .system-prompt-entry-button,
@@ -97,7 +96,6 @@
     }
 
     .button-secondary:hover,
-    .clear-conversation-button:hover:not(:disabled),
     .mobile-settings-entry-button:hover:not(:disabled),
     .material-add-button:hover,
     .system-prompt-entry-button:hover,

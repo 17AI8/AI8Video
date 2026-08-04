@@ -59,6 +59,10 @@ def get_chat_status(session_id: str, generation_batch_id: str | None = None) -> 
     )
 
 
+def reset_chat_session(session_id: str) -> None:
+    ai8video_chat_service.reset_chat_session_via_ai8video(session_id)
+
+
 def start_external_generation_task(
     session_id: str,
     generation_batch_id: str,
@@ -112,6 +116,7 @@ __all__ = [
     "handle_chat",
     "run_batch_payload",
     "restore_smart_split_plan",
+    "reset_chat_session",
     "start_external_generation_task",
     "write_supervisor_admin_result_payload",
 ]

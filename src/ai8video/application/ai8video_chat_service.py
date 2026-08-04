@@ -701,6 +701,10 @@ def handle_chat_via_ai8video(
     return session.handle_message(message=message, timeout_seconds=timeout_seconds)
 
 
+def reset_chat_session_via_ai8video(session_id: str) -> None:
+    _get_session(session_id=session_id, refresh=True)
+
+
 def restore_smart_split_plan_via_ai8video(session_id: str, videos: list[dict]) -> bool:
     _get_session(session_id=session_id)
     return restore_smart_split_plan(session_id, videos)
