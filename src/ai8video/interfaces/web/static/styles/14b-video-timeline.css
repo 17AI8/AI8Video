@@ -85,11 +85,6 @@
       background: rgba(51, 135, 214, 0.58);
     }
 
-    .video-preview-video-timeline.is-seek-mode .video-preview-video-chunks,
-    .video-preview-video-timeline.is-seek-mode .video-preview-video-chunk {
-      cursor: crosshair;
-    }
-
     .video-preview-video-timeline .video-preview-tts-timeline-head [data-video-preview-video-status] {
       overflow: hidden;
       color: rgba(247, 251, 255, 0.62);

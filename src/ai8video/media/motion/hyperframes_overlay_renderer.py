@@ -11,6 +11,8 @@ import json
 import re
 from typing import Any
 
+from ai8video.media.motion.html_motion_timeline import timeline_chunk_id, timeline_text_position
+
 
 def build_composition_html(
     artifact: dict[str, Any],
@@ -67,7 +69,9 @@ def _base_css(
 .hf-zone h1,.hf-zone h2,.hf-zone h3{{font-weight:800;line-height:1.1!important}}.hf-zone p{{line-height:1.3!important}}.hf-zone small{{line-height:1.3!important}}
 .hf-zone h1{{font-size:30px!important}}.hf-zone h2{{font-size:26px!important}}.hf-zone h3{{font-size:22px!important}}.hf-zone p{{font-size:18px!important}}.hf-zone small{{font-size:14px!important}}
 .hf-zone svg{{display:block;max-width:100%!important;max-height:100%!important;overflow:hidden!important;contain:paint}}.hf-zone svg *{{vector-effect:non-scaling-stroke}}
-.zone-top-left{{left:4%;top:5%;width:30%;height:18%}}.zone-top-right{{right:4%;top:5%;width:30%;height:18%}}.zone-bottom-left{{left:4%;bottom:8%;width:30%;height:18%}}.zone-bottom-right{{right:4%;bottom:8%;width:30%;height:18%}}.zone-left-rail{{left:3%;top:24%;width:22%;height:50%}}.zone-right-rail{{right:3%;top:24%;width:22%;height:50%}}.zone-top-band{{left:8%;top:4%;width:84%;height:14%}}.zone-bottom-band{{left:8%;bottom:6%;width:84%;height:14%}}{scene_css}"""
+.ai8-motion-text-edit-target{{touch-action:none}}.ai8-motion-text-edit-target.is-ai8-motion-text-editable{{cursor:grab;outline:2px dashed rgba(255,238,67,.92);outline-offset:6px}}.ai8-motion-text-edit-target.is-ai8-motion-text-dragging{{cursor:grabbing;outline-style:solid}}
+.zone-top-left{{left:4%;top:5%;width:30%;height:18%}}.zone-top-right{{right:4%;top:5%;width:30%;height:18%}}.zone-bottom-left{{left:4%;bottom:8%;width:30%;height:18%}}.zone-bottom-right{{right:4%;bottom:8%;width:30%;height:18%}}.zone-left-rail{{left:3%;top:24%;width:22%;height:50%}}.zone-right-rail{{right:3%;top:24%;width:22%;height:50%}}.zone-top-band{{left:8%;top:4%;width:84%;height:14%}}.zone-bottom-band{{left:8%;bottom:6%;width:84%;height:14%}}{scene_css}
+#root .hf-scene[data-text-x][data-text-y] .hf-zone,#root .hf-scene[data-text-x][data-text-y] .hf-stage,#root .hf-scene[data-text-x][data-text-y] .hf-card-content,#root .hf-scene[data-text-x][data-text-y] .hf-title-row,#root .hf-scene[data-text-x][data-text-y] .hf-copy{{overflow:visible!important}}"""
 
 
 def _safe_css_color(value: Any, fallback: str) -> str:
@@ -122,11 +126,18 @@ def _scene_markup(scene: dict[str, Any], index: int, *, fixed: bool = False) -> 
     zone_class = f"hf-zone zone-{html.escape(scene['zone'])}"
     if fixed:
         zone_class += " hf-fixed-zone"
+    position = timeline_text_position(scene.get("_timelineTextPosition"))
+    position_attributes = ""
+    if position is not None:
+        position_attributes = (
+            f' data-text-x="{position["x"]:.3f}" data-text-y="{position["y"]:.3f}"'
+        )
     return (
         f'<section id="hf-scene-{index + 1}" class="hf-scene clip" '
+        f'data-chunk-id="{html.escape(timeline_chunk_id(scene, index), quote=True)}" '
         f'data-timeline-source-index="{source_index}" data-start="{scene["start"]:.3f}" '
         f'data-duration="{scene_duration:.3f}" data-source-start="{source_start:.3f}" '
-        f'data-source-end="{source_end:.3f}" data-track-index="{index + 1}">'
+        f'data-source-end="{source_end:.3f}" data-track-index="{index + 1}"{position_attributes}>'
         f'<div class="{zone_class}">{scene["html"]}</div></section>'
     )
 

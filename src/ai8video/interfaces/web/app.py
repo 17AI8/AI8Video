@@ -290,9 +290,13 @@ from ai8video.knowledge.script_knowledge_ingestion import (
 from ai8video.assets.upload_utils import resolve_upload_filename
 from ai8video.assets.user_generated_results import (
     USER_GENERATED_RESULT_ROOT,
+    burned_result_lock,
     ensure_user_generated_result_dir,
     is_simulated_user_generated_result_path,
+    mirror_generated_result_file,
     migrate_legacy_result_layout,
+    schedule_burned_result_copy,
+    schedule_missing_burned_result_copies,
 )
 from ai8video.assets.user_files import USER_FILE_ROOT
 from ai8video.assets.user_recycle_bin import (
@@ -2219,6 +2223,7 @@ def _user_generated_result_items(limit: int = 50) -> list[dict]:
     asset_store = JsonlAssetStore(config.asset_store_path)
     root = ensure_user_generated_result_dir().resolve()
     _migrate_legacy_extension_results(root, asset_store)
+    schedule_missing_burned_result_copies(root)
     asset_records = asset_store.read_all()
     asset_by_archive_key = {
         str(item.get("archiveKey") or "").strip(): item
@@ -2348,6 +2353,40 @@ def _resolve_user_generated_video_key(raw_key: object) -> tuple[Path, str]:
         if target is None:
             raise FileNotFoundError("video not found")
     return target, target.relative_to(root).as_posix()
+
+
+def _resolve_user_generated_burned_video_key(raw_key: object) -> tuple[Path, str]:
+    key = unquote(str(raw_key or "").strip())
+    if not key:
+        raise ValueError("userGeneratedKey is required")
+    if Path(key).is_absolute():
+        raise ValueError("userGeneratedKey must be relative")
+    clean_key = key.lstrip("/")
+    burned_key = clean_key if clean_key.startswith("burned/") else f"burned/{clean_key}"
+    root = ensure_user_generated_result_dir().resolve()
+    burned_root = (root / "burned").resolve()
+    target = (root / burned_key).resolve()
+    if not _is_within(burned_root, target):
+        raise ValueError("userGeneratedKey is outside burned results")
+    if target.suffix.lower() not in USER_GENERATED_VIDEO_EXTENSIONS:
+        raise ValueError("userGeneratedKey must point to a video")
+    if not target.is_file():
+        raise FileNotFoundError("burned video not found")
+    return target, target.relative_to(root).as_posix()
+
+
+def _ensure_user_generated_burned_video_key(raw_key: object) -> tuple[Path, str]:
+    try:
+        return _resolve_user_generated_burned_video_key(raw_key)
+    except FileNotFoundError:
+        clean_key = unquote(str(raw_key or "").strip()).lstrip("/")
+        source_key = clean_key[len("burned/"):] if clean_key.startswith("burned/") else clean_key
+        source, _relative_key = _resolve_user_generated_video_key(source_key)
+        root = ensure_user_generated_result_dir().resolve()
+        target = mirror_generated_result_file(source, archive_root=root, overwrite=False)
+        if target is None or not target.is_file():
+            raise FileNotFoundError("burned video not found")
+        return target, target.relative_to(root).as_posix()
 
 
 def _user_generated_video_alias_target(root: Path, clean_key: str) -> Path | None:
@@ -2597,6 +2636,7 @@ def _replace_user_generated_video(left_key: object, right_key: object) -> dict[s
         cleanup = _delete_extension_state_assets(relative_left_key, relative_right_key)
     except Exception as exc:
         cleanup = {"ok": False, "deleted": [], "reason": str(exc)[:300]}
+    schedule_burned_result_copy(left_path, result_root=ensure_user_generated_result_dir(), overwrite=True)
     return {
         "ok": True,
         "userGeneratedKey": relative_left_key,
@@ -2999,6 +3039,7 @@ def _install_batch_merge_result(
             },
         )
         created.append(restored_result_metadata_path(root, relative_key))
+        schedule_burned_result_copy(target, result_root=root, overwrite=True)
         return 0
     except Exception:
         for path in reversed(created):
@@ -3963,14 +4004,15 @@ def _confirm_user_generated_burn(raw_key: object, html_chunks: object = None) ->
     output_path = (result_root / "burned" / relative_key).resolve()
     if not _is_within(result_root, output_path):
         raise ValueError("烧录输出路径不合法")
-    background_music_result = _render_confirmed_burn(
-        video_path,
-        output_path,
-        tts_state,
-        video_state,
-        html_pending,
-        relative_key,
-    )
+    with burned_result_lock(output_path):
+        background_music_result = _render_confirmed_burn(
+            video_path,
+            output_path,
+            tts_state,
+            video_state,
+            html_pending,
+            relative_key,
+        )
     output_key = output_path.relative_to(result_root).as_posix()
     return {
         "ok": True,
@@ -4820,7 +4862,7 @@ def _archive_intermediate_artifacts_status() -> dict[str, Any]:
     reference_stats = _path_stats_recursive(TRANSFORMED_REFERENCE_DIR, USER_GENERATED_IMAGE_EXTENSIONS)
     recycle_stats = _path_stats_recursive(ensure_user_recycle_bin_dir(), {".mp4", ".mov", ".m4v", ".json"})
     items = {
-        "result-videos": {**video_stats, "label": "结果视频", "cleanup": "none"},
+        "result-videos": {**video_stats, "label": "可编辑母版视频", "cleanup": "none"},
         "covers": {**cover_stats, "label": "封面图", "cleanup": "orphan-covers"},
         "previews": {**preview_stats, "label": "预览图", "cleanup": "regenerate"},
         "extension-archive": {**extension_stats, "label": "延长视频归档", "cleanup": "clear"},
@@ -5295,6 +5337,17 @@ def _open_in_file_manager(target: Path) -> None:
     subprocess.Popen(["xdg-open", str(resolved)])
 
 
+def _reveal_in_file_manager(target: Path) -> None:
+    resolved = target.resolve()
+    if sys.platform == "darwin":
+        subprocess.Popen(["open", "-R", str(resolved)])
+        return
+    if os.name == "nt":
+        subprocess.Popen(["explorer", "/select,", str(resolved)])
+        return
+    subprocess.Popen(["xdg-open", str(resolved.parent)])
+
+
 def _open_path(target: Path) -> None:
     resolved = target.resolve()
     if resolved.is_dir():
@@ -5495,7 +5548,7 @@ def api_auth_settings():
         ),
         _settings_field("后端", "AI8VIDEO_ARCHIVE_BACKEND", config.archive_backend, "env/default", sensitive=False, category="归档"),
         _settings_field(
-            "结果视频",
+            "可编辑母版视频",
             "AI8VIDEO_ARCHIVE_RESULT_VIDEO_DIR",
             archive_items["result-videos"]["display"],
             "用户文件夹/用户生成结果/video",
@@ -5968,9 +6021,35 @@ def api_open_archive_dir():
 def api_open_user_generated_results_folder():
     if request.method == "OPTIONS":
         return HTTPResponse(status=204)
-    target_root = ensure_user_generated_result_dir()
+    result_root = ensure_user_generated_result_dir().resolve()
+    schedule_missing_burned_result_copies(result_root)
+    target_root = result_root / "burned" / "video"
+    target_root.mkdir(parents=True, exist_ok=True)
     _open_in_file_manager(target_root)
     return {"ok": True, "path": str(target_root)}
+
+
+@app.route("/api/user-generated-results/open-burned-in-folder", method=["POST", "OPTIONS"])
+def api_open_user_generated_burned_video_in_folder():
+    if request.method == "OPTIONS":
+        return HTTPResponse(status=204)
+    payload = request.json or {}
+    try:
+        target, burned_key = _ensure_user_generated_burned_video_key(
+            payload.get("userGeneratedKey")
+        )
+    except ValueError as exc:
+        response.status = 400
+        return {"ok": False, "error": str(exc)}
+    except FileNotFoundError:
+        response.status = 404
+        return {"ok": False, "error": "当前视频还没有烧录结果"}
+    _reveal_in_file_manager(target)
+    return {
+        "ok": True,
+        "userGeneratedKey": burned_key,
+        "path": str(target),
+    }
 
 
 @app.route("/api/open-user-generated-cover-folder", method=["POST", "OPTIONS"])
@@ -6121,6 +6200,7 @@ def api_merge_user_generated_results():
             merge_result = concat_videos(merge_inputs, target)
         relative_key = target.relative_to(root).as_posix()
         _save_merged_narration_metadata(relative_key, left_key, left_narration)
+        schedule_burned_result_copy(target, result_root=root, overwrite=True)
         return {
             "ok": True,
             "userGeneratedKey": relative_key,
@@ -10128,12 +10208,16 @@ def main() -> int:
     args = parser.parse_args()
     port = args.port or _find_free_port()
     migration = migrate_legacy_result_layout()
-    if migration.get("movedVideos") or migration.get("movedMetadata"):
+    if migration.get("movedVideos") or migration.get("movedSidecars") or migration.get("movedMetadata"):
         logging.info(
-            "已将结果统一到用户生成结果/video：视频 %d 个，恢复元数据 %d 个",
+            "已治理用户生成结果/video：视频 %d 个，隔离非视频文件 %d 个，恢复元数据 %d 个",
             len(migration.get("movedVideos") or []),
+            len(migration.get("movedSidecars") or []),
             len(migration.get("movedMetadata") or []),
         )
+    scheduled_burned_copies = schedule_missing_burned_result_copies()
+    if scheduled_burned_copies:
+        logging.info("已安排补齐 %d 个初始烧录副本", len(scheduled_burned_copies))
     try:
         knowledge_sync = register_script_knowledge_sources()
         logging.info("剧本知识库启动维护完成：%s", knowledge_sync)

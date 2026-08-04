@@ -3,7 +3,10 @@
     }
 
     function cloneHtmlMotionTimelineChunks(chunks) {
-      return (Array.isArray(chunks) ? chunks : []).map((chunk) => ({ ...chunk }));
+      return (Array.isArray(chunks) ? chunks : []).map((chunk) => ({
+        ...chunk,
+        textPosition: normalizeHtmlMotionTextPosition(chunk?.textPosition),
+      }));
     }
 
     function normalizeHtmlMotionTimelineChunks(chunks) {
@@ -29,12 +32,14 @@
         return {
           ...restored,
           index,
+          chunkId: htmlMotionChunkId(chunk, index),
           sourceIndex: Number.isInteger(rawSourceIndex) && rawSourceIndex >= 0 ? rawSourceIndex : index,
           sourceStartSeconds: sourceStart,
           sourceEndSeconds: sourceEnd,
           startSeconds: start,
           durationSeconds: duration,
           endSeconds: timelineRoundSeconds(start + duration),
+          textPosition: normalizeHtmlMotionTextPosition(chunk?.textPosition),
         };
       });
     }
@@ -194,9 +199,9 @@
         const width = Math.max(0.1, Number(chunk.durationSeconds || 0.1)) / duration * 100;
         const action = scissorMode
           ? `剪刀工具：点击${label}中的位置切块`
-          : `选择${label}，起点 ${start.toFixed(1)}秒；拖动整体可移动，拖动左右边缘可裁剪或恢复`;
+          : `选择${label}，起点 ${start.toFixed(1)}秒；当其在预览中可见时可拖动文字，拖动整体可移动时间`;
         const selected = selectedIndexes.has(index);
-        return `<button type="button" class="video-preview-html-motion-chunk${selected ? ' is-selected' : ''}" data-video-preview-html-motion-chunk data-chunk-index="${index}" data-full-label="${escapeHtml(label)}" data-boundary-base-title="${escapeHtml(action)}" aria-label="${escapeHtml(action)}" aria-pressed="${selected ? 'true' : 'false'}" title="${escapeHtml(action)}" style="left:${left}%;width:${Math.min(width, 100 - left)}%;top:${1 + index % 2 * 22}px"><span data-compact-label="${escapeHtml(compactLabel)}">${escapeHtml(label)}</span>${timelineTrimHandleMarkup(label)}</button>`;
+        return `<button type="button" class="video-preview-html-motion-chunk${selected ? ' is-selected' : ''}" data-video-preview-html-motion-chunk data-chunk-index="${index}" data-chunk-id="${escapeHtml(htmlMotionChunkId(chunk, index))}" data-full-label="${escapeHtml(label)}" data-boundary-base-title="${escapeHtml(action)}" aria-label="${escapeHtml(action)}" aria-pressed="${selected ? 'true' : 'false'}" title="${escapeHtml(action)}" style="left:${left}%;width:${Math.min(width, 100 - left)}%;top:${1 + index % 2 * 22}px"><span data-compact-label="${escapeHtml(compactLabel)}">${escapeHtml(label)}</span>${timelineTrimHandleMarkup(label)}</button>`;
       }).join('');
       const boundary = timelineBoundaryDetails();
       track.innerHTML = `${timelineRulerMarkup(duration)}<div class="video-preview-html-motion-chunk-lane" tabindex="0"><span class="video-preview-html-motion-marquee" data-video-preview-html-motion-marquee hidden></span>${timelineOverflowZoneMarkup(duration, boundary.htmlMotionOverflowIndexes, boundary)}<span class="video-preview-timeline-cut-guide" data-video-preview-cut-guide hidden></span>${timelineSnapGuideMarkup()}<span class="video-preview-tts-playhead" data-video-preview-html-motion-playhead aria-label="HTML 动效时间轴播放头" title="拖动播放头；按住 Shift 临时关闭吸附"></span>${markup}</div>`;
@@ -299,6 +304,19 @@
         if (state.videoPreviewModal === modal) {
           modal.htmlMotionTimelineChunks = normalizeHtmlMotionTimelineChunks(data.timelineChunks || chunks);
           modal.htmlMotionTimelineRevision = Number(data.revision || modal.htmlMotionTimelineRevision || 0);
+          const livePreviewUrl = String(data.livePreviewUrl || modal.htmlMotionLivePreviewUrl || '').trim();
+          if (livePreviewUrl) modal.htmlMotionLivePreviewUrl = livePreviewUrl;
+          const video = els.videoPreviewBody?.querySelector('video');
+          if (video && livePreviewUrl) {
+            mountLiveHtmlMotionPreview(
+              video,
+              livePreviewUrl,
+              modal.htmlMotionTimelineChunks,
+              { preserveVideoSource: true, autoplay: !video.paused },
+            );
+          } else {
+            syncLiveHtmlMotionPreview(video);
+          }
           setHtmlMotionTimelineStatus(`${message}，已保存，等待确认烧录`, 'success');
         }
         return true;
@@ -327,8 +345,22 @@
       const sourceSplit = Number(chunk.sourceStartSeconds || 0) + current - start;
       const bounds = splitTimelineRestoreBounds(chunk, sourceSplit);
       const label = chunk.label || `动效 ${index + 1}`;
-      const first = { ...bounds.first, label: `${label} A`, durationSeconds: current - start, endSeconds: current };
-      const second = { ...bounds.second, label: `${label} B`, startSeconds: current, durationSeconds: end - current, endSeconds: end };
+      const chunkId = htmlMotionChunkId(chunk, index);
+      const first = {
+        ...bounds.first,
+        chunkId,
+        label: `${label} A`,
+        durationSeconds: current - start,
+        endSeconds: current,
+      };
+      const second = {
+        ...bounds.second,
+        chunkId: createHtmlMotionChunkId(chunkId),
+        label: `${label} B`,
+        startSeconds: current,
+        durationSeconds: end - current,
+        endSeconds: end,
+      };
       state.videoPreviewModal.htmlMotionTimelineChunks = [
         ...chunks.slice(0, index), first, second, ...chunks.slice(index + 1),
       ];

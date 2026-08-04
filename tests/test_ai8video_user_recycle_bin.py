@@ -68,10 +68,16 @@ class AI8VideoUserRecycleBinTest(unittest.TestCase):
             ), patch.object(user_generated_results, "USER_GENERATED_RESULT_ROOT", result_root), patch.object(
                 user_generated_results,
                 "ensure_user_file_root",
-            ):
+            ), patch.object(user_recycle_bin, "schedule_burned_result_copy") as schedule_copy:
                 result = user_recycle_bin.restore_failed_video_task("task-one")
 
             restored_key = result["restoredVideos"][0]["userGeneratedKey"]
+            restored_path = (result_root / restored_key).resolve()
+            schedule_copy.assert_called_once_with(
+                restored_path,
+                result_root=result_root.resolve(),
+                overwrite=False,
+            )
             self.assertEqual(result["restoredCount"], 1)
             self.assertEqual(restored_key, f"video/{Path(restored_key).name}")
             self.assertFalse(task_folder.exists())

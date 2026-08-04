@@ -11,7 +11,7 @@ from typing import Any
 from ai8video.media.motion.html_motion_overlay import _resolve_motion_font_family
 from ai8video.media.motion.html_motion_render_cache import sync_live_preview_font
 from ai8video.media.motion.html_motion_review import HTML_MOTION_REVIEW_ROOT, html_motion_review_status
-from ai8video.media.motion.html_motion_timeline import timeline_chunks
+from ai8video.media.motion.html_motion_timeline import timeline_chunk_id, timeline_chunks
 from ai8video.media.motion.hyperframes_overlay_renderer import build_composition_html
 from ai8video.media.motion.hyperframes_runtime import WAAPI_RUNTIME_SOURCE
 from ai8video.media.timeline_contract import TIMELINE_SCHEMA_VERSION
@@ -55,6 +55,7 @@ def _offset_scenes(
         scene["start"] = round(offset + float(scene.get("start") or 0), 3)
         scene["end"] = round(offset + float(scene.get("end") or 0), 3)
         scene["_timelineSourceIndex"] = output_start_index + scene_index
+        scene["_timelineChunkId"] = f"merged-{source_index + 1}-{timeline_chunk_id(scene, scene_index)}"
         ids = [str(value) for value in scene.get("ids") or [] if str(value)]
         replacements = {value: f"m{source_index + 1}-{scene_index + 1}-{value}" for value in set(ids)}
         replacements[f"hf-scene-{scene_index + 1}"] = f"hf-scene-{output_start_index + scene_index + 1}"

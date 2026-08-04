@@ -281,6 +281,11 @@ class AI8VideoVideoAssetArchiverTest(unittest.TestCase):
             path.write_bytes(b"mixed-mp4")
             return {"enabled": True, "status": "mixed", "musicName": "theme.mp3"}
 
+        def _schedule_copy(path: Path, **kwargs):
+            self.assertEqual(path.read_bytes(), b"mixed-mp4")
+            self.assertTrue((Path(config.archive_local_dir) / "job-001-manifest.json").is_file())
+            return None
+
         with patch.object(generated_results, "USER_GENERATED_RESULT_ROOT", generated_root), patch.object(
             VideoAssetArchiver,
             "_download_to_tempfile",
@@ -297,7 +302,10 @@ class AI8VideoVideoAssetArchiverTest(unittest.TestCase):
         ), patch(
             "ai8video.assets.video_asset_archiver.file_meta",
             return_value={"sha256": "mixed-sha", "size_bytes": 9},
-        ):
+        ), patch(
+            "ai8video.assets.video_asset_archiver.schedule_burned_result_copy",
+            side_effect=_schedule_copy,
+        ) as schedule_copy:
             job = self._sample_job()
             job.cover_image_url = None
             archived = archiver.archive(
@@ -309,6 +317,11 @@ class AI8VideoVideoAssetArchiverTest(unittest.TestCase):
 
         mix_music.assert_called_once()
         result_video = generated_root / archived.archive_key
+        schedule_copy.assert_called_once_with(
+            result_video,
+            result_root=generated_root,
+            overwrite=False,
+        )
         self.assertEqual(result_video.read_bytes(), b"mixed-mp4")
         self.assertFalse((Path(config.archive_local_dir) / archived.archive_key).exists())
         self.assertEqual(archived.sha256, "mixed-sha")

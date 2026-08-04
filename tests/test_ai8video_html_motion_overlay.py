@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ai8video.media import ffmpeg_utils
-from ai8video.media.motion import html_motion_overlay, html_motion_review
+from ai8video.media.motion import html_motion_overlay, html_motion_review, hyperframes_overlay_renderer
 from ai8video.core.config import AI8VideoConfig
 from ai8video.media.motion.html_motion_overlay import (
     _composite_transparent_layer,
@@ -465,6 +465,60 @@ class AI8VideoHtmlMotionOverlayTest(unittest.TestCase):
         self.assertEqual(rerender.call_args.args[0]["scenes"][0]["start"], 4.2)
         self.assertTrue(reused["renderReused"])
         self.assertEqual(rerender.call_count, 1)
+
+    def test_timeline_chunk_text_position_and_stable_id_reach_composition(self) -> None:
+        artifact = {
+            "design": {"palette": {"accent": "#78A7FF", "support": "#FFB76B", "text": "#FFFFFF"}},
+            "scenes": [{
+                "start": 0.0,
+                "end": 2.0,
+                "html": '<div class="hf-copy"><h1 id="scene-1-title">第一段</h1></div>',
+                "css": "#hf-scene-1 .hf-stage{overflow:hidden!important}",
+                "zone": "top-left",
+                "ids": ["scene-1-title"],
+                "animations": [{
+                    "target": "#scene-1-title",
+                    "kind": "entrance",
+                    "at": 0.0,
+                    "duration": 0.3,
+                    "from": {"opacity": 0},
+                    "to": {"opacity": 1},
+                }],
+            }],
+        }
+
+        chunks = html_motion_review._apply_timeline_chunks(
+            artifact,
+            [{
+                "sourceIndex": 0,
+                "chunkId": "intro-primary",
+                "startSeconds": 0.0,
+                "durationSeconds": 2.0,
+                "textPosition": {"x": 62.5, "y": 31.25},
+            }],
+            2.0,
+        )
+        composition = hyperframes_overlay_renderer.build_composition_html(
+            artifact,
+            {"width": 720, "height": 1280, "durationSeconds": 2.0},
+        )
+
+        self.assertEqual(chunks[0]["chunkId"], "intro-primary")
+        self.assertEqual(chunks[0]["textPosition"], {"x": 62.5, "y": 31.25})
+        self.assertEqual(artifact["scenes"][0]["_timelineChunkId"], "intro-primary")
+        self.assertEqual(artifact["scenes"][0]["_timelineTextPosition"], {"x": 62.5, "y": 31.25})
+        self.assertIn('data-chunk-id="intro-primary"', composition)
+        self.assertIn('data-text-x="62.500" data-text-y="31.250"', composition)
+        text_overflow_override = (
+            "#root .hf-scene[data-text-x][data-text-y] .hf-zone,"
+            "#root .hf-scene[data-text-x][data-text-y] .hf-stage"
+        )
+        self.assertIn("#root{position:relative;width:720px;height:1280px;overflow:hidden", composition)
+        self.assertIn(text_overflow_override, composition)
+        self.assertGreater(
+            composition.index(text_overflow_override),
+            composition.index("#hf-scene-1 .hf-stage{overflow:hidden!important}"),
+        )
 
     def test_alpha_validation_rejects_nontransparent_layer(self) -> None:
         with patch.object(html_motion_overlay, "probe_media_video_info", return_value={"pixelFormat": "yuv420p"}):

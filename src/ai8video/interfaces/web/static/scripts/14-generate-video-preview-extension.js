@@ -360,9 +360,6 @@
       editVideoTimelineButton?.addEventListener('click', () => {
         void toggleAllTimelineEditors(userGeneratedKey, editVideoTimelineButton);
       });
-      els.videoPreviewBody.querySelector('[data-video-preview-action="toggle-video-seek"]')?.addEventListener('click', () => {
-        toggleVideoSeekMode();
-      });
       els.videoPreviewBody.querySelector('[data-video-preview-action="toggle-video-scissors"]')?.addEventListener('click', () => {
         toggleVideoScissorMode();
       });
@@ -485,12 +482,13 @@
         htmlMotionTimelineDirty: false,
         htmlMotionScissorMode: false,
         htmlMotionSelectedChunkIndex: null,
+        htmlMotionSelectedChunkIndexes: [],
+        htmlMotionChunkIdSequence: 0,
         videoTimelineChunks: [],
         videoTimelineSourceDuration: 0,
         videoTimelineOutputDuration: 0,
         videoTimelineFilmstripUrl: '',
         videoTimelineFilmstripFrameCount: 0,
-        videoTimelineSeekMode: false,
         videoTimelineScissorMode: false,
         videoTimelineSelectedChunkIndex: null,
         videoTimelineBusy: false,

@@ -11,10 +11,6 @@
       return state.videoPreviewModal?.videoTimelineScissorMode === true;
     }
 
-    function isVideoSeekMode() {
-      return state.videoPreviewModal?.videoTimelineSeekMode === true;
-    }
-
     function videoTimelineDefaultStatus(data = {}) {
       if (data?.pending) return '已裁剪，等待确认烧录';
       if (data?.filmstripStatus === 'failed') return '缩略图读取失败，仍可切块和删除';
@@ -68,7 +64,6 @@
       const panel = videoTimelinePanel();
       const button = panel?.querySelector('[data-video-preview-action="toggle-video-scissors"]');
       const enabled = Boolean(active && panel?.classList.contains('is-open'));
-      if (enabled) setVideoSeekMode(false, { updateStatus: false });
       if (state.videoPreviewModal) state.videoPreviewModal.videoTimelineScissorMode = enabled;
       panel?.classList.toggle('is-scissor-mode', enabled);
       if (enabled) setVideoSelectedChunkIndex(null);
@@ -87,28 +82,6 @@
 
     function toggleVideoScissorMode() {
       setVideoScissorMode(!isVideoScissorMode());
-    }
-
-    function setVideoSeekMode(active, options = {}) {
-      const panel = videoTimelinePanel();
-      const button = panel?.querySelector('[data-video-preview-action="toggle-video-seek"]');
-      const enabled = Boolean(active && panel?.classList.contains('is-open'));
-      if (state.videoPreviewModal) state.videoPreviewModal.videoTimelineSeekMode = enabled;
-      panel?.classList.toggle('is-seek-mode', enabled);
-      if (enabled) {
-        setVideoScissorMode(false, { render: false, updateStatus: false });
-        setVideoSelectedChunkIndex(null);
-      }
-      button?.classList.toggle('is-active', enabled);
-      button?.setAttribute('aria-pressed', enabled ? 'true' : 'false');
-      if (button) button.title = enabled ? '关闭定位工具' : '开启定位工具';
-      if (options.updateStatus !== false) setVideoTimelineStatus(enabled
-        ? '定位工具已开启：点击胶片任意位置跳转'
-        : videoTimelineDefaultStatus(state.videoPreviewModal?.burnReview?.videoTimeline || {}));
-    }
-
-    function toggleVideoSeekMode() {
-      setVideoSeekMode(!isVideoSeekMode());
     }
 
     function packVideoTimelineChunks(chunks) {
@@ -180,7 +153,7 @@
         const label = chunk.label || `片段 ${index + 1}`;
         const action = isVideoScissorMode()
           ? `剪刀工具：点击${label}中的位置切块`
-          : `选择并跳转到${label}，${start.toFixed(1)}秒；拖动左右边缘可裁剪或恢复`;
+          : `选择${label}并定位到点击位置；键盘激活时跳转到${start.toFixed(1)}秒；拖动左右边缘可裁剪或恢复`;
         return `<button type="button" class="video-preview-tts-chunk video-preview-video-chunk${index === selectedIndex ? ' is-selected' : ''}" data-video-preview-video-chunk data-chunk-index="${index}" aria-label="${escapeHtml(action)}" aria-pressed="${index === selectedIndex ? 'true' : 'false'}" title="${escapeHtml(action)}" style="left:${geometry.left}%;width:${geometry.width}%;--video-preview-video-content-scale:${geometry.contentScale}%;--video-preview-video-content-offset:${geometry.contentOffset}%"><span class="video-preview-video-frames">${buildVideoFilmstripTiles(chunk)}</span><span class="video-preview-tts-chunk-meta"><span>${escapeHtml(label)}</span><small>${start.toFixed(1)}s</small></span>${timelineTrimHandleMarkup(label)}</button>`;
       }).join('');
       track.innerHTML = `${timelineRulerMarkup(scaleDuration)}<div class="video-preview-tts-chunk-lane"><span class="video-preview-timeline-cut-guide" data-video-preview-cut-guide hidden></span>${timelineSnapGuideMarkup()}<span class="video-preview-tts-playhead" data-video-preview-video-playhead aria-label="视频时间轴播放头" title="拖动播放头；按住 Shift 临时关闭吸附"></span>${markup}</div>`;
@@ -197,11 +170,6 @@
 
     function handleVideoTimelineChunkClick(event, element) {
       const index = Number(element.dataset.chunkIndex);
-      if (isVideoSeekMode()) {
-        if (event.detail === 0) seekVideoTimelineToChunk(index);
-        else seekVideoTimelineAtPointer(event, element);
-        return;
-      }
       if (isVideoScissorMode()) {
         if (event.detail === 0) splitVideoTimelineAtPlayhead(currentVideoPreviewUserGeneratedKey());
         else splitVideoTimelineAtPointer(event, element);
@@ -210,28 +178,23 @@
       const chunk = state.videoPreviewModal?.videoTimelineChunks?.[index];
       const video = els.videoPreviewBody?.querySelector('video');
       if (!chunk || !video) return;
-        setVideoSelectedChunkIndex(index);
-    }
-
-    function seekVideoTimelineToChunk(index) {
-      const chunk = state.videoPreviewModal?.videoTimelineChunks?.[index];
-      seekVideoTimelineToTime(Number(chunk?.startSeconds || 0));
-    }
-
-    function seekVideoTimelineAtPointer(event, element) {
+      if (event.detail === 0) {
+        seekVideoTimelineToTime(Number(chunk.startSeconds || 0), index);
+        return;
+      }
       const lane = element.closest('.video-preview-tts-chunk-lane');
       const scaleDuration = videoTimelineEditScaleDuration();
       if (!lane || scaleDuration <= 0) return;
-      seekVideoTimelineToTime(timelineSecondsAtPointer(event, lane, scaleDuration));
+      seekVideoTimelineToTime(timelineSecondsAtPointer(event, lane, scaleDuration), index);
     }
 
-    function seekVideoTimelineToTime(seconds) {
+    function seekVideoTimelineToTime(seconds, selectedIndex) {
       const video = els.videoPreviewBody?.querySelector('video');
       if (!video) return;
       const outputDuration = Number(state.videoPreviewModal?.videoTimelineOutputDuration || seconds);
       video.pause();
       video.currentTime = Math.max(0, Math.min(seconds, outputDuration, video.duration || seconds));
-      setVideoSelectedChunkIndex(null);
+      setVideoSelectedChunkIndex(selectedIndex);
       syncVideoTimelinePlayhead();
       setVideoTimelineStatus(`已定位到 ${video.currentTime.toFixed(1)} 秒`, 'success');
     }
@@ -412,7 +375,6 @@
         closeDependentTimelinePanels();
         syncVideoTimelinePlayhead();
       } else {
-        setVideoSeekMode(false, { updateStatus: false });
         setVideoScissorMode(false, { render: false, updateStatus: false });
         setVideoSelectedChunkIndex(null);
       }

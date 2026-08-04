@@ -97,6 +97,21 @@
       margin-bottom: 0;
     }
 
+    #videoPreviewModal .video-preview-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
+      margin-left: auto;
+    }
+
+    #videoPreviewOpenBurnedFolderButton {
+      min-height: 32px;
+      padding: 0 12px;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+
     #videoPreviewModal .video-preview-header-status {
       padding: 3px 9px;
       border-radius: 999px;
@@ -195,6 +210,10 @@
       border: 0;
       background: transparent;
       pointer-events: none;
+    }
+
+    .video-preview-html-motion-live.is-text-position-editable {
+      pointer-events: auto;
     }
 
     .video-preview-nav-button {

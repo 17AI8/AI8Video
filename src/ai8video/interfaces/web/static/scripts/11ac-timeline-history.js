@@ -117,10 +117,10 @@
       modal.videoTimelineSelectedChunkIndex = null;
       modal.ttsSelectedChunkIndex = null;
       modal.htmlMotionSelectedChunkIndex = null;
+      modal.htmlMotionSelectedChunkIndexes = [];
     }
 
     function renderTimelineHistorySnapshot() {
-      setVideoSeekMode(false, { updateStatus: false });
       setVideoScissorMode(false, { render: false, updateStatus: false });
       setTtsScissorMode(false, { render: false, updateStatus: false });
       setHtmlMotionScissorMode(false, { render: false, updateStatus: false });

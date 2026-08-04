@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import shutil
+import threading
+import uuid
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -12,6 +17,11 @@ from ai8video.core.legacy_payload import normalize_legacy_video_payload
 RESULT_VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v"}
 RESULT_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 RESULT_MEDIA_EXTENSIONS = RESULT_VIDEO_EXTENSIONS | RESULT_IMAGE_EXTENSIONS
+logger = logging.getLogger(__name__)
+_BURNED_COPY_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ai8-burned-copy")
+_BURNED_COPY_LOCKS: dict[str, threading.Lock] = {}
+_BURNED_COPY_LOCKS_GUARD = threading.Lock()
+_UNCHECKED_TARGET_STATE = object()
 
 
 def is_simulated_user_generated_result_path(source: Path) -> bool:
@@ -25,7 +35,7 @@ def ensure_user_generated_result_dir() -> Path:
 
 
 def migrate_legacy_result_layout(result_root: Path = USER_GENERATED_RESULT_ROOT) -> dict[str, Any]:
-    """恢复 canonical video/ 目录，并清理其下的历史二级结果目录。"""
+    """恢复 canonical video/ 目录，并隔离其中的历史非视频文件。"""
     root = Path(result_root).resolve()
     root.mkdir(parents=True, exist_ok=True)
     video_root = root / "video"
@@ -38,10 +48,12 @@ def migrate_legacy_result_layout(result_root: Path = USER_GENERATED_RESULT_ROOT)
     for source in sorted(video_root.rglob("*")):
         if source.is_file() and source.suffix.lower() in RESULT_VIDEO_EXTENSIONS and source.parent != video_root:
             _move_result_video(source, video_root, root, moved_keys, moved_videos)
+    moved_sidecars = _quarantine_result_video_sidecars(video_root, root)
     moved_metadata = _migrate_result_metadata(root, moved_keys)
     _prune_result_subdirectories(video_root)
     return {
         "movedVideos": moved_videos,
+        "movedSidecars": moved_sidecars,
         "movedMetadata": moved_metadata,
         "resultVideoRoot": str(video_root),
     }
@@ -55,23 +67,41 @@ def _move_result_video(
     moved_videos: list[str],
 ) -> None:
     old_key = source.relative_to(result_root).as_posix()
-    target = _next_video_result_path(video_root, source.name)
+    target = _next_result_file_path(video_root, source.name)
     shutil.move(str(source), str(target))
     canonical_key = target.relative_to(result_root).as_posix()
     moved_keys[old_key] = canonical_key
     moved_videos.append(canonical_key)
 
 
-def _next_video_result_path(video_root: Path, filename: str) -> Path:
-    candidate = video_root / Path(filename).name
+def _next_result_file_path(directory: Path, filename: str) -> Path:
+    candidate = directory / Path(filename).name
     if not candidate.exists():
         return candidate
     stem, suffix = candidate.stem, candidate.suffix
     for index in range(1, 1000):
-        numbered = video_root / f"{stem}-{index}{suffix}"
+        numbered = directory / f"{stem}-{index}{suffix}"
         if not numbered.exists():
             return numbered
-    raise RuntimeError("用户生成结果目录中同名视频过多")
+    raise RuntimeError("用户生成结果目录中同名文件过多")
+
+
+def _quarantine_result_video_sidecars(video_root: Path, result_root: Path) -> list[str]:
+    quarantine_root = result_root / "misc" / "video"
+    moved: list[str] = []
+    for source in sorted(video_root.rglob("*")):
+        if not source.is_file() or source.suffix.lower() in RESULT_VIDEO_EXTENSIONS:
+            continue
+        if source.name == ".DS_Store":
+            continue
+        relative = source.relative_to(video_root)
+        target = quarantine_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            target = _next_result_file_path(target.parent, target.name)
+        shutil.move(str(source), str(target))
+        moved.append(target.relative_to(result_root).as_posix())
+    return moved
 
 
 def _migrate_result_metadata(root: Path, moved_keys: dict[str, str]) -> list[str]:
@@ -122,8 +152,107 @@ def _prune_result_subdirectories(root: Path) -> None:
                 pass
 
 
-def mirror_generated_result_file(source: Path, *, archive_root: Path | None = None) -> Path | None:
-    return None
+def burned_result_lock(target: Path) -> threading.Lock:
+    key = str(Path(target).resolve())
+    with _BURNED_COPY_LOCKS_GUARD:
+        return _BURNED_COPY_LOCKS.setdefault(key, threading.Lock())
+
+
+def burned_result_path(source: Path, *, result_root: Path | None = None) -> Path | None:
+    root = Path(result_root or ensure_user_generated_result_dir()).resolve()
+    resolved = Path(source).resolve()
+    try:
+        relative = resolved.relative_to(root)
+    except ValueError:
+        return None
+    if not relative.parts or relative.parts[0] != "video":
+        return None
+    if resolved.suffix.lower() not in RESULT_VIDEO_EXTENSIONS:
+        return None
+    return (root / "burned" / relative).resolve()
+
+
+def _result_file_state(path: Path) -> tuple[int, int, int, int] | None:
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return None
+    return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
+
+
+def mirror_generated_result_file(
+    source: Path,
+    *,
+    archive_root: Path | None = None,
+    overwrite: bool = False,
+    expected_target_state: tuple[int, int, int, int] | None | object = _UNCHECKED_TARGET_STATE,
+) -> Path | None:
+    resolved_source = Path(source).resolve()
+    target = burned_result_path(resolved_source, result_root=archive_root)
+    if target is None or not resolved_source.is_file():
+        return None
+    with burned_result_lock(target):
+        if (
+            expected_target_state is not _UNCHECKED_TARGET_STATE
+            and _result_file_state(target) != expected_target_state
+        ):
+            return target if target.is_file() else None
+        if target.is_file() and not overwrite:
+            return target
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_name(f".{target.name}.copying-{uuid.uuid4().hex}")
+        try:
+            shutil.copy2(resolved_source, temporary)
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+    return target
+
+
+def schedule_burned_result_copy(
+    source: Path,
+    *,
+    result_root: Path | None = None,
+    overwrite: bool = False,
+) -> Future[Path | None] | None:
+    target = burned_result_path(source, result_root=result_root)
+    if target is None:
+        return None
+    expected_target_state = _result_file_state(target) if overwrite else _UNCHECKED_TARGET_STATE
+    future = _BURNED_COPY_EXECUTOR.submit(
+        mirror_generated_result_file,
+        source,
+        archive_root=result_root,
+        overwrite=overwrite,
+        expected_target_state=expected_target_state,
+    )
+
+    def report_failure(completed: Future[Path | None]) -> None:
+        try:
+            completed.result()
+        except Exception:
+            logger.exception("创建烧录初始副本失败：%s", target)
+
+    future.add_done_callback(report_failure)
+    return future
+
+
+def schedule_missing_burned_result_copies(
+    result_root: Path | None = None,
+) -> list[Future[Path | None]]:
+    root = Path(result_root or ensure_user_generated_result_dir()).resolve()
+    video_root = root / "video"
+    if not video_root.is_dir():
+        return []
+    scheduled: list[Future[Path | None]] = []
+    for source in sorted(video_root.rglob("*")):
+        target = burned_result_path(source, result_root=root)
+        if target is None or target.is_file():
+            continue
+        future = schedule_burned_result_copy(source, result_root=root, overwrite=False)
+        if future is not None:
+            scheduled.append(future)
+    return scheduled
 
 
 def sync_generated_results_from_archive_root(archive_root: Path) -> Path:

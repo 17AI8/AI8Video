@@ -382,7 +382,7 @@
       const index = Number(element.dataset.chunkIndex);
       bindTimelineEndTrimHandle(element, {
         duration,
-        disabled: () => isVideoScissorMode() || isVideoSeekMode() || timelineHistoryBusy(),
+        disabled: () => isVideoScissorMode() || timelineHistoryBusy(),
         currentEnd: () => Number(state.videoPreviewModal?.videoTimelineChunks?.[index]?.sourceEndSeconds || 0),
         minimumEnd: () => Number(state.videoPreviewModal?.videoTimelineChunks?.[index]?.sourceStartSeconds || 0)
           + TIMELINE_TRIM_MIN_SECONDS,

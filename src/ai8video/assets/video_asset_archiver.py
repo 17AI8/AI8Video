@@ -17,7 +17,10 @@ import requests
 from ai8video.core.config import AI8VideoConfig
 from ai8video.media.ffmpeg_utils import resolve_ffmpeg_bin
 from ai8video.core.models import ArchivedAsset, VideoPrompt, ParsedRequest, QuickVideoJob, GenerationOutcome
-from ai8video.assets.user_generated_results import ensure_user_generated_result_dir
+from ai8video.assets.user_generated_results import (
+    ensure_user_generated_result_dir,
+    schedule_burned_result_copy,
+)
 from ai8video.assets.user_generated_previews import generate_preview_for_video
 from ai8video.assets.user_recycle_bin import save_failed_video_task
 from ai8video.media.background_music import (
@@ -281,6 +284,7 @@ class VideoAssetArchiver:
             local_tts_result=postprocess["localTts"],
             postprocess_meta=extra_meta,
         )
+        schedule_burned_result_copy(result_video, result_root=result_root, overwrite=False)
         return ArchivedAsset(
             video_index=video.index,
             job_id=job.job_id,
@@ -437,6 +441,7 @@ class VideoAssetArchiver:
             html_motion_result=postprocess["htmlMotionOverlay"],
             local_tts_result=postprocess["localTts"],
         )
+        schedule_burned_result_copy(result_video, result_root=result_root, overwrite=False)
         return ArchivedAsset(
             video_index=video.index,
             job_id=job.job_id,

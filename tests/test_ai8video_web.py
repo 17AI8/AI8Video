@@ -1536,9 +1536,11 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn('function setVideoSelectedChunkIndex(index, exclusive = true)', source)
         self.assertIn('function setTtsSelectedChunkIndex(index, exclusive = true)', source)
         self.assertIn('function setHtmlMotionSelectedChunkIndex(index, exclusive = true)', source)
-        self.assertIn('data-video-preview-action="toggle-video-seek"', source)
-        self.assertIn('function seekVideoTimelineAtPointer(event, element)', source)
-        self.assertIn("'定位工具已开启：点击胶片任意位置跳转'", source)
+        self.assertNotIn('data-video-preview-action="toggle-video-seek"', source)
+        self.assertNotIn('videoTimelineSeekMode', source)
+        self.assertIn('seekVideoTimelineToTime(Number(chunk.startSeconds || 0), index);', source)
+        self.assertIn('seekVideoTimelineToTime(timelineSecondsAtPointer(event, lane, scaleDuration), index);', source)
+        self.assertIn('setVideoSelectedChunkIndex(selectedIndex);', source)
         self.assertIn('setVideoSelectedChunkIndex(null, false)', source)
         self.assertIn('setTtsSelectedChunkIndex(null, false)', source)
         self.assertIn('setHtmlMotionSelectedChunkIndex(null, false)', source)
@@ -1562,6 +1564,27 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("element.dataset.suppressHtmlMotionClick = 'true';", source)
         self.assertIn("if (element.dataset.suppressHtmlMotionClick === 'true') {", source)
         self.assertIn("if (lane?.dataset.timelineIgnoreClick === 'true') {", source)
+
+    def test_html_motion_text_position_editing_uses_visible_selected_anchor_and_batch_scope(self) -> None:
+        source = read_static_source()
+        runtime = (Path(html_motion_review.__file__).parent / "waapi_timeline_runtime.js").read_text(
+            encoding="utf-8",
+        )
+
+        self.assertIn("function currentHtmlMotionVisibleSelectedChunks(video)", source)
+        self.assertIn("selectedChunkIds: editing.selectedChunkIds", source)
+        self.assertIn("editableChunkIds: editing.editableChunkIds", source)
+        self.assertIn("frame.classList.toggle('is-text-position-editable', editable)", source)
+        self.assertIn("if (!currentHtmlMotionVisibleSelectedChunks(video).length)", source)
+        self.assertIn("selectedIndexes.forEach((index) => {", source)
+        self.assertIn("chunk.textPosition = { ...position };", source)
+        self.assertIn("已同步 ${selectedIndexes.length} 个动效片段文字位置", source)
+        self.assertIn("syncLiveHtmlMotionPreview(els.videoPreviewBody?.querySelector('video'))", source)
+        self.assertIn("anchorScene.dataset.ai8TextEditable !== 'true'", runtime)
+        self.assertIn("type: 'ai8-motion-text-position-change'", runtime)
+        self.assertIn("selectedChunkIds: global.__ai8MotionSelectedChunkIds || []", runtime)
+        self.assertIn("data-chunk-id=", source)
+        self.assertIn("is-text-position-editable", source)
 
     def test_tts_timeline_supports_marquee_and_batch_selection(self) -> None:
         source = read_static_source()
@@ -2541,8 +2564,9 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertTrue(body["ok"])
         self.assertEqual(Path(body["path"]).resolve(), local_video.parent.resolve())
 
-    def test_api_open_user_generated_results_folder_opens_root_without_resync(self) -> None:
+    def test_api_open_user_generated_results_folder_opens_burned_video_dir(self) -> None:
         generated_root = self.root / "用户生成结果"
+        burned_video_dir = generated_root / "burned" / "video"
         request_backup = ai8video_web.request
         response_backup = ai8video_web.response
         fake_response = SimpleNamespace(status=200)
@@ -2555,6 +2579,10 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 return_value=generated_root.resolve(),
             ), patch.object(
                 ai8video_web,
+                "schedule_missing_burned_result_copies",
+                return_value=[],
+            ), patch.object(
+                ai8video_web,
                 "_open_in_file_manager",
             ) as open_dir:
                 body = ai8video_web.api_open_user_generated_results_folder()
@@ -2562,12 +2590,84 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             ai8video_web.request = request_backup
             ai8video_web.response = response_backup
 
-        open_dir.assert_called_once_with(generated_root.resolve())
+        open_dir.assert_called_once_with(burned_video_dir.resolve())
         self.assertTrue(body["ok"])
-        self.assertEqual(Path(body["path"]).resolve(), generated_root.resolve())
+        self.assertEqual(Path(body["path"]).resolve(), burned_video_dir.resolve())
+        self.assertTrue(burned_video_dir.is_dir())
 
-    def test_api_open_user_generated_results_folder_always_opens_root(self) -> None:
+    def test_api_open_user_generated_burned_video_reveals_exact_file(self) -> None:
         generated_root = self.root / "用户生成结果"
+        burned_video = generated_root / "burned" / "video" / "demo.mp4"
+        burned_video.parent.mkdir(parents=True, exist_ok=True)
+        burned_video.write_bytes(b"burned")
+        request_backup = ai8video_web.request
+        response_backup = ai8video_web.response
+        fake_response = SimpleNamespace(status=200)
+        ai8video_web.request = SimpleNamespace(
+            method="POST",
+            json={"userGeneratedKey": "video/demo.mp4"},
+        )
+        ai8video_web.response = fake_response
+        try:
+            with patch.object(
+                ai8video_web,
+                "ensure_user_generated_result_dir",
+                return_value=generated_root.resolve(),
+            ), patch.object(ai8video_web, "_reveal_in_file_manager") as reveal_file:
+                body = ai8video_web.api_open_user_generated_burned_video_in_folder()
+        finally:
+            ai8video_web.request = request_backup
+            ai8video_web.response = response_backup
+
+        reveal_file.assert_called_once_with(burned_video.resolve())
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["userGeneratedKey"], "burned/video/demo.mp4")
+        self.assertEqual(Path(body["path"]).resolve(), burned_video.resolve())
+
+    def test_api_open_user_generated_burned_video_repairs_missing_initial_copy(self) -> None:
+        generated_root = self.root / "用户生成结果"
+        source_video = generated_root / "video" / "demo.mp4"
+        burned_video = generated_root / "burned" / "video" / "demo.mp4"
+        source_video.parent.mkdir(parents=True, exist_ok=True)
+        source_video.write_bytes(b"source")
+        request_backup = ai8video_web.request
+        response_backup = ai8video_web.response
+        fake_response = SimpleNamespace(status=200)
+        ai8video_web.request = SimpleNamespace(
+            method="POST",
+            json={"userGeneratedKey": "video/demo.mp4"},
+        )
+        ai8video_web.response = fake_response
+        try:
+            with patch.object(
+                ai8video_web,
+                "ensure_user_generated_result_dir",
+                return_value=generated_root.resolve(),
+            ), patch.object(ai8video_web, "_reveal_in_file_manager") as reveal_file:
+                body = ai8video_web.api_open_user_generated_burned_video_in_folder()
+        finally:
+            ai8video_web.request = request_backup
+            ai8video_web.response = response_backup
+
+        reveal_file.assert_called_once_with(burned_video.resolve())
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["userGeneratedKey"], "burned/video/demo.mp4")
+        self.assertEqual(burned_video.read_bytes(), b"source")
+
+    def test_reveal_in_file_manager_selects_file_in_macos_finder(self) -> None:
+        video = self.root / "burned.mp4"
+        video.write_bytes(b"video")
+        with patch.object(ai8video_web.sys, "platform", "darwin"), patch.object(
+            ai8video_web.subprocess,
+            "Popen",
+        ) as popen:
+            ai8video_web._reveal_in_file_manager(video)
+
+        popen.assert_called_once_with(["open", "-R", str(video.resolve())])
+
+    def test_api_open_user_generated_results_folder_ignores_stale_local_path(self) -> None:
+        generated_root = self.root / "用户生成结果"
+        burned_video_dir = generated_root / "burned" / "video"
         archive_root = self.root / "archive"
         archive_video = archive_root / "ai8video" / "2026" / "06" / "13" / "demo.mp4"
         mirrored_video = generated_root / "ai8video" / "2026" / "06" / "13" / "demo.mp4"
@@ -2592,15 +2692,19 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 ai8video_web,
                 "_archive_roots",
                 return_value=[archive_root.resolve()],
+            ), patch.object(
+                ai8video_web,
+                "schedule_missing_burned_result_copies",
+                return_value=[],
             ), patch.object(ai8video_web, "_open_in_file_manager") as open_dir:
                 body = ai8video_web.api_open_user_generated_results_folder()
         finally:
             ai8video_web.request = request_backup
             ai8video_web.response = response_backup
 
-        open_dir.assert_called_once_with(generated_root.resolve())
+        open_dir.assert_called_once_with(burned_video_dir.resolve())
         self.assertTrue(body["ok"])
-        self.assertEqual(Path(body["path"]).resolve(), generated_root.resolve())
+        self.assertEqual(Path(body["path"]).resolve(), burned_video_dir.resolve())
 
     def test_api_user_generated_results_reads_live_folder_instead_of_stale_jsonl(self) -> None:
         generated_root = self.root / "用户生成结果"
@@ -6036,6 +6140,18 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("const explicitKey = trigger?.getAttribute?.('data-video-user-generated-key') || '';", html)
         self.assertIn("const userGeneratedKey = explicitKey || deriveUserGeneratedKeyFromMediaUrl(src);", html)
 
+    def test_static_video_preview_can_open_current_burned_result_in_folder(self) -> None:
+        html = read_static_source()
+
+        self.assertIn('id="resultModalOpenFolderButton"', html)
+        self.assertIn('title="打开最终烧录成片文件夹">打开成片文件夹</button>', html)
+        self.assertIn('id="videoPreviewOpenBurnedFolderButton"', html)
+        self.assertIn('>在文件夹中打开</button>', html)
+        self.assertIn("currentVideoPreviewUserGeneratedKey()", html)
+        self.assertIn("/api/user-generated-results/open-burned-in-folder", html)
+        self.assertIn("JSON.stringify({ userGeneratedKey })", html)
+        self.assertIn("已在文件夹中选中", html)
+
     def test_agent_batch_merge_collapses_cards_and_reconciles_merged_preview(self) -> None:
         html = read_static_source()
 
@@ -6616,7 +6732,15 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             ai8video_web,
             "merge_html_motion_reviews",
             return_value={"ok": True, "reviewReady": False},
-        ):
+        ), patch.object(
+            ai8video_web,
+            "_current_video_timeline_status",
+            return_value={},
+        ), patch.object(
+            ai8video_web,
+            "_current_tts_timeline_status",
+            return_value={},
+        ), patch.object(ai8video_web, "schedule_burned_result_copy") as schedule_copy:
             body = ai8video_web._batch_merge_user_generated_videos(["video/second.mp4", "video/first.mp4"])
 
         self.assertEqual(captured, ["second.mp4", "first.mp4"])
@@ -6633,6 +6757,11 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertFalse(audio_path.exists())
         self.assertEqual(JsonlAssetStore(self.root / "assets.jsonl").read_all(), [])
         merged = result_root / body["userGeneratedKey"]
+        schedule_copy.assert_called_once_with(
+            merged.resolve(),
+            result_root=result_root.resolve(),
+            overwrite=True,
+        )
         self.assertEqual(merged.read_bytes(), b"merged")
         self.assertEqual((result_root / body["previewKey"]).read_bytes(), b"second-preview")
 
@@ -8053,13 +8182,18 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             ai8video_web, "generate_preview_for_video", return_value={"ok": True},
         ), patch.object(
             ai8video_web, "_delete_extension_state_assets", return_value={"ok": True, "deleted": []},
-        ):
+        ), patch.object(ai8video_web, "schedule_burned_result_copy") as schedule_copy:
             body = ai8video_web._replace_user_generated_video(
                 "video/original.mp4",
                 "extensions/video/selected.mp4",
             )
 
         base = ai8video_web.hidden_bgm_base_path(result_root, "video/original.mp4")
+        schedule_copy.assert_called_once_with(
+            left.resolve(),
+            result_root=result_root,
+            overwrite=True,
+        )
         self.assertTrue(body["ok"])
         self.assertEqual(left.read_bytes(), b"selected-variant")
         self.assertEqual(base.read_bytes(), b"selected-variant")
@@ -8099,13 +8233,18 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             ai8video_web, "generate_preview_for_video", return_value={"ok": True},
         ), patch.object(
             ai8video_web, "_delete_extension_state_assets", return_value={"ok": True, "deleted": []},
-        ):
+        ), patch.object(ai8video_web, "schedule_burned_result_copy") as schedule_copy:
             ai8video_web._replace_user_generated_video(
                 "video/original.mp4",
                 "extensions/video/selected.mp4",
             )
 
         base = ai8video_web.hidden_bgm_base_path(result_root, "video/original.mp4")
+        schedule_copy.assert_called_once_with(
+            left.resolve(),
+            result_root=result_root,
+            overwrite=True,
+        )
         self.assertEqual(left.read_bytes(), b"selected-visual-with-current-tts")
         self.assertEqual(base.read_bytes(), b"selected-visual-with-current-tts")
 

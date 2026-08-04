@@ -466,7 +466,7 @@
             <button id="resultModalBatchMergeConfirmButton" type="button" class="button-secondary hidden">确认</button>
           </div>
           <button id="resultModalRefreshButton" type="button" class="button-secondary">刷新</button>
-          <button id="resultModalOpenFolderButton" type="button" class="button-secondary">打开文件夹</button>
+          <button id="resultModalOpenFolderButton" type="button" class="button-secondary" title="打开最终烧录成片文件夹">打开成片文件夹</button>
           <button id="resultModalCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
         </div>
       </div>
@@ -481,7 +481,10 @@
           <div id="videoPreviewSub" class="modal-sub"></div>
           <span id="videoPreviewStatus" class="video-preview-header-status" hidden></span>
         </div>
-        <button id="videoPreviewCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+        <div class="video-preview-header-actions">
+          <button id="videoPreviewOpenBurnedFolderButton" type="button" class="button-secondary" aria-label="在文件夹中打开当前视频的烧录结果" title="打开烧录结果所在文件夹并选中文件">在文件夹中打开</button>
+          <button id="videoPreviewCloseButton" type="button" class="modal-close" aria-label="关闭">×</button>
+        </div>
       </div>
       <div id="videoPreviewBody"></div>
     </div>

@@ -113,11 +113,17 @@
         frame.setAttribute('aria-hidden', 'true');
         stage.appendChild(frame);
       }
-      const sync = () => frame.contentWindow?.postMessage({
-        type: 'ai8-motion-preview',
-        currentTime: Number(video.currentTime || 0),
-        chunks: state.videoPreviewModal?.htmlMotionTimelineChunks || chunks,
-      }, '*');
+      bindLiveHtmlMotionPreviewMessages(frame, video);
+      const sync = () => {
+        const editing = htmlMotionTextPositionPreviewState(video, frame);
+        frame.contentWindow?.postMessage({
+          type: 'ai8-motion-preview',
+          currentTime: Number(video.currentTime || 0),
+          chunks: state.videoPreviewModal?.htmlMotionTimelineChunks || chunks,
+          selectedChunkIds: editing.selectedChunkIds,
+          editableChunkIds: editing.editableChunkIds,
+        }, '*');
+      };
       const syncWhenReady = (event) => {
         if (event.source !== frame.contentWindow || event.data?.type !== 'ai8-motion-ready') return;
         window.removeEventListener('message', syncWhenReady);
@@ -132,7 +138,7 @@
           video.addEventListener(eventName, () => syncLiveHtmlMotionPreview(video));
         });
       }
-      video.play().catch(() => {});
+      if (options.autoplay !== false) video.play().catch(() => {});
     }
 
     function syncLiveHtmlMotionPreview(video) {
@@ -148,10 +154,15 @@
         );
         frame = video.closest('.video-preview-stage')?.querySelector('[data-video-preview-html-motion-live]');
       }
-      frame?.contentWindow?.postMessage({
+      if (!frame) return;
+      bindLiveHtmlMotionPreviewMessages(frame, video);
+      const editing = htmlMotionTextPositionPreviewState(video, frame);
+      frame.contentWindow?.postMessage({
         type: 'ai8-motion-preview',
         currentTime: Number(video?.currentTime || 0),
         chunks: state.videoPreviewModal?.htmlMotionTimelineChunks || [],
+        selectedChunkIds: editing.selectedChunkIds,
+        editableChunkIds: editing.editableChunkIds,
       }, '*');
     }
 

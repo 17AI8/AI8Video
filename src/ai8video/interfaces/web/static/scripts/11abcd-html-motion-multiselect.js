@@ -28,6 +28,7 @@
         element.setAttribute('aria-pressed', active ? 'true' : 'false');
       });
       syncHtmlMotionDeleteButton();
+      syncLiveHtmlMotionPreview(els.videoPreviewBody?.querySelector('video'));
     }
 
     function toggleHtmlMotionChunkSelection(index) {

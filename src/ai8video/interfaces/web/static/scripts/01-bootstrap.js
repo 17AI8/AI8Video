@@ -483,6 +483,7 @@
       videoPreviewSub: document.getElementById('videoPreviewSub'),
       videoPreviewStatus: document.getElementById('videoPreviewStatus'),
       videoPreviewBody: document.getElementById('videoPreviewBody'),
+      videoPreviewOpenBurnedFolderButton: document.getElementById('videoPreviewOpenBurnedFolderButton'),
       videoPreviewCloseButton: document.getElementById('videoPreviewCloseButton'),
       settingsModal: document.getElementById('settingsModal'),
       settingsModalSub: document.getElementById('settingsModalSub'),

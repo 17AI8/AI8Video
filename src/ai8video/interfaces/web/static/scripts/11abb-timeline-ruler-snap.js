@@ -258,6 +258,7 @@
       syncTtsTimelinePlayhead();
       syncVideoTimelinePlayhead();
       syncHtmlMotionTimelinePlayhead();
+      syncLiveHtmlMotionPreview(els.videoPreviewBody?.querySelector('video'));
     }
 
     function bindSmoothTimelinePlayheadSync(video) {

@@ -9,6 +9,9 @@ from typing import Any
 from ai8video.media.timeline_contract import normalize_restore_bounds, optional_seconds
 
 
+_CHUNK_ID_PATTERN = re.compile(r"[^A-Za-z0-9._:-]+")
+
+
 def timeline_chunks(
     artifact: Any,
     source_artifact: Any = None,
@@ -71,6 +74,7 @@ def _timeline_chunk(
     label = re.sub(r"\s+", " ", text).strip()[:32] or f"Chunk {index + 1}"
     return {
         "index": index,
+        "chunkId": timeline_chunk_id(scene, index),
         "sourceIndex": source_index,
         "sourceStartSeconds": round(
             optional_seconds(scene.get("_timelineSourceStartSeconds"), source_scene_start),
@@ -92,6 +96,37 @@ def _timeline_chunk(
         "endSeconds": round(end, 3),
         "durationSeconds": round(max(0.1, end - start), 3),
         "label": label,
+        "textPosition": timeline_text_position(scene.get("_timelineTextPosition")),
+    }
+
+
+def timeline_chunk_id(scene: Any, index: int) -> str:
+    raw = str(scene.get("_timelineChunkId") or "").strip() if isinstance(scene, dict) else ""
+    normalized = _CHUNK_ID_PATTERN.sub("-", raw).strip("-._:")[:96]
+    return normalized or f"html-motion-chunk-{index + 1}"
+
+
+def timeline_text_position(value: Any, *, strict: bool = False) -> dict[str, float] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        if strict:
+            raise ValueError("文字位置数据不合法")
+        return None
+    try:
+        x = float(value.get("x"))
+        y = float(value.get("y"))
+    except (TypeError, ValueError):
+        if strict:
+            raise ValueError("文字位置数据不合法") from None
+        return None
+    if not math.isfinite(x) or not math.isfinite(y):
+        if strict:
+            raise ValueError("文字位置数据不合法")
+        return None
+    return {
+        "x": round(min(100.0, max(0.0, x)), 3),
+        "y": round(min(100.0, max(0.0, y)), 3),
     }
 
 
@@ -156,9 +191,22 @@ def _rebuild_scene(
             "_timelineOriginalSourceEndSeconds": round(
                 min(source_scene_end, restore_bounds.end_seconds), 3
             ),
+            "_timelineChunkId": _chunk_id_from_item(item, source_index, target_index),
         }
     )
+    text_position = timeline_text_position(item.get("textPosition"), strict=True)
+    if text_position is None:
+        scene.pop("_timelineTextPosition", None)
+    else:
+        scene["_timelineTextPosition"] = text_position
     return scene
+
+
+def _chunk_id_from_item(item: dict[str, Any], source_index: int, target_index: int) -> str:
+    candidate = timeline_chunk_id({"_timelineChunkId": item.get("chunkId")}, target_index)
+    if item.get("chunkId"):
+        return candidate
+    return f"html-motion-source-{source_index + 1}-chunk-{target_index + 1}"
 
 
 def _chunk_location(item: Any, target_index: int) -> tuple[int, float]:

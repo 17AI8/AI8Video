@@ -161,6 +161,14 @@
       }
     });
 
+    els.videoPreviewOpenBurnedFolderButton.addEventListener('click', async () => {
+      try {
+        await openCurrentBurnedVideoInFolder(els.videoPreviewOpenBurnedFolderButton);
+      } catch (error) {
+        window.alert(error?.message || '打开烧录结果失败');
+      }
+    });
+
     els.videoPreviewCloseButton.addEventListener('click', () => {
       closeVideoPreviewModal();
     });

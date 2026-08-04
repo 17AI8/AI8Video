@@ -164,7 +164,7 @@
       );
       bindTimelineStartTrimHandle(element, {
         duration,
-        disabled: () => isVideoScissorMode() || isVideoSeekMode() || timelineHistoryBusy(),
+        disabled: () => isVideoScissorMode() || timelineHistoryBusy(),
         currentStart: () => Number(state.videoPreviewModal?.videoTimelineChunks?.[index]?.sourceStartSeconds || 0),
         minimumStart: () => Number(
           state.videoPreviewModal?.videoTimelineChunks?.[index]?.originalSourceStartSeconds
