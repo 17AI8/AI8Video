@@ -8,7 +8,7 @@
   <p>用自然语言串联选题、知识检索、脚本规划、图片与视频生成、TTS、精剪、批量监督和本地交付。</p>
 
   <p>
-    <a href="pyproject.toml"><img src="https://img.shields.io/badge/version-0.3.0-4f6dff?style=flat-square" alt="Version 0.3.0"></a>
+    <a href="pyproject.toml"><img src="https://img.shields.io/badge/version-0.4.0-4f6dff?style=flat-square" alt="Version 0.4.0"></a>
     <img src="https://img.shields.io/badge/Python-3.10--3.13-0ea5e9?style=flat-square&logo=python&logoColor=white" alt="Python 3.10 to 3.13">
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square" alt="MIT License"></a>
     <img src="https://img.shields.io/badge/runtime-local--first-0891b2?style=flat-square" alt="Local-first Runtime">

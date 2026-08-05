@@ -1,6 +1,6 @@
 """AI8video 的短视频生成、媒体处理与任务编排能力。"""
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 from ai8video.core.identity import ENV_PREFIX, PRODUCT_NAME, PRODUCT_SLUG, bridge_legacy_environment
 
