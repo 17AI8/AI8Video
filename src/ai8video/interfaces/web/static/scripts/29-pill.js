@@ -137,7 +137,14 @@
       const assetRecord = item?.assetRecord && typeof item.assetRecord === 'object' ? item.assetRecord : {};
       const requestedKey = String(item?.userGeneratedKey || assetRecord.archiveKey || '').trim();
       if (requestedKey) {
-        return results.find((result) => result.userGeneratedKey === requestedKey) || null;
+        const canonicalRequestedKey = requestedKey.startsWith('video/')
+          ? `source/${requestedKey}`
+          : requestedKey;
+        const requestedResult = results.find((result) => (
+          result.userGeneratedKey === canonicalRequestedKey
+          || result.userGeneratedKey === requestedKey
+        ));
+        if (requestedResult) return requestedResult;
       }
       const candidates = [
         item?.archiveKey || assetRecord.archiveKey,
@@ -158,14 +165,14 @@
         return resultNames.some((name) => candidates.includes(name));
       });
       const exactMediaMatch = exactMediaMatches.find((result) => (
-        String(result?.userGeneratedKey || '').startsWith('video/')
+        String(result?.userGeneratedKey || '').startsWith('source/video/')
       )) || exactMediaMatches[0];
       if (exactMediaMatch) return exactMediaMatch;
       const jobId = String(item?.jobId || assetRecord.jobId || '').trim();
       if (!jobId) return null;
       return results.find((result) => (
         String(result?.jobId || '').trim() === jobId
-        && String(result?.userGeneratedKey || '').startsWith('video/')
+        && String(result?.userGeneratedKey || '').startsWith('source/video/')
       )) || results.find((result) => String(result?.jobId || '').trim() === jobId) || null;
     }
 
@@ -180,6 +187,10 @@
     }
 
     function resolvePlayableVideoSrc(item) {
+      const directKey = String(item?.userGeneratedKey || '').trim();
+      if (directKey && ['source', 'burned'].includes(String(item?.artifactKind || '').trim())) {
+        return buildUserGeneratedMediaUrl(directKey);
+      }
       const userGeneratedMirror = findUserGeneratedMirror(item);
       if (userGeneratedMirror?.userGeneratedKey) {
         return buildUserGeneratedMediaUrl(userGeneratedMirror.userGeneratedKey);
@@ -205,12 +216,8 @@
       if (userGeneratedMirror?.userGeneratedCoverKey) {
         return buildUserGeneratedMediaUrl(userGeneratedMirror.userGeneratedCoverKey);
       }
-      if (userGeneratedMirror?.userGeneratedKey) {
-        const mirrorCoverKey = deriveLocalCoverKey(userGeneratedMirror.userGeneratedKey);
-        if (mirrorCoverKey) {
-          return buildUserGeneratedMediaUrl(mirrorCoverKey);
-        }
-      }
+      // The results API only exposes userGeneratedCoverKey after verifying the file exists.
+      // Do not infer a cover beside a mirrored video because burned videos may have no cover.
       if (itemRequiresUserGeneratedMirror(item)) {
         return '';
       }
@@ -329,13 +336,13 @@
       setTimeout(() => { trigger.textContent = previous; }, 1200);
     }
 
-    async function openUserGeneratedResultsFolder(trigger) {
+    async function openUserGeneratedResultsFolder(trigger, artifactKind = 'burned') {
       const previous = trigger.textContent;
       trigger.textContent = '打开中...';
       const res = await fetch('/api/open-user-generated-results-folder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ artifactKind }),
       });
       if (!res.ok) {
         trigger.textContent = '打开失败';

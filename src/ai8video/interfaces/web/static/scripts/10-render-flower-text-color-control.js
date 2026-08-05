@@ -327,8 +327,9 @@
 
     function ensureResultModalState() {
       if (!state.resultModal || typeof state.resultModal !== 'object') {
-        state.resultModal = { visible: false, batchMerge: false, batchMergeSubmitting: false, selectedKeys: [] };
+        state.resultModal = { visible: false, directory: 'burned', batchMerge: false, batchMergeSubmitting: false, selectedKeys: [] };
       }
+      if (!['source', 'burned'].includes(state.resultModal.directory)) state.resultModal.directory = 'burned';
       if (!Array.isArray(state.resultModal.selectedKeys)) state.resultModal.selectedKeys = [];
       return state.resultModal;
     }
@@ -364,12 +365,23 @@
       const modalState = ensureResultModalState();
       const visible = !!state.resultModal.visible;
       els.resultModal.classList.toggle('hidden', !visible);
-      const gallery = buildResultFolderGalleryModel(getActiveSession());
+      const activeDirectory = modalState.directory;
+      const isSourceDirectory = activeDirectory === 'source';
+      const gallery = buildResultFolderGalleryModel(getActiveSession(), activeDirectory);
       const completedCount = getResultFolderCompletedCount(gallery);
       els.resultModalTitle.textContent = '全部生成结果';
       els.resultModalSub.textContent = completedCount
-        ? `结果目录中 ${completedCount} 个成片`
-        : '结果目录当前没有成片。';
+        ? `${isSourceDirectory ? '原片' : '烧录结果'}目录中 ${completedCount} 个视频`
+        : `${isSourceDirectory ? '原片' : '烧录结果'}目录当前没有视频。`;
+      [els.resultModalSourceTab, els.resultModalBurnedTab].forEach((tab) => {
+        const selected = tab?.dataset.resultDirectory === activeDirectory;
+        tab?.classList.toggle('is-active', selected);
+        tab?.setAttribute('aria-selected', selected ? 'true' : 'false');
+        tab?.setAttribute('tabindex', selected ? '0' : '-1');
+      });
+      els.resultModalOpenFolderButton.textContent = isSourceDirectory ? '打开原片文件夹' : '打开成片文件夹';
+      els.resultModalOpenFolderButton.title = isSourceDirectory ? '打开纯净原片文件夹' : '打开最终烧录成片文件夹';
+      els.resultModalOpenFolderButton.dataset.artifactKind = activeDirectory;
       els.resultModalOpenFolderButton.disabled = false;
       els.resultModalOpenFolderButton.dataset.archiveKey = '';
       els.resultModalOpenFolderButton.dataset.localPath = '';
@@ -396,6 +408,15 @@
 
     function openResultModal() {
       state.resultModal.visible = true;
+      renderResultModal();
+    }
+
+    function selectResultDirectory(directory) {
+      const modalState = ensureResultModalState();
+      if (modalState.batchMergeSubmitting || !['source', 'burned'].includes(directory)) return;
+      modalState.directory = directory;
+      modalState.batchMerge = false;
+      modalState.selectedKeys = [];
       renderResultModal();
     }
 

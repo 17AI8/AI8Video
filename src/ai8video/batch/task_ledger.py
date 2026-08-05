@@ -154,6 +154,40 @@ class TaskLedger:
                 ),
             )
 
+    def reopen_generation_batch(
+        self,
+        *,
+        session_id: str,
+        generation_batch_id: str,
+        phase: str,
+        progress: dict[str, Any],
+    ) -> None:
+        """Reopen a terminal batch after an explicit user rollback."""
+        normalized_session_id = _require_text(session_id, "session_id")
+        normalized_generation_batch_id = _require_text(generation_batch_id, "generation_batch_id")
+        normalized_phase = _require_text(phase, "phase")
+        now = _isoformat(time.time())
+        progress_json = json.dumps(progress, ensure_ascii=False, sort_keys=True)
+        self.initialize()
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE generation_batches
+                SET session_id = ?, status = 'active', phase = ?, progress_json = ?,
+                    updated_at = ?, completed_at = NULL
+                WHERE generation_batch_id = ?
+                """,
+                (
+                    normalized_session_id,
+                    normalized_phase,
+                    progress_json,
+                    now,
+                    normalized_generation_batch_id,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise LookupError("generation batch not found")
+
     def get_generation_batch(self, generation_batch_id: str) -> dict[str, Any] | None:
         normalized_generation_batch_id = _require_text(generation_batch_id, "generation_batch_id")
         self.initialize()

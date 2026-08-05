@@ -58,6 +58,137 @@ def read_static_source() -> str:
 
 
 class AI8VideoShortVideoWebTest(unittest.TestCase):
+    def test_delete_burned_result_preserves_source_and_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            source = root / "source" / "video" / "done.mp4"
+            burned = root / "burned" / "video" / "done.mp4"
+            metadata = root / ".restored-meta" / "source" / "video" / "done.mp4.json"
+            source.parent.mkdir(parents=True)
+            burned.parent.mkdir(parents=True)
+            metadata.parent.mkdir(parents=True)
+            source.write_bytes(b"source")
+            burned.write_bytes(b"burned")
+            metadata.write_text('{"userGeneratedKey":"source/video/done.mp4"}', encoding="utf-8")
+
+            with patch.object(ai8video_web, "ensure_user_generated_result_dir", return_value=root):
+                result = ai8video_web._delete_user_generated_video(
+                    "burned/video/done.mp4",
+                    "burned",
+                )
+
+            self.assertEqual(result["artifactKind"], "burned")
+            self.assertFalse(burned.exists())
+            self.assertTrue(source.exists())
+            self.assertTrue(metadata.exists())
+
+    def test_delete_editable_result_removes_source_and_burned_pair(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            source = root / "source" / "video" / "done.mp4"
+            burned = root / "burned" / "video" / "done.mp4"
+            source.parent.mkdir(parents=True)
+            burned.parent.mkdir(parents=True)
+            source.write_bytes(b"source")
+            burned.write_bytes(b"burned")
+
+            with patch.object(ai8video_web, "ensure_user_generated_result_dir", return_value=root), patch.object(
+                ai8video_web,
+                "_find_related_user_generated_asset_identity",
+                return_value={"jobIds": set(), "keys": set()},
+            ):
+                result = ai8video_web._delete_user_generated_video(
+                    "source/video/done.mp4",
+                    "editable",
+                )
+
+            self.assertIn("source/video/done.mp4", result["deleted"])
+            self.assertIn("burned/video/done.mp4", result["deleted"])
+            self.assertFalse(source.exists())
+            self.assertFalse(burned.exists())
+
+    def test_result_wall_batch_merge_maps_burned_keys_to_source_edit_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            first_source = root / "source" / "video" / "first.mp4"
+            second_source = root / "source" / "video" / "second.mp4"
+            first_source.parent.mkdir(parents=True)
+            first_source.write_bytes(b"first")
+            second_source.write_bytes(b"second")
+            edited_statuses: list[str] = []
+
+            def video_status(_path: Path, relative_key: str) -> dict:
+                edited_statuses.append(relative_key)
+                return {"timelineChunks": [], "pending": False}
+
+            with patch.object(ai8video_web, "ensure_user_generated_result_dir", return_value=root), patch.object(
+                ai8video_web,
+                "_tts_narration_text_for_user_generated_video",
+                return_value=("", {}),
+            ), patch.object(
+                ai8video_web,
+                "_background_music_track_for_user_generated_video",
+                return_value={},
+            ), patch.object(
+                ai8video_web,
+                "track_source",
+                side_effect=lambda _track, path: path,
+            ), patch.object(
+                ai8video_web,
+                "_batch_merge_visual_source",
+                side_effect=lambda _path, _key, fallback: fallback,
+            ), patch.object(
+                ai8video_web,
+                "track_duration",
+                return_value=1.0,
+            ), patch.object(
+                ai8video_web,
+                "_current_video_timeline_status",
+                side_effect=video_status,
+            ), patch.object(
+                ai8video_web,
+                "_current_tts_timeline_status",
+                return_value={"timelineChunks": [], "pending": False},
+            ):
+                context = ai8video_web._prepare_batch_merge_context([
+                    "burned/video/first.mp4",
+                    "burned/video/second.mp4",
+                ])
+
+            self.assertEqual(
+                context["sourceKeys"],
+                ["source/video/first.mp4", "source/video/second.mp4"],
+            )
+            self.assertEqual(edited_statuses, context["sourceKeys"])
+            self.assertEqual(context["target"].parent, (root / "source" / "video").resolve())
+
+    def test_tts_candidates_prioritize_structured_narration_over_source_summary(self) -> None:
+        record = {
+            "sourceSummary": "最后一秒主体必须正对镜头",
+            "prompt": "【整体】最终成片约10秒\n【0-10秒】\n- 台词/口播：提示词里的口播",
+            "keywordGuidance": {
+                "post_review": {"narrationText": "正确的结构化台词"},
+            },
+        }
+
+        candidates = ai8video_web._collect_tts_narration_candidates(record)
+
+        self.assertEqual(candidates[0], "正确的结构化台词")
+        self.assertNotIn("最后一秒主体必须正对镜头", candidates)
+
+    def test_tts_candidates_use_structured_segment_dialogue_before_prompt_fallback(self) -> None:
+        record = {
+            "prompt": "最后一秒主体必须正对镜头。",
+            "segments": [
+                {"time_range": "0-5秒", "dialogue": "第一句台词"},
+                {"time_range": "5-10秒", "dialogue": "第二句台词"},
+            ],
+        }
+
+        candidates = ai8video_web._collect_tts_narration_candidates(record)
+
+        self.assertEqual(candidates, ["第一句台词 第二句台词", "最后一秒主体必须正对镜头。"])
+
     def test_rollback_latest_tail_frame_result_restores_wait_and_resets_downstream(self) -> None:
         progress = {
             "items": [

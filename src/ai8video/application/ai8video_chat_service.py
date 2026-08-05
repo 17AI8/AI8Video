@@ -42,7 +42,10 @@ from ai8video.application.runtime import (
     handle_chat_message,
     restore_smart_split_plan,
 )
-from ai8video.assets.user_generated_results import build_generation_result_reconciliation
+from ai8video.assets.user_generated_results import (
+    USER_GENERATED_RESULT_ROOT,
+    build_generation_result_reconciliation,
+)
 from ai8video.assets.user_recycle_bin import humanize_failed_video_reason
 
 
@@ -850,6 +853,32 @@ def _recover_chat_status_from_ledger(session_id: str, generation_batch_id: str |
 def _merge_live_status_with_generation_family(status: dict, family: dict) -> dict:
     progress = dict(family.get("progress") or {})
     root_batch_id = str(family.get("generationBatchId") or "").strip()
+    child_batches = [
+        child
+        for child in family.get("childBatches") or []
+        if isinstance(child, dict)
+    ]
+    active_target_video_indexes = [
+        int(child.get("targetVideoIndex") or 0)
+        for child in child_batches
+        if str(child.get("status") or "").strip() == "active"
+        and int(child.get("targetVideoIndex") or 0) > 0
+    ]
+    session_id = str(status.get("sessionId") or "").strip()
+    if session_id and active_target_video_indexes:
+        try:
+            asset_records = JsonlAssetStore(
+                AI8VideoConfig.from_env().asset_store_path
+            ).read_all()
+            _restore_completed_recovery_items(
+                progress,
+                asset_records,
+                session_id,
+                max(active_target_video_indexes),
+            )
+            _with_generation_progress_counts(progress)
+        except (FileNotFoundError, OSError, ValueError):
+            pass
     active = str(progress.get("status") or "").strip() == "active"
     return {
         **status,
@@ -859,7 +888,7 @@ def _merge_live_status_with_generation_family(status: dict, family: dict) -> dic
         "generationProgress": progress,
         "generationBatchFamily": {
             "rootGenerationBatchId": root_batch_id,
-            "children": family.get("childBatches") or [],
+            "children": child_batches,
         },
     }
 
@@ -875,13 +904,17 @@ def _restore_completed_recovery_items(
     latest_records: dict[int, dict[str, Any]] = {}
     for record in asset_records:
         video_index = int(record.get("videoIndex") or 0)
+        archive_path = _resolve_recovered_archive_path(record)
         if (
             str(record.get("sessionId") or "") == session_id
             and 0 < video_index < next_video_index
             and str(record.get("generationStatus") or "") == "generated"
-            and Path(str(record.get("archiveLocalPath") or "")).is_file()
+            and archive_path is not None
         ):
-            latest_records[video_index] = record
+            latest_records[video_index] = {
+                **record,
+                "archiveLocalPath": str(archive_path),
+            }
     for video_index, record in latest_records.items():
         previous = items_by_index.get(video_index, {})
         items_by_index[video_index] = {
@@ -898,6 +931,20 @@ def _restore_completed_recovery_items(
         items_by_index[video_index].pop("historicalSnapshot", None)
         items_by_index[video_index].pop("error", None)
     progress["items"] = [items_by_index[index] for index in sorted(items_by_index) if index > 0]
+
+
+def _resolve_recovered_archive_path(record: dict[str, Any]) -> Path | None:
+    archive_path = Path(str(record.get("archiveLocalPath") or ""))
+    if archive_path.is_file():
+        return archive_path
+    try:
+        legacy_relative_path = archive_path.relative_to(USER_GENERATED_RESULT_ROOT)
+    except ValueError:
+        return None
+    if legacy_relative_path.parts[:1] != ("video",):
+        return None
+    source_path = USER_GENERATED_RESULT_ROOT / "source" / legacy_relative_path
+    return source_path if source_path.is_file() else None
 
 
 def _recovered_manual_wait_events(events: Any, next_video_index: int) -> list[dict[str, Any]]:

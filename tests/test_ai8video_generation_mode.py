@@ -253,6 +253,27 @@ class AI8VideoGenerationModeTest(unittest.TestCase):
         self.assertEqual(completed.stage, "completed")
         self.assertFalse(completed.draft.tail_frame_chaining)
 
+    def test_standard_smart_split_enables_parallel_episode_planning_only_for_smart_split(self) -> None:
+        planning_kwargs: list[dict] = []
+
+        class FakePipeline:
+            def plan_request(self, _request, **kwargs):
+                planning_kwargs.append(kwargs)
+                return []
+
+        pipeline = FakePipeline()
+        controller = AI8VideoConversationController(
+            pipeline,
+            merge_mode_loader=lambda: "normal",
+        )  # type: ignore[arg-type]
+        request = ParsedRequest(raw_text="系列素材", mode="batch_videos", video_count=2)
+
+        controller._plan_generation_request(request, smart_split=True)
+        controller._plan_generation_request(request, smart_split=False)
+
+        self.assertTrue(planning_kwargs[0]["use_parallel_episode_planning"])
+        self.assertNotIn("use_parallel_episode_planning", planning_kwargs[1])
+
     def test_text_cannot_change_manual_video_count(self) -> None:
         planned_counts: list[int | None] = []
         smart_split_flags: list[bool] = []

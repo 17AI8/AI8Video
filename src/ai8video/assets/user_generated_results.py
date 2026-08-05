@@ -17,6 +17,9 @@ from ai8video.core.legacy_payload import normalize_legacy_video_payload
 RESULT_VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v"}
 RESULT_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 RESULT_MEDIA_EXTENSIONS = RESULT_VIDEO_EXTENSIONS | RESULT_IMAGE_EXTENSIONS
+SOURCE_VIDEO_PREFIX = "source/video"
+LEGACY_VIDEO_PREFIX = "video"
+BURNED_VIDEO_PREFIX = "burned/video"
 logger = logging.getLogger(__name__)
 _BURNED_COPY_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ai8-burned-copy")
 _BURNED_COPY_LOCKS: dict[str, threading.Lock] = {}
@@ -35,27 +38,29 @@ def ensure_user_generated_result_dir() -> Path:
 
 
 def migrate_legacy_result_layout(result_root: Path = USER_GENERATED_RESULT_ROOT) -> dict[str, Any]:
-    """恢复 canonical video/ 目录，并隔离其中的历史非视频文件。"""
+    """幂等迁移旧 video/ 原片，并保留独立 burned 成片。"""
     root = Path(result_root).resolve()
     root.mkdir(parents=True, exist_ok=True)
-    video_root = root / "video"
-    video_root.mkdir(parents=True, exist_ok=True)
+    legacy_video_root = root / LEGACY_VIDEO_PREFIX
+    source_video_root = root / SOURCE_VIDEO_PREFIX
+    source_video_root.mkdir(parents=True, exist_ok=True)
     moved_keys: dict[str, str] = {}
     moved_videos: list[str] = []
     for source in sorted(root.iterdir()):
         if source.is_file() and source.suffix.lower() in RESULT_VIDEO_EXTENSIONS:
-            _move_result_video(source, video_root, root, moved_keys, moved_videos)
-    for source in sorted(video_root.rglob("*")):
-        if source.is_file() and source.suffix.lower() in RESULT_VIDEO_EXTENSIONS and source.parent != video_root:
-            _move_result_video(source, video_root, root, moved_keys, moved_videos)
-    moved_sidecars = _quarantine_result_video_sidecars(video_root, root)
+            _move_result_video(source, source_video_root, root, moved_keys, moved_videos)
+    if legacy_video_root.is_dir():
+        for source in sorted(legacy_video_root.rglob("*")):
+            if source.is_file() and source.suffix.lower() in RESULT_VIDEO_EXTENSIONS:
+                _move_result_video(source, source_video_root, root, moved_keys, moved_videos)
+    moved_sidecars = _quarantine_result_video_sidecars(legacy_video_root, root)
     moved_metadata = _migrate_result_metadata(root, moved_keys)
-    _prune_result_subdirectories(video_root)
+    _prune_result_subdirectories(legacy_video_root)
     return {
         "movedVideos": moved_videos,
         "movedSidecars": moved_sidecars,
         "movedMetadata": moved_metadata,
-        "resultVideoRoot": str(video_root),
+        "resultVideoRoot": str(source_video_root),
     }
 
 
@@ -108,14 +113,18 @@ def _migrate_result_metadata(root: Path, moved_keys: dict[str, str]) -> list[str
     metadata_root = root / ".restored-meta"
     if not metadata_root.is_dir():
         return []
-    target_root = metadata_root / "video"
+    target_root = metadata_root / SOURCE_VIDEO_PREFIX
     target_root.mkdir(parents=True, exist_ok=True)
     moved: list[str] = []
     for source in sorted(metadata_root.rglob("*.json")):
-        if source.parent == target_root:
+        if source.is_relative_to(target_root):
             continue
         old_video_key = source.relative_to(metadata_root).with_suffix("").as_posix()
-        new_video_key = moved_keys.get(old_video_key, f"video/{Path(old_video_key).name}")
+        if old_video_key.startswith(f"{LEGACY_VIDEO_PREFIX}/"):
+            default_key = f"{SOURCE_VIDEO_PREFIX}/{Path(old_video_key).name}"
+        else:
+            default_key = f"{SOURCE_VIDEO_PREFIX}/{Path(old_video_key).name}"
+        new_video_key = moved_keys.get(old_video_key, default_key)
         target = (target_root / Path(new_video_key).name).with_suffix(
             f"{Path(new_video_key).suffix}.json"
         )
@@ -150,6 +159,10 @@ def _prune_result_subdirectories(root: Path) -> None:
                 item.rmdir()
             except OSError:
                 pass
+    try:
+        root.rmdir()
+    except OSError:
+        pass
 
 
 def burned_result_lock(target: Path) -> threading.Lock:
@@ -165,11 +178,28 @@ def burned_result_path(source: Path, *, result_root: Path | None = None) -> Path
         relative = resolved.relative_to(root)
     except ValueError:
         return None
-    if not relative.parts or relative.parts[0] != "video":
+    if relative.parts[:2] != ("source", "video"):
         return None
     if resolved.suffix.lower() not in RESULT_VIDEO_EXTENSIONS:
         return None
-    return (root / "burned" / relative).resolve()
+    return (root / BURNED_VIDEO_PREFIX / Path(*relative.parts[2:])).resolve()
+
+
+def source_key_for_result_key(raw_key: object) -> str:
+    """Map burned and legacy keys to the canonical editable source key."""
+    clean_key = str(raw_key or "").strip().lstrip("/")
+    if clean_key.startswith(f"{BURNED_VIDEO_PREFIX}/"):
+        return f"{SOURCE_VIDEO_PREFIX}/{clean_key.removeprefix(f'{BURNED_VIDEO_PREFIX}/')}"
+    if clean_key.startswith(f"{LEGACY_VIDEO_PREFIX}/"):
+        return f"source/{clean_key}"
+    return clean_key
+
+
+def burned_key_for_source_key(raw_key: object) -> str:
+    source_key = source_key_for_result_key(raw_key)
+    if not source_key.startswith(f"{SOURCE_VIDEO_PREFIX}/"):
+        return ""
+    return f"{BURNED_VIDEO_PREFIX}/{source_key.removeprefix(f'{SOURCE_VIDEO_PREFIX}/')}"
 
 
 def _result_file_state(path: Path) -> tuple[int, int, int, int] | None:
@@ -241,7 +271,7 @@ def schedule_missing_burned_result_copies(
     result_root: Path | None = None,
 ) -> list[Future[Path | None]]:
     root = Path(result_root or ensure_user_generated_result_dir()).resolve()
-    video_root = root / "video"
+    video_root = root / SOURCE_VIDEO_PREFIX
     if not video_root.is_dir():
         return []
     scheduled: list[Future[Path | None]] = []
@@ -491,7 +521,8 @@ def _flat_legacy_result_path(raw_path: Any, result_root: Path, result_files: set
     elif ".." in raw_candidate.parts:
         return None
     candidates = [
-        (result_root / "video" / raw_candidate.name).resolve(),
+        (result_root / SOURCE_VIDEO_PREFIX / raw_candidate.name).resolve(),
+        (result_root / LEGACY_VIDEO_PREFIX / raw_candidate.name).resolve(),
         (result_root / raw_candidate.name).resolve(),
     ]
     for candidate in candidates:

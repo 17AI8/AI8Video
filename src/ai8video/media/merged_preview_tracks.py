@@ -69,13 +69,14 @@ def merged_tts_chunks(statuses: list[dict[str, Any]], video_durations: list[floa
     audio_offset = 0.0
     video_offset = 0.0
     for status, video_duration in zip(statuses, video_durations):
-        for item in status.get("timelineChunks") or []:
-            chunks.append({
-                "sourceStartSeconds": round(audio_offset + float(item.get("sourceStartSeconds") or 0), 3),
-                "sourceEndSeconds": round(audio_offset + float(item.get("sourceEndSeconds") or 0), 3),
-                "startSeconds": round(video_offset + float(item.get("startSeconds") or 0), 3),
-            })
-        audio_offset += float(status.get("audioDurationSeconds") or 0)
+        if _audio_path(status) is not None:
+            for item in status.get("timelineChunks") or []:
+                chunks.append({
+                    "sourceStartSeconds": round(audio_offset + float(item.get("sourceStartSeconds") or 0), 3),
+                    "sourceEndSeconds": round(audio_offset + float(item.get("sourceEndSeconds") or 0), 3),
+                    "startSeconds": round(video_offset + float(item.get("startSeconds") or 0), 3),
+                })
+            audio_offset += float(status.get("audioDurationSeconds") or 0)
         video_offset += max(0.0, video_duration)
     return chunks
 

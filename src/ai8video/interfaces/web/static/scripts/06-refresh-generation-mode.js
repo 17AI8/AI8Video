@@ -279,6 +279,7 @@
       const originalItems = progressStatus === 'planning'
         ? receivedItems.filter((item) => ['planning', 'pending_submission'].includes(String(item?.status || '').trim()))
         : receivedItems;
+      const preserveSparseVideoIndexes = progress.preserveSparseVideoIndexes === true;
       const maxVideoIndex = originalItems.reduce((max, item, index) => (
         Math.max(max, Number(item?.videoIndex || 0) || index + 1)
       ), 0);
@@ -297,19 +298,21 @@
           byVideo.set(videoIndex, item);
         }
       });
-      const items = [];
-      for (let index = 1; index <= requested; index += 1) {
-        const existing = byVideo.get(index);
-        if (existing) {
-          items.push(existing);
-        } else {
-          items.push({
-            videoIndex: index,
-            title: `视频 ${index}`,
-            status: terminalStateless ? 'skipped' : 'pending_submission',
-            statusLabel: terminalStateless ? '未提交' : '正在生成视频方案',
-            jobId: null,
-          });
+      const items = preserveSparseVideoIndexes ? [...originalItems] : [];
+      if (!preserveSparseVideoIndexes) {
+        for (let index = 1; index <= requested; index += 1) {
+          const existing = byVideo.get(index);
+          if (existing) {
+            items.push(existing);
+          } else {
+            items.push({
+              videoIndex: index,
+              title: `视频 ${index}`,
+              status: terminalStateless ? 'skipped' : 'pending_submission',
+              statusLabel: terminalStateless ? '未提交' : '正在生成视频方案',
+              jobId: null,
+            });
+          }
         }
       }
       const submittedStatuses = new Set(['submitted', 'polling', 'archiving', 'succeeded', 'failed']);
@@ -319,7 +322,7 @@
         ...pendingStatus,
         generationProgress: {
           ...progress,
-          totalRequested: requested,
+          totalRequested: preserveSparseVideoIndexes ? items.length : requested,
           items,
           submittedCount: countStatus(submittedStatuses),
           runningCount: countStatus(runningStatuses),
@@ -397,11 +400,16 @@
       };
       mergePendingGenerationBatchId(payload, nextPayload);
       const isErrorPayload = String(payload?.meta?.operation || '').trim() === 'error';
+      const familyStillActive = String(generationProgress?.status || '').trim() === 'active'
+        || (generationProgress?.items || []).some((item) => (
+          String(item?.status || '').trim() === 'awaiting_tail_frame_continue'
+        ));
       if (
         !isErrorPayload
         && data.status !== 'pending'
         && incomingProgress
         && isTerminalTaskStatus(data.status)
+        && !familyStillActive
       ) {
         nextPayload.stage = 'completed';
         nextPayload.meta = {
@@ -479,6 +487,11 @@
           if (recovered) changed = true;
           continue;
         }
+        if (last?.role === 'user') {
+          const recovered = await recoverReplyAfterOrphanedUserMessage(session);
+          if (recovered) changed = true;
+          continue;
+        }
         if (!last || last.role !== 'assistant') continue;
         if (!isStoredTransportFailureMessage(last.error)) continue;
         const recovered = await tryRecoverSessionAfterTransportFailure(
@@ -488,6 +501,35 @@
         if (recovered) changed = true;
       }
       return changed;
+    }
+
+    async function recoverReplyAfterOrphanedUserMessage(session) {
+      const sessionId = String(session?.id || '').trim();
+      if (!sessionId) return false;
+      try {
+        const { res, data } = await fetchChatStatusWithBatchFallback(sessionId, session, {
+          preferLatestBatch: true,
+        });
+        if (!res.ok || !data || typeof data !== 'object') return false;
+        if (data.status !== 'pending' && data.reply) {
+          session.messages.push({ role: 'assistant', payload: buildAssistantPayload(data, sessionId) });
+          return true;
+        }
+        if (data.status === 'pending' || data.generationProgress) {
+          const pendingPayload = buildLocalPendingPayload(
+            sessionId,
+            getLatestUserRequestText(session),
+          );
+          session.messages.push({
+            role: 'assistant',
+            payload: mergeGenerationStatusPayload(pendingPayload, data, sessionId),
+          });
+          return true;
+        }
+      } catch (error) {
+        console.error(error);
+      }
+      return false;
     }
 
     async function reconcilePendingSessionAfterReload(session, targetMessage = null, statusMessage = null) {

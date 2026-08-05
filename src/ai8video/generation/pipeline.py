@@ -24,11 +24,11 @@ from ai8video.generation.video_prompt_planner import (
     rewrite_video_with_ai,
     single_prompt_to_video,
     plan_video_prompts_with_ai,
+    plan_standard_smart_split_prompts_with_ai,
 )
 from ai8video.assets.asset_store import JsonlAssetStore
 from ai8video.generation.business_prompt import finalize_video_prompts
 from ai8video.core.config import AI8VideoConfig
-from ai8video.assets.default_reference_image import build_reference_image_instruction
 from ai8video.generation.generation_progress import (
     GenerationCancelled,
     fail_generation_progress,
@@ -113,6 +113,7 @@ class AI8VideoPipeline:
         progress_session_id: str | None = None,
         smart_split: bool = False,
         smart_split_count_locked: bool = False,
+        use_parallel_episode_planning: bool = False,
     ) -> list[VideoPrompt]:
         allow_mock_planning = self.config.dry_run
         task_constraints = self._reference_task_constraints(request)
@@ -126,6 +127,7 @@ class AI8VideoPipeline:
             llm=self.llm,
             trace_session_id=progress_session_id,
             smart_split_count_locked=smart_split_count_locked,
+            use_parallel_episode_planning=use_parallel_episode_planning,
         )
         context = AgentRunContext(
             session_id=str(progress_session_id or ""),
@@ -160,6 +162,7 @@ class AI8VideoPipeline:
         registry.register(build_planning_capability(
             infer_count=infer_smart_video_count_with_ai,
             smart_plan=plan_video_prompts_with_ai,
+            parallel_smart_plan=plan_standard_smart_split_prompts_with_ai,
             repeat_plan=repeat_single_prompt_to_videos,
             single_plan=single_prompt_to_video,
         ))
@@ -595,16 +598,9 @@ class AI8VideoPipeline:
 
     @staticmethod
     def _reference_task_constraints(request: ParsedRequest) -> str | None:
-        blocks: list[str] = []
-        if getattr(request, "reference_image", None):
-            blocks.append(build_reference_image_instruction(
-                getattr(request, "reference_image_transform_options", None),
-                getattr(request, "reference_image_custom_prompt", None),
-            ))
-        custom_constraints = AI8VideoPipeline._custom_input_task_constraints(request.raw_text)
-        if custom_constraints:
-            blocks.append(custom_constraints)
-        return "\n".join(block for block in blocks if block and block.strip()) or None
+        # Reference-image transform settings belong exclusively to first-frame preprocessing.
+        # Injecting them here makes image-editing instructions leak into scripts and shot plans.
+        return AI8VideoPipeline._custom_input_task_constraints(request.raw_text)
 
     @staticmethod
     def _custom_input_task_constraints(raw_text: str) -> str | None:

@@ -30,6 +30,7 @@ def merge_html_motion_reviews(
     video_path: Path,
     video_offsets: list[float],
     video_durations: list[float],
+    video_statuses: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     available = [(index, source) for index, source in enumerate(sources) if source]
     if not available:
@@ -38,7 +39,18 @@ def merge_html_motion_reviews(
     artifact["scenes"] = []
     output_scene_index = 0
     for source_index, (source_artifact, _) in available:
-        scenes = _offset_scenes(source_artifact, source_index, video_offsets[source_index], output_scene_index)
+        timeline_chunks = (
+            video_statuses[source_index].get("timelineChunks") or []
+            if video_statuses and source_index < len(video_statuses)
+            else []
+        )
+        scenes = _offset_scenes(
+            source_artifact,
+            source_index,
+            video_offsets[source_index],
+            output_scene_index,
+            timeline_chunks,
+        )
         artifact["scenes"].extend(scenes)
         output_scene_index += len(scenes)
     media = copy.deepcopy(available[0][1][1])
@@ -47,13 +59,21 @@ def merge_html_motion_reviews(
 
 
 def _offset_scenes(
-    artifact: dict[str, Any], source_index: int, offset: float, output_start_index: int = 0,
+    artifact: dict[str, Any],
+    source_index: int,
+    offset: float,
+    output_start_index: int = 0,
+    timeline_chunks: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     scenes = []
+    normalized_chunks = _normalized_timeline_chunks(timeline_chunks)
     for scene_index, raw_scene in enumerate(artifact.get("scenes") or []):
+        mapped_range = _map_scene_range(raw_scene, normalized_chunks)
+        if mapped_range is None:
+            continue
         scene = copy.deepcopy(raw_scene)
-        scene["start"] = round(offset + float(scene.get("start") or 0), 3)
-        scene["end"] = round(offset + float(scene.get("end") or 0), 3)
+        scene["start"] = round(offset + mapped_range[0], 3)
+        scene["end"] = round(offset + mapped_range[1], 3)
         scene["_timelineSourceIndex"] = output_start_index + scene_index
         scene["_timelineChunkId"] = f"merged-{source_index + 1}-{timeline_chunk_id(scene, scene_index)}"
         ids = [str(value) for value in scene.get("ids") or [] if str(value)]
@@ -61,6 +81,46 @@ def _offset_scenes(
         replacements[f"hf-scene-{scene_index + 1}"] = f"hf-scene-{output_start_index + scene_index + 1}"
         scenes.append(_replace_ids(scene, replacements))
     return scenes
+
+
+def _normalized_timeline_chunks(
+    timeline_chunks: list[dict[str, Any]] | None,
+) -> list[tuple[float, float, float]]:
+    normalized = []
+    output_cursor = 0.0
+    for item in timeline_chunks or []:
+        if not isinstance(item, dict):
+            continue
+        source_start = max(0.0, float(item.get("sourceStartSeconds") or 0))
+        source_end = max(source_start, float(item.get("sourceEndSeconds") or 0))
+        if source_end <= source_start:
+            continue
+        normalized.append((source_start, source_end, output_cursor))
+        output_cursor += source_end - source_start
+    return normalized
+
+
+def _map_scene_range(
+    scene: dict[str, Any],
+    timeline_chunks: list[tuple[float, float, float]],
+) -> tuple[float, float] | None:
+    scene_start = max(0.0, float(scene.get("start") or 0))
+    scene_end = max(scene_start, float(scene.get("end") or 0))
+    if not timeline_chunks:
+        return scene_start, scene_end
+    intersections = []
+    for source_start, source_end, output_start in timeline_chunks:
+        intersection_start = max(scene_start, source_start)
+        intersection_end = min(scene_end, source_end)
+        if intersection_end <= intersection_start:
+            continue
+        intersections.append((
+            output_start + intersection_start - source_start,
+            output_start + intersection_end - source_start,
+        ))
+    if not intersections:
+        return None
+    return intersections[0][0], intersections[-1][1]
 
 
 def _replace_ids(value: Any, replacements: dict[str, str]) -> Any:

@@ -313,6 +313,7 @@
       const title = options?.title || '全屏播放';
       const cover = options?.cover || '';
       const userGeneratedKey = String(options?.userGeneratedKey || deriveUserGeneratedKeyFromMediaUrl(src)).trim();
+      const artifactKind = String(options?.artifactKind || 'editable').trim();
       const userGeneratedPreviewKey = String(options?.userGeneratedPreviewKey || deriveLocalPreviewKey(userGeneratedKey)).trim();
       const userGeneratedCoverKey = String(options?.userGeneratedCoverKey || deriveLocalCoverKey(userGeneratedKey)).trim();
       const playlist = Array.isArray(options?.playlist) && options.playlist.length
@@ -355,7 +356,7 @@
       previousButton?.addEventListener('click', () => navigateVideoPreview(-1));
       nextButton?.addEventListener('click', () => navigateVideoPreview(1));
       deleteButton?.addEventListener('click', () => {
-        deleteUserGeneratedVideoFromPreview(userGeneratedKey, deleteButton);
+        deleteUserGeneratedVideoFromPreview(userGeneratedKey, deleteButton, artifactKind);
       });
       editVideoTimelineButton?.addEventListener('click', () => {
         void toggleAllTimelineEditors(userGeneratedKey, editVideoTimelineButton);

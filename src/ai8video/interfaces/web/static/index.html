@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" href="/static/images/ai8video-avatar.png?v=20260727-1">
   <link rel="stylesheet" href="/static/script-knowledge.css?v=20260724-18">
   <!-- Updated: 2026-06-23 15:17 CST - 花字调色预览连体按钮圆角修正 -->
-  <link rel="stylesheet" href="/static/workbench.css?v=20260804-32">
+  <link rel="stylesheet" href="/static/workbench.css?v=20260805-34">
 </head>
 <body>
   <div class="shell">
@@ -495,6 +495,10 @@
           <button id="resultModalCloseButton" type="button" class="modal-close" aria-label="关闭"><span class="fa-icon" data-fa-icon="xmark" aria-hidden="true"></span></button>
         </div>
       </div>
+      <div id="resultModalDirectoryTabs" class="result-directory-tabs" role="tablist" aria-label="结果目录">
+        <button id="resultModalSourceTab" type="button" class="result-directory-tab" role="tab" data-result-directory="source">原片</button>
+        <button id="resultModalBurnedTab" type="button" class="result-directory-tab" role="tab" data-result-directory="burned">烧录结果</button>
+      </div>
       <div id="resultModalBody"></div>
     </div>
   </div>
@@ -620,6 +624,6 @@
       </form>
     </div>
   </div>
-  <script src="/static/workbench.js?v=20260804-14"></script>
+  <script src="/static/workbench.js?v=20260805-22"></script>
 </body>
 </html>

@@ -19,6 +19,17 @@ class RecoveredTailFrameResumeTests(TestCase):
 
         self.assertIsNone(AI8VideoPipeline._reference_task_constraints(request))
 
+    def test_reference_image_transform_settings_do_not_enter_planning_constraints(self):
+        request = self._asset_request()
+        request.reference_image = "/tmp/default-reference.png"
+        request.reference_image_transform_options = {
+            "autoChangeBackground": True,
+            "autoChangePose": True,
+        }
+        request.reference_image_custom_prompt = "重新生成夏日天台场景"
+
+        self.assertIsNone(AI8VideoPipeline._reference_task_constraints(request))
+
     def test_recovery_waits_with_latest_tail_frame_and_preserves_remaining_prompts(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -109,7 +109,7 @@ class VideoPrompt:
     prompt: str
     source_summary: str = ""
     keyword_guidance: dict[str, Any] = field(default_factory=dict)
-    archive_subdir: str = "video"
+    archive_subdir: str = "source/video"
 
 
 @dataclass

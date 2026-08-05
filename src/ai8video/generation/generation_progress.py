@@ -161,11 +161,28 @@ def get_generation_batch_family_snapshot(
         return record
     children = _TASK_LEDGER.list_generation_batch_children(root_batch_id)
     progress = dict(root.get("progress") or {})
-    items = [
-        {**_normalize_family_item(item), "generationBatchId": root_batch_id}
+    items_by_index = {
+        int(item.get("videoIndex") or 0): {
+            **_normalize_family_item(item),
+            "generationBatchId": root_batch_id,
+        }
         for item in progress.get("items") or []
-        if isinstance(item, dict)
-    ]
+        if isinstance(item, dict) and int(item.get("videoIndex") or 0) > 0
+    }
+    for child in children:
+        child_batch_id = str(child.get("generationBatchId") or "").strip()
+        child_progress = child.get("progress") if isinstance(child.get("progress"), dict) else {}
+        for child_item in child_progress.get("items") or []:
+            if not isinstance(child_item, dict):
+                continue
+            video_index = int(child_item.get("videoIndex") or 0)
+            if video_index <= 0:
+                continue
+            items_by_index[video_index] = {
+                **_normalize_family_item(child_item),
+                "generationBatchId": child_batch_id,
+            }
+    items = [items_by_index[index] for index in sorted(items_by_index)]
     progress.update(
         generationBatchId=root_batch_id,
         items=items,
@@ -182,11 +199,24 @@ def get_generation_batch_family_snapshot(
         ],
     )
     _refresh_family_progress_counts(progress)
+    family_status = str(progress.get("status") or root.get("status") or "").strip()
+    active_child = next(
+        (
+            child for child in reversed(children)
+            if str(child.get("status") or "").strip() == "active"
+        ),
+        None,
+    )
+    family_phase = (
+        str(active_child.get("phase") or "").strip()
+        if active_child
+        else str(root.get("phase") or "").strip()
+    )
     return {
         **root,
         "generationBatchId": root_batch_id,
-        "status": root.get("status"),
-        "phase": root.get("phase"),
+        "status": family_status,
+        "phase": family_phase,
         "progress": progress,
         "childBatches": progress["childBatches"],
     }
@@ -1112,6 +1142,16 @@ def _persist_progress_snapshot(progress_snapshot: dict[str, Any] | None) -> None
         ).strip()
         persisted_progress = _with_counts(progress_snapshot)
         if root_batch_id != generation_batch_id:
+            # Child progress is the authoritative state for retries and manual
+            # tail-frame continuations. Persist it before projecting into the
+            # root so a terminal root cannot hide the active child snapshot.
+            _TASK_LEDGER.upsert_generation_batch(
+                session_id=session_id,
+                generation_batch_id=generation_batch_id,
+                status=status,
+                phase=str(progress_snapshot.get("phase") or "").strip() or None,
+                progress=persisted_progress,
+            )
             root_record = _TASK_LEDGER.get_generation_batch(root_batch_id) or {}
             root_progress = dict(root_record.get("progress") or {})
             root_items = {

@@ -1078,6 +1078,11 @@ class AI8VideoConversationController:
             progress_session_id=progress_session_id,
             smart_split=smart_split,
             smart_split_count_locked=smart_split_count_locked,
+            **(
+                {"use_parallel_episode_planning": True}
+                if smart_split and pipeline is self.pipeline
+                else {}
+            ),
         )
 
     def _supports_planned_generation(self) -> bool:

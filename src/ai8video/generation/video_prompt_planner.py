@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from typing import Callable
 
 from ai8video.agent_skills import apply_agent_skills
@@ -29,6 +33,33 @@ from ai8video.media.local_tts import extract_dialogue_text, prepare_narration_te
 
 LLMCallable = Callable[[str], str]
 SMART_SPLIT_MAX_VIDEOS = 12
+DEFAULT_EPISODE_PLANNING_CONCURRENCY = 4
+
+
+@dataclass(frozen=True)
+class EpisodePlanningBrief:
+    index: int
+    title: str
+    objective: str
+    source_summary: str
+    source_material: str
+    relation_to_previous: str
+    relation_to_next: str
+    required_keywords: tuple[str, ...]
+    required_facts: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class GlobalVideoOutline:
+    series_premise: str
+    character_identity: str
+    wardrobe: str
+    setting: str
+    time_context: str
+    visual_style: str
+    must_preserve_facts: tuple[str, ...]
+    continuity_rules: tuple[str, ...]
+    episodes: tuple[EpisodePlanningBrief, ...]
 
 
 def infer_smart_video_count_with_ai(
@@ -220,22 +251,323 @@ def extract_script_keywords_with_ai(
     )
     try:
         raw = llm(keyword_prompt)
-        append_prompt_trace(
-            "keyword_model_output",
-            session_id=trace_session_id,
-            payload={"raw": raw},
-        )
+        append_prompt_trace("keyword_model_output", session_id=trace_session_id, payload={"raw": raw})
         return normalize_keyword_guidance(parse_json_object(raw))
     except Exception as exc:
         append_prompt_trace(
             "keyword_model_error",
             session_id=trace_session_id,
-            payload={
-                "errorType": exc.__class__.__name__,
-                "error": str(exc),
-            },
+            payload={"errorType": exc.__class__.__name__, "error": str(exc)},
         )
         return None
+
+
+def build_global_video_outline_prompt(
+    script: str,
+    video_count: int,
+    style_hint: str | None,
+    core_keywords: str | None,
+    task_constraints: str | None,
+) -> str:
+    return apply_agent_skills("planner", f"""你是AI8video 的标准模式智能分集总规划器。
+
+{business_prompt_block()}
+{format_task_constraint_block(task_constraints)}
+
+请先为 {video_count} 条短视频建立唯一的系列大纲和连续性设定，再划分逐集 brief。此阶段不要写详细分镜或完整台词。
+连续性表示人物身份、衣着、场景体系、时间背景、视觉风格和事实统一；每条视频仍须有独立开场、主体和收束，可单独发布。
+设定必须来自本轮素材和用户要求，不得补入无依据的品牌、身份、衣着或场景。没有明确要求时使用空字符串，不要擅自具体化。
+逐集 brief 必须覆盖不同素材范围，并记录与前后集的主题承接，但不能让单集依赖其他集才能看懂。
+风格要求：{style_hint or "保持用户原剧本风格"}
+核心主题 / 关键词：{core_keywords or "根据全文提炼"}
+
+只返回严格 JSON 对象：
+{{
+  "series_premise":"系列共同目标",
+  "character_identity":"统一人物身份，没有则为空",
+  "wardrobe":"统一衣着设定，没有则为空",
+  "setting":"统一场景体系，没有则为空",
+  "time_context":"统一时间背景，没有则为空",
+  "visual_style":"统一视觉风格",
+  "must_preserve_facts":["必须保留的事实"],
+  "continuity_rules":["并发展开时必须共同遵守的规则"],
+  "episodes":[
+    {{"index":1,"title":"独立标题","objective":"本集目标","source_summary":"参考了哪些原文信息","source_material":"本集可使用的原文事实与内容摘要","relation_to_previous":"与前集的主题关系","relation_to_next":"与后集的主题关系","required_keywords":["关键词"],"required_facts":["事实"]}}
+  ]
+}}
+
+用户剧本：
+{script}
+""")
+
+
+def _parse_global_video_outline(raw: str, video_count: int) -> GlobalVideoOutline:
+    data = parse_json_object(raw)
+    episode_items = data.get("episodes")
+    if not isinstance(episode_items, list) or len(episode_items) != video_count:
+        raise ValueError(f"全局大纲包含 {len(episode_items or [])} 集，预期 {video_count} 集")
+    episodes = tuple(
+        EpisodePlanningBrief(
+            index=int(item.get("index") or position),
+            title=str(item.get("title") or f"视频 {position}").strip(),
+            objective=str(item.get("objective") or "").strip(),
+            source_summary=clean_source_summary(item.get("source_summary")),
+            source_material=str(item.get("source_material") or "").strip(),
+            relation_to_previous=str(item.get("relation_to_previous") or "").strip(),
+            relation_to_next=str(item.get("relation_to_next") or "").strip(),
+            required_keywords=tuple(coerce_text_list(item.get("required_keywords"))),
+            required_facts=tuple(coerce_text_list(item.get("required_facts"))),
+        )
+        for position, item in enumerate(episode_items, 1)
+        if isinstance(item, dict)
+    )
+    expected_indexes = list(range(1, video_count + 1))
+    if sorted(episode.index for episode in episodes) != expected_indexes:
+        raise ValueError("全局大纲的分集 index 不完整或重复")
+    return GlobalVideoOutline(
+        series_premise=str(data.get("series_premise") or "").strip(),
+        character_identity=str(data.get("character_identity") or "").strip(),
+        wardrobe=str(data.get("wardrobe") or "").strip(),
+        setting=str(data.get("setting") or "").strip(),
+        time_context=str(data.get("time_context") or "").strip(),
+        visual_style=str(data.get("visual_style") or "").strip(),
+        must_preserve_facts=tuple(coerce_text_list(data.get("must_preserve_facts"))),
+        continuity_rules=tuple(coerce_text_list(data.get("continuity_rules"))),
+        episodes=episodes,
+    )
+
+
+def _outline_context(outline: GlobalVideoOutline) -> dict:
+    return {
+        "series_premise": outline.series_premise,
+        "character_identity": outline.character_identity,
+        "wardrobe": outline.wardrobe,
+        "setting": outline.setting,
+        "time_context": outline.time_context,
+        "visual_style": outline.visual_style,
+        "must_preserve_facts": list(outline.must_preserve_facts),
+        "continuity_rules": list(outline.continuity_rules),
+    }
+
+
+def build_episode_detail_prompt(
+    outline: GlobalVideoOutline,
+    episode: EpisodePlanningBrief,
+    *,
+    style_hint: str | None,
+    core_keywords: str | None,
+    task_constraints: str | None,
+    final_duration_seconds: int | None,
+) -> str:
+    return apply_agent_skills("planner", f"""你是AI8video 的单集详细剧本规划器。
+
+{business_prompt_block()}
+{format_task_constraint_block(task_constraints)}
+
+根据统一系列设定和本集 brief，只展开第 {episode.index} 集。不得改变统一人物、衣着、场景体系、时间、视觉风格和事实；不得规划其他集。
+本集必须独立可发布，包含开场钩子、主体和收束。提示词需写清时间段、景别、场景、运镜、动作、表情、情绪、身体状态、语气以及“台词/口播：...”。
+{format_timing_rule(final_duration_seconds)}
+风格要求：{style_hint or "保持用户原剧本风格"}
+核心主题 / 关键词：{core_keywords or "服从本集 brief"}
+
+统一系列设定：
+{json.dumps(_outline_context(outline), ensure_ascii=False)}
+
+本集 brief：
+{json.dumps(episode.__dict__, ensure_ascii=False, default=list)}
+
+不要把详细内容拼成一段自由文本。请把整体要求和每个时间片段分别放进结构化字段，由程序统一渲染排版。
+segments 必须覆盖完整成片时长且时间连续；每段都必须填写全部字段，不得省略字段或合并字段。
+只返回严格 JSON 对象：
+{{
+  "index":{episode.index},
+  "title":"...",
+  "overall":"最终成片约10秒；系列共同画面、人物、文字和禁用要求",
+  "segments":[
+    {{"time_range":"0-3秒","shot_size":"...","scene":"...","camera_movement":"...","character_action":"...","performance":"表情、情绪和身体状态","tone":"...","dialogue":"...","sound_effect":"..."}}
+  ],
+  "narration_text":"观众实际听到的完整台词正文",
+  "source_summary":"参考了……",
+  "preserved_keywords":["..."],
+  "omitted_keywords_reason":"..."
+}}
+""")
+
+
+def _format_episode_prompt(data: dict, episode_index: int) -> str:
+    overall = str(data.get("overall") or "").strip()
+    segments = data.get("segments")
+    if not overall:
+        raise ValueError(f"第 {episode_index} 集缺少整体要求")
+    if not isinstance(segments, list) or not segments:
+        raise ValueError(f"第 {episode_index} 集缺少时间片段")
+    required_fields = (
+        "time_range",
+        "shot_size",
+        "scene",
+        "camera_movement",
+        "character_action",
+        "performance",
+        "tone",
+        "dialogue",
+        "sound_effect",
+    )
+    rendered_segments: list[str] = []
+    for position, segment in enumerate(segments, 1):
+        if not isinstance(segment, dict):
+            raise ValueError(f"第 {episode_index} 集第 {position} 个时间片段格式错误")
+        normalized = {field: str(segment.get(field) or "").strip() for field in required_fields}
+        missing_fields = [field for field, value in normalized.items() if not value]
+        if missing_fields:
+            raise ValueError(
+                f"第 {episode_index} 集第 {position} 个时间片段缺少字段：{', '.join(missing_fields)}"
+            )
+        rendered_segments.append(
+            f"【{normalized['time_range']}】\n"
+            f"- 时间段：{normalized['time_range']}\n"
+            f"- 景别：{normalized['shot_size']}\n"
+            f"- 场景：{normalized['scene']}\n"
+            f"- 运镜：{normalized['camera_movement']}\n"
+            f"- 人物动作：{normalized['character_action']}\n"
+            f"- 表情/情绪/身体状态：{normalized['performance']}\n"
+            f"- 语气：{normalized['tone']}\n"
+            f"- 台词/口播：{normalized['dialogue']}\n"
+            f"- 音效建议：{normalized['sound_effect']}"
+        )
+    return f"【整体】{overall}\n" + "\n".join(rendered_segments)
+
+
+def _video_from_episode_data(
+    data: dict,
+    episode: EpisodePlanningBrief,
+    outline: GlobalVideoOutline,
+) -> VideoPrompt:
+    returned_index = int(data.get("index") or episode.index)
+    if returned_index != episode.index:
+        raise ValueError(f"单集规划返回 index {returned_index}，预期 {episode.index}")
+    prompt = sanitize_internal_fidelity_notes(_format_episode_prompt(data, episode.index))
+    narration_text = prepare_narration_text(
+        str(data.get("narration_text") or data.get("dialogue") or "").strip()
+        or extract_dialogue_text(prompt)
+    )
+    return VideoPrompt(
+        index=episode.index,
+        title=clean_video_title(str(data.get("title") or episode.title), episode.index),
+        prompt=prompt,
+        source_summary=clean_source_summary(data.get("source_summary") or episode.source_summary),
+        keyword_guidance={
+            "global": {
+                "must_preserve_facts": list(outline.must_preserve_facts),
+                "continuity_rules": list(outline.continuity_rules),
+            },
+            "preserved_keywords": coerce_text_list(data.get("preserved_keywords")),
+            "omitted_keywords_reason": str(data.get("omitted_keywords_reason") or "").strip(),
+            "post_review": {
+                "passes": True,
+                "status": "confirmed_planning_output",
+                "narrationText": narration_text,
+                "violations": [],
+                "userAdvisories": [],
+            },
+        },
+    )
+
+
+def _plan_episode_detail(
+    outline: GlobalVideoOutline,
+    episode: EpisodePlanningBrief,
+    *,
+    llm: LLMCallable,
+    style_hint: str | None,
+    core_keywords: str | None,
+    task_constraints: str | None,
+    final_duration_seconds: int | None,
+    trace_session_id: str | None,
+) -> VideoPrompt:
+    prompt = build_episode_detail_prompt(
+        outline,
+        episode,
+        style_hint=style_hint,
+        core_keywords=core_keywords,
+        task_constraints=task_constraints,
+        final_duration_seconds=final_duration_seconds,
+    )
+    started_at = time.monotonic()
+    append_prompt_trace("episode_detail_model_input", session_id=trace_session_id, payload={"episodeIndex": episode.index, "prompt": prompt})
+    raw = llm(prompt)
+    append_prompt_trace("episode_detail_model_output", session_id=trace_session_id, payload={"episodeIndex": episode.index, "raw": raw, "elapsedMilliseconds": round((time.monotonic() - started_at) * 1000)})
+    try:
+        return _video_from_episode_data(parse_json_object(raw), episode, outline)
+    except Exception as parse_error:
+        repair_prompt = f"""你是 JSON 格式修复器。只修复下面第 {episode.index} 集结果的 JSON 格式和必填字段，不改写内容。只返回一个严格 JSON 对象，index 必须为 {episode.index}：\n{raw}"""
+        append_prompt_trace("episode_detail_model_repair_input", session_id=trace_session_id, payload={"episodeIndex": episode.index, "error": str(parse_error)})
+        repaired_raw = llm(repair_prompt)
+        append_prompt_trace("episode_detail_model_repair_output", session_id=trace_session_id, payload={"episodeIndex": episode.index, "raw": repaired_raw})
+        try:
+            return _video_from_episode_data(parse_json_object(repaired_raw), episode, outline)
+        except Exception as repair_error:
+            raise RuntimeError(f"第 {episode.index} 集规划结果格式异常，请重新规划。") from repair_error
+
+
+def plan_standard_smart_split_prompts_with_ai(
+    script: str,
+    video_count: int,
+    style_hint: str | None = None,
+    core_keywords: str | None = None,
+    task_constraints: str | None = None,
+    final_duration_seconds: int | None = None,
+    llm: LLMCallable | None = None,
+    allow_mock: bool = False,
+    trace_session_id: str | None = None,
+) -> list[VideoPrompt]:
+    if video_count < 1:
+        raise ValueError("video_count must be >= 1")
+    if llm is None:
+        if allow_mock:
+            return mock_plan_video_prompts(script, video_count, style_hint, core_keywords)
+        raise RuntimeError("An LLM callable is required for intelligent script splitting")
+    model_script = prepare_script_for_model(script, video_count)
+    outline_prompt = build_global_video_outline_prompt(
+        model_script, video_count, style_hint, core_keywords, task_constraints
+    )
+    outline_started_at = time.monotonic()
+    append_prompt_trace("global_outline_model_input", session_id=trace_session_id, payload={"videoCount": video_count, "prompt": outline_prompt})
+    outline_raw = llm(outline_prompt)
+    append_prompt_trace("global_outline_model_output", session_id=trace_session_id, payload={"raw": outline_raw, "elapsedMilliseconds": round((time.monotonic() - outline_started_at) * 1000)})
+    try:
+        outline = _parse_global_video_outline(outline_raw, video_count)
+    except Exception as exc:
+        append_prompt_trace("global_outline_model_error", session_id=trace_session_id, payload={"errorType": exc.__class__.__name__, "error": str(exc), "raw": outline_raw})
+        raise RuntimeError("全局分集大纲格式异常，请重新规划。") from exc
+
+    configured_concurrency = int(os.getenv("AI8VIDEO_EPISODE_PLANNING_CONCURRENCY", str(DEFAULT_EPISODE_PLANNING_CONCURRENCY)))
+    worker_count = max(1, min(video_count, configured_concurrency))
+    fanout_started_at = time.monotonic()
+    videos_by_index: dict[int, VideoPrompt] = {}
+    with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="episode-planner") as executor:
+        future_to_episode = {
+            executor.submit(
+                _plan_episode_detail,
+                outline,
+                episode,
+                llm=llm,
+                style_hint=style_hint,
+                core_keywords=core_keywords,
+                task_constraints=task_constraints,
+                final_duration_seconds=final_duration_seconds,
+                trace_session_id=trace_session_id,
+            ): episode
+            for episode in outline.episodes
+        }
+        for future in as_completed(future_to_episode):
+            episode = future_to_episode[future]
+            videos_by_index[episode.index] = future.result()
+    expected_indexes = list(range(1, video_count + 1))
+    if sorted(videos_by_index) != expected_indexes:
+        raise RuntimeError("并发规划结果不完整，请重新规划。")
+    videos = [videos_by_index[index] for index in expected_indexes]
+    append_prompt_trace("planning_fanout_completed", session_id=trace_session_id, payload={"videoCount": video_count, "workerCount": worker_count, "elapsedMilliseconds": round((time.monotonic() - fanout_started_at) * 1000)})
+    return videos
 
 
 def plan_video_prompts_with_ai(

@@ -249,15 +249,20 @@
       return `${prefix}当前任务已返回 ${returnedCount}/${expectedCount} 条，${successCount} 条已生成，${archiveCount} 条已归档${failedPart}`;
     }
 
-    function buildResultFolderGalleryModel(session) {
+    function buildResultFolderGalleryModel(session, directory = 'burned') {
       const currentGallery = buildCurrentResultGalleryModel(session);
-      const items = dedupeAssets(sortAssetsNewest(state.userGeneratedResults || []));
+      const sourceItems = directory === 'source'
+        ? state.userGeneratedResults
+        : state.userBurnedResults;
+      const items = dedupeAssets(sortAssetsNewest(sourceItems || []));
       return {
         ...currentGallery,
         items,
         expectedCount: items.length,
         source: 'folder',
-        emptyText: '当前视频文件夹里还没有可预览结果。',
+        emptyText: directory === 'source'
+          ? '原片目录中还没有可预览的视频。'
+          : '烧录结果目录中还没有可预览的视频。',
         folderTarget: null,
       };
     }

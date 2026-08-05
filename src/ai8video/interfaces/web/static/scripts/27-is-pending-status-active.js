@@ -72,6 +72,14 @@
       }
     }
 
+    function invalidatePendingPollResponses(sessionId) {
+      clearPendingPoll(sessionId);
+      pendingPollEpochs.set(sessionId, (pendingPollEpochs.get(sessionId) || 0) + 1);
+      if (pendingPollInflight.has(sessionId)) {
+        pendingPollRefreshRequested.add(sessionId);
+      }
+    }
+
     function schedulePendingPoll(sessionId, delay = 3000) {
       clearPendingPoll(sessionId);
       pendingPollTimers.set(sessionId, window.setTimeout(() => {
@@ -224,8 +232,10 @@
         return;
       }
       pendingPollInflight.add(sessionId);
+      const requestEpoch = pendingPollEpochs.get(sessionId) || 0;
       try {
         const { res, data } = await fetchChatStatusWithBatchFallback(sessionId, session);
+        if ((pendingPollEpochs.get(sessionId) || 0) !== requestEpoch) return;
         if (!res.ok) {
           throw new Error(data.error || '状态查询失败');
         }
@@ -249,6 +259,21 @@
           return;
         }
         if (data.status !== 'pending' && data.reply) {
+          const familyStillActive = String(data.generationProgress?.status || '').trim() === 'active'
+            || (data.generationProgress?.items || []).some((item) => (
+              String(item?.status || '').trim() === 'awaiting_tail_frame_continue'
+            ));
+          if (data.generationProgress && familyStillActive) {
+            last.payload = mergeGenerationStatusPayload(last.payload, data, sessionId);
+            await Promise.allSettled([
+              refreshAssets(),
+              refreshUserGeneratedResults(),
+            ]);
+            persistSessions();
+            render();
+            schedulePendingPoll(sessionId, 3000);
+            return;
+          }
           last.payload = buildAssistantPayload(data, sessionId);
           if (state.generationProgress?.sessionId === sessionId) {
             clearGenerationProgress();
@@ -322,6 +347,9 @@
         }
       } finally {
         pendingPollInflight.delete(sessionId);
+        if (pendingPollRefreshRequested.delete(sessionId)) {
+          schedulePendingPoll(sessionId, 0);
+        }
       }
     }
 

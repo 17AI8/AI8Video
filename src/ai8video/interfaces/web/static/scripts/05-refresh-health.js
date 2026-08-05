@@ -279,7 +279,8 @@
     async function refreshUserGeneratedResults() {
       const res = await fetch('/api/user-generated-results?limit=200');
       const data = await res.json();
-      state.userGeneratedResults = data.items || [];
+      state.userGeneratedResults = data.editableItems || data.items || [];
+      state.userBurnedResults = data.burnedItems || [];
       await refreshRecycleBin();
       const restored = restoreSucceededProgressFromUserResults();
       if (scrubMissingUserGeneratedProgressFromSessions() || restored) {

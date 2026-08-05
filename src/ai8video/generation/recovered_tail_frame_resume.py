@@ -5,6 +5,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
+from ai8video.assets.user_generated_results import USER_GENERATED_RESULT_ROOT
 from ai8video.core.models import ParsedRequest, VideoPrompt
 from ai8video.generation.manual_tail_frame_gate import MANUAL_TAIL_FRAME_DIR
 from ai8video.media.video_segment_postprocess import extract_tail_frame
@@ -49,7 +50,15 @@ def prepare_recovered_tail_frame_resume(
         key=lambda item: int(item.get("videoIndex") or 0),
     )
     completed_indexes = _completed_video_indexes(asset_records, session_id)
-    first_unfinished = next(
+    explicit_waiting_item = next(
+        (
+            item
+            for item in items
+            if str(item.get("status") or "").strip() == "awaiting_tail_frame_continue"
+        ),
+        None,
+    )
+    first_unfinished = explicit_waiting_item or next(
         (item for item in items if int(item.get("videoIndex") or 0) not in completed_indexes),
         None,
     )
@@ -64,6 +73,7 @@ def prepare_recovered_tail_frame_resume(
     ):
         return None
     next_index = int(first_unfinished.get("videoIndex") or 0)
+    completed_indexes.discard(next_index)
     if next_index <= 1 or any(
         int(item.get("videoIndex") or 0) not in completed_indexes
         for item in items
@@ -149,6 +159,8 @@ def get_recovered_tail_frame_resume(
 ) -> RecoveredTailFrameResume:
     with _LOCK:
         checkpoint = _CHECKPOINTS.get(_key(session_id, source_batch_id, video_index))
+        if checkpoint is None:
+            checkpoint = _find_unique_checkpoint(session_id, video_index)
     if checkpoint is None:
         raise LookupError("当前历史任务没有可继续的尾帧检查点")
     return checkpoint
@@ -159,9 +171,30 @@ def take_recovered_tail_frame_resume(
 ) -> RecoveredTailFrameResume:
     with _LOCK:
         checkpoint = _CHECKPOINTS.pop(_key(session_id, source_batch_id, video_index), None)
+        if checkpoint is None:
+            checkpoint = _find_unique_checkpoint(session_id, video_index)
+            if checkpoint is not None:
+                _CHECKPOINTS.pop(
+                    _key(session_id, checkpoint.source_batch_id, video_index),
+                    None,
+                )
     if checkpoint is None:
         raise LookupError("当前历史任务没有可继续的尾帧检查点")
     return checkpoint
+
+
+def _find_unique_checkpoint(
+    session_id: str,
+    video_index: int,
+) -> RecoveredTailFrameResume | None:
+    normalized_session_id = str(session_id).strip()
+    normalized_video_index = int(video_index)
+    matches = [
+        checkpoint
+        for key, checkpoint in _CHECKPOINTS.items()
+        if key[0] == normalized_session_id and key[2] == normalized_video_index
+    ]
+    return matches[0] if len(matches) == 1 else None
 
 
 def refresh_recovered_tail_frame_resume(
@@ -221,13 +254,16 @@ def _remaining_videos(items: list[dict[str, Any]], next_index: int) -> list[Vide
 def _latest_predecessor_record(
     records: list[dict[str, Any]], session_id: str, video_index: int
 ) -> dict | None:
-    matches = [
-        record for record in records
-        if str(record.get("sessionId") or "") == session_id
-        and int(record.get("videoIndex") or 0) == video_index
-        and str(record.get("generationStatus") or "") == "generated"
-        and Path(str(record.get("archiveLocalPath") or "")).is_file()
-    ]
+    matches = []
+    for record in records:
+        archive_path = _resolve_migrated_archive_path(record)
+        if (
+            str(record.get("sessionId") or "") == session_id
+            and int(record.get("videoIndex") or 0) == video_index
+            and str(record.get("generationStatus") or "") == "generated"
+            and archive_path is not None
+        ):
+            matches.append({**record, "archiveLocalPath": str(archive_path)})
     return matches[-1] if matches else None
 
 
@@ -237,8 +273,22 @@ def _completed_video_indexes(records: list[dict[str, Any]], session_id: str) -> 
         for record in records
         if str(record.get("sessionId") or "") == session_id
         and str(record.get("generationStatus") or "") == "generated"
-        and Path(str(record.get("archiveLocalPath") or "")).is_file()
+        and _resolve_migrated_archive_path(record) is not None
     }
+
+
+def _resolve_migrated_archive_path(record: dict[str, Any]) -> Path | None:
+    archive_path = Path(str(record.get("archiveLocalPath") or ""))
+    if archive_path.is_file():
+        return archive_path
+    try:
+        legacy_relative_path = archive_path.relative_to(USER_GENERATED_RESULT_ROOT)
+    except ValueError:
+        return None
+    if legacy_relative_path.parts[:1] != ("video",):
+        return None
+    source_path = USER_GENERATED_RESULT_ROOT / "source" / legacy_relative_path
+    return source_path if source_path.is_file() else None
 
 
 def _request_from_record(record: dict[str, Any], video_count: int) -> ParsedRequest:

@@ -142,6 +142,7 @@
       return {
         ...progress,
         items,
+        preserveSparseVideoIndexes: true,
         totalRequested: items.length,
         succeededCount: items.filter((item) => item?.status === 'succeeded').length,
         failedCount: items.filter((item) => item?.status === 'failed').length,
@@ -282,6 +283,7 @@
         userGeneratedKey,
         userGeneratedPreviewKey: trigger?.getAttribute?.('data-video-user-generated-preview-key') || deriveLocalPreviewKey(userGeneratedKey),
         userGeneratedCoverKey: trigger?.getAttribute?.('data-video-user-generated-cover-key') || deriveLocalCoverKey(userGeneratedKey),
+        artifactKind: trigger?.getAttribute?.('data-video-artifact-kind') || 'editable',
       };
     }
 

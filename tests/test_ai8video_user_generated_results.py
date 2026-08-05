@@ -69,9 +69,9 @@ class AI8VideoUserGeneratedResultsTest(unittest.TestCase):
 
         result = user_generated_results.migrate_legacy_result_layout(generated_root)
 
-        self.assertEqual(result["movedVideos"], ["video/legacy.mp4"])
+        self.assertEqual(result["movedVideos"], ["source/video/legacy.mp4"])
         self.assertEqual(result["movedSidecars"], ["misc/video/restored/legacy.txt"])
-        self.assertTrue((generated_root / "video" / "legacy.mp4").is_file())
+        self.assertTrue((generated_root / "source" / "video" / "legacy.mp4").is_file())
         self.assertFalse(legacy_video.exists())
         self.assertFalse(legacy_note.exists())
         self.assertEqual(
@@ -80,13 +80,44 @@ class AI8VideoUserGeneratedResultsTest(unittest.TestCase):
             ),
             "legacy transcript",
         )
-        migrated_meta = generated_root / ".restored-meta" / "video" / "legacy.mp4.json"
+        migrated_meta = generated_root / ".restored-meta" / "source" / "video" / "legacy.mp4.json"
         self.assertTrue(migrated_meta.is_file())
         self.assertEqual(
             json.loads(migrated_meta.read_text(encoding="utf-8"))["userGeneratedKey"],
-            "video/legacy.mp4",
+            "source/video/legacy.mp4",
         )
-        self.assertTrue((generated_root / "video").is_dir())
+        self.assertTrue((generated_root / "source" / "video").is_dir())
+
+    def test_migration_preserves_collision_and_is_idempotent(self) -> None:
+        generated_root = self.root / "用户生成结果"
+        canonical = generated_root / "source" / "video" / "same.mp4"
+        legacy = generated_root / "video" / "nested" / "same.mp4"
+        legacy_metadata = generated_root / ".restored-meta" / "video" / "nested" / "same.mp4.json"
+        canonical.parent.mkdir(parents=True)
+        legacy.parent.mkdir(parents=True)
+        legacy_metadata.parent.mkdir(parents=True)
+        canonical.write_bytes(b"canonical")
+        legacy.write_bytes(b"legacy")
+        legacy_metadata.write_text(
+            '{"userGeneratedKey":"video/nested/same.mp4","videoTitle":"legacy"}',
+            encoding="utf-8",
+        )
+
+        first = user_generated_results.migrate_legacy_result_layout(generated_root)
+        second = user_generated_results.migrate_legacy_result_layout(generated_root)
+
+        migrated = generated_root / "source" / "video" / "same-1.mp4"
+        self.assertEqual(first["movedVideos"], ["source/video/same-1.mp4"])
+        self.assertEqual(second["movedVideos"], [])
+        self.assertEqual(canonical.read_bytes(), b"canonical")
+        self.assertEqual(migrated.read_bytes(), b"legacy")
+        metadata = json.loads(
+            (generated_root / ".restored-meta" / "source" / "video" / "same-1.mp4.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(metadata["userGeneratedKey"], "source/video/same-1.mp4")
+        self.assertFalse((generated_root / "video").exists())
 
     def test_reconciliation_resolves_legacy_flat_key_to_video_root(self) -> None:
         generated_root = self.root / "用户生成结果"
@@ -106,7 +137,7 @@ class AI8VideoUserGeneratedResultsTest(unittest.TestCase):
     def test_generated_video_gets_independent_initial_burned_copy(self) -> None:
         user_root = self.root / "用户文件夹"
         generated_root = user_root / "用户生成结果"
-        source = generated_root / "video" / "done.mp4"
+        source = generated_root / "source" / "video" / "done.mp4"
         source.parent.mkdir(parents=True)
         source.write_bytes(b"mp4")
 
@@ -125,7 +156,7 @@ class AI8VideoUserGeneratedResultsTest(unittest.TestCase):
 
     def test_initial_burned_copy_never_overwrites_confirmed_burn(self) -> None:
         generated_root = self.root / "用户生成结果"
-        source = generated_root / "video" / "done.mp4"
+        source = generated_root / "source" / "video" / "done.mp4"
         burned = generated_root / "burned" / "video" / "done.mp4"
         source.parent.mkdir(parents=True)
         burned.parent.mkdir(parents=True)
@@ -143,7 +174,7 @@ class AI8VideoUserGeneratedResultsTest(unittest.TestCase):
 
     def test_scheduled_overwrite_skips_target_changed_after_scheduling(self) -> None:
         generated_root = self.root / "用户生成结果"
-        source = generated_root / "video" / "done.mp4"
+        source = generated_root / "source" / "video" / "done.mp4"
         burned = generated_root / "burned" / "video" / "done.mp4"
         source.parent.mkdir(parents=True)
         burned.parent.mkdir(parents=True)
@@ -176,7 +207,7 @@ class AI8VideoUserGeneratedResultsTest(unittest.TestCase):
 
     def test_missing_burned_copies_are_scheduled_asynchronously(self) -> None:
         generated_root = self.root / "用户生成结果"
-        source = generated_root / "video" / "done.mp4"
+        source = generated_root / "source" / "video" / "done.mp4"
         source.parent.mkdir(parents=True)
         source.write_bytes(b"master")
 

@@ -68,6 +68,7 @@
       health: null,
       assets: [],
       userGeneratedResults: [],
+      userBurnedResults: [],
       recycleBin: { count: 0, items: [], root: '' },
       deletedUserGeneratedKeys: [],
       deletedUserGeneratedJobIds: [],
@@ -276,6 +277,7 @@
       },
       resultModal: {
         visible: false,
+        directory: 'burned',
         batchMerge: false,
         batchMergeSubmitting: false,
         selectedKeys: [],
@@ -403,6 +405,8 @@
     const scriptKnowledgeTypewriterLines = new Map();
     const pendingPollTimers = new Map();
     const pendingPollInflight = new Set();
+    const pendingPollEpochs = new Map();
+    const pendingPollRefreshRequested = new Set();
     const tailFrameRecoveryPollAttempted = new Set();
     const pendingCancelInflight = new Set();
     const collectingSyncTimers = new Map();
@@ -458,6 +462,9 @@
       resultModal: document.getElementById('resultModal'),
       resultModalTitle: document.getElementById('resultModalTitle'),
       resultModalSub: document.getElementById('resultModalSub'),
+      resultModalDirectoryTabs: document.getElementById('resultModalDirectoryTabs'),
+      resultModalSourceTab: document.getElementById('resultModalSourceTab'),
+      resultModalBurnedTab: document.getElementById('resultModalBurnedTab'),
       resultModalBody: document.getElementById('resultModalBody'),
       resultModalBatchMergeGroup: document.getElementById('resultModalBatchMergeGroup'),
       resultModalBatchMergeButton: document.getElementById('resultModalBatchMergeButton'),

@@ -125,9 +125,17 @@
       await confirmResultBatchMerge();
     });
 
+    els.resultModalDirectoryTabs.addEventListener('click', (event) => {
+      const tab = event.target.closest('[data-result-directory]');
+      if (tab) selectResultDirectory(tab.dataset.resultDirectory);
+    });
+
     els.resultModalOpenFolderButton.addEventListener('click', async () => {
       try {
-        await openUserGeneratedResultsFolder(els.resultModalOpenFolderButton);
+        await openUserGeneratedResultsFolder(
+          els.resultModalOpenFolderButton,
+          els.resultModalOpenFolderButton.dataset.artifactKind,
+        );
       } catch (error) {
         console.error(error);
       }

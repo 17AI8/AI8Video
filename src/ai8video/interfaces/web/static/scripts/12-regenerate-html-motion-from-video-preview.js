@@ -322,7 +322,7 @@
       }
     }
 
-    async function deleteUserGeneratedVideoFromPreview(userGeneratedKey, button) {
+    async function deleteUserGeneratedVideoFromPreview(userGeneratedKey, button, artifactKind = 'editable') {
       const key = String(userGeneratedKey || '').trim();
       if (!key) return;
       if (!window.confirm('确定删除这个视频？删除后会同步从查看结果里移除。')) {
@@ -336,7 +336,7 @@
         const res = await fetch('/api/user-generated-results/delete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userGeneratedKey: key }),
+          body: JSON.stringify({ userGeneratedKey: key, artifactKind }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data?.ok === false) {

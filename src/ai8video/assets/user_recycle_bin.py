@@ -12,6 +12,7 @@ from ai8video.core.legacy_payload import normalize_legacy_video_payload
 from ai8video.core.models import VideoPrompt, QuickVideoJob
 from ai8video.assets.user_files import USER_RECYCLE_BIN_ROOT, ensure_user_file_root
 from ai8video.assets.user_generated_results import (
+    SOURCE_VIDEO_PREFIX,
     ensure_user_generated_result_dir,
     schedule_burned_result_copy,
 )
@@ -163,7 +164,7 @@ def restore_failed_video_task(folder: str) -> dict[str, Any]:
         raise ValueError("回收站任务中没有可恢复的视频")
 
     result_root = ensure_user_generated_result_dir().resolve()
-    destination_dir = result_root / "video"
+    destination_dir = result_root / SOURCE_VIDEO_PREFIX
     destination_dir.mkdir(parents=True, exist_ok=True)
     manifest = _load_task_manifest(task_folder)
     moved_videos: list[tuple[Path, Path]] = []

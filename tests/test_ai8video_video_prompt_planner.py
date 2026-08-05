@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -15,6 +17,7 @@ from ai8video.generation.video_prompt_planner import (
     rewrite_video_with_ai,
     single_prompt_to_video,
     plan_video_prompts_with_ai,
+    plan_standard_smart_split_prompts_with_ai,
 )
 from ai8video.generation.video_prompt_support import clean_source_summary, parse_json_array, parse_json_object
 from ai8video.core.models import VideoPrompt
@@ -248,6 +251,128 @@ class AI8VideoVideoPromptPlannerTest(unittest.TestCase):
         self.assertIn("JSON 格式修复器", model_inputs[2])
         self.assertEqual(videos[0].title, "消息到来")
         self.assertIn('他说："来了"', videos[0].prompt)
+
+    def test_standard_smart_split_plans_outline_once_and_details_concurrently(self) -> None:
+        model_prompts: list[str] = []
+        prompt_lock = threading.Lock()
+
+        def fake_llm(prompt: str) -> str:
+            with prompt_lock:
+                model_prompts.append(prompt)
+            if "标准模式智能分集总规划器" in prompt:
+                return self._parallel_outline_json(3)
+            if "只展开第 1 集" in prompt:
+                time.sleep(0.06)
+                return self._episode_json(1)
+            if "只展开第 2 集" in prompt:
+                time.sleep(0.03)
+                return self._episode_json(2)
+            if "只展开第 3 集" in prompt:
+                return self._episode_json(3)
+            raise AssertionError(f"unexpected prompt: {prompt[:80]}")
+
+        videos = plan_standard_smart_split_prompts_with_ai(
+            "系列素材",
+            3,
+            llm=fake_llm,
+        )
+
+        self.assertEqual([video.index for video in videos], [1, 2, 3])
+        self.assertEqual(sum("标准模式智能分集总规划器" in prompt for prompt in model_prompts), 1)
+        detail_prompts = [prompt for prompt in model_prompts if "单集详细剧本规划器" in prompt]
+        self.assertEqual(len(detail_prompts), 3)
+        self.assertTrue(all("深色西装" in prompt for prompt in detail_prompts))
+        self.assertTrue(all("商务会议室" in prompt for prompt in detail_prompts))
+        self.assertTrue(all(video.prompt.startswith("【整体】") for video in videos))
+        self.assertTrue(all("【0-10秒】" in video.prompt for video in videos))
+        self.assertTrue(all("- 时间段：0-10秒" in video.prompt for video in videos))
+        self.assertTrue(all("- 表情/情绪/身体状态：" in video.prompt for video in videos))
+        self.assertTrue(all("- 音效建议：" in video.prompt for video in videos))
+
+    def test_standard_smart_split_repairs_only_invalid_episode(self) -> None:
+        detail_attempts = {1: 0, 2: 0}
+
+        def fake_llm(prompt: str) -> str:
+            if "标准模式智能分集总规划器" in prompt:
+                return self._parallel_outline_json(2)
+            if "只展开第 1 集" in prompt:
+                detail_attempts[1] += 1
+                return self._episode_json(1)
+            if "只展开第 2 集" in prompt:
+                detail_attempts[2] += 1
+                return "not-json"
+            if "第 2 集结果的 JSON 格式" in prompt:
+                return self._episode_json(2)
+            raise AssertionError(f"unexpected prompt: {prompt[:80]}")
+
+        videos = plan_standard_smart_split_prompts_with_ai("系列素材", 2, llm=fake_llm)
+
+        self.assertEqual([video.index for video in videos], [1, 2])
+        self.assertEqual(detail_attempts, {1: 1, 2: 1})
+
+    def test_standard_smart_split_fails_atomically_when_episode_cannot_be_repaired(self) -> None:
+        def fake_llm(prompt: str) -> str:
+            if "标准模式智能分集总规划器" in prompt:
+                return self._parallel_outline_json(2)
+            if "只展开第 1 集" in prompt:
+                return self._episode_json(1)
+            return "not-json"
+
+        with self.assertRaisesRegex(RuntimeError, "第 2 集规划结果格式异常"):
+            plan_standard_smart_split_prompts_with_ai("系列素材", 2, llm=fake_llm)
+
+    @staticmethod
+    def _parallel_outline_json(video_count: int) -> str:
+        episodes = [
+            {
+                "index": index,
+                "title": f"主题 {index}",
+                "objective": f"目标 {index}",
+                "source_summary": f"参考了素材 {index}",
+                "source_material": f"事实 {index}",
+                "relation_to_previous": "主题递进",
+                "relation_to_next": "主题承接",
+                "required_keywords": [f"关键词 {index}"],
+                "required_facts": [f"事实 {index}"],
+            }
+            for index in range(1, video_count + 1)
+        ]
+        return __import__("json").dumps({
+            "series_premise": "统一系列",
+            "character_identity": "企业负责人",
+            "wardrobe": "深色西装",
+            "setting": "商务会议室",
+            "time_context": "工作日下午",
+            "visual_style": "真实商务纪实",
+            "must_preserve_facts": ["统一事实"],
+            "continuity_rules": ["人物衣着保持一致"],
+            "episodes": episodes,
+        }, ensure_ascii=False)
+
+    @staticmethod
+    def _episode_json(index: int) -> str:
+        return __import__("json").dumps({
+            "index": index,
+            "title": f"主题 {index}",
+            "overall": "最终成片约10秒；同一人物、衣着与场景保持一致；全片不出现字幕或logo。",
+            "segments": [
+                {
+                    "time_range": "0-10秒",
+                    "shot_size": "中近景",
+                    "scene": "商务会议室",
+                    "camera_movement": "缓慢推近",
+                    "character_action": "负责人面向镜头讲述",
+                    "performance": "自信、笃定；体态挺拔",
+                    "tone": "清晰有力",
+                    "dialogue": f"第 {index} 集。",
+                    "sound_effect": "轻快鼓点收束",
+                }
+            ],
+            "narration_text": f"第 {index} 集。",
+            "source_summary": f"参考了素材 {index}",
+            "preserved_keywords": [f"关键词 {index}"],
+            "omitted_keywords_reason": "",
+        }, ensure_ascii=False)
 
     def test_planning_prompt_requires_dialogue_and_shootable_segments(self) -> None:
         prompt = build_video_planning_prompt("老板说客户丢了才知道私域沉淀重要", 2, "老板真实口播")

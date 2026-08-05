@@ -149,6 +149,62 @@ class CapabilityRegistryTest(unittest.TestCase):
         self.assertEqual(len(result.value), 6)
         self.assertEqual(calls, {"infer": 0, "smart": 1, "repeat": 0})
 
+    def test_parallel_episode_strategy_is_explicit_and_legacy_remains_default(self) -> None:
+        request = ParsedRequest(raw_text="智能分集素材", mode="batch_videos", video_count=2)
+        calls = {"legacy": 0, "parallel": 0}
+
+        def legacy_plan(*_args, **_kwargs):
+            calls["legacy"] += 1
+            return [VideoPrompt(index=1, title="旧路径", prompt="旧路径")]
+
+        def parallel_plan(*_args, **_kwargs):
+            calls["parallel"] += 1
+            return [VideoPrompt(index=1, title="并发路径", prompt="并发路径")]
+
+        capability = build_planning_capability(
+            infer_count=lambda *_args, **_kwargs: (2, "unused"),
+            smart_plan=legacy_plan,
+            parallel_smart_plan=parallel_plan,
+            repeat_plan=lambda *_args, **_kwargs: [],
+            single_plan=lambda *_args, **_kwargs: [],
+        )
+        registry = CapabilityRegistry()
+        registry.register(capability)
+
+        legacy_result = registry.execute(
+            PLANNING_CAPABILITY_NAME,
+            AgentRunContext(),
+            PlanningCapabilityInput(
+                request=request,
+                target_duration=10,
+                task_constraints="",
+                smart_split=True,
+                smart_split_count_locked=True,
+                allow_mock=True,
+                llm=None,
+                trace_session_id=None,
+            ),
+        )
+        parallel_result = registry.execute(
+            PLANNING_CAPABILITY_NAME,
+            AgentRunContext(),
+            PlanningCapabilityInput(
+                request=request,
+                target_duration=10,
+                task_constraints="",
+                smart_split=True,
+                smart_split_count_locked=True,
+                use_parallel_episode_planning=True,
+                allow_mock=True,
+                llm=None,
+                trace_session_id=None,
+            ),
+        )
+
+        self.assertEqual(legacy_result.value[0].title, "旧路径")
+        self.assertEqual(parallel_result.value[0].title, "并发路径")
+        self.assertEqual(calls, {"legacy": 1, "parallel": 1})
+
 
 if __name__ == "__main__":
     unittest.main()

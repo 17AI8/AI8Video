@@ -187,6 +187,7 @@
       const userGeneratedKey = item.userGeneratedKey || deriveUserGeneratedKeyFromMediaUrl(videoSrc);
       const userGeneratedPreviewKey = item.userGeneratedPreviewKey || deriveLocalPreviewKey(userGeneratedKey);
       const userGeneratedCoverKey = item.userGeneratedCoverKey || deriveLocalCoverKey(userGeneratedKey);
+      const artifactKind = String(item.artifactKind || 'editable');
       const badgeText = item.videoIndex ? `第 ${item.videoIndex} 条` : `视频 ${index + 1}`;
       const title = cleanDisplayText(item.videoTitle || item.title, badgeText);
       const ratioLabel = buildResultRatioLabel(item);
@@ -231,6 +232,7 @@
                 data-video-user-generated-key="${escapeHtml(userGeneratedKey)}"
                 data-video-user-generated-preview-key="${escapeHtml(userGeneratedPreviewKey)}"
                 data-video-user-generated-cover-key="${escapeHtml(userGeneratedCoverKey)}"
+                data-video-artifact-kind="${escapeHtml(artifactKind)}"
                 aria-label="播放 ${escapeHtml(title)}"
               ><span aria-hidden="true"></span></button>
             ` : ''}
@@ -380,7 +382,8 @@
       if (isSkipped) {
         const rawLabel = String(item?.statusLabel || stage || '').trim();
         const cancelled = rawLabel.includes('取消') || rawLabel.includes('终止');
-        const primary = cancelled ? rawLabel : '生成失败';
+        const previousVideoFailed = String(item?.error || '').includes('前序视频提交失败');
+        const primary = cancelled ? rawLabel : (rawLabel || '未继续生成');
         const rawReason = getGenerationFailureRawReason(item);
         const inheritedReason = !cancelled && isNoUpstreamFailureReason(rawReason)
           ? String(context?.sharedFailureReason || '').trim()
@@ -389,7 +392,13 @@
         const friendlyReason = effectiveReason ? humanizeGenerationFailureReason(effectiveReason) : '';
         const fallbackReason = cancelled ? primary : '这条未提交给生成服务；没有上游返回。';
         const tooltipReason = friendlyReason || fallbackReason || primary;
-        const badgeReason = cancelled ? primary : summarizeGenerationFailureReason(tooltipReason);
+        const badgeReason = previousVideoFailed
+          ? '上一个视频已失败'
+          : (
+              isNoUpstreamFailureReason(rawReason)
+                ? primary
+                : (cancelled ? primary : summarizeGenerationFailureReason(tooltipReason))
+            );
         return `
           <div class="result-notify-card failed ${resultNotifyRatioClass(item)}">
             <div class="result-notify-preview" title="${escapeHtml(tooltipReason)}">
@@ -516,6 +525,9 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data?.ok === false) throw new Error(data?.error || '回退失败');
+        // A chat-status request started before rollback may still contain the deleted
+        // video's old succeeded snapshot. Discard it before applying the new state.
+        invalidatePendingPollResponses(sessionId);
         const session = state.sessions.find((item) => item.id === sessionId);
         if (session && data?.generationProgress) {
           const incoming = {
@@ -534,7 +546,7 @@
           persistSessions();
           render();
         }
-        schedulePendingPoll(sessionId, 0);
+        if (!pendingPollInflight.has(sessionId)) schedulePendingPoll(sessionId, 0);
         void refreshAssets();
         void refreshUserGeneratedResults();
       } catch (error) {

@@ -22,17 +22,26 @@ class PlanningCapabilityInput:
     llm: Callable[[str], str] | None
     trace_session_id: str | None
     smart_split_count_locked: bool = False
+    use_parallel_episode_planning: bool = False
 
 
 def build_planning_capability(
     *,
     infer_count: Callable[..., tuple[int, str]],
     smart_plan: Callable[..., list[VideoPrompt]],
+    parallel_smart_plan: Callable[..., list[VideoPrompt]] | None = None,
     repeat_plan: Callable[..., list[VideoPrompt]],
     single_plan: Callable[..., list[VideoPrompt]],
 ) -> CapabilitySpec[PlanningCapabilityInput, list[VideoPrompt]]:
     def execute(_context: AgentRunContext, data: PlanningCapabilityInput) -> list[VideoPrompt]:
-        return _execute_planning(data, infer_count, smart_plan, repeat_plan, single_plan)
+        return _execute_planning(
+            data,
+            infer_count,
+            smart_plan,
+            parallel_smart_plan or smart_plan,
+            repeat_plan,
+            single_plan,
+        )
 
     return CapabilitySpec(
         name=PLANNING_CAPABILITY_NAME,
@@ -52,6 +61,7 @@ def _execute_planning(
     data: PlanningCapabilityInput,
     infer_count: Callable[..., tuple[int, str]],
     smart_plan: Callable[..., list[VideoPrompt]],
+    parallel_smart_plan: Callable[..., list[VideoPrompt]],
     repeat_plan: Callable[..., list[VideoPrompt]],
     single_plan: Callable[..., list[VideoPrompt]],
 ) -> list[VideoPrompt]:
@@ -67,7 +77,8 @@ def _execute_planning(
             )
         if not video_count:
             raise ValueError("video_count is required for video planning")
-        return smart_plan(
+        selected_smart_plan = parallel_smart_plan if data.use_parallel_episode_planning else smart_plan
+        return selected_smart_plan(
             request.raw_text,
             video_count,
             request.style_hint,

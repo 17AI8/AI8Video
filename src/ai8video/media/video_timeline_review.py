@@ -251,6 +251,7 @@ def video_timeline_candidate_needs_render(
     candidate = _review_dir(relative_key) / str(state.get("candidateName") or "candidate.mp4")
     return (
         not candidate.is_file()
+        or (probe_media_duration_seconds(candidate) or 0) <= 0
         or state.get("compositeSignature") != _file_signature(composite_source)
         or state.get("preserveSourceAudio") is not preserve_source_audio
     )
@@ -592,7 +593,24 @@ def _review_dir(relative_key: str) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     path = (root / _review_id(relative_key)).resolve()
     _assert_within_review_root(path)
+    _adopt_legacy_review_dir(root, relative_key, path)
     return path
+
+
+def _adopt_legacy_review_dir(root: Path, relative_key: str, canonical_path: Path) -> None:
+    if canonical_path.exists() or not relative_key.startswith("source/video/"):
+        return
+    legacy_key = relative_key.removeprefix("source/")
+    legacy_path = (root / _review_id(legacy_key)).resolve()
+    _assert_within_review_root(legacy_path)
+    if legacy_path.is_dir():
+        legacy_path.replace(canonical_path)
+        state_path = canonical_path / "review.json"
+        state = _load_json(state_path)
+        if state:
+            state["relativeKey"] = relative_key
+            state["reviewId"] = canonical_path.name
+            _write_json(state_path, state)
 
 
 def _review_dir_from_id(review_id: str) -> Path:

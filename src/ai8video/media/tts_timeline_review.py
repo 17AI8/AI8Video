@@ -508,7 +508,24 @@ def _review_dir(relative_key: str) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     path = (root / _review_id(relative_key)).resolve()
     _assert_within_review_root(path)
+    _adopt_legacy_review_dir(root, relative_key, path)
     return path
+
+
+def _adopt_legacy_review_dir(root: Path, relative_key: str, canonical_path: Path) -> None:
+    if canonical_path.exists() or not relative_key.startswith("source/video/"):
+        return
+    legacy_key = relative_key.removeprefix("source/")
+    legacy_path = (root / _review_id(legacy_key)).resolve()
+    _assert_within_review_root(legacy_path)
+    if legacy_path.is_dir():
+        legacy_path.replace(canonical_path)
+        state_path = canonical_path / "review.json"
+        state = _load_json(state_path)
+        if state:
+            state["relativeKey"] = relative_key
+            state["reviewId"] = canonical_path.name
+            _write_json(state_path, state)
 
 
 def _review_root() -> Path:

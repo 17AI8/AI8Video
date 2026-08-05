@@ -466,6 +466,19 @@ def _review_dir(relative_key: str) -> Path:
     review_id = hashlib.sha256(relative_key.encode("utf-8")).hexdigest()[:32]
     path = (root / review_id).resolve()
     _assert_within_review_root(path)
+    if not path.exists() and relative_key.startswith("source/video/"):
+        legacy_key = relative_key.removeprefix("source/")
+        legacy_id = hashlib.sha256(legacy_key.encode("utf-8")).hexdigest()[:32]
+        legacy_path = (root / legacy_id).resolve()
+        _assert_within_review_root(legacy_path)
+        if legacy_path.is_dir():
+            legacy_path.replace(path)
+            payload_path = path / "review.json"
+            payload = _load_json(payload_path)
+            if payload:
+                payload["relativeKey"] = relative_key
+                payload["reviewId"] = path.name
+                _write_json(payload_path, payload)
     return path
 
 

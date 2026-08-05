@@ -18,6 +18,7 @@ from ai8video.core.config import AI8VideoConfig
 from ai8video.media.ffmpeg_utils import resolve_ffmpeg_bin
 from ai8video.core.models import ArchivedAsset, VideoPrompt, ParsedRequest, QuickVideoJob, GenerationOutcome
 from ai8video.assets.user_generated_results import (
+    SOURCE_VIDEO_PREFIX,
     ensure_user_generated_result_dir,
     schedule_burned_result_copy,
 )
@@ -310,7 +311,8 @@ class VideoAssetArchiver:
 
     @staticmethod
     def _result_video_key(video: VideoPrompt, filename: str) -> str:
-        subdir = Path(str(video.archive_subdir or "video").strip() or "video")
+        requested_subdir = str(video.archive_subdir or SOURCE_VIDEO_PREFIX).strip() or SOURCE_VIDEO_PREFIX
+        subdir = Path(SOURCE_VIDEO_PREFIX if requested_subdir == "video" else requested_subdir)
         if subdir.is_absolute() or ".." in subdir.parts:
             raise ValueError("用户生成结果归档目录无效")
         return (subdir / filename).as_posix()

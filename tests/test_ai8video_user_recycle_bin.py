@@ -79,7 +79,7 @@ class AI8VideoUserRecycleBinTest(unittest.TestCase):
                 overwrite=False,
             )
             self.assertEqual(result["restoredCount"], 1)
-            self.assertEqual(restored_key, f"video/{Path(restored_key).name}")
+            self.assertEqual(restored_key, f"source/video/{Path(restored_key).name}")
             self.assertFalse(task_folder.exists())
             self.assertFalse(source_video.exists())
             self.assertTrue((result_root / restored_key).is_file())

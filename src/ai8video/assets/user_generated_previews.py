@@ -4,11 +4,15 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from threading import Lock
 from typing import Iterable
+from uuid import uuid4
 
 from ai8video.media.ffmpeg_utils import resolve_ffmpeg_bin
 
 PREVIEW_DIR_NAME = "preview"
+_PREVIEW_LOCKS: dict[str, Lock] = {}
+_PREVIEW_LOCKS_GUARD = Lock()
 
 
 def preview_key_for_video(video_relative_key: str) -> str:
@@ -58,28 +62,40 @@ def generate_preview_for_video(
         return {"ok": False, "previewKey": preview_key, "error": "path outside generated results"}
     if not source.is_file():
         return {"ok": False, "previewKey": preview_key, "error": "video missing"}
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temp_target = target.with_name(f"{target.stem}.generating{target.suffix}")
-    if temp_target.exists():
-        temp_target.unlink()
-    cmd = [
-        resolve_ffmpeg_bin(ffmpeg_bin),
-        "-y",
-        "-i",
-        str(source),
-        "-frames:v",
-        "1",
-        "-q:v",
-        "3",
-        str(temp_target),
-    ]
-    try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
-        os.replace(temp_target, target)
-    except Exception as exc:
-        if temp_target.exists():
-            temp_target.unlink()
-        return {"ok": False, "previewKey": preview_key, "error": str(exc)[-500:]}
+    with _preview_lock(target):
+        if target.is_file():
+            return _successful_preview_result(preview_key, target)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temp_target = target.with_name(
+            f".{target.stem}.generating-{uuid4().hex}{target.suffix}"
+        )
+        command = [
+            resolve_ffmpeg_bin(ffmpeg_bin),
+            "-y",
+            "-i",
+            str(source),
+            "-frames:v",
+            "1",
+            "-q:v",
+            "3",
+            str(temp_target),
+        ]
+        try:
+            subprocess.run(command, check=True, capture_output=True, text=True)
+            os.replace(temp_target, target)
+        except Exception as exc:
+            temp_target.unlink(missing_ok=True)
+            return {"ok": False, "previewKey": preview_key, "error": str(exc)[-500:]}
+    return _successful_preview_result(preview_key, target)
+
+
+def _preview_lock(target: Path) -> Lock:
+    lock_key = str(target.resolve())
+    with _PREVIEW_LOCKS_GUARD:
+        return _PREVIEW_LOCKS.setdefault(lock_key, Lock())
+
+
+def _successful_preview_result(preview_key: str, target: Path) -> dict:
     return {
         "ok": True,
         "previewKey": preview_key,

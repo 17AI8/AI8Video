@@ -291,6 +291,8 @@
       min-height: 0;
       padding: 12px 18px;
       overflow: hidden;
+      container-name: viral-breakdown-stage;
+      container-type: inline-size;
     }
 
     #viralBreakdownModal .viral-breakdown-workbench {
@@ -541,6 +543,14 @@
       font-size: 13px;
       font-weight: 800;
       color: var(--viral-text);
+    }
+
+    /* The modal can be narrower than the viewport, so adapt to its usable width. */
+    @container viral-breakdown-stage (max-width: 960px) {
+      #viralBreakdownModal .viral-breakdown-workspace-layout {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(220px, 0.72fr) minmax(280px, 1.28fr);
+      }
     }
 
     @media (max-width: 920px) {

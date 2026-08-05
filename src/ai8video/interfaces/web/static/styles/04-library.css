@@ -106,8 +106,35 @@
     #resultModal .material-modal-panel {
       width: min(920px, calc(100vw - 48px));
       max-height: min(620px, calc(100vh - 48px));
-      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-rows: auto auto minmax(0, 1fr);
       overflow: hidden;
+    }
+
+    .result-directory-tabs {
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+      width: fit-content;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(235, 241, 252, 0.8);
+    }
+
+    .result-directory-tab {
+      min-height: 32px;
+      padding: 0 16px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .result-directory-tab.is-active {
+      background: #fff;
+      color: var(--accent);
+      box-shadow: 0 2px 8px rgba(49, 91, 175, 0.12);
     }
 
     #resultModal .modal-head {
@@ -116,7 +143,12 @@
     }
 
     #resultModal .modal-title {
-      flex: 0 0 150px;
+      flex: 0 0 auto;
+      min-width: 220px;
+    }
+
+    #resultModal .modal-sub {
+      white-space: nowrap;
     }
 
     #viralBreakdownModal .material-modal-panel,
