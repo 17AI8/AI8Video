@@ -98,6 +98,10 @@
       renderResultModal({ preserveScroll: true });
       try {
         await requestResultBatchMerge(keys);
+        // Batch merge creates a logical edit state that still references the
+        // original clips.  Its disposable single-track cache is never a result
+        // file; a real burned file is created only after confirmation.
+        modalState.directory = 'source';
         modalState.batchMerge = false;
         modalState.selectedKeys = [];
       } catch (error) {

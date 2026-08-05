@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -358,7 +359,19 @@ def build_episode_detail_prompt(
     core_keywords: str | None,
     task_constraints: str | None,
     final_duration_seconds: int | None,
+    tail_frame_chaining: bool = False,
 ) -> str:
+    if tail_frame_chaining:
+        segment_rule = """传尾帧模式已开启：用户在规划前已明确选择该模式，不能在提交阶段再改写提示词。
+第一个 segments 元素必须是传入参考尾帧后的起始段：time_range 必须从 0 秒开始，且只能包含
+time_range、reference_frame_start（必须为 true）、tone、dialogue 四个字段；不要在该段写景别、场景、运镜、人物动作、表情或音效。
+后续 segments 必须覆盖剩余时长、时间连续，并完整填写 time_range、shot_size、scene、camera_movement、character_action、performance、tone、dialogue、sound_effect。
+至少输出首个参考图起始段和一个后续完整时间段。"""
+        segment_schema = """    {\"time_range\":\"0-3秒\",\"reference_frame_start\":true,\"tone\":\"...\",\"dialogue\":\"...\"},
+    {\"time_range\":\"3-10秒\",\"shot_size\":\"...\",\"scene\":\"...\",\"camera_movement\":\"...\",\"character_action\":\"...\",\"performance\":\"表情、情绪和身体状态\",\"tone\":\"...\",\"dialogue\":\"...\",\"sound_effect\":\"...\"}"""
+    else:
+        segment_rule = "segments 必须覆盖完整成片时长且时间连续；每段都必须填写全部字段，不得省略字段或合并字段。"
+        segment_schema = "    {\"time_range\":\"0-3秒\",\"shot_size\":\"...\",\"scene\":\"...\",\"camera_movement\":\"...\",\"character_action\":\"...\",\"performance\":\"表情、情绪和身体状态\",\"tone\":\"...\",\"dialogue\":\"...\",\"sound_effect\":\"...\"}"
     return apply_agent_skills("planner", f"""你是AI8video 的单集详细剧本规划器。
 
 {business_prompt_block()}
@@ -377,14 +390,14 @@ def build_episode_detail_prompt(
 {json.dumps(episode.__dict__, ensure_ascii=False, default=list)}
 
 不要把详细内容拼成一段自由文本。请把整体要求和每个时间片段分别放进结构化字段，由程序统一渲染排版。
-segments 必须覆盖完整成片时长且时间连续；每段都必须填写全部字段，不得省略字段或合并字段。
+{segment_rule}
 只返回严格 JSON 对象：
 {{
   "index":{episode.index},
   "title":"...",
   "overall":"最终成片约10秒；系列共同画面、人物、文字和禁用要求",
   "segments":[
-    {{"time_range":"0-3秒","shot_size":"...","scene":"...","camera_movement":"...","character_action":"...","performance":"表情、情绪和身体状态","tone":"...","dialogue":"...","sound_effect":"..."}}
+{segment_schema}
   ],
   "narration_text":"观众实际听到的完整台词正文",
   "source_summary":"参考了……",
@@ -394,7 +407,12 @@ segments 必须覆盖完整成片时长且时间连续；每段都必须填写�
 """)
 
 
-def _format_episode_prompt(data: dict, episode_index: int) -> str:
+def _format_episode_prompt(
+    data: dict,
+    episode_index: int,
+    *,
+    tail_frame_chaining: bool = False,
+) -> str:
     overall = str(data.get("overall") or "").strip()
     segments = data.get("segments")
     if not overall:
@@ -416,6 +434,32 @@ def _format_episode_prompt(data: dict, episode_index: int) -> str:
     for position, segment in enumerate(segments, 1):
         if not isinstance(segment, dict):
             raise ValueError(f"第 {episode_index} 集第 {position} 个时间片段格式错误")
+        if tail_frame_chaining and position == 1:
+            reference_fields = ("time_range", "tone", "dialogue")
+            normalized_reference = {
+                field: str(segment.get(field) or "").strip()
+                for field in reference_fields
+            }
+            missing_fields = [field for field, value in normalized_reference.items() if not value]
+            if missing_fields:
+                raise ValueError(
+                    f"第 {episode_index} 集传尾帧起始段缺少字段：{', '.join(missing_fields)}"
+                )
+            if not re.match(r"^0\s*[-~至到]\s*\d+", normalized_reference["time_range"]):
+                raise ValueError(
+                    f"第 {episode_index} 集传尾帧起始段必须使用 0-x秒 时间范围"
+                )
+            if segment.get("reference_frame_start") is not True:
+                raise ValueError(
+                    f"第 {episode_index} 集传尾帧起始段必须声明 reference_frame_start=true"
+                )
+            rendered_segments.append(
+                f"【{normalized_reference['time_range']}】\n"
+                "画面从参考图开始\n"
+                f"- 语气：{normalized_reference['tone']}\n"
+                f"- 台词/口播：{normalized_reference['dialogue']}"
+            )
+            continue
         normalized = {field: str(segment.get(field) or "").strip() for field in required_fields}
         missing_fields = [field for field, value in normalized.items() if not value]
         if missing_fields:
@@ -441,11 +485,19 @@ def _video_from_episode_data(
     data: dict,
     episode: EpisodePlanningBrief,
     outline: GlobalVideoOutline,
+    *,
+    tail_frame_chaining: bool = False,
 ) -> VideoPrompt:
     returned_index = int(data.get("index") or episode.index)
     if returned_index != episode.index:
         raise ValueError(f"单集规划返回 index {returned_index}，预期 {episode.index}")
-    prompt = sanitize_internal_fidelity_notes(_format_episode_prompt(data, episode.index))
+    prompt = sanitize_internal_fidelity_notes(
+        _format_episode_prompt(
+            data,
+            episode.index,
+            tail_frame_chaining=tail_frame_chaining,
+        )
+    )
     narration_text = prepare_narration_text(
         str(data.get("narration_text") or data.get("dialogue") or "").strip()
         or extract_dialogue_text(prompt)
@@ -483,6 +535,7 @@ def _plan_episode_detail(
     task_constraints: str | None,
     final_duration_seconds: int | None,
     trace_session_id: str | None,
+    tail_frame_chaining: bool,
 ) -> VideoPrompt:
     prompt = build_episode_detail_prompt(
         outline,
@@ -491,20 +544,35 @@ def _plan_episode_detail(
         core_keywords=core_keywords,
         task_constraints=task_constraints,
         final_duration_seconds=final_duration_seconds,
+        tail_frame_chaining=tail_frame_chaining,
     )
     started_at = time.monotonic()
     append_prompt_trace("episode_detail_model_input", session_id=trace_session_id, payload={"episodeIndex": episode.index, "prompt": prompt})
     raw = llm(prompt)
     append_prompt_trace("episode_detail_model_output", session_id=trace_session_id, payload={"episodeIndex": episode.index, "raw": raw, "elapsedMilliseconds": round((time.monotonic() - started_at) * 1000)})
     try:
-        return _video_from_episode_data(parse_json_object(raw), episode, outline)
+        return _video_from_episode_data(
+            parse_json_object(raw),
+            episode,
+            outline,
+            tail_frame_chaining=tail_frame_chaining,
+        )
     except Exception as parse_error:
-        repair_prompt = f"""你是 JSON 格式修复器。只修复下面第 {episode.index} 集结果的 JSON 格式和必填字段，不改写内容。只返回一个严格 JSON 对象，index 必须为 {episode.index}：\n{raw}"""
+        tail_frame_requirement = (
+            "传尾帧模式下第一个 segments 元素必须包含 time_range、reference_frame_start=true、tone、dialogue，且不得混入其他镜头字段。"
+            if tail_frame_chaining else ""
+        )
+        repair_prompt = f"""你是 JSON 格式修复器。只修复下面第 {episode.index} 集结果的 JSON 格式和必填字段，不改写内容。{tail_frame_requirement}只返回一个严格 JSON 对象，index 必须为 {episode.index}：\n{raw}"""
         append_prompt_trace("episode_detail_model_repair_input", session_id=trace_session_id, payload={"episodeIndex": episode.index, "error": str(parse_error)})
         repaired_raw = llm(repair_prompt)
         append_prompt_trace("episode_detail_model_repair_output", session_id=trace_session_id, payload={"episodeIndex": episode.index, "raw": repaired_raw})
         try:
-            return _video_from_episode_data(parse_json_object(repaired_raw), episode, outline)
+            return _video_from_episode_data(
+                parse_json_object(repaired_raw),
+                episode,
+                outline,
+                tail_frame_chaining=tail_frame_chaining,
+            )
         except Exception as repair_error:
             raise RuntimeError(f"第 {episode.index} 集规划结果格式异常，请重新规划。") from repair_error
 
@@ -519,6 +587,7 @@ def plan_standard_smart_split_prompts_with_ai(
     llm: LLMCallable | None = None,
     allow_mock: bool = False,
     trace_session_id: str | None = None,
+    tail_frame_chaining: bool = False,
 ) -> list[VideoPrompt]:
     if video_count < 1:
         raise ValueError("video_count must be >= 1")
@@ -556,6 +625,7 @@ def plan_standard_smart_split_prompts_with_ai(
                 task_constraints=task_constraints,
                 final_duration_seconds=final_duration_seconds,
                 trace_session_id=trace_session_id,
+                tail_frame_chaining=tail_frame_chaining,
             ): episode
             for episode in outline.episodes
         }

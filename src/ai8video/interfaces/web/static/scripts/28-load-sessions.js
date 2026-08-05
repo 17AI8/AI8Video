@@ -230,6 +230,93 @@
       }
     }
 
+    function pendingTaskSnapshotFromSession(session) {
+      const pendingMessage = [...(session?.messages || [])].reverse().find((message) => (
+        message?.role === 'assistant'
+        && isPendingPayload(message.payload)
+        && isPendingStatusActive(message.payload?.pendingStatus || {})
+      ));
+      if (!pendingMessage?.payload) return null;
+      const pending = pendingMessage.payload.pendingStatus || {};
+      const sessionId = String(session?.id || pending.sessionId || '').trim();
+      if (!sessionId) return null;
+      return {
+        sessionId,
+        generationBatchId: extractGenerationBatchId(pendingMessage.payload),
+        generationBatchAuthority: extractGenerationBatchAuthority(pendingMessage.payload),
+        pendingSince: String(pending.pendingSince || pending.taskStartedAt || '').trim(),
+        taskStartedAt: String(pending.taskStartedAt || pending.pendingSince || '').trim(),
+        videoCount: Number(pending.videoCount || pending.generationProgress?.totalRequested || 0) || 0,
+        savedAt: Date.now(),
+      };
+    }
+
+    function persistPendingTaskSnapshots() {
+      const snapshots = {};
+      (state.sessions || []).forEach((session) => {
+        const snapshot = pendingTaskSnapshotFromSession(session);
+        if (snapshot) snapshots[snapshot.sessionId] = snapshot;
+      });
+      try {
+        if (Object.keys(snapshots).length) {
+          localStorage.setItem(PENDING_TASK_STORAGE_KEY, JSON.stringify(snapshots));
+        } else {
+          localStorage.removeItem(PENDING_TASK_STORAGE_KEY);
+        }
+      } catch (error) {
+        console.warn('后台任务恢复快照保存失败', error);
+      }
+    }
+
+    function loadPendingTaskSnapshots() {
+      try {
+        const value = JSON.parse(localStorage.getItem(PENDING_TASK_STORAGE_KEY) || '{}');
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+        return Object.values(value).filter((snapshot) => (
+          snapshot
+          && typeof snapshot === 'object'
+          && String(snapshot.sessionId || '').trim()
+        ));
+      } catch {
+        return [];
+      }
+    }
+
+    function restorePendingSessionsAfterReload() {
+      let restored = false;
+      loadPendingTaskSnapshots().forEach((snapshot) => {
+        const sessionId = String(snapshot.sessionId || '').trim();
+        const session = (state.sessions || []).find((item) => item?.id === sessionId);
+        if (!session) return;
+        const hasPendingMessage = (session.messages || []).some((message) => (
+          message?.role === 'assistant'
+          && isPendingPayload(message.payload)
+          && isPendingStatusActive(message.payload?.pendingStatus || {})
+        ));
+        if (hasPendingMessage) return;
+        const pendingPayload = buildLocalPendingPayload(sessionId, '');
+        const generationBatchAuthority = normalizeGenerationBatchAuthority(
+          snapshot.generationBatchAuthority,
+          String(snapshot.generationBatchId || '').trim(),
+        );
+        pendingPayload.pendingStatus = {
+          ...pendingPayload.pendingStatus,
+          status: 'pending',
+          sessionId,
+          generationBatchId: generationBatchAuthority?.rootGenerationBatchId
+            || String(snapshot.generationBatchId || '').trim(),
+          generationBatchAuthority,
+          childGenerationBatchId: generationBatchAuthority?.latestChildGenerationBatchId || null,
+          pendingSince: String(snapshot.pendingSince || '').trim() || new Date().toISOString(),
+          taskStartedAt: String(snapshot.taskStartedAt || snapshot.pendingSince || '').trim() || new Date().toISOString(),
+          videoCount: Number(snapshot.videoCount || 0) || 0,
+        };
+        session.messages.push({ role: 'assistant', payload: pendingPayload });
+        restored = true;
+      });
+      return restored;
+    }
+
     function persistSessions() {
       const candidates = [
         [8, 80, false],
@@ -239,17 +326,19 @@
       ];
       for (const [sessionLimit, messageLimit, aggressive] of candidates) {
         const serialized = serializeSessionsForStorage(sessionLimit, messageLimit, aggressive);
-        if (tryPersistSessionSnapshot(serialized)) return true;
+        if (tryPersistSessionSnapshot(serialized)) {
+          persistPendingTaskSnapshots();
+          return true;
+        }
       }
       try {
         localStorage.removeItem(SESSION_STORAGE_KEY);
       } catch (error) {
         console.warn('会话缓存清理失败', error);
       }
+      persistPendingTaskSnapshots();
       return false;
     }
-
-
 
 
 

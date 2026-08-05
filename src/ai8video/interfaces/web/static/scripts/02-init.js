@@ -18,6 +18,7 @@
         history.replaceState(null, '', location.pathname);
       }
       await initializeConversations();
+      restorePendingSessionsAfterReload();
       pruneSettledPendingProgressFromSessions();
       persistSessions();
       await refreshHealth(); await refreshUserGeneratedResults();

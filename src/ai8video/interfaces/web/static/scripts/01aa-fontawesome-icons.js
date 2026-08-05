@@ -7,6 +7,7 @@
       'eye',
       'eye-slash',
       'microphone',
+      'gear',
       'pen-to-square',
       'crop-simple',
       'scissors',

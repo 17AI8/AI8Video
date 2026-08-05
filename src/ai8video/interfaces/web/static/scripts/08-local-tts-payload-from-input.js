@@ -73,8 +73,10 @@
       }
       state.localTts = data;
       await refreshAuthSettings();
+      syncVideoPreviewTtsVoiceSettingsFromState();
       state.settingsModal.videoModelError = '';
       renderSettingsModal();
+      return state.localTts;
     }
 
     async function previewLocalTtsVoice() {

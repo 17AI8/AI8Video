@@ -119,6 +119,11 @@
       return getPlayableResultItems(gallery).length;
     }
 
+    function getResultFolderTotalCount(session) {
+      return getResultFolderCompletedCount(buildResultFolderGalleryModel(session, 'source'))
+        + getResultFolderCompletedCount(buildResultFolderGalleryModel(session, 'burned'));
+    }
+
     function renderProgress() {
       const session = getActiveSession();
       const model = buildProgressModel(session);
@@ -128,7 +133,7 @@
         return;
       }
       if (els.sidebarResultsSection) els.sidebarResultsSection.hidden = false;
-      const resultCount = getResultFolderCompletedCount(buildResultFolderGalleryModel(session));
+      const resultCount = getResultFolderTotalCount(session);
       els.progressPanel.innerHTML = buildSidebarNavItemMarkup({
         icon: 'progress',
         title: '查看结果',
@@ -432,6 +437,7 @@
       edit: 'pen-to-square',
       crop: 'crop-simple',
       scissors: 'scissors',
+      settings: 'gear',
       chevron: 'chevron-down',
       sparkles: 'wand-magic-sparkles',
       check: 'check',

@@ -423,11 +423,23 @@
       if (data?.generationBatchId) {
         pendingStatus.generationBatchId = String(data.generationBatchId).trim();
       }
+      const generationBatchAuthority = extractGenerationBatchAuthority(data);
+      if (generationBatchAuthority) {
+        pendingStatus.generationBatchAuthority = generationBatchAuthority;
+        pendingStatus.generationBatchId = generationBatchAuthority.rootGenerationBatchId;
+        if (generationBatchAuthority.latestChildGenerationBatchId) {
+          pendingStatus.childGenerationBatchId = generationBatchAuthority.latestChildGenerationBatchId;
+        }
+      }
       if (Object.prototype.hasOwnProperty.call(data || {}, 'generationProgress')) {
         pendingStatus.generationProgress = scrubDeletedGenerationProgress(
           data?.generationProgress || null,
           currentDeletedUserGeneratedIdentity(),
         );
+        if (pendingStatus.generationProgress && generationBatchAuthority) {
+          pendingStatus.generationProgress.generationBatchId = generationBatchAuthority.rootGenerationBatchId;
+          pendingStatus.generationProgress.generationBatchAuthority = generationBatchAuthority;
+        }
       }
       return pendingStatus;
     }

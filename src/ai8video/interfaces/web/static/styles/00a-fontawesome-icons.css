@@ -19,6 +19,7 @@
 .fa-icon[data-fa-icon="eye"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/eye.svg"); }
 .fa-icon[data-fa-icon="eye-slash"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/eye-slash.svg"); }
 .fa-icon[data-fa-icon="microphone"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/microphone.svg"); }
+.fa-icon[data-fa-icon="gear"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/gear.svg"); }
 .fa-icon[data-fa-icon="pen-to-square"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/pen-to-square.svg"); }
 .fa-icon[data-fa-icon="crop-simple"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/crop-simple.svg"); }
 .fa-icon[data-fa-icon="scissors"] { --fa-icon-url: url("../vendor/fontawesome-free-7.3.1-desktop/svgs-full/solid/scissors.svg"); }

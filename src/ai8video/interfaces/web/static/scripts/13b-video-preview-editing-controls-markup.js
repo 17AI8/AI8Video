@@ -1,3 +1,11 @@
+    function videoPreviewBurnedResultControlsMarkup(userGeneratedKey) {
+      const encodedKey = escapeHtml(userGeneratedKey);
+      const deleteButton = userGeneratedKey
+        ? '<button type="button" class="video-preview-button danger" data-video-preview-action="delete-video" data-icon="trash" data-video-user-generated-key="' + encodedKey + '">' + videoPreviewButtonInnerHtml('trash', '删除视频') + '</button>'
+        : '';
+      return '<div class="video-preview-controls-row"><span class="video-preview-button-label">烧录结果为只读成片</span><div class="video-preview-side-actions">' + deleteButton + '</div></div>';
+    }
+
     function videoPreviewEditingControlsMarkup(userGeneratedKey) {
       const encodedKey = escapeHtml(userGeneratedKey);
       const disabled = userGeneratedKey ? '' : 'disabled';
@@ -37,7 +45,7 @@
             </div>
             <span class="video-preview-timeline-duration" data-video-preview-tts-duration>0.0 秒</span>
             <div class="video-preview-tts-timeline-actions">
-              <button type="button" class="video-preview-button video-preview-tts-tool-button" data-video-preview-tts-editor-action data-video-preview-action="smart-split-tts" data-icon="sparkles" aria-label="智能切块" title="根据音波停顿智能切块">${videoPreviewIconSvg('sparkles')}</button>
+              <button type="button" class="video-preview-button video-preview-tts-tool-button video-preview-tts-tool-button-labeled" data-video-preview-tts-editor-action data-video-preview-action="smart-split-tts" data-icon="sparkles" aria-label="剪气口" title="剪除低音量气口，后续配音保持原时间码">${videoPreviewButtonInnerHtml('sparkles', '剪气口')}</button>
               <button type="button" class="video-preview-button video-preview-tts-tool-button" data-video-preview-tts-editor-action data-video-preview-action="toggle-tts-scissors" data-icon="scissors" aria-label="剪刀工具" aria-pressed="false" title="开启剪刀工具">${videoPreviewIconSvg('scissors')}</button>
               <button type="button" class="video-preview-button video-preview-tts-tool-button video-preview-tts-delete-button" data-video-preview-tts-editor-action data-video-preview-action="delete-selected-tts-chunk" data-icon="trash" aria-label="删除所选配音块" title="请先点击选择一个配音块" disabled>${videoPreviewIconSvg('trash')}</button>
               <button type="button" class="video-preview-button" data-video-preview-tts-editor-action data-video-preview-action="export-tts-mp3" title="自定义文件名和保存位置并导出当前时间轴配音">导出 MP3</button>
@@ -65,7 +73,8 @@
           <div class="video-preview-control-group">
             <button type="button" class="video-preview-button" data-video-preview-action="edit-video-timeline" data-icon="crop" data-video-user-generated-key="${encodedKey}" aria-expanded="false" title="展开全部时间轴" ${disabled}>${videoPreviewButtonInnerHtml('crop', '裁剪视频')}</button>
             <span class="video-preview-split-button" role="group" aria-label="TTS 配音">
-              <button type="button" class="video-preview-button" data-video-preview-action="regenerate-tts" data-icon="mic" data-video-user-generated-key="${encodedKey}" ${disabled}>${videoPreviewButtonInnerHtml('mic', '重新生成TTS配音')}</button>
+              <button type="button" class="video-preview-button" data-video-preview-action="regenerate-tts" data-icon="mic" data-video-user-generated-key="${encodedKey}" ${disabled}>${videoPreviewButtonInnerHtml('mic', '生成配音')}</button>
+              <button type="button" class="video-preview-button video-preview-tts-voice-settings-button" data-video-preview-action="edit-tts-voice" data-icon="settings" data-video-user-generated-key="${encodedKey}" aria-label="音色设置" aria-expanded="false" title="设置 TTS 音色" ${disabled}>${videoPreviewButtonInnerHtml('settings', '')}</button>
               <button type="button" class="video-preview-button" data-video-preview-action="edit-tts-text" data-icon="edit" data-video-user-generated-key="${encodedKey}" aria-expanded="false" title="展开台词编辑器" ${disabled}>${videoPreviewButtonInnerHtml('edit', '修改台词')}</button>
             </span>
             <button type="button" class="video-preview-button" data-video-preview-action="regenerate-html-motion" data-icon="sparkles" data-video-user-generated-key="${encodedKey}" ${disabled}>${videoPreviewButtonInnerHtml('sparkles', '重新生成 HTML 动效')}</button>

@@ -1,12 +1,8 @@
 from __future__ import annotations
 
 import json
-import logging
-import os
 import shutil
 import threading
-import uuid
-from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -20,11 +16,8 @@ RESULT_MEDIA_EXTENSIONS = RESULT_VIDEO_EXTENSIONS | RESULT_IMAGE_EXTENSIONS
 SOURCE_VIDEO_PREFIX = "source/video"
 LEGACY_VIDEO_PREFIX = "video"
 BURNED_VIDEO_PREFIX = "burned/video"
-logger = logging.getLogger(__name__)
-_BURNED_COPY_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ai8-burned-copy")
-_BURNED_COPY_LOCKS: dict[str, threading.Lock] = {}
-_BURNED_COPY_LOCKS_GUARD = threading.Lock()
-_UNCHECKED_TARGET_STATE = object()
+_BURNED_RESULT_LOCKS: dict[str, threading.Lock] = {}
+_BURNED_RESULT_LOCKS_GUARD = threading.Lock()
 
 
 def is_simulated_user_generated_result_path(source: Path) -> bool:
@@ -167,11 +160,12 @@ def _prune_result_subdirectories(root: Path) -> None:
 
 def burned_result_lock(target: Path) -> threading.Lock:
     key = str(Path(target).resolve())
-    with _BURNED_COPY_LOCKS_GUARD:
-        return _BURNED_COPY_LOCKS.setdefault(key, threading.Lock())
+    with _BURNED_RESULT_LOCKS_GUARD:
+        return _BURNED_RESULT_LOCKS.setdefault(key, threading.Lock())
 
 
 def burned_result_path(source: Path, *, result_root: Path | None = None) -> Path | None:
+    """Map an editable source video to its explicit-burn destination."""
     root = Path(result_root or ensure_user_generated_result_dir()).resolve()
     resolved = Path(source).resolve()
     try:
@@ -200,89 +194,6 @@ def burned_key_for_source_key(raw_key: object) -> str:
     if not source_key.startswith(f"{SOURCE_VIDEO_PREFIX}/"):
         return ""
     return f"{BURNED_VIDEO_PREFIX}/{source_key.removeprefix(f'{SOURCE_VIDEO_PREFIX}/')}"
-
-
-def _result_file_state(path: Path) -> tuple[int, int, int, int] | None:
-    try:
-        stat = path.stat()
-    except FileNotFoundError:
-        return None
-    return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
-
-
-def mirror_generated_result_file(
-    source: Path,
-    *,
-    archive_root: Path | None = None,
-    overwrite: bool = False,
-    expected_target_state: tuple[int, int, int, int] | None | object = _UNCHECKED_TARGET_STATE,
-) -> Path | None:
-    resolved_source = Path(source).resolve()
-    target = burned_result_path(resolved_source, result_root=archive_root)
-    if target is None or not resolved_source.is_file():
-        return None
-    with burned_result_lock(target):
-        if (
-            expected_target_state is not _UNCHECKED_TARGET_STATE
-            and _result_file_state(target) != expected_target_state
-        ):
-            return target if target.is_file() else None
-        if target.is_file() and not overwrite:
-            return target
-        target.parent.mkdir(parents=True, exist_ok=True)
-        temporary = target.with_name(f".{target.name}.copying-{uuid.uuid4().hex}")
-        try:
-            shutil.copy2(resolved_source, temporary)
-            os.replace(temporary, target)
-        finally:
-            temporary.unlink(missing_ok=True)
-    return target
-
-
-def schedule_burned_result_copy(
-    source: Path,
-    *,
-    result_root: Path | None = None,
-    overwrite: bool = False,
-) -> Future[Path | None] | None:
-    target = burned_result_path(source, result_root=result_root)
-    if target is None:
-        return None
-    expected_target_state = _result_file_state(target) if overwrite else _UNCHECKED_TARGET_STATE
-    future = _BURNED_COPY_EXECUTOR.submit(
-        mirror_generated_result_file,
-        source,
-        archive_root=result_root,
-        overwrite=overwrite,
-        expected_target_state=expected_target_state,
-    )
-
-    def report_failure(completed: Future[Path | None]) -> None:
-        try:
-            completed.result()
-        except Exception:
-            logger.exception("创建烧录初始副本失败：%s", target)
-
-    future.add_done_callback(report_failure)
-    return future
-
-
-def schedule_missing_burned_result_copies(
-    result_root: Path | None = None,
-) -> list[Future[Path | None]]:
-    root = Path(result_root or ensure_user_generated_result_dir()).resolve()
-    video_root = root / SOURCE_VIDEO_PREFIX
-    if not video_root.is_dir():
-        return []
-    scheduled: list[Future[Path | None]] = []
-    for source in sorted(video_root.rglob("*")):
-        target = burned_result_path(source, result_root=root)
-        if target is None or target.is_file():
-            continue
-        future = schedule_burned_result_copy(source, result_root=root, overwrite=False)
-        if future is not None:
-            scheduled.append(future)
-    return scheduled
 
 
 def sync_generated_results_from_archive_root(archive_root: Path) -> Path:

@@ -188,7 +188,7 @@
 
     function resolvePlayableVideoSrc(item) {
       const directKey = String(item?.userGeneratedKey || '').trim();
-      if (directKey && ['source', 'burned'].includes(String(item?.artifactKind || '').trim())) {
+      if (directKey && ['source', 'burned', 'editable', 'merged-editable'].includes(String(item?.artifactKind || '').trim())) {
         return buildUserGeneratedMediaUrl(directKey);
       }
       const userGeneratedMirror = findUserGeneratedMirror(item);

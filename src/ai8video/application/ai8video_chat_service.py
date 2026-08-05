@@ -740,8 +740,25 @@ def get_chat_status_via_ai8video(session_id: str, generation_batch_id: str | Non
         session_id,
         requested_generation_batch_id or current_generation_batch_id,
     )
-    if isinstance(family, dict) and family.get("childBatches"):
-        return _merge_live_status_with_generation_family(status, family)
+    if isinstance(family, dict):
+        if family.get("childBatches"):
+            return _merge_live_status_with_generation_family(status, family)
+        authority = _generation_batch_authority_from_family(family)
+        status = {
+            **status,
+            "generationBatchId": str(
+                family.get("generationBatchId")
+                or status.get("generationBatchId")
+                or ""
+            ).strip() or None,
+            "generationBatchAuthority": authority,
+        }
+        if isinstance(status.get("generationProgress"), dict):
+            status["generationProgress"] = {
+                **status["generationProgress"],
+                "generationBatchId": authority["rootGenerationBatchId"],
+                "generationBatchAuthority": authority,
+            }
     if not requested_generation_batch_id or current_generation_batch_id == requested_generation_batch_id:
         return status
     return _unknown_generation_batch_status(
@@ -767,8 +784,10 @@ def _recover_chat_status_from_ledger(session_id: str, generation_batch_id: str |
     recovered_progress = dict(recovered_progress) if isinstance(recovered_progress, dict) else {}
     recovered_progress["items"] = [dict(item) for item in recovered_progress.get("items") or []]
     recovered_generation_batch_id = str(ledger_snapshot.get("generationBatchId") or "").strip()
+    generation_batch_authority = _generation_batch_authority_from_family(ledger_snapshot)
     recovered_progress.setdefault("sessionId", session_id)
     recovered_progress.setdefault("generationBatchId", recovered_generation_batch_id)
+    recovered_progress["generationBatchAuthority"] = generation_batch_authority
     recovered_progress["readOnlyRecovery"] = True
     recovered_progress["willResumeGeneration"] = False
     recovered_progress["statelessProgress"] = True
@@ -778,6 +797,7 @@ def _recover_chat_status_from_ledger(session_id: str, generation_batch_id: str |
         "statusLabel": "已从任务账本恢复历史进度，不会自动继续生成",
         "sessionId": session_id,
         "generationBatchId": recovered_generation_batch_id,
+        "generationBatchAuthority": generation_batch_authority,
         "generationProgress": recovered_progress,
         "ledgerSnapshot": ledger_snapshot,
         "readOnlyRecovery": True,
@@ -858,12 +878,25 @@ def _merge_live_status_with_generation_family(status: dict, family: dict) -> dic
         for child in family.get("childBatches") or []
         if isinstance(child, dict)
     ]
+    generation_batch_authority = _generation_batch_authority_from_family(family)
+    progress["generationBatchAuthority"] = generation_batch_authority
+    latest_child_batch_id = str(
+        generation_batch_authority.get("latestChildGenerationBatchId") or ""
+    ).strip()
+    latest_child = next(
+        (
+            child for child in reversed(child_batches)
+            if str(child.get("generationBatchId") or "").strip() == latest_child_batch_id
+        ),
+        None,
+    )
     active_target_video_indexes = [
-        int(child.get("targetVideoIndex") or 0)
-        for child in child_batches
-        if str(child.get("status") or "").strip() == "active"
-        and int(child.get("targetVideoIndex") or 0) > 0
-    ]
+        int(latest_child.get("targetVideoIndex") or 0)
+    ] if (
+        isinstance(latest_child, dict)
+        and str(latest_child.get("status") or "").strip() == "active"
+        and int(latest_child.get("targetVideoIndex") or 0) > 0
+    ) else []
     session_id = str(status.get("sessionId") or "").strip()
     if session_id and active_target_video_indexes:
         try:
@@ -879,17 +912,61 @@ def _merge_live_status_with_generation_family(status: dict, family: dict) -> dic
             _with_generation_progress_counts(progress)
         except (FileNotFoundError, OSError, ValueError):
             pass
-    active = str(progress.get("status") or "").strip() == "active"
+    family_status = str(
+        family.get("status") or progress.get("status") or status.get("status") or "idle"
+    ).strip()
+    active = family_status == "active"
     return {
         **status,
-        "status": "pending" if active else status.get("status"),
+        # A live session may still report an earlier root status.  Once a
+        # family exists, only its canonical root + latest-child snapshot owns
+        # generation state; live status merely supplies chat metadata.
+        "status": "pending" if active else family_status,
         "phase": family.get("phase") or status.get("phase"),
         "generationBatchId": root_batch_id,
+        "generationBatchAuthority": generation_batch_authority,
         "generationProgress": progress,
         "generationBatchFamily": {
             "rootGenerationBatchId": root_batch_id,
             "children": child_batches,
+            **generation_batch_authority,
         },
+    }
+
+
+def _generation_batch_authority_from_family(family: dict[str, Any]) -> dict[str, str | None]:
+    stored = family.get("generationBatchAuthority")
+    stored = dict(stored) if isinstance(stored, dict) else {}
+    root_batch_id = str(
+        stored.get("rootGenerationBatchId")
+        or family.get("generationBatchId")
+        or family.get("rootGenerationBatchId")
+        or ""
+    ).strip()
+    children = [child for child in family.get("childBatches") or [] if isinstance(child, dict)]
+    latest_child_batch_id = str(
+        stored.get("latestChildGenerationBatchId")
+        or (children[-1].get("generationBatchId") if children else "")
+        or ""
+    ).strip() or None
+    latest_child = next(
+        (
+            child for child in reversed(children)
+            if str(child.get("generationBatchId") or "").strip() == latest_child_batch_id
+        ),
+        children[-1] if children else {},
+    )
+    revision_candidates = [
+        str(value or "").strip()
+        for record in [family, latest_child]
+        for value in (record.get("familyRevision"), record.get("updatedAt"), record.get("createdAt"))
+        if str(value or "").strip()
+    ]
+    return {
+        "rootGenerationBatchId": root_batch_id,
+        "latestChildGenerationBatchId": latest_child_batch_id,
+        "familyRevision": str(stored.get("familyRevision") or "").strip()
+        or max(revision_candidates, default=None),
     }
 
 

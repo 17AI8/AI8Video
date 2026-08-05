@@ -60,7 +60,6 @@ from ai8video.integrations.video_model_settings import load_video_model_settings
 from ai8video.core.models import ArchivedAsset, VideoPrompt, FirstFrameAsset, ParsedRequest, PipelineResult, QuickVideoJob, GenerationOutcome
 from ai8video.generation.prompt_trace import append_prompt_trace
 from ai8video.generation.tail_frame_chaining import (
-    append_tail_frame_chain_prompt,
     build_next_tail_frame_request,
     tail_frame_chain_result_succeeded,
 )
@@ -339,8 +338,6 @@ class AI8VideoPipeline:
             finalized_video_queue = self._finalize_video_queue(
                 request, videos, task_constraints, progress_session_id
             )
-            if request.tail_frame_chaining:
-                finalized_video_queue = [append_tail_frame_chain_prompt(video) for video in finalized_video_queue]
             active_request = request
             tail_dir = tempfile.TemporaryDirectory(prefix="ai8video-tail-chain-")
             for position, final_video in enumerate(finalized_video_queue):

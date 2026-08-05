@@ -134,89 +134,16 @@ class AI8VideoUserGeneratedResultsTest(unittest.TestCase):
         self.assertEqual(result["items"][0]["resultState"], "available")
         self.assertEqual(result["items"][0]["resultPath"], str(result_file.resolve()))
 
-    def test_generated_video_gets_independent_initial_burned_copy(self) -> None:
-        user_root = self.root / "用户文件夹"
-        generated_root = user_root / "用户生成结果"
+    def test_burned_destination_does_not_materialize_a_copy(self) -> None:
+        generated_root = self.root / "用户生成结果"
         source = generated_root / "source" / "video" / "done.mp4"
         source.parent.mkdir(parents=True)
         source.write_bytes(b"mp4")
 
-        with patch.object(user_generated_results, "ensure_user_file_root", lambda: user_root.mkdir(parents=True, exist_ok=True) or user_root), patch.object(
-            user_generated_results,
-            "USER_GENERATED_RESULT_ROOT",
-            generated_root,
-        ):
-            burned = user_generated_results.mirror_generated_result_file(source)
-
+        burned = user_generated_results.burned_result_path(source, result_root=generated_root)
         self.assertEqual(burned, (generated_root / "burned" / "video" / "done.mp4").resolve())
         self.assertEqual(source.read_bytes(), b"mp4")
-        self.assertEqual(burned.read_bytes(), b"mp4")
-        source.write_bytes(b"updated-master")
-        self.assertEqual(burned.read_bytes(), b"mp4")
-
-    def test_initial_burned_copy_never_overwrites_confirmed_burn(self) -> None:
-        generated_root = self.root / "用户生成结果"
-        source = generated_root / "source" / "video" / "done.mp4"
-        burned = generated_root / "burned" / "video" / "done.mp4"
-        source.parent.mkdir(parents=True)
-        burned.parent.mkdir(parents=True)
-        source.write_bytes(b"master")
-        burned.write_bytes(b"confirmed-burn")
-
-        result = user_generated_results.mirror_generated_result_file(
-            source,
-            archive_root=generated_root,
-            overwrite=False,
-        )
-
-        self.assertEqual(result, burned.resolve())
-        self.assertEqual(burned.read_bytes(), b"confirmed-burn")
-
-    def test_scheduled_overwrite_skips_target_changed_after_scheduling(self) -> None:
-        generated_root = self.root / "用户生成结果"
-        source = generated_root / "source" / "video" / "done.mp4"
-        burned = generated_root / "burned" / "video" / "done.mp4"
-        source.parent.mkdir(parents=True)
-        burned.parent.mkdir(parents=True)
-        source.write_bytes(b"updated-master")
-        burned.write_bytes(b"initial-copy")
-        submitted: dict[str, object] = {}
-
-        class DeferredExecutor:
-            def submit(self, function, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
-                submitted["function"] = function
-                submitted["args"] = args
-                submitted["kwargs"] = kwargs
-                from concurrent.futures import Future
-
-                return Future()
-
-        with patch.object(user_generated_results, "_BURNED_COPY_EXECUTOR", DeferredExecutor()):
-            future = user_generated_results.schedule_burned_result_copy(
-                source,
-                result_root=generated_root,
-                overwrite=True,
-            )
-
-        burned.write_bytes(b"confirmed-burn")
-        result = submitted["function"](*submitted["args"], **submitted["kwargs"])
-        future.set_result(result)
-
-        self.assertEqual(result, burned.resolve())
-        self.assertEqual(burned.read_bytes(), b"confirmed-burn")
-
-    def test_missing_burned_copies_are_scheduled_asynchronously(self) -> None:
-        generated_root = self.root / "用户生成结果"
-        source = generated_root / "source" / "video" / "done.mp4"
-        source.parent.mkdir(parents=True)
-        source.write_bytes(b"master")
-
-        futures = user_generated_results.schedule_missing_burned_result_copies(generated_root)
-        self.assertEqual(len(futures), 1)
-        self.assertEqual(
-            futures[0].result(timeout=2),
-            (generated_root / "burned" / "video" / "done.mp4").resolve(),
-        )
+        self.assertFalse(burned.exists())
 
     def test_reconciliation_reports_available_succeeded_result(self) -> None:
         generated_root = self.root / "用户生成结果"

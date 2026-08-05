@@ -72,7 +72,11 @@ class AI8VideoVideoSegmentPostprocessTests(unittest.TestCase):
                 commands.append(cmd)
                 output.write_bytes(b"merged")
 
-            with patch.object(video_segment_postprocess, "_run_ffmpeg", side_effect=fake_run):
+            with patch.object(video_segment_postprocess, "_run_ffmpeg", side_effect=fake_run), patch.object(
+                video_segment_postprocess,
+                "probe_media_metadata",
+                return_value={"audioChannels": 2, "durationSeconds": 1.0},
+            ):
                 result = video_segment_postprocess.concat_videos(
                     [segment1, segment2],
                     output,
@@ -89,6 +93,35 @@ class AI8VideoVideoSegmentPostprocessTests(unittest.TestCase):
             self.assertEqual(command[command.index("-crf") + 1], "16")
             self.assertEqual(command[command.index("-pix_fmt") + 1], "yuv420p")
             self.assertEqual(result["videoEncoding"]["crf"], "16")
+
+    def test_concat_videos_injects_silence_for_a_segment_without_audio(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            root = Path(tempdir)
+            voiced = root / "voiced.mp4"
+            silent = root / "silent.mp4"
+            output = root / "merged.mp4"
+            voiced.write_bytes(b"voiced")
+            silent.write_bytes(b"silent")
+            commands: list[list[str]] = []
+
+            def fake_run(cmd: list[str], _message: str) -> None:
+                commands.append(cmd)
+                output.write_bytes(b"merged")
+
+            with patch.object(video_segment_postprocess, "_run_ffmpeg", side_effect=fake_run), patch.object(
+                video_segment_postprocess,
+                "probe_media_metadata",
+                side_effect=[
+                    {"audioChannels": 2, "durationSeconds": 1.25},
+                    {"audioChannels": 0, "durationSeconds": 2.5},
+                ],
+            ):
+                video_segment_postprocess.concat_videos([voiced, silent], output, ffmpeg_bin="ffmpeg-test")
+
+            filters = commands[0][commands[0].index("-filter_complex") + 1]
+            self.assertIn("[0:a]aresample=48000", filters)
+            self.assertIn("anullsrc=r=48000:cl=stereo,atrim=duration=2.500000", filters)
+            self.assertNotIn("[1:a]aresample", filters)
 
 
 if __name__ == "__main__":

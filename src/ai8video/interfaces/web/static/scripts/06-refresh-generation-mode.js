@@ -205,7 +205,10 @@
 
     function extractGenerationBatchId(payload) {
       return String(
-        payload?.pendingStatus?.generationBatchId
+        payload?.pendingStatus?.generationBatchAuthority?.rootGenerationBatchId
+        || payload?.generationBatchAuthority?.rootGenerationBatchId
+        || payload?.generationBatchFamily?.rootGenerationBatchId
+        || payload?.pendingStatus?.generationBatchId
         || payload?.pendingStatus?.generationProgress?.generationBatchId
         || payload?.generationProgress?.generationBatchId
         || payload?.generationBatchId
@@ -213,17 +216,126 @@
       ).trim();
     }
 
+    function normalizeGenerationBatchAuthority(value, fallbackRootBatchId = '') {
+      const source = value && typeof value === 'object' ? value : {};
+      const children = Array.isArray(source.children) ? source.children : [];
+      const latestChild = children.at?.(-1) || {};
+      const rootGenerationBatchId = String(
+        source.rootGenerationBatchId
+        || source.generationBatchId
+        || fallbackRootBatchId
+        || ''
+      ).trim();
+      if (!rootGenerationBatchId) return null;
+      return {
+        rootGenerationBatchId,
+        latestChildGenerationBatchId: String(
+          source.latestChildGenerationBatchId
+          || source.childGenerationBatchId
+          || latestChild?.generationBatchId
+          || ''
+        ).trim() || null,
+        familyRevision: String(
+          source.familyRevision
+          || source.updatedAt
+          || ''
+        ).trim() || null,
+      };
+    }
+
+    function extractGenerationBatchAuthority(payload) {
+      const source = payload && typeof payload === 'object' ? payload : {};
+      const pending = source.pendingStatus && typeof source.pendingStatus === 'object'
+        ? source.pendingStatus
+        : {};
+      const progress = pending.generationProgress && typeof pending.generationProgress === 'object'
+        ? pending.generationProgress
+        : (source.generationProgress && typeof source.generationProgress === 'object'
+          ? source.generationProgress
+          : {});
+      const explicitAuthority = pending.generationBatchAuthority
+        || source.generationBatchAuthority
+        || source.generationBatchFamily
+        || progress.generationBatchAuthority
+        || {};
+      const authority = normalizeGenerationBatchAuthority({
+        ...(explicitAuthority && typeof explicitAuthority === 'object' ? explicitAuthority : {}),
+        childGenerationBatchId: explicitAuthority?.latestChildGenerationBatchId
+          || explicitAuthority?.childGenerationBatchId
+          || pending.childGenerationBatchId
+          || source.childGenerationBatchId
+          || progress.childGenerationBatchId,
+      },
+        extractGenerationBatchId(source),
+      );
+      if (authority) return authority;
+      return normalizeGenerationBatchAuthority({
+        rootGenerationBatchId: extractGenerationBatchId(source),
+        latestChildGenerationBatchId: pending.childGenerationBatchId
+          || source.childGenerationBatchId
+          || progress.childGenerationBatchId,
+      });
+    }
+
+    function compareGenerationFamilyRevision(leftAuthority, rightAuthority) {
+      const left = String(leftAuthority?.familyRevision || '').trim();
+      const right = String(rightAuthority?.familyRevision || '').trim();
+      if (!left || !right || left === right) return 0;
+      return left > right ? 1 : -1;
+    }
+
+    function hasExplicitGenerationBatchAuthority(payload) {
+      const pending = payload?.pendingStatus || {};
+      return !!(
+        pending?.generationBatchAuthority?.rootGenerationBatchId
+        || payload?.generationBatchAuthority?.rootGenerationBatchId
+      );
+    }
+
+    function generationBatchAuthorityKey(authority) {
+      if (!authority?.rootGenerationBatchId) return '';
+      return [
+        authority.rootGenerationBatchId,
+        authority.latestChildGenerationBatchId || '',
+        authority.familyRevision || '',
+      ].join('|');
+    }
+
+    function isIncomingGenerationAuthorityAccepted(previousPayload, incomingPayload) {
+      const previous = extractGenerationBatchAuthority(previousPayload);
+      const incoming = extractGenerationBatchAuthority(incomingPayload);
+      if (!previous?.rootGenerationBatchId) return true;
+      if (!incoming?.rootGenerationBatchId) return false;
+      if (previous.rootGenerationBatchId !== incoming.rootGenerationBatchId) {
+        // Old local snapshots used one ambiguous field and may contain a child
+        // ID. They can be upgraded only by the response to that exact request.
+        return !hasExplicitGenerationBatchAuthority(previousPayload);
+      }
+      const previousChild = previous.latestChildGenerationBatchId;
+      const incomingChild = incoming.latestChildGenerationBatchId;
+      if (previousChild && !incomingChild) return false;
+      if (previousChild && incomingChild && previousChild !== incomingChild) {
+        return compareGenerationFamilyRevision(incoming, previous) > 0;
+      }
+      return compareGenerationFamilyRevision(incoming, previous) >= 0;
+    }
+
     function mergePendingGenerationBatchId(previousPayload, nextPayload) {
       if (!nextPayload || typeof nextPayload !== 'object') return nextPayload;
-      const generationBatchId = extractGenerationBatchId(nextPayload) || extractGenerationBatchId(previousPayload);
-      if (!generationBatchId) return nextPayload;
+      const authority = extractGenerationBatchAuthority(nextPayload)
+        || extractGenerationBatchAuthority(previousPayload);
+      if (!authority?.rootGenerationBatchId) return nextPayload;
+      const generationBatchId = authority.rootGenerationBatchId;
       if (!nextPayload.pendingStatus || typeof nextPayload.pendingStatus !== 'object') {
         nextPayload.pendingStatus = {};
       }
       nextPayload.generationBatchId = generationBatchId;
+      nextPayload.generationBatchAuthority = authority;
       nextPayload.pendingStatus.generationBatchId = generationBatchId;
+      nextPayload.pendingStatus.generationBatchAuthority = authority;
       if (nextPayload.pendingStatus.generationProgress && typeof nextPayload.pendingStatus.generationProgress === 'object') {
         nextPayload.pendingStatus.generationProgress.generationBatchId = generationBatchId;
+        nextPayload.pendingStatus.generationProgress.generationBatchAuthority = authority;
       }
       return nextPayload;
     }
@@ -235,6 +347,7 @@
           last.error = payload.error;
           delete last.payload;
         } else {
+          if (!isIncomingGenerationAuthorityAccepted(last.payload, payload)) return;
           mergePendingGenerationBatchId(last.payload, payload);
           preservePendingVideoCount(last.payload, payload);
           last.payload = payload;
@@ -337,47 +450,23 @@
     }
 
     function mergeGenerationProgressSnapshot(previousProgress = {}, nextProgress = {}, options = {}) {
-      if (!nextProgress || typeof nextProgress !== 'object') return nextProgress;
-      const previousBatchId = String(previousProgress?.generationBatchId || '').trim();
-      const nextBatchId = String(nextProgress?.generationBatchId || '').trim();
-      const differentBatch = previousBatchId && nextBatchId && previousBatchId !== nextBatchId;
-      const authoritativeRecovery = !!(
-        options.authoritative === true
-        ||
-        nextProgress.readOnlyRecovery
-        || nextProgress.statelessProgress
-        || ['cancelled', 'canceled'].includes(String(nextProgress.status || '').trim())
-      );
-      if (differentBatch || authoritativeRecovery) return nextProgress;
-      const previousItems = Array.isArray(previousProgress?.items) ? previousProgress.items : [];
-      const nextItems = Array.isArray(nextProgress.items) ? nextProgress.items : [];
-      if (!previousItems.length || previousItems.length <= nextItems.length) return nextProgress;
-      const byVideo = new Map(previousItems.map((item, index) => [
-        Number(item?.videoIndex || 0) || index + 1,
-        item,
-      ]));
-      nextItems.forEach((item, index) => {
-        byVideo.set(Number(item?.videoIndex || 0) || index + 1, item);
-      });
-      const items = [...byVideo.entries()]
-        .sort(([left], [right]) => left - right)
-        .map(([, item]) => item);
-      return {
-        ...previousProgress,
-        ...nextProgress,
-        totalRequested: Math.max(
-          Number(previousProgress?.totalRequested || 0) || 0,
-          Number(nextProgress.totalRequested || 0) || 0,
-          items.length,
-        ),
-        items,
-      };
+      if (!nextProgress || typeof nextProgress !== 'object') return previousProgress;
+      // The backend returns the canonical root + latest-child family snapshot.
+      // Once ownership has been checked, retaining older items can only revive
+      // a stale result from a previous child batch.
+      return nextProgress;
     }
 
     function mergeGenerationStatusPayload(payload = {}, data = {}, sessionId = '', options = {}) {
       const previousPending = payload?.pendingStatus || {};
       const incomingPending = extractPendingStatus(data, sessionId) || {};
       const incomingProgress = incomingPending.generationProgress;
+      if (
+        (incomingProgress || extractGenerationBatchAuthority(incomingPending))
+        && !isIncomingGenerationAuthorityAccepted(payload, incomingPending)
+      ) {
+        return payload;
+      }
       const authoritativeRecovery = !!(
         options.authoritative === true
         ||
@@ -487,6 +576,10 @@
           if (recovered) changed = true;
           continue;
         }
+        if (await recoverPendingTaskWithoutLocalMessage(session)) {
+          changed = true;
+          continue;
+        }
         if (last?.role === 'user') {
           const recovered = await recoverReplyAfterOrphanedUserMessage(session);
           if (recovered) changed = true;
@@ -501,6 +594,31 @@
         if (recovered) changed = true;
       }
       return changed;
+    }
+
+    async function recoverPendingTaskWithoutLocalMessage(session) {
+      const sessionId = String(session?.id || '').trim();
+      if (!sessionId) return false;
+      try {
+        const { res, data } = await fetchChatStatusWithBatchFallback(sessionId, session, {
+          preferLatestBatch: true,
+        });
+        if (!res.ok || data?.status !== 'pending') return false;
+        const pendingPayload = buildLocalPendingPayload(
+          sessionId,
+          getLatestUserRequestText(session),
+        );
+        session.messages.push({
+          role: 'assistant',
+          payload: mergeGenerationStatusPayload(pendingPayload, data, sessionId, {
+            authoritative: true,
+          }),
+        });
+        return true;
+      } catch (error) {
+        console.error(error);
+        return false;
+      }
     }
 
     async function recoverReplyAfterOrphanedUserMessage(session) {
@@ -543,7 +661,9 @@
           messages: [messageForStatus],
         };
         const { res, data } = await fetchChatStatusWithBatchFallback(sessionId, statusSession, {
-          preferLatestBatch: true,
+          // A persisted authority must recover its own root.  Only a true
+          // cold start without any batch identity may scan the latest root.
+          preferLatestBatch: !extractGenerationBatchId(messageForStatus.payload),
         });
         if (!res.ok) return false;
         if (data.status !== 'pending' && data.reply) {

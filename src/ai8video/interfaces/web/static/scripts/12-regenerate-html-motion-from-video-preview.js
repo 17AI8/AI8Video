@@ -325,7 +325,11 @@
     async function deleteUserGeneratedVideoFromPreview(userGeneratedKey, button, artifactKind = 'editable') {
       const key = String(userGeneratedKey || '').trim();
       if (!key) return;
-      if (!window.confirm('确定删除这个视频？删除后会同步从查看结果里移除。')) {
+      const isMergedEdit = String(artifactKind || '') === 'merged-editable';
+      const confirmText = isMergedEdit
+        ? '确定删除这个合并编辑态？它引用的原片、烧录结果和全部编辑资源也会一并删除。'
+        : '确定删除这个视频？删除后会同步从查看结果里移除。';
+      if (!window.confirm(confirmText)) {
         return;
       }
       if (button) {

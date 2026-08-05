@@ -169,9 +169,17 @@ def get_generation_batch_family_snapshot(
         for item in progress.get("items") or []
         if isinstance(item, dict) and int(item.get("videoIndex") or 0) > 0
     }
-    for child in children:
-        child_batch_id = str(child.get("generationBatchId") or "").strip()
-        child_progress = child.get("progress") if isinstance(child.get("progress"), dict) else {}
+    # A family is not an accumulating overlay of every retry.  Once a newer
+    # child exists, older children are historical attempts only: their late
+    # worker updates must never overwrite the current root + latest-child view.
+    latest_child = children[-1] if children else None
+    if isinstance(latest_child, dict):
+        child_batch_id = str(latest_child.get("generationBatchId") or "").strip()
+        child_progress = (
+            latest_child.get("progress")
+            if isinstance(latest_child.get("progress"), dict)
+            else {}
+        )
         for child_item in child_progress.get("items") or []:
             if not isinstance(child_item, dict):
                 continue
@@ -183,33 +191,31 @@ def get_generation_batch_family_snapshot(
                 "generationBatchId": child_batch_id,
             }
     items = [items_by_index[index] for index in sorted(items_by_index)]
+    child_batches = [
+        {
+            "generationBatchId": child.get("generationBatchId"),
+            "parentGenerationBatchId": child.get("parentGenerationBatchId"),
+            "batchKind": child.get("batchKind"),
+            "targetVideoIndex": child.get("targetVideoIndex"),
+            "status": child.get("status"),
+            "phase": child.get("phase"),
+            "createdAt": child.get("createdAt"),
+            "updatedAt": child.get("updatedAt"),
+        }
+        for child in children
+    ]
+    authority = _generation_batch_family_authority(root, children)
     progress.update(
         generationBatchId=root_batch_id,
         items=items,
-        childBatches=[
-            {
-                "generationBatchId": child.get("generationBatchId"),
-                "parentGenerationBatchId": child.get("parentGenerationBatchId"),
-                "batchKind": child.get("batchKind"),
-                "targetVideoIndex": child.get("targetVideoIndex"),
-                "status": child.get("status"),
-                "phase": child.get("phase"),
-            }
-            for child in children
-        ],
+        childBatches=child_batches,
+        generationBatchAuthority=authority,
     )
     _refresh_family_progress_counts(progress)
     family_status = str(progress.get("status") or root.get("status") or "").strip()
-    active_child = next(
-        (
-            child for child in reversed(children)
-            if str(child.get("status") or "").strip() == "active"
-        ),
-        None,
-    )
     family_phase = (
-        str(active_child.get("phase") or "").strip()
-        if active_child
+        str(latest_child.get("phase") or "").strip()
+        if isinstance(latest_child, dict)
         else str(root.get("phase") or "").strip()
     )
     return {
@@ -218,7 +224,31 @@ def get_generation_batch_family_snapshot(
         "status": family_status,
         "phase": family_phase,
         "progress": progress,
-        "childBatches": progress["childBatches"],
+        "childBatches": child_batches,
+        "generationBatchAuthority": authority,
+    }
+
+
+def _generation_batch_family_authority(
+    root: dict[str, Any],
+    children: list[dict[str, Any]],
+) -> dict[str, str | None]:
+    """Publish one stable ownership token for a root batch and its latest child."""
+    root_batch_id = str(root.get("generationBatchId") or "").strip()
+    latest_child = children[-1] if children else {}
+    latest_child_batch_id = str(latest_child.get("generationBatchId") or "").strip() or None
+    revision_candidates = [
+        str(record.get(field) or "").strip()
+        for record in [root, latest_child]
+        for field in ("updatedAt", "createdAt")
+        if str(record.get(field) or "").strip()
+    ]
+    return {
+        "rootGenerationBatchId": root_batch_id,
+        "latestChildGenerationBatchId": latest_child_batch_id,
+        # ISO-8601 UTC values are lexically ordered.  This is a monotonic
+        # family watermark, not a client-generated sequence number.
+        "familyRevision": max(revision_candidates, default=None),
     }
 
 

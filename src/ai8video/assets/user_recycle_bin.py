@@ -14,7 +14,6 @@ from ai8video.assets.user_files import USER_RECYCLE_BIN_ROOT, ensure_user_file_r
 from ai8video.assets.user_generated_results import (
     SOURCE_VIDEO_PREFIX,
     ensure_user_generated_result_dir,
-    schedule_burned_result_copy,
 )
 from ai8video.assets.user_generated_previews import generate_preview_for_video, preview_key_for_video
 
@@ -184,8 +183,6 @@ def restore_failed_video_task(folder: str) -> dict[str, Any]:
         raise
     shutil.rmtree(task_folder)
     restored = [target for _source, target in moved_videos]
-    for path in restored:
-        schedule_burned_result_copy(path, result_root=result_root, overwrite=False)
     return {
         "ok": True,
         "restoredCount": len(restored),

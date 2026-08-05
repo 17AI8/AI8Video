@@ -204,7 +204,7 @@
           data-user-generated-key="${escapeHtml(userGeneratedKey)}"
           title="删除最新结果并回到等待继续状态">回退</button>
       ` : '';
-      const batchSelection = options.batchMerge && mergeKey ? `
+      const batchSelection = options.batchMerge && mergeKey && artifactKind === 'editable' ? `
         <button type="button" class="result-batch-merge-select${selectionOrder ? ' is-selected' : ''}"
           data-result-batch-merge-select="${escapeHtml(mergeKey)}" aria-pressed="${selectionOrder ? 'true' : 'false'}"
           aria-label="${selectionOrder ? `取消第 ${selectionOrder} 个合并视频` : '选择这个视频进行合并'}">
@@ -493,7 +493,11 @@
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data?.ok === false) throw new Error(data?.error || '尾帧操作失败');
         if (action === 'continue' && data?.generationBatchId) {
-          persistGenerationRetryPendingState(sessionId, videoIndex, data.generationBatchId);
+          persistGenerationRetryPendingState(
+            sessionId,
+            videoIndex,
+            generationBatchAuthorityForAction(data, generationBatchId),
+          );
         } else {
           const preview = button.closest('.result-notify-preview')?.querySelector('img');
           if (preview && data?.tailFramePreviewUrl) preview.src = data.tailFramePreviewUrl;
@@ -530,16 +534,22 @@
         invalidatePendingPollResponses(sessionId);
         const session = state.sessions.find((item) => item.id === sessionId);
         if (session && data?.generationProgress) {
+          const authority = generationBatchAuthorityForAction(data, generationBatchId);
+          const rootGenerationBatchId = String(
+            authority?.rootGenerationBatchId || data?.generationBatchId || generationBatchId
+          ).trim();
           const incoming = {
             status: 'pending',
             phase: 'awaiting_tail_frame_continue',
-            generationBatchId,
+            generationBatchId: rootGenerationBatchId,
+            generationBatchAuthority: authority,
+            childGenerationBatchId: data.childGenerationBatchId,
             generationProgress: data.generationProgress,
           };
           (session.messages || []).forEach((message) => {
             if (message?.role !== 'assistant' || !message?.payload) return;
             const messageBatchId = extractGenerationBatchId(message.payload);
-            if (messageBatchId && messageBatchId !== generationBatchId) return;
+            if (messageBatchId && messageBatchId !== rootGenerationBatchId) return;
             if (!message.payload.pendingStatus && !messageBatchId) return;
             message.payload = mergeGenerationStatusPayload(message.payload, incoming, sessionId);
           });
@@ -709,29 +719,57 @@
       };
     }
 
-    function persistGenerationRetryPendingState(sessionId, videoIndex, generationBatchId, displayProgress = null) {
+    function generationBatchAuthorityForAction(data = {}, fallbackRootBatchId = '') {
+      return normalizeGenerationBatchAuthority({
+        ...(data?.generationBatchAuthority && typeof data.generationBatchAuthority === 'object'
+          ? data.generationBatchAuthority
+          : {}),
+        rootGenerationBatchId: data?.generationBatchAuthority?.rootGenerationBatchId
+          || data?.generationBatchId
+          || fallbackRootBatchId,
+        latestChildGenerationBatchId: data?.generationBatchAuthority?.latestChildGenerationBatchId
+          || data?.childGenerationBatchId,
+      }, fallbackRootBatchId);
+    }
+
+    function persistGenerationRetryPendingState(sessionId, videoIndex, generationBatchAuthority, displayProgress = null) {
       const session = state.sessions.find((item) => item.id === sessionId);
       const last = session?.messages?.at?.(-1);
       if (!last?.payload || last.role !== 'assistant') return;
+      const authority = normalizeGenerationBatchAuthority(generationBatchAuthority);
+      if (!authority) return;
+      // Switching to a retry/recovery child changes the owner of this card.
+      // Any response already in flight belongs to the previous owner.
+      invalidatePendingPollResponses(sessionId);
       const pending = last.payload.pendingStatus || {};
       const progress = displayProgress && typeof displayProgress === 'object'
         ? displayProgress
         : (pending.generationProgress || {});
       const items = Array.isArray(progress.items) ? progress.items : [];
       last.payload.meta = { ...(last.payload.meta || {}), operation: 'pending', continuationClosed: false };
-      last.payload.generationBatchId = generationBatchId;
+      last.payload.generationBatchId = authority.rootGenerationBatchId;
+      last.payload.generationBatchAuthority = authority;
       last.payload.pendingStatus = normalizePendingStatusProgress({
         ...pending,
         status: 'pending',
         phase: 'generating',
         statusLabel: '视频生成中',
-        generationBatchId,
+        generationBatchId: authority.rootGenerationBatchId,
+        childGenerationBatchId: authority.latestChildGenerationBatchId,
+        generationBatchAuthority: authority,
         generationProgress: {
           ...progress,
           status: 'active',
-          generationBatchId,
+          generationBatchId: authority.rootGenerationBatchId,
+          generationBatchAuthority: authority,
           items: items.map((item) => Number(item?.videoIndex || 0) === videoIndex
-            ? { ...item, status: 'pending_submission', statusLabel: '正在重新生成', error: '', generationBatchId }
+            ? {
+              ...item,
+              status: 'pending_submission',
+              statusLabel: '正在重新生成',
+              error: '',
+              generationBatchId: authority.latestChildGenerationBatchId || authority.rootGenerationBatchId,
+            }
             : item),
         },
       });
@@ -762,7 +800,7 @@
         persistGenerationRetryPendingState(
           sessionId,
           videoIndex,
-          String(data?.generationBatchId || generationBatchId).trim(),
+          generationBatchAuthorityForAction(data, generationBatchId),
           data?.displayGenerationProgress,
         );
       } catch (error) {

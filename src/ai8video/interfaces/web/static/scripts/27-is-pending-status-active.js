@@ -233,16 +233,53 @@
       }
       pendingPollInflight.add(sessionId);
       const requestEpoch = pendingPollEpochs.get(sessionId) || 0;
+      const requestMessage = session?.messages?.at?.(-1) || null;
+      const requestAuthorityKey = generationBatchAuthorityKey(
+        extractGenerationBatchAuthority(requestMessage?.payload),
+      );
       try {
         const { res, data } = await fetchChatStatusWithBatchFallback(sessionId, session);
         if ((pendingPollEpochs.get(sessionId) || 0) !== requestEpoch) return;
-        if (!res.ok) {
-          throw new Error(data.error || '状态查询失败');
-        }
         const targetSession = state.sessions.find((item) => item.id === sessionId);
         const last = targetSession?.messages?.at?.(-1);
+        if (!res.ok) {
+          if (
+            data?.phase === 'unknown_generation_batch'
+            && last === requestMessage
+            && generationBatchAuthorityKey(extractGenerationBatchAuthority(last?.payload)) === requestAuthorityKey
+          ) {
+            last.payload = {
+              ...last.payload,
+              meta: {
+                ...(last.payload?.meta || {}),
+                operation: 'pending',
+                continuationClosed: true,
+              },
+              pendingStatus: {
+                ...(last.payload?.pendingStatus || {}),
+                status: 'idle',
+                phase: 'unknown_generation_batch',
+                statusLabel: '原生成批次已失效，未切换到其他批次',
+                stalePending: true,
+              },
+            };
+            persistSessions();
+            render();
+            clearPendingPoll(sessionId);
+            return;
+          }
+          throw new Error(data.error || '状态查询失败');
+        }
         if (!targetSession || !last || last.role !== 'assistant') {
           clearPendingPoll(sessionId);
+          return;
+        }
+        if (
+          last !== requestMessage
+          || generationBatchAuthorityKey(extractGenerationBatchAuthority(last.payload)) !== requestAuthorityKey
+          || !isIncomingGenerationAuthorityAccepted(last.payload, data)
+        ) {
+          schedulePendingPoll(sessionId, 250);
           return;
         }
         if (
@@ -365,7 +402,7 @@
         .find((item) => item?.role === 'assistant' && item?.payload?.pendingStatus);
       const generationBatchId = extractGenerationBatchId(targetMessage?.payload || {});
       pendingCancelInflight.add(targetSessionId);
-      clearPendingPoll(targetSessionId);
+      invalidatePendingPollResponses(targetSessionId);
       applyCancelledPendingStatus(targetSessionId, {
         status: 'cancelled',
         phase: 'cancelled',
@@ -492,14 +529,10 @@
 
     async function fetchChatStatusWithBatchFallback(sessionId, session, options = {}) {
       const preferLatestBatch = options.preferLatestBatch === true;
-      let res = await fetch(buildChatStatusUrl(sessionId, session, {
+      const res = await fetch(buildChatStatusUrl(sessionId, session, {
         omitGenerationBatchId: preferLatestBatch,
       }));
-      let data = await res.json().catch(() => ({}));
-      if (!preferLatestBatch && !res.ok && data?.phase === 'unknown_generation_batch') {
-        res = await fetch(buildChatStatusUrl(sessionId, session, { omitGenerationBatchId: true }));
-        data = await res.json().catch(() => ({}));
-      }
+      const data = await res.json().catch(() => ({}));
       return { res, data };
     }
 

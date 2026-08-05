@@ -106,7 +106,7 @@
           },
         };
       }
-      clearPendingPoll(session.id);
+      invalidatePendingPollResponses(session.id);
       clearCollectingSync(session.id);
       collectingSyncSeen.delete(session.id);
       session.messages.splice(range.startIndex, range.currentIndex - range.startIndex + 1);

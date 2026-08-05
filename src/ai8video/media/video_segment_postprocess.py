@@ -11,7 +11,7 @@ from typing import Any
 
 import requests
 
-from ai8video.media.ffmpeg_utils import resolve_ffmpeg_bin
+from ai8video.media.ffmpeg_utils import probe_media_metadata, resolve_ffmpeg_bin
 from ai8video.core.models import QuickVideoJob
 from ai8video.media.video_encoding import append_video_postprocess_encoding_args
 
@@ -162,12 +162,23 @@ def concat_videos(video_paths: list[Path], output_path: Path, *, ffmpeg_bin: str
         reencode_cmd.extend(["-i", str(item)])
     filters = []
     concat_inputs = []
-    for index in range(len(video_paths)):
-        filters.extend([
-            f"[{index}:v]setpts=PTS-STARTPTS[v{index}]",
-            f"[{index}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
-            f"asetpts=PTS-STARTPTS[a{index}]",
-        ])
+    for index, item in enumerate(video_paths):
+        metadata = probe_media_metadata(item) or {}
+        has_audio = int(metadata.get("audioChannels") or 0) > 0
+        filters.append(f"[{index}:v]setpts=PTS-STARTPTS[v{index}]")
+        if has_audio:
+            filters.append(
+                f"[{index}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
+                f"asetpts=PTS-STARTPTS[a{index}]"
+            )
+        else:
+            duration = float(metadata.get("durationSeconds") or 0)
+            if not math.isfinite(duration) or duration <= 0:
+                raise RuntimeError(f"合并视频失败：无法读取无音轨片段时长 {item}")
+            filters.append(
+                "anullsrc=r=48000:cl=stereo,"
+                f"atrim=duration={duration:.6f},asetpts=PTS-STARTPTS[a{index}]"
+            )
         concat_inputs.append(f"[v{index}][a{index}]")
     filters.append(f"{''.join(concat_inputs)}concat=n={len(video_paths)}:v=1:a=1[v][a]")
     reencode_cmd.extend(["-filter_complex", ";".join(filters), "-map", "[v]", "-map", "[a]"])

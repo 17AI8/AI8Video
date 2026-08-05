@@ -88,6 +88,7 @@ def _execute_planning(
             llm=data.llm,
             allow_mock=data.allow_mock,
             trace_session_id=data.trace_session_id,
+            tail_frame_chaining=bool(request.tail_frame_chaining),
         )
     if request.mode == "batch_videos":
         if not video_count:

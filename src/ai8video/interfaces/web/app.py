@@ -71,11 +71,10 @@ from ai8video.media.background_music import (
     update_preserve_original_audio,
 )
 from ai8video.media.background_music_track import (
+    build_hidden_bgm_timeline,
     hidden_bgm_base_path,
     save_hidden_bgm_base,
-    merge_hidden_bgm_tracks,
     track_duration,
-    track_source,
 )
 from ai8video.assets.default_reference_image import (
     clear_default_reference_image,
@@ -231,6 +230,15 @@ from ai8video.media.merged_preview_tracks import (
     merge_tts_audio,
     merged_edited_video_chunks,
     merged_tts_chunks,
+    merged_video_chunks,
+)
+from ai8video.media.batch_merge_edit_state import (
+    batch_merge_edit_id,
+    create_batch_merge_edit_state,
+    delete_batch_merge_edit_state,
+    is_batch_merge_edit_key,
+    list_batch_merge_edit_states,
+    load_batch_merge_edit_state,
 )
 from ai8video.media.video_merge_mode import (
     load_video_merge_mode,
@@ -297,9 +305,7 @@ from ai8video.assets.user_generated_results import (
     burned_result_lock,
     ensure_user_generated_result_dir,
     is_simulated_user_generated_result_path,
-    mirror_generated_result_file,
     migrate_legacy_result_layout,
-    schedule_burned_result_copy,
     source_key_for_result_key,
 )
 from ai8video.assets.user_files import USER_FILE_ROOT
@@ -1405,7 +1411,7 @@ def api_tail_frame_chain_continue():
         return HTTPResponse(status=204)
     payload = request.json or {}
     try:
-        return continue_manual_tail_frame(
+        result = continue_manual_tail_frame(
             str(payload.get("sessionId") or "").strip(),
             str(payload.get("generationBatchId") or "").strip(),
             int(payload.get("videoIndex") or 0),
@@ -1416,6 +1422,47 @@ def api_tail_frame_chain_continue():
         except (ValueError, LookupError) as exc:
             response.status = 409
             return {"ok": False, "error": str(exc)}
+    return _with_generation_batch_action_authority(result)
+
+
+def _with_generation_batch_action_authority(result: dict[str, Any]) -> dict[str, Any]:
+    """Normalize action replies to the same root/child authority used by status."""
+    session_id = str(result.get("sessionId") or "").strip()
+    requested_batch_id = str(result.get("generationBatchId") or "").strip()
+    if not session_id or not requested_batch_id:
+        return result
+    try:
+        record = get_generation_ledger_snapshot(session_id, requested_batch_id) or {}
+        root_batch_id = str(
+            record.get("rootGenerationBatchId")
+            or record.get("generationBatchId")
+            or requested_batch_id
+        ).strip()
+        family = get_generation_batch_family_snapshot(session_id, root_batch_id) or {}
+        authority = family.get("generationBatchAuthority")
+        authority = dict(authority) if isinstance(authority, dict) else {}
+        authority.setdefault("rootGenerationBatchId", root_batch_id)
+        children = [child for child in family.get("childBatches") or [] if isinstance(child, dict)]
+        if not authority.get("latestChildGenerationBatchId") and children:
+            authority["latestChildGenerationBatchId"] = children[-1].get("generationBatchId")
+        if not authority.get("latestChildGenerationBatchId"):
+            authority["latestChildGenerationBatchId"] = result.get("childGenerationBatchId") or None
+        authority.setdefault("familyRevision", None)
+    except Exception:
+        authority = {
+            "rootGenerationBatchId": requested_batch_id,
+            "latestChildGenerationBatchId": None,
+            "familyRevision": None,
+        }
+    normalized = {
+        **result,
+        "generationBatchId": str(authority.get("rootGenerationBatchId") or requested_batch_id),
+        "generationBatchAuthority": authority,
+    }
+    latest_child_batch_id = str(authority.get("latestChildGenerationBatchId") or "").strip()
+    if latest_child_batch_id:
+        normalized["childGenerationBatchId"] = latest_child_batch_id
+    return normalized
 
 
 @app.route("/api/tail-frame-chain/refresh", method=["POST", "OPTIONS"])
@@ -1541,21 +1588,40 @@ def _rollback_latest_tail_frame_result(payload: dict[str, Any]) -> dict[str, Any
     if expected_key and expected_key != user_generated_key:
         raise ValueError("回退目标与当前生成结果不一致")
     asset_records = JsonlAssetStore(AI8VideoConfig.from_env().asset_store_path).read_all()
+    source_batch_id = str(target.get("generationBatchId") or generation_batch_id).strip()
+    rollback_batch_id = create_generation_batch_id(session_id)
     checkpoint = prepare_rollback_tail_frame_resume(
         session_id=session_id,
-        source_batch_id=generation_batch_id,
+        source_batch_id=rollback_batch_id,
         video_index=video_index,
         progress={**progress, "items": items},
         asset_records=asset_records,
         target_record=target_record,
     )
     original_progress = {**progress, "items": [dict(item) for item in items]}
-    # A recovered continuation can still be writing to this batch when the user
-    # rolls its newest result back. Cancel that worker before reopening the root.
+    task_ledger = TaskLedger()
+    # A rollback is a new authority boundary.  Reopening the root leaves a
+    # terminal child able to overlay the rollback snapshot later, so record a
+    # fresh child before cancelling the attempt that produced this result.
+    task_ledger.register_child_generation_batch(
+        session_id=session_id,
+        generation_batch_id=rollback_batch_id,
+        parent_generation_batch_id=source_batch_id,
+        batch_kind="tail_frame_rollback",
+        target_video_index=video_index,
+        task_type="tail_frame_rollback",
+        request_snapshot={
+            "sourceBatchId": source_batch_id,
+            "videoIndex": video_index,
+            "userGeneratedKey": user_generated_key,
+        },
+    )
+    # A recovered continuation can still be writing to this attempt when the
+    # user rolls its newest result back.  It is no longer the family authority.
     cancel_chat_via_ai8video(
         session_id=session_id,
         reason="用户回退最新视频，终止当前续生成任务",
-        generation_batch_id=generation_batch_id,
+        generation_batch_id=source_batch_id,
     )
     for item in items:
         index = int(item.get("videoIndex") or 0)
@@ -1565,7 +1631,7 @@ def _rollback_latest_tail_frame_result(payload: dict[str, Any]) -> dict[str, Any
                 statusLabel="已回退，等待继续",
                 jobId=None,
                 tailFramePreviewUrl=checkpoint.preview_url(),
-                generationBatchId=generation_batch_id,
+                generationBatchId=rollback_batch_id,
             )
             for field in ("assetRecord", "videoUrl", "hasLocalAsset", "providerStatus", "providerProgress", "error"):
                 item.pop(field, None)
@@ -1575,7 +1641,7 @@ def _rollback_latest_tail_frame_result(payload: dict[str, Any]) -> dict[str, Any
                 statusLabel="等待前序视频",
                 jobId=None,
                 providerProgress=0,
-                generationBatchId=generation_batch_id,
+                generationBatchId=rollback_batch_id,
             )
             for field in ("tailFramePreviewUrl", "assetRecord", "videoUrl", "hasLocalAsset", "error"):
                 item.pop(field, None)
@@ -1589,66 +1655,36 @@ def _rollback_latest_tail_frame_result(payload: dict[str, Any]) -> dict[str, Any
             for item in items
         ),
     )
-    task_ledger = TaskLedger()
-    task_ledger.reopen_generation_batch(
+    task_ledger.upsert_generation_batch(
         session_id=session_id,
-        generation_batch_id=generation_batch_id,
+        generation_batch_id=rollback_batch_id,
+        status="active",
         phase="awaiting_tail_frame_continue",
         progress=progress,
     )
-    child_batch_id = str(target.get("childGenerationBatchId") or "").strip()
-    child_ledger = get_generation_ledger_snapshot(session_id, child_batch_id) if child_batch_id else None
-    child_original_progress = None
-    if isinstance(child_ledger, dict):
-        child_progress = dict(child_ledger.get("progress") or {})
-        child_items = [
-            dict(item) for item in child_progress.get("items") or [] if isinstance(item, dict)
-        ]
-        child_original_progress = {**child_progress, "items": [dict(item) for item in child_items]}
-        family_items = {int(item.get("videoIndex") or 0): item for item in items}
-        for child_item in child_items:
-            family_item = family_items.get(int(child_item.get("videoIndex") or 0))
-            if family_item is not None:
-                child_item.clear()
-                child_item.update(family_item)
-                child_item.pop("childGenerationBatchId", None)
-                child_item["generationBatchId"] = child_batch_id
-        child_progress.update(status="active", items=child_items)
-        task_ledger.upsert_generation_batch(
-            session_id=session_id,
-            generation_batch_id=child_batch_id,
-            status="active",
-            phase="awaiting_tail_frame_continue",
-            progress=child_progress,
-        )
     try:
         deleted = _delete_user_generated_video(user_generated_key)
     except Exception:
+        # The new child remains the authority even when deletion fails, but it
+        # must show the pre-rollback state rather than a phantom wait state.
         task_ledger.upsert_generation_batch(
             session_id=session_id,
-            generation_batch_id=generation_batch_id,
-            status=str(original_progress.get("status") or "active"),
+            generation_batch_id=rollback_batch_id,
+            status=str(ledger.get("status") or original_progress.get("status") or "completed"),
             phase=str(ledger.get("phase") or "").strip() or None,
             progress=original_progress,
         )
-        if isinstance(child_ledger, dict) and child_original_progress is not None:
-            task_ledger.upsert_generation_batch(
-                session_id=session_id,
-                generation_batch_id=child_batch_id,
-                status=str(child_ledger.get("status") or "active"),
-                phase=str(child_ledger.get("phase") or "").strip() or None,
-                progress=child_original_progress,
-            )
         raise
-    return {
+    return _with_generation_batch_action_authority({
         "ok": True,
         "sessionId": session_id,
-        "generationBatchId": generation_batch_id,
+        "generationBatchId": rollback_batch_id,
+        "childGenerationBatchId": rollback_batch_id,
         "videoIndex": video_index,
         "tailFramePreviewUrl": checkpoint.preview_url(),
         "deleted": deleted.get("deleted") or [],
         "generationProgress": progress,
-    }
+    })
 
 
 def _start_recovered_tail_frame_resume(payload: dict) -> dict:
@@ -1687,7 +1723,7 @@ def _start_recovered_tail_frame_resume(payload: dict) -> dict:
         session_id, batch_id, _run_recovered_tail_frame_resume_task, args=(context,)
     )
     response.status = 202
-    return {
+    return _with_generation_batch_action_authority({
         "ok": True,
         "status": "pending",
         "generationBatchId": root_batch_id,
@@ -1695,7 +1731,7 @@ def _start_recovered_tail_frame_resume(payload: dict) -> dict:
         "videoIndex": video_index,
         "workerId": task.worker_id,
         "recoveredResume": True,
-    }
+    })
 
 
 def _run_recovered_tail_frame_resume_task(task: GenerationTask, context: dict[str, Any]) -> None:
@@ -2036,6 +2072,18 @@ def user_generated_result_media(relative_path: str):
         return HTTPResponse(status=204)
     root = ensure_user_generated_result_dir().resolve()
     clean_path = str(relative_path or "").strip().lstrip("/")
+    if is_batch_merge_edit_key(clean_path):
+        state = _batch_merge_edit_state_for_key(root, clean_path)
+        if not state:
+            response.status = 404
+            return {"error": "merged edit state not found"}
+        try:
+            target = _ensure_batch_merge_edit_cache(root, state)
+        except FileNotFoundError:
+            response.status = 404
+            return {"error": "merged edit source not found"}
+        response.set_header("Cache-Control", "no-store")
+        return static_file(target.name, root=str(target.parent))
     target = (root / clean_path).resolve()
     if not target.is_file() and Path(clean_path).suffix.lower() in USER_GENERATED_VIDEO_EXTENSIONS:
         alias_target = _user_generated_video_alias_target(root, clean_path)
@@ -2244,7 +2292,8 @@ def _user_generated_result_items(limit: int = 50) -> list[dict]:
     config = AI8VideoConfig.from_env()
     asset_store = JsonlAssetStore(config.asset_store_path)
     root = ensure_user_generated_result_dir().resolve()
-    migrate_legacy_result_layout(root)
+    # Legacy layout migration runs once at startup. Listing must only observe
+    # disk state, otherwise a manual deletion can be recreated from a legacy copy.
     _migrate_legacy_extension_results(root, asset_store)
     asset_records = asset_store.read_all()
     asset_by_archive_key = {
@@ -2256,6 +2305,13 @@ def _user_generated_result_items(limit: int = 50) -> list[dict]:
         Path(str(item.get("archiveKey") or "")).name: item
         for item in asset_records
         if Path(str(item.get("archiveKey") or "")).name
+    }
+    merged_states = list_batch_merge_edit_states(root)
+    merged_member_keys = {
+        source_key_for_result_key(str(source_key or "").strip().lstrip("/"))
+        for state in merged_states
+        for source_key in state.get("sourceKeys") or []
+        if str(source_key or "").strip()
     }
     items: list[dict] = []
     for source in root.rglob("*"):
@@ -2269,6 +2325,10 @@ def _user_generated_result_items(limit: int = 50) -> list[dict]:
             continue
         is_burned_result = relative_key.startswith(f"{BURNED_VIDEO_PREFIX}/")
         source_key = source_key_for_result_key(relative_key)
+        # A logical merge owns its member cards while keeping all member files
+        # and their independent edit state intact underneath the session.
+        if source_key in merged_member_keys:
+            continue
         burned_key = burned_key_for_source_key(source_key)
         restored_record = load_restored_result_metadata(root, source_key)
         asset_record = asset_by_archive_key.get(source_key) or asset_by_archive_name.get(source.name) or {}
@@ -2311,6 +2371,54 @@ def _user_generated_result_items(limit: int = 50) -> list[dict]:
             item["archiveCoverKey"] = cover_key
             item["archiveCoverUrl"] = cover_key
             item["archiveLocalCoverPath"] = str((root / cover_key).resolve())
+        items.append(item)
+    for state in merged_states:
+        relative_key = str(state.get("userGeneratedKey") or "").strip().lstrip("/")
+        if not relative_key:
+            continue
+        cache = _batch_merge_edit_cache_path(relative_key)
+        try:
+            stat = cache.stat() if cache.is_file() else None
+        except OSError:
+            stat = None
+        restored_record = load_restored_result_metadata(root, relative_key)
+        generation_meta = restored_record.get("generationMeta") if isinstance(restored_record.get("generationMeta"), dict) else {}
+        source_keys = [str(key or "").strip().lstrip("/") for key in state.get("sourceKeys") or []]
+        item = {
+            **restored_record,
+            "archiveKey": relative_key,
+            "archiveBackend": "local",
+            "archiveStatus": restored_record.get("archiveStatus") or "archived",
+            "archiveUrl": relative_key,
+            "archiveLocalPath": str(cache),
+            "createdAt": restored_record.get("createdAt") or state.get("createdAt") or "",
+            "videoTitle": sanitize_internal_fidelity_notes(
+                restored_record.get("videoTitle") or f"批量合并-{batch_merge_edit_id(relative_key)[:8]}"
+            ),
+            "prompt": sanitize_internal_fidelity_notes(restored_record.get("prompt") or ""),
+            "userGeneratedKey": relative_key,
+            "userGeneratedLocalPath": str(cache),
+            "userGeneratedSizeBytes": stat.st_size if stat else 0,
+            "userGeneratedUpdatedAt": (
+                datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat()
+                if stat
+                else str(state.get("createdAt") or "")
+            ),
+            "artifactKind": "merged-editable",
+            "sourceUserGeneratedKey": relative_key,
+            "burnedUserGeneratedKey": burned_key_for_source_key(relative_key),
+            "generationMeta": {
+                **generation_meta,
+                "batchMergedSourceKeys": source_keys,
+                "batchMergeEditable": True,
+            },
+        }
+        first_visual_key = str(state.get("firstPreviewKey") or "").strip().lstrip("/")
+        first_visual = (root / first_visual_key).resolve() if first_visual_key else None
+        if first_visual and _is_within(root, first_visual) and first_visual.is_file():
+            if first_visual.suffix.lower() in USER_GENERATED_IMAGE_EXTENSIONS:
+                item["userGeneratedPreviewKey"] = first_visual_key
+                item["userGeneratedPreviewLocalPath"] = str(first_visual)
         items.append(item)
     items.sort(
         key=lambda item: (
@@ -2372,6 +2480,12 @@ def _resolve_user_generated_video_key(raw_key: object) -> tuple[Path, str]:
     requested_key = key.lstrip("/")
     clean_key = source_key_for_result_key(requested_key)
     root = ensure_user_generated_result_dir().resolve()
+    if is_batch_merge_edit_key(clean_key):
+        state = _batch_merge_edit_state_for_key(root, clean_key)
+        if not state:
+            raise FileNotFoundError("合并编辑态不存在")
+        cache = _ensure_batch_merge_edit_cache(root, state)
+        return cache, clean_key
     target = (root / clean_key).resolve()
     if not _is_within(root, target):
         raise ValueError("userGeneratedKey is outside generated results")
@@ -2406,20 +2520,6 @@ def _resolve_user_generated_burned_video_key(raw_key: object) -> tuple[Path, str
     return target, target.relative_to(root).as_posix()
 
 
-def _ensure_user_generated_burned_video_key(raw_key: object) -> tuple[Path, str]:
-    try:
-        return _resolve_user_generated_burned_video_key(raw_key)
-    except FileNotFoundError:
-        clean_key = unquote(str(raw_key or "").strip()).lstrip("/")
-        source_key = source_key_for_result_key(clean_key)
-        source, _relative_key = _resolve_user_generated_video_key(source_key)
-        root = ensure_user_generated_result_dir().resolve()
-        target = mirror_generated_result_file(source, archive_root=root, overwrite=False)
-        if target is None or not target.is_file():
-            raise FileNotFoundError("burned video not found")
-        return target, target.relative_to(root).as_posix()
-
-
 def _user_generated_video_alias_target(root: Path, clean_key: str) -> Path | None:
     filename = Path(clean_key).name
     candidates = [
@@ -2434,7 +2534,164 @@ def _user_generated_video_alias_target(root: Path, clean_key: str) -> Path | Non
     return None
 
 
-def _delete_user_generated_video(raw_key: object, artifact_kind: object = "editable") -> dict:
+def _batch_merge_edit_cache_path(relative_key: str) -> Path:
+    merge_id = batch_merge_edit_id(relative_key)
+    if not merge_id:
+        raise ValueError("合并编辑态标识无效")
+    return (MERGE_TEMP_MEDIA_DIR / "merged-edit-state" / f"{merge_id}.mp4").resolve()
+
+
+def _batch_merge_edit_state_for_key(root: Path, relative_key: object) -> dict[str, Any]:
+    return load_batch_merge_edit_state(root, relative_key)
+
+
+def _batch_merge_edit_source_items(root: Path, state: dict[str, Any]) -> list[tuple[Path, str]]:
+    source_keys = [str(key or "").strip().lstrip("/") for key in state.get("sourceKeys") or []]
+    if len(source_keys) < 2 or len(source_keys) != len(set(source_keys)):
+        raise ValueError("合并编辑态来源无效")
+    items: list[tuple[Path, str]] = []
+    for key in source_keys:
+        if is_batch_merge_edit_key(key):
+            raise ValueError("合并编辑态不能再次作为合并来源")
+        direct = (root / key).resolve()
+        canonical = (root / source_key_for_result_key(key)).resolve()
+        source = direct if _is_within(root, direct) and direct.is_file() else canonical
+        if not _is_within(root, source) or not source.is_file():
+            alias = _user_generated_video_alias_target(root, key)
+            source = alias.resolve() if alias is not None else source
+        if not _is_within(root, source) or not source.is_file():
+            raise FileNotFoundError("合并编辑态的原片已删除")
+        if source.suffix.lower() not in USER_GENERATED_VIDEO_EXTENSIONS:
+            raise ValueError("合并编辑态来源必须是视频")
+        items.append((source, source.relative_to(root).as_posix()))
+    return items
+
+
+def _ensure_batch_merge_edit_cache(root: Path, state: dict[str, Any]) -> Path:
+    relative_key = str(state.get("userGeneratedKey") or "")
+    cache = _batch_merge_edit_cache_path(relative_key)
+    if cache.is_file() and cache.stat().st_size > 0:
+        return cache
+    items = _batch_merge_edit_source_items(root, state)
+    source_paths = [path for path, _ in items]
+    source_durations = [max(0.0, float(value or 0)) for value in state.get("sourceDurations") or []]
+    if len(source_durations) != len(source_paths) or not all(duration > 0 for duration in source_durations):
+        source_durations = [track_duration(path) for path in source_paths]
+    raw_chunks = state.get("sourceVideoChunks") or state.get("videoChunks") or merged_video_chunks(source_durations)
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="merged-edit-cache-", dir=cache.parent) as temporary_directory:
+        work = Path(temporary_directory)
+        raw = work / "source-concat.mp4"
+        candidate = work / "candidate.mp4"
+        concat_videos(source_paths, raw)
+        render_video_timeline_video(
+            raw,
+            candidate,
+            raw_chunks,
+            source_duration_seconds=sum(source_durations),
+        )
+        candidate.replace(cache)
+    if not cache.is_file() or cache.stat().st_size <= 0:
+        raise RuntimeError("合并编辑态预览缓存为空")
+    return cache
+
+
+def _batch_merge_edit_state_references_source(root: Path, relative_key: str) -> bool:
+    candidate = source_key_for_result_key(str(relative_key or "").strip().lstrip("/"))
+    return any(
+        candidate in {
+            source_key_for_result_key(str(source or "").strip().lstrip("/"))
+            for source in state.get("sourceKeys") or []
+        }
+        for state in list_batch_merge_edit_states(root)
+    )
+
+
+def _discard_batch_merge_edit_support_artifacts(root: Path, state: dict[str, Any]) -> list[str]:
+    relative_key = str(state.get("userGeneratedKey") or "")
+    deleted: list[str] = []
+    if not relative_key:
+        return deleted
+    cache = _batch_merge_edit_cache_path(relative_key)
+    if cache.is_file():
+        cache.unlink()
+        deleted.append(str(cache))
+    bgm_base = hidden_bgm_base_path(root, relative_key).resolve()
+    if _is_within(root, bgm_base) and bgm_base.is_file():
+        bgm_base.unlink()
+        deleted.append(bgm_base.relative_to(root).as_posix())
+    metadata = load_restored_result_metadata(root, relative_key)
+    local_tts = (
+        ((metadata.get("archiveMeta") or {}).get("localTts") or {})
+        if isinstance(metadata, dict)
+        else {}
+    )
+    tts_audio = _safe_local_tts_audio_path(local_tts.get("audioPath"))
+    if tts_audio is not None:
+        tts_audio.unlink()
+        deleted.append(str(tts_audio))
+    for review_root in (VIDEO_TIMELINE_REVIEW_ROOT, TTS_TIMELINE_REVIEW_ROOT, HTML_MOTION_REVIEW_ROOT):
+        review_id = hashlib.sha256(relative_key.encode("utf-8")).hexdigest()[:32]
+        review_dir = (review_root / review_id).resolve()
+        if review_dir.is_dir() and _is_within(review_root.resolve(), review_dir):
+            shutil.rmtree(review_dir)
+            deleted.append(str(review_dir))
+    burned_key = burned_key_for_source_key(relative_key)
+    burned = (root / burned_key).resolve() if burned_key else None
+    if burned and _is_within((root / "burned").resolve(), burned) and burned.is_file():
+        burned.unlink()
+        deleted.append(burned_key)
+        burned_preview = delete_preview_for_video(root, burned_key)
+        if burned_preview:
+            deleted.append(burned_preview)
+    metadata_key = delete_restored_result_metadata(root, relative_key)
+    if metadata_key:
+        deleted.append(metadata_key)
+    descriptor_key = delete_batch_merge_edit_state(root, relative_key)
+    if descriptor_key:
+        deleted.append(descriptor_key)
+    return deleted
+
+
+def _delete_batch_merge_edit_state(root: Path, state: dict[str, Any]) -> dict[str, Any]:
+    relative_key = str(state.get("userGeneratedKey") or "")
+    source_keys = [str(key or "").strip().lstrip("/") for key in state.get("sourceKeys") or []]
+    if not relative_key or len(source_keys) < 2:
+        raise ValueError("合并编辑态无效")
+    deleted: list[str] = []
+    related_job_ids: set[str] = set()
+    related_keys: set[str] = set()
+    for source_key in source_keys:
+        try:
+            result = _delete_user_generated_video(source_key, "editable", _allow_merge_member=True)
+        except FileNotFoundError:
+            continue
+        deleted.extend(str(value) for value in result.get("deleted") or [])
+        related_job_ids.update(str(value) for value in result.get("relatedJobIds") or [] if str(value))
+        related_keys.update(str(value) for value in result.get("relatedKeys") or [] if str(value))
+        related_keys.add(str(result.get("userGeneratedKey") or source_key))
+    deleted.extend(_discard_batch_merge_edit_support_artifacts(root, state))
+    _asset_maintenance_service().remove_records(
+        lambda record: str(record.get("jobId") or "") in related_job_ids
+        or str(record.get("archiveKey") or "") in related_keys
+    )
+    return {
+        "ok": True,
+        "deleted": list(dict.fromkeys(deleted)),
+        "userGeneratedKey": relative_key,
+        "artifactKind": "merged-editable",
+        "relatedJobIds": sorted(related_job_ids),
+        "relatedKeys": sorted(related_keys),
+        "sourceKeys": source_keys,
+    }
+
+
+def _delete_user_generated_video(
+    raw_key: object,
+    artifact_kind: object = "editable",
+    *,
+    _allow_merge_member: bool = False,
+) -> dict:
     root = ensure_user_generated_result_dir().resolve()
     normalized_kind = str(artifact_kind or "editable").strip().lower()
     if normalized_kind == "burned":
@@ -2454,9 +2711,19 @@ def _delete_user_generated_video(raw_key: object, artifact_kind: object = "edita
             "relatedJobIds": [],
             "relatedKeys": [],
         }
-    if normalized_kind != "editable":
-        raise ValueError("artifactKind must be editable or burned")
+    requested_key = source_key_for_result_key(unquote(str(raw_key or "").strip()).lstrip("/"))
+    merge_state = _batch_merge_edit_state_for_key(root, requested_key)
+    if merge_state:
+        if normalized_kind not in {"editable", "merged-editable"}:
+            raise ValueError("合并编辑态只能作为可编辑视频删除")
+        return _delete_batch_merge_edit_state(root, merge_state)
+    if normalized_kind not in {"editable", "merged-editable"}:
+        raise ValueError("artifactKind must be editable、merged-editable 或 burned")
+    if normalized_kind == "merged-editable":
+        raise FileNotFoundError("合并编辑态不存在")
     target, relative_key = _resolve_user_generated_video_key(raw_key)
+    if not _allow_merge_member and _batch_merge_edit_state_references_source(root, relative_key):
+        raise ValueError("该原片属于合并编辑态，请删除合并视频")
     bgm_prefix = ".media-tracks/bgm-base/"
     media_key = relative_key[len(bgm_prefix):] if relative_key.startswith(bgm_prefix) else relative_key
     cover_key = _find_user_generated_cover_key(root, media_key)
@@ -2702,7 +2969,6 @@ def _replace_user_generated_video(left_key: object, right_key: object) -> dict[s
         cleanup = _delete_extension_state_assets(relative_left_key, relative_right_key)
     except Exception as exc:
         cleanup = {"ok": False, "deleted": [], "reason": str(exc)[:300]}
-    schedule_burned_result_copy(left_path, result_root=ensure_user_generated_result_dir(), overwrite=True)
     return {
         "ok": True,
         "userGeneratedKey": relative_left_key,
@@ -2836,7 +3102,7 @@ def _save_merged_narration_metadata(
 ) -> None:
     metadata_path = restored_result_metadata_path(ensure_user_generated_result_dir(), relative_key)
     payload = {
-        "schema": "merged-result-v1",
+        "schema": "merged-edit-state-v2" if is_batch_merge_edit_key(relative_key) else "merged-result-v1",
         "createdAt": datetime.now(timezone.utc).isoformat(),
         "userGeneratedKey": relative_key,
         "sourceVideoKey": source_key,
@@ -2853,113 +3119,6 @@ def _save_merged_narration_metadata(
     temporary.replace(metadata_path)
 
 
-def _append_batch_merge_artifact(artifacts: list[Path], candidate: Path, allowed_root: Path) -> None:
-    resolved = candidate.resolve()
-    if _is_within(allowed_root.resolve(), resolved) and resolved.exists() and resolved not in artifacts:
-        artifacts.append(resolved)
-
-
-def _batch_merge_cached_artifacts(root: Path, relative_key: str) -> list[tuple[Path, Path]]:
-    frame_root = (root / "extension-frame").resolve()
-    frame_name = hashlib.sha256(relative_key.encode("utf-8")).hexdigest()[:24]
-    cached = [(path, frame_root) for path in frame_root.glob(f"{frame_name}*")]
-    review_root = HTML_MOTION_REVIEW_ROOT.resolve()
-    review_id = hashlib.sha256(relative_key.encode("utf-8")).hexdigest()[:32]
-    cached.append((review_root / review_id, review_root))
-    return cached
-
-
-def _batch_merge_record_matches_sources(record: dict[str, Any], source_keys: list[str]) -> bool:
-    normalized = {str(key).strip() for key in source_keys if str(key).strip()}
-    names = {Path(key).name for key in normalized}
-    for field in ("userGeneratedKey", "archiveKey", "archiveLocalPath", "userGeneratedLocalPath", "localVideoPath"):
-        value = str(record.get(field) or "").strip()
-        if value in normalized or (value and Path(value).name in names):
-            return True
-    first_frame = record.get("firstFrame") if isinstance(record.get("firstFrame"), dict) else {}
-    frame_source = Path(str(first_frame.get("source") or "")).name
-    frame_names = {hashlib.sha256(key.encode("utf-8")).hexdigest()[:24] for key in normalized}
-    return bool(frame_source and any(frame_source.startswith(name) for name in frame_names))
-
-
-def _batch_merge_related_records(source_keys: list[str]) -> list[dict[str, Any]]:
-    return [
-        record
-        for record in JsonlAssetStore(_asset_store_path()).read_all()
-        if _batch_merge_record_matches_sources(record, source_keys)
-    ]
-
-
-def _batch_merge_record_artifacts(root: Path, record: dict[str, Any]) -> list[tuple[Path, Path]]:
-    artifacts: list[tuple[Path, Path]] = []
-    for field in ("userGeneratedKey", "archiveKey", "userGeneratedPreviewKey", "archiveCoverKey"):
-        value = str(record.get(field) or "").strip().lstrip("/")
-        if value and "://" not in value:
-            artifacts.append((root / value, root))
-    for field in ("archiveLocalPath", "userGeneratedLocalPath", "localVideoPath", "archiveLocalCoverPath"):
-        value = str(record.get(field) or "").strip()
-        if value:
-            artifacts.append((Path(value), root))
-    archive_root = Path(AI8VideoConfig.from_env().archive_local_dir).resolve()
-    raw_manifest = str(record.get("archiveManifestPath") or "").strip()
-    manifest = Path(raw_manifest) if raw_manifest else archive_root / ".missing"
-    if raw_manifest and not manifest.is_absolute():
-        manifest = (PROJECT_ROOT / manifest).resolve()
-    local_tts = record.get("archiveMeta") if isinstance(record.get("archiveMeta"), dict) else {}
-    local_tts = local_tts.get("localTts") if isinstance(local_tts.get("localTts"), dict) else {}
-    raw_audio = str(local_tts.get("audioPath") or "").strip()
-    audio = Path(raw_audio) if raw_audio else local_tts_output_dir() / ".missing"
-    return [*artifacts, (manifest, archive_root), (audio, local_tts_output_dir().resolve())]
-
-
-def _batch_merge_source_artifacts(root: Path, resolved_items: list[tuple[Path, str]]) -> list[Path]:
-    artifacts: list[Path] = []
-    source_keys = [relative_key for _, relative_key in resolved_items]
-    for video_path, relative_key in resolved_items:
-        preview_key = find_preview_key(root, relative_key)
-        cover_key = _find_user_generated_cover_key(root, relative_key)
-        track = _background_music_track_for_user_generated_video(relative_key, video_path)
-        track_base = Path(str(track.get("baseVideoPath") or ""))
-        result_artifacts = [
-            video_path,
-            *(root / key for key in (preview_key, cover_key) if key),
-            restored_result_metadata_path(root, relative_key),
-            track_base,
-        ]
-        for candidate in result_artifacts:
-            _append_batch_merge_artifact(artifacts, candidate, root)
-        for candidate, allowed_root in _batch_merge_cached_artifacts(root, relative_key):
-            _append_batch_merge_artifact(artifacts, candidate, allowed_root)
-    for record in _batch_merge_related_records(source_keys):
-        for candidate, allowed_root in _batch_merge_record_artifacts(root, record):
-            _append_batch_merge_artifact(artifacts, candidate, allowed_root)
-    return artifacts
-
-
-def _stage_batch_merge_sources(artifacts: list[Path], stash: Path) -> list[tuple[Path, Path]]:
-    staged: list[tuple[Path, Path]] = []
-    for index, source in enumerate(artifacts):
-        target = stash / f"{index:04d}-{source.name}"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(source), str(target))
-        staged.append((source, target))
-    return staged
-
-
-def _restore_batch_merge_sources(staged: list[tuple[Path, Path]]) -> None:
-    for original, staged_path in reversed(staged):
-        if not staged_path.exists():
-            continue
-        original.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(staged_path), str(original))
-
-
-def _remove_batch_merged_asset_records(source_keys: list[str]) -> tuple[int, int]:
-    return _asset_maintenance_service().remove_records(
-        lambda record: _batch_merge_record_matches_sources(record, source_keys)
-    )
-
-
 def _background_music_track_for_user_generated_video(relative_key: str, video_path: Path) -> dict[str, Any]:
     restored = load_restored_result_metadata(ensure_user_generated_result_dir(), relative_key)
     asset = _asset_record_for_user_generated_key(relative_key, video_path)
@@ -2972,13 +3131,6 @@ def _background_music_track_for_user_generated_video(relative_key: str, video_pa
     if isinstance(track, dict) and track:
         return track
     return {}
-
-
-def _batch_merge_visual_source(video_path: Path, relative_key: str, fallback: Path) -> Path:
-    try:
-        return html_motion_review_base_path(video_path, relative_key)
-    except LookupError:
-        return fallback
 
 
 def _replace_user_generated_background_music_track(raw_key: object, music: dict[str, Any]) -> None:
@@ -3017,85 +3169,74 @@ def _replace_user_generated_background_music_track(raw_key: object, music: dict[
 
 
 def _prepare_batch_merge_context(raw_keys: object) -> dict[str, Any]:
-    source_keys = [str(key or "").strip() for key in raw_keys] if isinstance(raw_keys, list) else []
-    source_keys = list(dict.fromkeys(key for key in source_keys if key))
-    if len(source_keys) < 2:
+    requested_keys = [str(key or "").strip() for key in raw_keys] if isinstance(raw_keys, list) else []
+    requested_keys = list(dict.fromkeys(key for key in requested_keys if key))
+    if len(requested_keys) < 2:
         raise ValueError("请至少选择两个视频")
-    if len(source_keys) > 100:
+    if len(requested_keys) > 100:
         raise ValueError("单次最多合并 100 个视频")
-    resolved_items = [_resolve_user_generated_video_key(key) for key in source_keys]
     root = ensure_user_generated_result_dir().resolve()
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-    target = (root / SOURCE_VIDEO_PREFIX / f"批量合并-{timestamp}.mp4").resolve()
+    resolved_items: list[tuple[Path, str]] = []
+    known_keys: set[str] = set()
+    for requested_key in requested_keys:
+        canonical_key = source_key_for_result_key(requested_key)
+        if is_batch_merge_edit_key(canonical_key):
+            raise ValueError("合并编辑态不能再次批量合并")
+        item = _resolve_user_generated_video_key(requested_key)
+        if item[1] in known_keys:
+            continue
+        if _batch_merge_edit_state_references_source(root, item[1]):
+            raise ValueError("原片已属于一个合并编辑态，请先删除该合并视频")
+        known_keys.add(item[1])
+        resolved_items.append(item)
+    if len(resolved_items) < 2:
+        raise ValueError("请至少选择两个不同的视频")
     first_key = resolved_items[0][1]
     first_visual_key = find_preview_key(root, first_key) or _find_user_generated_cover_key(root, first_key)
     narrations = [_tts_narration_text_for_user_generated_video(key, path)[0] for path, key in resolved_items]
     tracks = [_background_music_track_for_user_generated_video(key, path) for path, key in resolved_items]
-    track_sources = [track_source(track, path) for (path, _), track in zip(resolved_items, tracks)]
-    merge_sources = [
-        _batch_merge_visual_source(path, key, fallback)
-        for (path, key), fallback in zip(resolved_items, track_sources)
-    ]
-    source_durations = [track_duration(path) for path in merge_sources]
+    source_durations = [track_duration(path) for path, _ in resolved_items]
     video_statuses = [_current_video_timeline_status(path, key) for path, key in resolved_items]
-    durations = edited_video_durations(video_statuses, source_durations)
+    edited_durations = edited_video_durations(video_statuses, source_durations)
     tts_statuses = [_current_tts_timeline_status(path, key) for path, key in resolved_items]
     return {
         "root": root,
-        "target": target,
         "items": resolved_items,
         "sourceKeys": [item[1] for item in resolved_items],
         "firstKey": first_key,
         "firstVisualKey": first_visual_key,
         "narration": "\n".join(text for text in narrations if text),
         "tracks": tracks,
-        "mergeSources": merge_sources,
         "sourceDurations": source_durations,
         "videoStatuses": video_statuses,
-        "durations": durations,
-        "videoChunks": merged_edited_video_chunks(video_statuses, source_durations),
+        "editedDurations": edited_durations,
+        # First render the source clips and their cuts into a disposable cache.
+        # Once that cache exists, every remaining review track shares its edited
+        # timebase instead of mixing raw-concat and post-cut coordinates.
+        "sourceVideoChunks": merged_edited_video_chunks(video_statuses, source_durations),
+        "videoChunks": merged_video_chunks(edited_durations),
         "ttsStatuses": tts_statuses,
-        "ttsChunks": merged_tts_chunks(tts_statuses, durations),
+        "ttsChunks": merged_tts_chunks(tts_statuses, edited_durations),
         "htmlSources": [html_motion_merge_source(key) for _, key in resolved_items],
     }
 
 
-def _install_batch_merge_result(
-    context: dict[str, Any], work: Path, candidate: Path, visual_copy: Path,
-    merged_base: Path, merged_tts: Path,
-) -> int:
-    root, target = context["root"], context["target"]
-    created: list[Path] = []
+def _install_batch_merge_edit_state(
+    context: dict[str, Any],
+    state: dict[str, Any],
+    merged_tts: Path,
+) -> Path:
+    root = context["root"]
+    relative_key = str(state["userGeneratedKey"])
     try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(candidate), str(target))
-        created.append(target)
-        relative_key = target.relative_to(root).as_posix()
-        review_id = hashlib.sha256(relative_key.encode("utf-8")).hexdigest()[:32]
-        base_target = hidden_bgm_base_path(root, relative_key)
-        if merged_base.is_file():
-            base_target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(merged_base), str(base_target))
-            created.append(base_target)
-        preview_target = root / "preview" / f"{target.stem}.jpg"
-        if visual_copy.is_file():
-            preview_target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(visual_copy, preview_target)
-        else:
-            preview = generate_preview_for_video(target, root, relative_key)
-            if not preview.get("ok"):
-                raise RuntimeError("合并视频预览图生成失败")
-        created.append(preview_target)
-        created.append(VIDEO_TIMELINE_REVIEW_ROOT / review_id)
-        save_video_timeline_review(target, relative_key, context["videoChunks"])
+        cache = _ensure_batch_merge_edit_cache(root, state)
+        save_video_timeline_review(cache, relative_key, context["videoChunks"])
         merged_local_tts = None
         if merged_tts.is_file() and context["ttsChunks"]:
-            tts_target = local_tts_output_dir() / f"{target.stem}-merged-preview.m4a"
+            tts_target = local_tts_output_dir() / f"merged-edit-{batch_merge_edit_id(relative_key)}.m4a"
             tts_target.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(merged_tts), str(tts_target))
-            created.append(tts_target)
-            created.append(TTS_TIMELINE_REVIEW_ROOT / review_id)
-            save_tts_timeline_review(target, relative_key, tts_target, context["ttsChunks"], tts_volume=1.0)
+            save_tts_timeline_review(cache, relative_key, tts_target, context["ttsChunks"], tts_volume=1.0)
             merged_local_tts = {
                 "status": "mixed",
                 "audioPath": str(tts_target),
@@ -3105,13 +3246,15 @@ def _install_batch_merge_result(
                 "timelineMuted": False,
                 "timelineEditedAt": datetime.now(timezone.utc).isoformat(),
             }
-        created.append(HTML_MOTION_REVIEW_ROOT / review_id)
-        html_review = merge_html_motion_reviews(
-            context["htmlSources"], relative_key, base_target, context["videoOffsets"], context["durations"],
+        offsets = []
+        cursor = 0.0
+        for duration in context["editedDurations"]:
+            offsets.append(cursor)
+            cursor += duration
+        merge_html_motion_reviews(
+            context["htmlSources"], relative_key, cache, offsets, context["editedDurations"],
             context["videoStatuses"],
         )
-        if html_review.get("reviewReady") is not True:
-            created.remove(HTML_MOTION_REVIEW_ROOT / review_id)
         _save_merged_narration_metadata(
             relative_key,
             context["firstKey"],
@@ -3120,66 +3263,49 @@ def _install_batch_merge_result(
             {
                 "schema": "hidden-bgm-track-v1",
                 "hidden": True,
-                "baseVideoPath": str(base_target),
-                "segments": context.get("mergedBgm", {}).get("segments", []),
+                "baseVideoPath": str(cache),
+                "segments": build_hidden_bgm_timeline(context["tracks"], context["editedDurations"]),
             },
             merged_local_tts,
         )
-        created.append(restored_result_metadata_path(root, relative_key))
-        schedule_burned_result_copy(target, result_root=root, overwrite=True)
-        return 0
+        return cache
     except Exception:
-        for path in reversed(created):
-            if path.is_dir():
-                shutil.rmtree(path)
-            elif path.is_file():
-                path.unlink()
+        _discard_batch_merge_edit_support_artifacts(root, state)
         raise
 
 
 def _batch_merge_user_generated_videos(raw_keys: object) -> dict[str, Any]:
     context = _prepare_batch_merge_context(raw_keys)
-    root, target, items = context["root"], context["target"], context["items"]
-    temp_root = PROJECT_ROOT / "temp" / "ai8video"
-    temp_root.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="batch-merge-", dir=temp_root) as tempdir:
-        work = Path(tempdir)
-        candidate = work / "merged.mp4"
-        merged_base = work / "merged-base.mp4"
-        merged_tts = work / "merged-tts.m4a"
-        merge_result = concat_videos(context["mergeSources"], candidate)
-        shutil.copy2(candidate, merged_base)
-        context["mergedBgm"] = merge_hidden_bgm_tracks(candidate, context["tracks"], context["sourceDurations"])
-        merge_tts_audio(context["ttsStatuses"], merged_tts)
-        offsets = []
-        cursor = 0.0
-        for duration in context["durations"]:
-            offsets.append(cursor)
-            cursor += duration
-        context["videoOffsets"] = offsets
-        visual_copy = work / "first-preview.jpg"
-        first_visual = root / context["firstVisualKey"] if context["firstVisualKey"] else None
-        if first_visual and first_visual.suffix.lower() in {".jpg", ".jpeg"}:
-            shutil.copy2(first_visual, visual_copy)
-        source_artifacts = _batch_merge_source_artifacts(root, items)
-        staged_sources = _stage_batch_merge_sources(source_artifacts, work / "sources")
-        try:
-            _install_batch_merge_result(
-                context, work, candidate, visual_copy, merged_base, merged_tts,
-            )
-            removed_records = _remove_batch_merged_asset_records(context["sourceKeys"])
-        except Exception:
-            _restore_batch_merge_sources(staged_sources)
-            raise
-    relative_key = target.relative_to(root).as_posix()
+    root = context["root"]
+    state = create_batch_merge_edit_state(
+        root,
+        source_keys=context["sourceKeys"],
+        source_video_chunks=context["sourceVideoChunks"],
+        video_chunks=context["videoChunks"],
+        source_durations=context["sourceDurations"],
+        edited_durations=context["editedDurations"],
+        first_preview_key=context["firstVisualKey"],
+    )
+    try:
+        temp_root = PROJECT_ROOT / "temp" / "ai8video"
+        temp_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="batch-merge-", dir=temp_root) as tempdir:
+            work = Path(tempdir)
+            merged_tts = work / "merged-tts.m4a"
+            merge_tts_audio(context["ttsStatuses"], merged_tts)
+            _install_batch_merge_edit_state(context, state, merged_tts)
+    except Exception:
+        _discard_batch_merge_edit_support_artifacts(root, state)
+        raise
+    relative_key = str(state["userGeneratedKey"])
     return {
         "ok": True,
         "userGeneratedKey": relative_key,
         "videoUrl": f"/user-generated-results/{relative_key}",
-        "previewKey": f"preview/{target.stem}.jpg",
+        "previewKey": str(state.get("firstPreviewKey") or ""),
         "sourceKeys": context["sourceKeys"],
-        "removedAssetRecords": removed_records,
-        "merge": merge_result,
+        "artifactKind": "merged-editable",
+        "merge": {"status": "logical-edit-state", "sourceCount": len(context["sourceKeys"])},
     }
 
 
@@ -4092,8 +4218,12 @@ def _confirm_user_generated_burn(raw_key: object, html_chunks: object = None) ->
         html_chunks,
     )
     result_root = ensure_user_generated_result_dir().resolve()
-    output_path = (result_root / "burned" / relative_key).resolve()
-    if not _is_within(result_root, output_path):
+    burned_key = burned_key_for_source_key(relative_key)
+    if not burned_key:
+        raise ValueError("烧录仅支持原片视频")
+    output_path = (result_root / burned_key).resolve()
+    burned_root = (result_root / "burned").resolve()
+    if not _is_within(burned_root, output_path):
         raise ValueError("烧录输出路径不合法")
     with burned_result_lock(output_path):
         background_music_result = _render_confirmed_burn(
@@ -4785,6 +4915,10 @@ def _restored_metadata_video_path(path: Path) -> Path:
     relative_key = str(payload.get("userGeneratedKey") or "").strip() if isinstance(payload, dict) else ""
     if not relative_key:
         relative_key = path.relative_to(metadata_root).with_suffix("").as_posix()
+    if is_batch_merge_edit_key(relative_key) and _batch_merge_edit_state_for_key(root, relative_key):
+        # A logical merge deliberately has no source/video file.  The
+        # descriptor is its authority, so its restored metadata is not orphaned.
+        return path
     candidate = (root / relative_key).resolve()
     return candidate if candidate.is_relative_to(root) else root / ".invalid-restored-metadata"
 
@@ -6170,7 +6304,7 @@ def api_open_user_generated_burned_video_in_folder():
         return HTTPResponse(status=204)
     payload = request.json or {}
     try:
-        target, burned_key = _ensure_user_generated_burned_video_key(
+        target, burned_key = _resolve_user_generated_burned_video_key(
             payload.get("userGeneratedKey")
         )
     except ValueError as exc:
@@ -6231,7 +6365,7 @@ def api_user_generated_results():
     scanned_items = _user_generated_result_items(limit=200)
     editable_items = [
         item for item in scanned_items
-        if str(item.get("artifactKind") or "") == "editable"
+        if str(item.get("artifactKind") or "") in {"editable", "merged-editable"}
     ][:limit]
     burned_items = [
         item for item in scanned_items
@@ -6351,7 +6485,6 @@ def api_merge_user_generated_results():
             merge_result = concat_videos(merge_inputs, target)
         relative_key = target.relative_to(root).as_posix()
         _save_merged_narration_metadata(relative_key, left_key, left_narration)
-        schedule_burned_result_copy(target, result_root=root, overwrite=True)
         return {
             "ok": True,
             "userGeneratedKey": relative_key,
@@ -7796,6 +7929,12 @@ def api_chat_status():
         if body.get("status") == "not_found":
             response.status = 404
             return body
+        # An explicit batch query has an ownership boundary.  Do not let
+        # session-wide trace, stale-first-frame, or local-terminal fallbacks
+        # replace it with another root or an older child.
+        _apply_trace_video_prompts(body, session_id, pending_since=pending_since)
+        _apply_deleted_asset_progress_state(body)
+        return body
     stale_first_frame = settle_stale_first_frame_progress(session_id)
     if stale_first_frame:
         return {
@@ -8143,15 +8282,16 @@ def api_retry_failed_generation():
             args=(task_context,),
         )
         response.status = 202
-        return {
+        return _with_generation_batch_action_authority({
             "ok": True,
             "status": "pending",
+            "sessionId": session_id,
             "generationBatchId": parent_batch_id,
             "childGenerationBatchId": retry_batch_id,
             "workerId": task.worker_id,
             "videoIndex": video.index,
             **({"displayGenerationProgress": display_progress} if display_progress else {}),
-        }
+        })
     except (ValueError, RuntimeError) as exc:
         if str(exc) == "未找到当前会话的视频失败记录，无法重试":
             try:

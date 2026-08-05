@@ -19,6 +19,7 @@ from ai8video.generation.generation_progress import (
     clear_generation_progress,
     create_generation_batch_id,
     fail_generation_progress,
+    get_generation_batch_family_snapshot,
     stop_unsubmitted_generation_progress,
     get_generation_progress,
     settle_stale_first_frame_progress,
@@ -34,6 +35,102 @@ from ai8video.batch.task_ledger import TaskLedger
 
 
 class AI8VideoAI8VideoChatStatusTest(unittest.TestCase):
+    def test_generation_batch_family_authority_tracks_root_and_latest_child(self) -> None:
+        session_id = "session-family-authority"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            ledger = TaskLedger(Path(temporary_directory) / "task_ledger.sqlite3")
+            ledger.upsert_generation_batch(
+                session_id=session_id,
+                generation_batch_id="gb-root",
+                status="active",
+                progress={"items": [{"videoIndex": 1, "status": "submitted"}]},
+            )
+            ledger.register_child_generation_batch(
+                session_id=session_id,
+                generation_batch_id="gb-child-1",
+                parent_generation_batch_id="gb-root",
+                batch_kind="video_retry",
+                target_video_index=1,
+            )
+            ledger.upsert_generation_batch(
+                session_id=session_id,
+                generation_batch_id="gb-child-1",
+                status="completed",
+                progress={"items": [{"videoIndex": 1, "status": "succeeded"}]},
+            )
+            ledger.register_child_generation_batch(
+                session_id=session_id,
+                generation_batch_id="gb-child-2",
+                parent_generation_batch_id="gb-root",
+                batch_kind="tail_frame_resume",
+                target_video_index=2,
+            )
+            ledger.upsert_generation_batch(
+                session_id=session_id,
+                generation_batch_id="gb-child-2",
+                status="active",
+                phase="polling",
+                progress={"items": [{"videoIndex": 2, "status": "submitted"}]},
+            )
+            with patch.object(generation_progress, "_TASK_LEDGER", ledger):
+                family = get_generation_batch_family_snapshot(session_id, "gb-root")
+                revision_before_historical_update = family["generationBatchAuthority"]["familyRevision"]
+                ledger.update_generation_execution(
+                    "gb-child-1",
+                    execution_state="completed",
+                )
+                family_after_historical_update = get_generation_batch_family_snapshot(
+                    session_id,
+                    "gb-root",
+                )
+
+        self.assertIsNotNone(family)
+        authority = family["generationBatchAuthority"]
+        self.assertEqual(authority["rootGenerationBatchId"], "gb-root")
+        self.assertEqual(authority["latestChildGenerationBatchId"], "gb-child-2")
+        self.assertTrue(authority["familyRevision"])
+        self.assertEqual(family["progress"]["generationBatchAuthority"], authority)
+        self.assertEqual(family["childBatches"][-1]["generationBatchId"], "gb-child-2")
+        self.assertTrue(family["childBatches"][-1]["updatedAt"])
+        self.assertEqual(family["phase"], "polling")
+        self.assertEqual(family["progress"]["items"][0]["status"], "submitted")
+        self.assertEqual(family["progress"]["items"][0]["generationBatchId"], "gb-root")
+        self.assertEqual(
+            family_after_historical_update["generationBatchAuthority"]["familyRevision"],
+            revision_before_historical_update,
+        )
+
+    def test_live_status_uses_terminal_family_over_stale_session_status(self) -> None:
+        family = {
+            "generationBatchId": "gb-root",
+            "status": "completed",
+            "phase": "completed",
+            "progress": {
+                "status": "completed",
+                "items": [{"videoIndex": 1, "status": "succeeded"}],
+            },
+            "childBatches": [{
+                "generationBatchId": "gb-child",
+                "status": "completed",
+                "phase": "completed",
+                "targetVideoIndex": 1,
+            }],
+            "generationBatchAuthority": {
+                "rootGenerationBatchId": "gb-root",
+                "latestChildGenerationBatchId": "gb-child",
+                "familyRevision": "2026-08-05T00:00:00.000000Z",
+            },
+        }
+
+        merged = ai8video_chat_service._merge_live_status_with_generation_family(
+            {"sessionId": "", "status": "pending", "phase": "polling"},
+            family,
+        )
+
+        self.assertEqual(merged["status"], "completed")
+        self.assertEqual(merged["phase"], "completed")
+        self.assertEqual(merged["generationBatchAuthority"], family["generationBatchAuthority"])
+
     def test_start_generation_progress_assigns_generation_batch_id(self) -> None:
         session_id = "session status batch id"
         videos = [VideoPrompt(index=1, title="第一条", prompt="video1")]

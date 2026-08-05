@@ -289,6 +289,35 @@ class AI8VideoVideoPromptPlannerTest(unittest.TestCase):
         self.assertTrue(all("- 表情/情绪/身体状态：" in video.prompt for video in videos))
         self.assertTrue(all("- 音效建议：" in video.prompt for video in videos))
 
+    def test_standard_smart_split_routes_tail_frame_mode_to_reference_frame_schema(self) -> None:
+        model_prompts: list[str] = []
+
+        def fake_llm(prompt: str) -> str:
+            model_prompts.append(prompt)
+            if "标准模式智能分集总规划器" in prompt:
+                return self._parallel_outline_json(1)
+            if "只展开第 1 集" in prompt:
+                return self._tail_frame_episode_json(1)
+            raise AssertionError(f"unexpected prompt: {prompt[:80]}")
+
+        videos = plan_standard_smart_split_prompts_with_ai(
+            "系列素材",
+            1,
+            llm=fake_llm,
+            tail_frame_chaining=True,
+        )
+
+        detail_prompt = next(prompt for prompt in model_prompts if "单集详细剧本规划器" in prompt)
+        self.assertIn("传尾帧模式已开启", detail_prompt)
+        self.assertIn('"reference_frame_start":true', detail_prompt)
+        first_segment, remainder = videos[0].prompt.split("【3-10秒】", 1)
+        self.assertIn("【0-3秒】\n画面从参考图开始", first_segment)
+        self.assertIn("- 语气：清晰有力", first_segment)
+        self.assertIn("- 台词/口播：第 1 集开场。", first_segment)
+        self.assertNotIn("- 景别：", first_segment)
+        self.assertIn("- 景别：中近景", remainder)
+
+
     def test_standard_smart_split_repairs_only_invalid_episode(self) -> None:
         detail_attempts = {1: 0, 2: 0}
 
@@ -369,6 +398,37 @@ class AI8VideoVideoPromptPlannerTest(unittest.TestCase):
                 }
             ],
             "narration_text": f"第 {index} 集。",
+            "source_summary": f"参考了素材 {index}",
+            "preserved_keywords": [f"关键词 {index}"],
+            "omitted_keywords_reason": "",
+        }, ensure_ascii=False)
+
+    @staticmethod
+    def _tail_frame_episode_json(index: int) -> str:
+        return __import__("json").dumps({
+            "index": index,
+            "title": f"主题 {index}",
+            "overall": "最终成片约10秒；同一人物、衣着与场景保持一致。",
+            "segments": [
+                {
+                    "time_range": "0-3秒",
+                    "reference_frame_start": True,
+                    "tone": "清晰有力",
+                    "dialogue": f"第 {index} 集开场。",
+                },
+                {
+                    "time_range": "3-10秒",
+                    "shot_size": "中近景",
+                    "scene": "商务会议室",
+                    "camera_movement": "缓慢推近",
+                    "character_action": "负责人面向镜头讲述",
+                    "performance": "自信、笃定；体态挺拔",
+                    "tone": "平稳收束",
+                    "dialogue": f"第 {index} 集收束。",
+                    "sound_effect": "轻快鼓点收束",
+                },
+            ],
+            "narration_text": f"第 {index} 集开场。第 {index} 集收束。",
             "source_summary": f"参考了素材 {index}",
             "preserved_keywords": [f"关键词 {index}"],
             "omitted_keywords_reason": "",

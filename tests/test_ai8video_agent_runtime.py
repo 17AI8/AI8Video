@@ -150,8 +150,14 @@ class CapabilityRegistryTest(unittest.TestCase):
         self.assertEqual(calls, {"infer": 0, "smart": 1, "repeat": 0})
 
     def test_parallel_episode_strategy_is_explicit_and_legacy_remains_default(self) -> None:
-        request = ParsedRequest(raw_text="智能分集素材", mode="batch_videos", video_count=2)
+        request = ParsedRequest(
+            raw_text="智能分集素材",
+            mode="batch_videos",
+            video_count=2,
+            tail_frame_chaining=True,
+        )
         calls = {"legacy": 0, "parallel": 0}
+        parallel_kwargs: dict = {}
 
         def legacy_plan(*_args, **_kwargs):
             calls["legacy"] += 1
@@ -159,6 +165,7 @@ class CapabilityRegistryTest(unittest.TestCase):
 
         def parallel_plan(*_args, **_kwargs):
             calls["parallel"] += 1
+            parallel_kwargs.update(_kwargs)
             return [VideoPrompt(index=1, title="并发路径", prompt="并发路径")]
 
         capability = build_planning_capability(
@@ -204,6 +211,7 @@ class CapabilityRegistryTest(unittest.TestCase):
         self.assertEqual(legacy_result.value[0].title, "旧路径")
         self.assertEqual(parallel_result.value[0].title, "并发路径")
         self.assertEqual(calls, {"legacy": 1, "parallel": 1})
+        self.assertTrue(parallel_kwargs["tail_frame_chaining"])
 
 
 if __name__ == "__main__":

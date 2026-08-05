@@ -1,12 +1,12 @@
     async function regenerateTtsFromVideoPreview(userGeneratedKey, button) {
       const key = String(userGeneratedKey || '').trim();
       if (!key) return;
-      const previous = getVideoPreviewButtonLabel(button) || '重新生成TTS配音';
+      const previous = getVideoPreviewButtonLabel(button) || '生成配音';
       if (button) {
         button.disabled = true;
         button.classList.add('is-spinning');
         button.setAttribute('aria-busy', 'true');
-        setVideoPreviewButtonLabel(button, '正在生成 tts 配音');
+        setVideoPreviewButtonLabel(button, '正在生成配音');
       }
       try {
         const res = await fetch('/api/user-generated-results/regenerate-tts', {
@@ -30,15 +30,16 @@
         }
         const video = els.videoPreviewBody?.querySelector('video');
         applyRegeneratedBurnReview(data?.burnReview || {}, video);
+        revealRegeneratedTtsTimeline();
         if (button) {
-          setVideoPreviewButtonLabel(button, '预览已生成');
+          setVideoPreviewButtonLabel(button, '音轨已刷新');
           setTimeout(() => {
             setVideoPreviewButtonLabel(button, previous);
             button.disabled = false;
           }, 1400);
         }
       } catch (error) {
-        const message = error?.message || '重新生成TTS配音失败';
+        const message = error?.message || '生成配音失败';
         window.alert(message.includes('台词已删除') ? '台词已删除' : message);
         if (button) {
           setVideoPreviewButtonLabel(button, previous);
@@ -50,6 +51,162 @@
           button.removeAttribute('aria-busy');
         }
       }
+    }
+
+    function revealRegeneratedTtsTimeline() {
+      const panel = els.videoPreviewBody?.querySelector('[data-video-preview-tts-timeline]');
+      const chunks = state.videoPreviewModal?.ttsTimelineChunks || [];
+      if (!panel || !chunks.length) return;
+      setTtsScissorMode(false, { render: false, updateStatus: false });
+      setTtsSelectedChunkIndex(null);
+      panel.hidden = false;
+      panel.classList.add('is-open');
+      panel.setAttribute('aria-hidden', 'false');
+      renderCurrentTtsTimeline();
+      syncTtsTimelinePlayhead();
+      setTtsTimelineStatus('配音已重新生成，音轨已刷新');
+    }
+
+    function videoPreviewTtsVoiceFieldMarkup() {
+      const tts = state.localTts || {};
+      const currentVoice = String(tts.voice || '冰糖');
+      const options = Array.isArray(tts.voiceOptions) ? tts.voiceOptions : [];
+      if (!options.length) {
+        return `<input type="text" class="video-preview-tts-voice-input" data-video-preview-tts-voice-input value="${escapeHtml(currentVoice)}" placeholder="输入音色名称" />`;
+      }
+      const optionsMarkup = options.map((item) => {
+        const value = String(item?.value || '');
+        const label = String(item?.label || value);
+        const selected = value === currentVoice;
+        return `<button type="button" class="video-preview-tts-voice-option" data-video-preview-tts-voice-option="${escapeHtml(value)}" role="option" aria-selected="${selected ? 'true' : 'false'}">${escapeHtml(label)}</button>`;
+      }).join('');
+      const selectedOption = options.find((item) => String(item?.value || '') === currentVoice);
+      const selectedLabel = String(selectedOption?.label || currentVoice);
+      return `
+        <div class="video-preview-tts-voice-picker" data-video-preview-tts-voice-picker>
+          <button type="button" class="video-preview-tts-voice-trigger" data-video-preview-tts-voice-toggle aria-label="选择 TTS 音色" aria-expanded="false" aria-haspopup="listbox">
+            <span>${escapeHtml(selectedLabel)}</span><span class="video-preview-tts-voice-caret" aria-hidden="true">${videoPreviewIconSvg('chevron')}</span>
+          </button>
+          <div class="video-preview-tts-voice-options" data-video-preview-tts-voice-options role="listbox" hidden>${optionsMarkup}</div>
+        </div>
+      `;
+    }
+
+    function videoPreviewTtsVoiceSettingsMarkup() {
+      const notice = String(state.videoPreviewModal?.ttsVoiceSettingsNotice || '与设置中的 TTS 音色实时同步').trim();
+      const tone = state.videoPreviewModal?.ttsVoiceSettingsTone || '';
+      return `
+        <div class="video-preview-tts-header">
+          <div class="video-preview-tts-heading"><strong>音色设置</strong><span class="video-preview-tts-status${tone ? ` is-${tone}` : ''}" data-video-preview-tts-voice-status>${escapeHtml(notice)}</span></div>
+          <button type="button" class="video-preview-button" data-close-video-preview-tts-voice>关闭</button>
+        </div>
+        <div class="video-preview-tts-voice-field">${videoPreviewTtsVoiceFieldMarkup()}</div>
+      `;
+    }
+
+    function syncVideoPreviewTtsVoiceSettingsFromState() {
+      const popover = els.videoPreviewBody?.querySelector('[data-video-preview-tts-voice-settings]');
+      if (!popover) return;
+      popover.innerHTML = videoPreviewTtsVoiceSettingsMarkup();
+    }
+
+    function closeVideoPreviewTtsVoiceSettings(button = null) {
+      const popover = els.videoPreviewBody?.querySelector('[data-video-preview-tts-voice-settings]');
+      popover?.classList.remove('is-open');
+      button?.setAttribute('aria-expanded', 'false');
+    }
+
+    function applyVideoPreviewTtsVoiceSelection(popover, option) {
+      if (!popover || !option) return;
+      popover.querySelectorAll('[data-video-preview-tts-voice-option]').forEach((item) => {
+        item.setAttribute('aria-selected', item === option ? 'true' : 'false');
+      });
+      const label = option.textContent?.trim() || '';
+      const triggerLabel = popover.querySelector('[data-video-preview-tts-voice-toggle] > span:first-child');
+      if (triggerLabel) triggerLabel.textContent = label;
+    }
+
+    async function saveVideoPreviewTtsVoice(value) {
+      const voice = String(value || '').trim();
+      if (!voice) return;
+      const previousTts = state.localTts;
+      state.localTts = { ...(state.localTts || {}), voice };
+      if (state.videoPreviewModal) {
+        state.videoPreviewModal.ttsVoiceSettingsNotice = '正在保存音色';
+        state.videoPreviewModal.ttsVoiceSettingsTone = 'working';
+      }
+      const saved = await saveLocalTtsSettings({ voice });
+      if (!saved) state.localTts = previousTts;
+      if (state.videoPreviewModal) {
+        state.videoPreviewModal.ttsVoiceSettingsNotice = saved
+          ? `已同步音色：${String(saved.voiceLabel || saved.voice || voice)}`
+          : '音色保存失败';
+        state.videoPreviewModal.ttsVoiceSettingsTone = saved ? 'success' : 'error';
+      }
+      syncVideoPreviewTtsVoiceSettingsFromState();
+    }
+
+    async function toggleVideoPreviewTtsVoiceSettings(button) {
+      const existing = els.videoPreviewBody?.querySelector('[data-video-preview-tts-voice-settings]');
+      if (existing?.classList.contains('is-open')) {
+        closeVideoPreviewTtsVoiceSettings(button);
+        return;
+      }
+      els.videoPreviewBody?.querySelector('[data-video-preview-tts-editor]')?.classList.remove('is-open');
+      let popover = existing;
+      if (!popover && els.videoPreviewBody) {
+        popover = document.createElement('div');
+        popover.className = 'video-preview-tts-popover video-preview-tts-voice-popover';
+        popover.dataset.videoPreviewTtsVoiceSettings = 'true';
+        popover.addEventListener('click', (event) => {
+          if (event.target.closest('[data-close-video-preview-tts-voice]')) {
+            closeVideoPreviewTtsVoiceSettings(button);
+            return;
+          }
+          const toggle = event.target.closest('[data-video-preview-tts-voice-toggle]');
+          if (toggle) {
+            const options = popover.querySelector('[data-video-preview-tts-voice-options]');
+            const expanded = toggle.getAttribute('aria-expanded') === 'true';
+            toggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+            if (options) options.hidden = expanded;
+            return;
+          }
+          const option = event.target.closest('[data-video-preview-tts-voice-option]');
+          if (option) {
+            applyVideoPreviewTtsVoiceSelection(popover, option);
+            void saveVideoPreviewTtsVoice(option.dataset.videoPreviewTtsVoiceOption || '');
+          }
+        });
+        popover.addEventListener('change', (event) => {
+          const input = event.target.closest('[data-video-preview-tts-voice-input]');
+          if (input) void saveVideoPreviewTtsVoice(input.value);
+        });
+        els.videoPreviewBody.appendChild(popover);
+      }
+      if (!popover) return;
+      if (state.videoPreviewModal) {
+        state.videoPreviewModal.ttsVoiceSettingsNotice = '正在读取当前音色';
+        state.videoPreviewModal.ttsVoiceSettingsTone = 'working';
+      }
+      popover.classList.add('is-open');
+      button?.setAttribute('aria-expanded', 'true');
+      syncVideoPreviewTtsVoiceSettingsFromState();
+      try {
+        const res = await fetch('/api/local-tts');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.ok === false) throw buildRequestError(data);
+        state.localTts = data;
+        if (state.videoPreviewModal) {
+          state.videoPreviewModal.ttsVoiceSettingsNotice = '与设置中的 TTS 音色实时同步';
+          state.videoPreviewModal.ttsVoiceSettingsTone = '';
+        }
+      } catch (error) {
+        if (state.videoPreviewModal) {
+          state.videoPreviewModal.ttsVoiceSettingsNotice = error?.message || '读取音色设置失败';
+          state.videoPreviewModal.ttsVoiceSettingsTone = 'error';
+        }
+      }
+      syncVideoPreviewTtsVoiceSettingsFromState();
     }
 
     async function persistOpenTtsEditorBeforeHtmlMotion(userGeneratedKey) {

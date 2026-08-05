@@ -13,6 +13,7 @@
     const NEW_SESSION_TITLE = `新的${BRAND_NAME}会话`;
     const WAITING_REPLY_TITLE = `等待${BRAND_NAME} 回复`;
     const SESSION_STORAGE_KEY = `${BRAND_SLUG}-chat-sessions`;
+    const PENDING_TASK_STORAGE_KEY = `${BRAND_SLUG}-pending-tasks`;
     const SESSION_STORAGE_MAX_CHARS = 900000;
     const SESSION_STORAGE_OMIT_KEYS = new Set([
       'imageBase64', 'audioBase64', 'videoBase64', 'base64', 'dataUrl', 'dataURL',
@@ -30,6 +31,7 @@
     const LEGACY_BRAND_SLUGS = ['AI8miniVideo', 'ai8minivideo'];
     const STORAGE_MIGRATIONS = [
       { key: SESSION_STORAGE_KEY, suffix: 'chat-sessions', aliases: ['ai8minivideo-sessions'] },
+      { key: PENDING_TASK_STORAGE_KEY, suffix: 'pending-tasks' },
       { key: SUPERVISOR_CONFIG_STORAGE_KEY, suffix: 'supervisor-config-draft' },
       { key: SUPERVISOR_ACTION_STORAGE_KEY, suffix: 'supervisor-admin-result' },
       { key: HOT_RADAR_SNAPSHOT_STORAGE_KEY, suffix: 'hot-radar-snapshot' },

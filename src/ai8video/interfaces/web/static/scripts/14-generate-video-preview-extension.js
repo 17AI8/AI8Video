@@ -314,6 +314,7 @@
       const cover = options?.cover || '';
       const userGeneratedKey = String(options?.userGeneratedKey || deriveUserGeneratedKeyFromMediaUrl(src)).trim();
       const artifactKind = String(options?.artifactKind || 'editable').trim();
+      const isBurnedResult = artifactKind === 'burned' || userGeneratedKey.startsWith('burned/video/');
       const userGeneratedPreviewKey = String(options?.userGeneratedPreviewKey || deriveLocalPreviewKey(userGeneratedKey)).trim();
       const userGeneratedCoverKey = String(options?.userGeneratedCoverKey || deriveLocalCoverKey(userGeneratedKey)).trim();
       const playlist = Array.isArray(options?.playlist) && options.playlist.length
@@ -323,6 +324,11 @@
       const hasPlaylistNav = playlist.length > 1;
       els.videoPreviewTitle.textContent = title;
       els.videoPreviewSub.textContent = hasPlaylistNav ? `当前页面播放 · ${playlistIndex + 1}/${playlist.length}` : '当前页面播放';
+      if (isBurnedResult) {
+        els.videoPreviewSub.textContent = '烧录结果 · 只读播放'
+          + (hasPlaylistNav ? ' · ' + (playlistIndex + 1) + '/' + playlist.length : '');
+      }
+      els.videoPreviewOpenBurnedFolderButton.hidden = !isBurnedResult;
       setVideoPreviewHeaderStatus('');
       els.videoPreviewBody.innerHTML = `
         <button type="button" class="video-preview-nav-button prev" data-video-preview-action="previous" ${hasPlaylistNav ? '' : 'disabled'}>上一个</button>
@@ -338,10 +344,13 @@
         </div>
         <button type="button" class="video-preview-nav-button next" data-video-preview-action="next" ${hasPlaylistNav ? '' : 'disabled'}>下一个</button>
         <div class="video-preview-controls">
-          ${videoPreviewEditingControlsMarkup(userGeneratedKey)}
+          ${isBurnedResult ? videoPreviewBurnedResultControlsMarkup(userGeneratedKey) : videoPreviewEditingControlsMarkup(userGeneratedKey)}
         </div>
       `;
       const video = els.videoPreviewBody.querySelector('video');
+      if (isBurnedResult) {
+        els.videoPreviewBody.querySelector('.video-preview-extend-actions')?.remove();
+      }
       const previousButton = els.videoPreviewBody.querySelector('[data-video-preview-action="previous"]');
       const nextButton = els.videoPreviewBody.querySelector('[data-video-preview-action="next"]');
       const deleteButton = els.videoPreviewBody.querySelector('[data-video-preview-action="delete-video"]');
@@ -375,6 +384,10 @@
       });
       regenerateTtsButton?.addEventListener('click', () => {
         regenerateTtsFromVideoPreview(userGeneratedKey, regenerateTtsButton);
+      });
+      const editTtsVoiceButton = els.videoPreviewBody.querySelector('[data-video-preview-action="edit-tts-voice"]');
+      editTtsVoiceButton?.addEventListener('click', () => {
+        void toggleVideoPreviewTtsVoiceSettings(editTtsVoiceButton);
       });
       const ttsScissorsButton = els.videoPreviewBody.querySelector('[data-video-preview-action="toggle-tts-scissors"]');
       ttsScissorsButton?.addEventListener('click', () => {
@@ -462,14 +475,17 @@
           video.style.setProperty('--preview-video-aspect', ratioValue);
         }
       }, { once: true });
-      bindSmoothTimelinePlayheadSync(video);
-      bindVideoPreviewBackgroundMusic(video);
+      if (!isBurnedResult) {
+        bindSmoothTimelinePlayheadSync(video);
+        bindVideoPreviewBackgroundMusic(video);
+      }
       if (video) video.dataset.officialSrc = src;
       state.videoPreviewModal = {
         ...(state.videoPreviewModal || {}),
         visible: true,
         playlist,
         index: playlistIndex,
+        artifactKind: isBurnedResult ? 'burned' : artifactKind,
         htmlMotionTaskId: '',
         htmlMotionPollTimer: null,
         htmlMotionTaskSnapshot: null,
@@ -504,8 +520,9 @@
         backgroundMusicDrawerOpen: false,
         burnReview: null,
       };
-      initializeTimelineHistory(userGeneratedKey);
       els.videoPreviewModal.classList.remove('hidden');
+      if (isBurnedResult) return;
+      initializeTimelineHistory(userGeneratedKey);
       renderHtmlMotionPreviewDrawer();
       requestAnimationFrame(() => syncHtmlMotionDrawerWidth());
       restoreVideoPreviewExtensionState(video, userGeneratedKey, extendVideoButton, regenerateVideoButton);

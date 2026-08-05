@@ -107,7 +107,83 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             self.assertFalse(source.exists())
             self.assertFalse(burned.exists())
 
-    def test_result_wall_batch_merge_maps_burned_keys_to_source_edit_state(self) -> None:
+    def test_result_listing_does_not_restore_a_manually_deleted_source_from_legacy_files(self) -> None:
+        generated_root = self.root / "用户生成结果"
+        source = generated_root / "source" / "video" / "manual-delete.mp4"
+        legacy = generated_root / "video" / "manual-delete.mp4"
+        source.parent.mkdir(parents=True)
+        legacy.parent.mkdir(parents=True)
+        source.write_bytes(b"source")
+        legacy.write_bytes(b"legacy")
+        source.unlink()
+        asset_store_path = self.root / "assets.jsonl"
+        asset_store_path.write_text("", encoding="utf-8")
+
+        with patch.object(
+            ai8video_web,
+            "ensure_user_generated_result_dir",
+            return_value=generated_root.resolve(),
+        ), patch.object(
+            ai8video_web.AI8VideoConfig,
+            "from_env",
+            return_value=SimpleNamespace(asset_store_path=asset_store_path),
+        ):
+            items = ai8video_web._user_generated_result_items(limit=10)
+
+        self.assertEqual(items, [])
+        self.assertFalse(source.exists())
+        self.assertTrue(legacy.is_file())
+
+    def test_result_listing_shows_logical_merge_and_keeps_member_files_hidden(self) -> None:
+        result_root = self.root / "用户生成结果"
+        source_keys = ["source/video/first.mp4", "source/video/second.mp4"]
+        for name in ("first", "second"):
+            source = result_root / "source" / "video" / f"{name}.mp4"
+            burned = result_root / "burned" / "video" / f"{name}.mp4"
+            source.parent.mkdir(parents=True, exist_ok=True)
+            burned.parent.mkdir(parents=True, exist_ok=True)
+            source.write_bytes(f"source-{name}".encode())
+            burned.write_bytes(f"burned-{name}".encode())
+        preview = result_root / "source" / "preview" / "first.jpg"
+        preview.parent.mkdir(parents=True)
+        preview.write_bytes(b"preview")
+        state = ai8video_web.create_batch_merge_edit_state(
+            result_root,
+            source_keys=source_keys,
+            source_video_chunks=[
+                {"sourceStartSeconds": 0.0, "sourceEndSeconds": 1.0},
+                {"sourceStartSeconds": 1.0, "sourceEndSeconds": 2.0},
+            ],
+            video_chunks=[{"sourceStartSeconds": 0.0, "sourceEndSeconds": 2.0}],
+            source_durations=[1.0, 1.0],
+            edited_durations=[1.0, 1.0],
+            first_preview_key="source/preview/first.jpg",
+        )
+        asset_store_path = self.root / "assets.jsonl"
+        asset_store_path.write_text("", encoding="utf-8")
+
+        with patch.object(
+            ai8video_web,
+            "ensure_user_generated_result_dir",
+            return_value=result_root.resolve(),
+        ), patch.object(
+            ai8video_web.AI8VideoConfig,
+            "from_env",
+            return_value=SimpleNamespace(asset_store_path=asset_store_path),
+        ):
+            items = ai8video_web._user_generated_result_items(limit=10)
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["artifactKind"], "merged-editable")
+        self.assertEqual(items[0]["userGeneratedKey"], state["userGeneratedKey"])
+        self.assertEqual(items[0]["generationMeta"]["batchMergedSourceKeys"], source_keys)
+        self.assertEqual(items[0]["userGeneratedPreviewKey"], "source/preview/first.jpg")
+        self.assertTrue((result_root / source_keys[0]).is_file())
+        self.assertTrue((result_root / source_keys[1]).is_file())
+        self.assertTrue((result_root / "burned" / "video" / "first.mp4").is_file())
+        self.assertTrue((result_root / "burned" / "video" / "second.mp4").is_file())
+
+    def test_batch_merge_context_maps_burned_keys_to_source_edit_state(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             first_source = root / "source" / "video" / "first.mp4"
@@ -131,14 +207,6 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 return_value={},
             ), patch.object(
                 ai8video_web,
-                "track_source",
-                side_effect=lambda _track, path: path,
-            ), patch.object(
-                ai8video_web,
-                "_batch_merge_visual_source",
-                side_effect=lambda _path, _key, fallback: fallback,
-            ), patch.object(
-                ai8video_web,
                 "track_duration",
                 return_value=1.0,
             ), patch.object(
@@ -160,7 +228,209 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 ["source/video/first.mp4", "source/video/second.mp4"],
             )
             self.assertEqual(edited_statuses, context["sourceKeys"])
-            self.assertEqual(context["target"].parent, (root / "source" / "video").resolve())
+            self.assertNotIn("target", context)
+            self.assertEqual(context["editedDurations"], [1.0, 1.0])
+            self.assertEqual(context["sourceVideoChunks"], [
+                {"sourceStartSeconds": 0.0, "sourceEndSeconds": 1.0},
+                {"sourceStartSeconds": 1.0, "sourceEndSeconds": 2.0},
+            ])
+            self.assertEqual(context["videoChunks"], context["sourceVideoChunks"])
+
+    def test_batch_merge_creates_logical_edit_state_and_uses_edited_cache_timebase(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            first = root / "source" / "video" / "first.mp4"
+            second = root / "source" / "video" / "second.mp4"
+            music = root / "theme.mp3"
+            first.parent.mkdir(parents=True)
+            first.write_bytes(b"first")
+            second.write_bytes(b"second")
+            music.write_bytes(b"music")
+            first_tts = root / "first.m4a"
+            second_tts = root / "second.m4a"
+            first_tts.write_bytes(b"first-tts")
+            second_tts.write_bytes(b"second-tts")
+            captured: dict[str, object] = {}
+
+            def concat(paths: list[Path], target: Path) -> dict:
+                captured["sources"] = list(paths)
+                target.write_bytes(b"raw-concatenation")
+                return {"status": "merged"}
+
+            def render_cache(
+                raw: Path,
+                candidate: Path,
+                chunks: list[dict],
+                *,
+                source_duration_seconds: float,
+            ) -> None:
+                captured["rawCache"] = raw
+                captured["sourceVideoChunks"] = chunks
+                captured["sourceDurationSeconds"] = source_duration_seconds
+                self.assertEqual(raw.read_bytes(), b"raw-concatenation")
+                candidate.write_bytes(b"edited-cache")
+
+            def merge_tts(_statuses: list[dict], target: Path) -> bool:
+                target.write_bytes(b"merged-tts")
+                return True
+
+            def save_metadata(
+                _relative_key: str,
+                _source_key: str,
+                _text: str,
+                _source_keys: list[str],
+                background_music_track: dict,
+                _local_tts: dict | None,
+            ) -> None:
+                captured["backgroundMusicTrack"] = background_music_track
+
+            with patch.object(
+                ai8video_web,
+                "ensure_user_generated_result_dir",
+                return_value=root,
+            ), patch.object(
+                ai8video_web,
+                "_tts_narration_text_for_user_generated_video",
+                return_value=("", {}),
+            ), patch.object(
+                ai8video_web,
+                "_background_music_track_for_user_generated_video",
+                return_value={
+                    "musicPath": str(music),
+                    "musicName": "theme.mp3",
+                    "volume": 0.2,
+                },
+            ), patch.object(
+                ai8video_web,
+                "track_duration",
+                return_value=5.0,
+            ), patch.object(
+                ai8video_web,
+                "_current_video_timeline_status",
+                side_effect=[
+                    {
+                        "timelineChunks": [
+                            {"sourceStartSeconds": 1.0, "sourceEndSeconds": 4.0},
+                        ],
+                        "pending": True,
+                    },
+                    {
+                        "timelineChunks": [
+                            {"sourceStartSeconds": 0.0, "sourceEndSeconds": 2.0},
+                        ],
+                        "pending": True,
+                    },
+                ],
+            ), patch.object(
+                ai8video_web,
+                "_current_tts_timeline_status",
+                side_effect=[
+                    {
+                        "available": True,
+                        "audioPath": str(first_tts),
+                        "audioDurationSeconds": 3.0,
+                        "timelineChunks": [
+                            {"sourceStartSeconds": 0.0, "sourceEndSeconds": 3.0, "startSeconds": 0.0},
+                        ],
+                    },
+                    {
+                        "available": True,
+                        "audioPath": str(second_tts),
+                        "audioDurationSeconds": 2.0,
+                        "timelineChunks": [
+                            {"sourceStartSeconds": 0.0, "sourceEndSeconds": 2.0, "startSeconds": 0.0},
+                        ],
+                    },
+                ],
+            ), patch.object(
+                ai8video_web,
+                "concat_videos",
+                side_effect=concat,
+            ), patch.object(
+                ai8video_web,
+                "render_video_timeline_video",
+                side_effect=render_cache,
+            ), patch.object(
+                ai8video_web,
+                "merge_tts_audio",
+                side_effect=merge_tts,
+            ), patch.object(
+                ai8video_web,
+                "save_video_timeline_review",
+            ) as save_video_review, patch.object(
+                ai8video_web,
+                "save_tts_timeline_review",
+            ) as save_tts_review, patch.object(
+                ai8video_web,
+                "merge_html_motion_reviews",
+                return_value={"reviewReady": False},
+            ), patch.object(
+                ai8video_web,
+                "_save_merged_narration_metadata",
+                side_effect=save_metadata,
+            ), patch.object(
+                ai8video_web,
+                "MERGE_TEMP_MEDIA_DIR",
+                root / "cache",
+            ), patch.object(
+                ai8video_web,
+                "local_tts_output_dir",
+                return_value=root / "merged-tts",
+            ):
+                result = ai8video_web._batch_merge_user_generated_videos([
+                    "source/video/first.mp4",
+                    "source/video/second.mp4",
+                ])
+
+            state = ai8video_web._batch_merge_edit_state_for_key(root, result["userGeneratedKey"])
+            self.assertEqual(captured["sources"], [first.resolve(), second.resolve()])
+            self.assertEqual(result["artifactKind"], "merged-editable")
+            self.assertTrue(result["userGeneratedKey"].startswith("source/video/.merged/"))
+            self.assertFalse((root / result["userGeneratedKey"]).exists())
+            self.assertEqual(first.read_bytes(), b"first")
+            self.assertEqual(second.read_bytes(), b"second")
+            self.assertEqual(state["sourceKeys"], ["source/video/first.mp4", "source/video/second.mp4"])
+            self.assertEqual(
+                captured["sourceVideoChunks"],
+                [
+                    {"sourceStartSeconds": 1.0, "sourceEndSeconds": 4.0},
+                    {"sourceStartSeconds": 5.0, "sourceEndSeconds": 7.0},
+                ],
+            )
+            self.assertEqual(captured["sourceDurationSeconds"], 10.0)
+            self.assertEqual(state["sourceVideoChunks"], captured["sourceVideoChunks"])
+            self.assertEqual(
+                state["videoChunks"],
+                [
+                    {"sourceStartSeconds": 0.0, "sourceEndSeconds": 3.0},
+                    {"sourceStartSeconds": 3.0, "sourceEndSeconds": 5.0},
+                ],
+            )
+            self.assertEqual(
+                save_video_review.call_args.args[2],
+                [
+                    {"sourceStartSeconds": 0.0, "sourceEndSeconds": 3.0},
+                    {"sourceStartSeconds": 3.0, "sourceEndSeconds": 5.0},
+                ],
+            )
+            cache = save_video_review.call_args.args[0]
+            self.assertEqual(cache.read_bytes(), b"edited-cache")
+            self.assertEqual(save_tts_review.call_args.args[0], cache)
+            self.assertEqual(
+                save_tts_review.call_args.args[3],
+                [
+                    {"sourceStartSeconds": 0.0, "sourceEndSeconds": 3.0, "startSeconds": 0.0},
+                    {"sourceStartSeconds": 3.0, "sourceEndSeconds": 5.0, "startSeconds": 3.0},
+                ],
+            )
+            background_track = captured["backgroundMusicTrack"]
+            self.assertEqual(background_track["segments"][0]["durationSeconds"], 3.0)
+            self.assertEqual(background_track["segments"][1]["startSeconds"], 3.0)
+            self.assertEqual(background_track["segments"][1]["durationSeconds"], 2.0)
+            self.assertEqual(
+                Path(background_track["baseVideoPath"]).read_bytes(),
+                b"edited-cache",
+            )
 
     def test_tts_candidates_prioritize_structured_narration_over_source_summary(self) -> None:
         record = {
@@ -214,6 +484,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             return_value={"deleted": ["video/third.mp4"]},
         ), patch.object(JsonlAssetStore, "read_all", return_value=[]), patch.object(
             ai8video_web, "prepare_rollback_tail_frame_resume", return_value=checkpoint,
+        ), patch.object(ai8video_web, "create_generation_batch_id", return_value="rollback-3"), patch.object(
+            ai8video_web, "_with_generation_batch_action_authority", side_effect=lambda result: result,
         ), patch.object(ai8video_web, "TaskLedger", return_value=ledger_writer):
             result = ai8video_web._rollback_latest_tail_frame_result({
                 "sessionId": "session-1",
@@ -228,6 +500,9 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertEqual(items[3]["status"], "pending_submission")
         self.assertNotIn("tailFramePreviewUrl", items[3])
         self.assertEqual(items[4]["status"], "pending_submission")
+        self.assertEqual(items[2]["generationBatchId"], "rollback-3")
+        self.assertEqual(result["childGenerationBatchId"], "rollback-3")
+        ledger_writer.register_child_generation_batch.assert_called_once()
         ledger_writer.upsert_generation_batch.assert_called_once()
 
     def test_rollback_accepts_latest_result_from_child_batch(self) -> None:
@@ -237,27 +512,22 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 {
                     "videoIndex": 2,
                     "status": "succeeded",
-                    "childGenerationBatchId": "child-2",
+                    "generationBatchId": "child-2",
                     "assetRecord": {"archiveKey": "video/second.mp4"},
                 },
                 {"videoIndex": 3, "status": "pending_submission"},
             ]
-        }
-        child_ledger = {
-            "status": "completed",
-            "phase": "completed",
-            "progress": {"items": [{"videoIndex": 2, "status": "succeeded"}]},
         }
         checkpoint = SimpleNamespace(next_video_index=2, preview_url=lambda: "/video-2-reference.png")
         ledger_writer = Mock()
         with patch.object(
             ai8video_web, "get_generation_batch_family_snapshot", return_value={"progress": progress},
         ), patch.object(
-            ai8video_web, "get_generation_ledger_snapshot", return_value=child_ledger,
-        ), patch.object(
             ai8video_web, "_delete_user_generated_video", return_value={"deleted": ["video/second.mp4"]},
         ), patch.object(JsonlAssetStore, "read_all", return_value=[]), patch.object(
             ai8video_web, "prepare_rollback_tail_frame_resume", return_value=checkpoint,
+        ), patch.object(ai8video_web, "create_generation_batch_id", return_value="rollback-2"), patch.object(
+            ai8video_web, "_with_generation_batch_action_authority", side_effect=lambda result: result,
         ), patch.object(ai8video_web, "TaskLedger", return_value=ledger_writer):
             result = ai8video_web._rollback_latest_tail_frame_result({
                 "sessionId": "session-1",
@@ -267,9 +537,12 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             })
 
         self.assertEqual(result["generationProgress"]["items"][1]["status"], "awaiting_tail_frame_continue")
-        child_write = ledger_writer.upsert_generation_batch.call_args_list[1].kwargs
-        self.assertEqual(child_write["generation_batch_id"], "child-2")
-        self.assertEqual(child_write["progress"]["items"][0]["status"], "awaiting_tail_frame_continue")
+        child_registration = ledger_writer.register_child_generation_batch.call_args.kwargs
+        self.assertEqual(child_registration["parent_generation_batch_id"], "child-2")
+        self.assertEqual(child_registration["generation_batch_id"], "rollback-2")
+        child_write = ledger_writer.upsert_generation_batch.call_args.kwargs
+        self.assertEqual(child_write["generation_batch_id"], "rollback-2")
+        self.assertEqual(child_write["progress"]["items"][1]["status"], "awaiting_tail_frame_continue")
 
     def setUp(self) -> None:
         self.tempdir = tempfile.TemporaryDirectory()
@@ -1028,8 +1301,11 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertNotIn("查看所有结果", progress_source)
         self.assertIn("function getResultFolderCompletedCount(gallery)", progress_source)
         self.assertIn("return getPlayableResultItems(gallery).length", progress_source)
+        self.assertIn("function getResultFolderTotalCount(session)", progress_source)
+        self.assertIn("buildResultFolderGalleryModel(session, 'source')", progress_source)
+        self.assertIn("buildResultFolderGalleryModel(session, 'burned')", progress_source)
         self.assertIn(
-            "const resultCount = getResultFolderCompletedCount(buildResultFolderGalleryModel(session))",
+            "const resultCount = getResultFolderTotalCount(session);",
             progress_source,
         )
         self.assertIn("const completedCount = getResultFolderCompletedCount(gallery)", progress_source)
@@ -2817,10 +3093,6 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 return_value=generated_root.resolve(),
             ), patch.object(
                 ai8video_web,
-                "schedule_missing_burned_result_copies",
-                return_value=[],
-            ), patch.object(
-                ai8video_web,
                 "_open_in_file_manager",
             ) as open_dir:
                 body = ai8video_web.api_open_user_generated_results_folder()
@@ -2862,9 +3134,9 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertEqual(body["userGeneratedKey"], "burned/video/demo.mp4")
         self.assertEqual(Path(body["path"]).resolve(), burned_video.resolve())
 
-    def test_api_open_user_generated_burned_video_repairs_missing_initial_copy(self) -> None:
+    def test_api_open_user_generated_burned_video_does_not_create_missing_output(self) -> None:
         generated_root = self.root / "用户生成结果"
-        source_video = generated_root / "video" / "demo.mp4"
+        source_video = generated_root / "source" / "video" / "demo.mp4"
         burned_video = generated_root / "burned" / "video" / "demo.mp4"
         source_video.parent.mkdir(parents=True, exist_ok=True)
         source_video.write_bytes(b"source")
@@ -2873,7 +3145,7 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         fake_response = SimpleNamespace(status=200)
         ai8video_web.request = SimpleNamespace(
             method="POST",
-            json={"userGeneratedKey": "video/demo.mp4"},
+            json={"userGeneratedKey": "source/video/demo.mp4"},
         )
         ai8video_web.response = fake_response
         try:
@@ -2887,10 +3159,46 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             ai8video_web.request = request_backup
             ai8video_web.response = response_backup
 
-        reveal_file.assert_called_once_with(burned_video.resolve())
-        self.assertTrue(body["ok"])
-        self.assertEqual(body["userGeneratedKey"], "burned/video/demo.mp4")
-        self.assertEqual(burned_video.read_bytes(), b"source")
+        reveal_file.assert_not_called()
+        self.assertFalse(body["ok"])
+        self.assertEqual(fake_response.status, 404)
+        self.assertEqual(body["error"], "当前视频还没有烧录结果")
+        self.assertEqual(source_video.read_bytes(), b"source")
+        self.assertFalse(burned_video.exists())
+
+    def test_confirm_burn_for_canonical_source_writes_to_burned_video(self) -> None:
+        generated_root = self.root / "用户生成结果"
+        source_video = generated_root / "source" / "video" / "demo.mp4"
+        burned_video = generated_root / "burned" / "video" / "demo.mp4"
+        source_video.parent.mkdir(parents=True, exist_ok=True)
+        source_video.write_bytes(b"source")
+        rendered: list[tuple[Path, Path]] = []
+
+        def render(source: Path, destination: Path, *_args: object) -> dict:
+            rendered.append((source, destination))
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(b"burned")
+            return {"status": "skipped"}
+
+        with patch.object(
+            ai8video_web,
+            "ensure_user_generated_result_dir",
+            return_value=generated_root.resolve(),
+        ), patch.object(
+            ai8video_web,
+            "_pending_burn_context",
+            return_value=({}, {}, False, False),
+        ), patch.object(
+            ai8video_web,
+            "_render_confirmed_burn",
+            side_effect=render,
+        ):
+            body = ai8video_web._confirm_user_generated_burn("source/video/demo.mp4")
+
+        self.assertEqual(rendered, [(source_video.resolve(), burned_video.resolve())])
+        self.assertEqual(body["burnedUserGeneratedKey"], "burned/video/demo.mp4")
+        self.assertEqual(source_video.read_bytes(), b"source")
+        self.assertEqual(burned_video.read_bytes(), b"burned")
 
     def test_reveal_in_file_manager_selects_file_in_macos_finder(self) -> None:
         video = self.root / "burned.mp4"
@@ -2930,10 +3238,6 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
                 ai8video_web,
                 "_archive_roots",
                 return_value=[archive_root.resolve()],
-            ), patch.object(
-                ai8video_web,
-                "schedule_missing_burned_result_copies",
-                return_value=[],
             ), patch.object(ai8video_web, "_open_in_file_manager") as open_dir:
                 body = ai8video_web.api_open_user_generated_results_folder()
         finally:
@@ -4349,6 +4653,55 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertEqual(fake_response.status, 404)
         self.assertEqual(body["status"], "not_found")
         self.assertEqual(body["generationBatchId"], "gb-missing-batch")
+
+    def test_api_chat_status_explicit_batch_does_not_use_session_fallback(self) -> None:
+        request_backup = ai8video_web.request
+        response_backup = ai8video_web.response
+        fake_response = SimpleNamespace(status=200)
+        query_values = {
+            "sessionId": "session-a",
+            "generationBatchId": "gb-root",
+        }
+        ai8video_web.request = SimpleNamespace(
+            method="GET",
+            query=SimpleNamespace(get=lambda key, default="": query_values.get(key, default)),
+        )
+        ai8video_web.response = fake_response
+        canonical = {
+            "status": "pending",
+            "sessionId": "session-a",
+            "generationBatchId": "gb-root",
+            "generationBatchAuthority": {
+                "rootGenerationBatchId": "gb-root",
+                "latestChildGenerationBatchId": "gb-child",
+                "familyRevision": "2026-08-05T00:00:00.000000Z",
+            },
+            "generationProgress": {"items": []},
+        }
+        try:
+            with patch.object(
+                ai8video_web,
+                "get_chat_status_via_ai8video",
+                return_value=canonical,
+            ) as chat_status, patch.object(
+                ai8video_web,
+                "settle_stale_first_frame_progress",
+            ) as stale_first_frame, patch.object(
+                ai8video_web,
+                "_query_local_terminal_generation_progress",
+            ) as local_terminal:
+                body = ai8video_web.api_chat_status()
+        finally:
+            ai8video_web.request = request_backup
+            ai8video_web.response = response_backup
+
+        chat_status.assert_called_once_with(
+            session_id="session-a",
+            generation_batch_id="gb-root",
+        )
+        stale_first_frame.assert_not_called()
+        local_terminal.assert_not_called()
+        self.assertIs(body, canonical)
 
     def test_api_chat_status_settles_stale_unsubmitted_planning_progress(self) -> None:
         request_backup = ai8video_web.request
@@ -6095,22 +6448,52 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("preview.title = '正在重新生成';", html)
         self.assertIn("const restoreFailedCard = showGenerationRetryPendingCard(button);", html)
         self.assertIn("restoreFailedCard();", html)
-        self.assertIn("function persistGenerationRetryPendingState(sessionId, videoIndex, generationBatchId, displayProgress = null)", html)
+        self.assertIn("function generationBatchAuthorityForAction(data = {}, fallbackRootBatchId = '')", html)
+        self.assertIn("function persistGenerationRetryPendingState(sessionId, videoIndex, generationBatchAuthority, displayProgress = null)", html)
         self.assertIn("operation: 'pending', continuationClosed: false", html)
-        self.assertIn("last.payload.generationBatchId = generationBatchId;", html)
+        self.assertIn("last.payload.generationBatchAuthority = authority;", html)
+        self.assertIn("invalidatePendingPollResponses(sessionId);", html)
         self.assertIn("schedulePendingPoll(sessionId, 200);", html)
         self.assertIn("async function reconcilePendingSessionAfterReload(session, targetMessage = null, statusMessage = null)", html)
-        self.assertIn("&& !isConversationContinuationClosed(message.payload)", html)
-        self.assertIn("function mergeGenerationProgressSnapshot(previousProgress = {}, nextProgress = {})", html)
-        self.assertIn("function mergeGenerationStatusPayload(payload = {}, data = {}, sessionId = '')", html)
+        self.assertIn("if (isConversationContinuationClosed(last.payload)) return false;", html)
+        self.assertIn("function normalizeGenerationBatchAuthority(value, fallbackRootBatchId = '')", html)
+        self.assertIn("function isIncomingGenerationAuthorityAccepted(previousPayload, incomingPayload)", html)
+        self.assertIn("function mergeGenerationProgressSnapshot(previousProgress = {}, nextProgress = {}, options = {})", html)
+        self.assertIn("function mergeGenerationStatusPayload(payload = {}, data = {}, sessionId = '', options = {})", html)
         self.assertIn("continuationClosed: true", html)
-        self.assertIn("messageToUpdate.payload = mergeGenerationStatusPayload(messageToUpdate.payload, data, sessionId);", html)
-        self.assertIn("pendingStatus.generationBatchId = String(data.generationBatchId).trim();", html)
+        self.assertIn("messageToUpdate.payload = mergeGenerationStatusPayload(", html)
+        self.assertIn("pendingStatus.generationBatchAuthority = generationBatchAuthority;", html)
         self.assertIn("tailFrameChaining: !!state.generationMode?.tailFrameChaining", html)
         self.assertLess(
             status_source.index("payload?.pendingStatus?.generationBatchId"),
             status_source.index("payload?.generationBatchId"),
         )
+
+    def test_pending_task_snapshot_survives_large_session_cache_eviction(self) -> None:
+        html = read_static_source()
+
+        self.assertIn("const PENDING_TASK_STORAGE_KEY = `${BRAND_SLUG}-pending-tasks`;", html)
+        self.assertIn("function pendingTaskSnapshotFromSession(session)", html)
+        self.assertIn("function persistPendingTaskSnapshots()", html)
+        self.assertIn("function restorePendingSessionsAfterReload()", html)
+        self.assertIn("async function recoverPendingTaskWithoutLocalMessage(session)", html)
+        self.assertIn("restorePendingSessionsAfterReload();", html)
+        self.assertIn("persistPendingTaskSnapshots();", html)
+
+    def test_pending_status_uses_root_child_authority_to_reject_stale_polling(self) -> None:
+        html = read_static_source()
+
+        self.assertIn("rootGenerationBatchId", html)
+        self.assertIn("latestChildGenerationBatchId", html)
+        self.assertIn("familyRevision", html)
+        self.assertIn("function isIncomingGenerationAuthorityAccepted(previousPayload, incomingPayload)", html)
+        self.assertIn("if (previous.rootGenerationBatchId !== incoming.rootGenerationBatchId)", html)
+        self.assertIn("if (previousChild && !incomingChild) return false;", html)
+        self.assertIn("return compareGenerationFamilyRevision(incoming, previous) > 0;", html)
+        self.assertIn("const requestAuthorityKey = generationBatchAuthorityKey(", html)
+        self.assertIn("last !== requestMessage", html)
+        self.assertIn("!isIncomingGenerationAuthorityAccepted(last.payload, data)", html)
+        self.assertIn("generationBatchAuthority: extractGenerationBatchAuthority(pendingMessage.payload)", html)
 
     def test_retry_generation_starts_background_worker_and_returns_pending_batch(self) -> None:
         request_backup = ai8video_web.request
@@ -6151,6 +6534,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertEqual(body["status"], "pending")
         self.assertEqual(body["generationBatchId"], "batch-old")
         self.assertEqual(body["childGenerationBatchId"], "batch-retry")
+        self.assertEqual(body["generationBatchAuthority"]["rootGenerationBatchId"], "batch-old")
+        self.assertEqual(body["generationBatchAuthority"]["latestChildGenerationBatchId"], "batch-retry")
 
     def test_retry_inputs_restore_tail_frame_mode(self) -> None:
         record = {
@@ -6390,6 +6775,81 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("JSON.stringify({ userGeneratedKey })", html)
         self.assertIn("已在文件夹中选中", html)
 
+    def test_static_burned_video_preview_is_read_only(self) -> None:
+        html = read_static_source()
+
+        self.assertIn("function videoPreviewBurnedResultControlsMarkup(userGeneratedKey)", html)
+        self.assertIn("const isBurnedResult = artifactKind === 'burned' || userGeneratedKey.startsWith('burned/video/');", html)
+        self.assertIn("烧录结果 · 只读播放", html)
+        self.assertIn(
+            "isBurnedResult ? videoPreviewBurnedResultControlsMarkup(userGeneratedKey) : videoPreviewEditingControlsMarkup(userGeneratedKey)",
+            html,
+        )
+        self.assertIn("els.videoPreviewOpenBurnedFolderButton.hidden = !isBurnedResult;", html)
+        self.assertIn("if (!isBurnedResult) {\n        bindSmoothTimelinePlayheadSync(video);", html)
+        self.assertIn("if (isBurnedResult) return;\n      initializeTimelineHistory(userGeneratedKey);", html)
+
+    def test_tts_smart_split_cuts_natural_phrase_pauses_without_ripple_shift(self) -> None:
+        html = read_static_source()
+
+        self.assertIn("function detectTtsPauseRanges(peaks, audioDuration)", html)
+        self.assertIn("Math.ceil(0.16 / secondsPerPeak)", html)
+        self.assertIn("function trimTtsChunkPauseGaps(chunk, pauseRanges)", html)
+        self.assertIn("if (gapStart - previousEnd < 0.16 || sourceEnd - gapEnd < 0.16) return;", html)
+        self.assertIn("originalSourceStartSeconds: start", html)
+        self.assertIn("originalSourceEndSeconds: end", html)
+        self.assertIn("后续配音保持原时间码", html)
+        self.assertIn("videoPreviewButtonInnerHtml('sparkles', '剪气口')", html)
+
+    def test_regenerated_tts_reveals_and_refreshes_audio_timeline(self) -> None:
+        html = read_static_source()
+
+        self.assertIn("applyRegeneratedBurnReview(data?.burnReview || {}, video);", html)
+        self.assertIn("revealRegeneratedTtsTimeline();", html)
+        self.assertIn("function revealRegeneratedTtsTimeline()", html)
+        self.assertIn("panel.classList.add('is-open');", html)
+        self.assertIn("renderCurrentTtsTimeline();", html)
+        self.assertIn("配音已重新生成，音轨已刷新", html)
+
+    def test_video_preview_tts_voice_settings_reuses_global_local_tts_config(self) -> None:
+        html = read_static_source()
+        css = (STATIC_ROOT / "styles" / "00a-fontawesome-icons.css").read_text(encoding="utf-8")
+        preview_css = (STATIC_ROOT / "styles" / "14-video-preview.css").read_text(encoding="utf-8")
+
+        self.assertIn("videoPreviewButtonInnerHtml('mic', '生成配音')", html)
+        self.assertIn("settings: 'gear',", html)
+        self.assertIn("'gear',", html)
+        self.assertIn('data-fa-icon="gear"', css)
+        self.assertIn('solid/gear.svg', css)
+        self.assertIn("flex: 0 0 42px;", preview_css)
+        self.assertIn("display: none;", preview_css)
+        self.assertIn("width: 18px;", preview_css)
+        self.assertIn(".video-preview-button-icon {\n      width: 18px;\n      height: 18px;", preview_css)
+        self.assertIn('aria-label="选择 TTS 音色"', html)
+        self.assertIn('data-video-preview-tts-voice-toggle', html)
+        self.assertIn('data-video-preview-tts-voice-option', html)
+        self.assertIn('saveVideoPreviewTtsVoice(option.dataset.videoPreviewTtsVoiceOption', html)
+        self.assertIn('function applyVideoPreviewTtsVoiceSelection(popover, option)', html)
+        self.assertIn('state.localTts = { ...(state.localTts || {}), voice };', html)
+        self.assertIn("videoPreviewIconSvg('chevron')", html)
+        self.assertIn("left: 84px;", preview_css)
+        self.assertIn("bottom: 50px;", preview_css)
+        self.assertIn("width: min(300px, calc(100% - 20px));", preview_css)
+        self.assertIn("background: #1b2a3d;", preview_css)
+        self.assertIn(".video-preview-tts-voice-option[aria-selected=\"true\"]", preview_css)
+        self.assertIn("background: #315b82;", preview_css)
+        self.assertIn(".video-preview-tts-voice-options[hidden]", preview_css)
+        self.assertIn("display: none;", preview_css)
+        self.assertIn('.video-preview-tts-voice-trigger[aria-expanded="true"]', preview_css)
+        self.assertIn("place-items: center;", preview_css)
+        self.assertIn("rotate(180deg)", preview_css)
+        self.assertNotIn('class="video-preview-tts-voice-label"', html)
+        self.assertIn('data-video-preview-action="edit-tts-voice"', html)
+        self.assertIn("toggleVideoPreviewTtsVoiceSettings(editTtsVoiceButton)", html)
+        self.assertIn("saveLocalTtsSettings({ voice })", html)
+        self.assertIn("syncVideoPreviewTtsVoiceSettingsFromState()", html)
+        self.assertIn("await fetch('/api/local-tts')", html)
+
     def test_agent_batch_merge_collapses_cards_and_reconciles_merged_preview(self) -> None:
         html = read_static_source()
 
@@ -6522,6 +6982,10 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("persistOpenTtsEditorBeforeHtmlMotion", html)
         self.assertIn("await persistOpenTtsEditorBeforeHtmlMotion(key)", html)
         self.assertIn("/api/user-generated-results/regenerate-tts", html)
+        self.assertIn("revealRegeneratedTtsTimeline();", html)
+        self.assertIn("function revealRegeneratedTtsTimeline()", html)
+        self.assertIn("panel.classList.add('is-open');", html)
+        self.assertIn("配音已重新生成，音轨已刷新", html)
         self.assertIn("/api/user-generated-results/tts-timeline-preview", html)
         self.assertIn("/api/user-generated-results/burn-review", html)
         self.assertIn("/api/user-generated-results/confirm-burn", html)
@@ -6560,7 +7024,8 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertNotIn('data-video-preview-action="toggle-play"', html)
         self.assertNotIn('data-video-preview-action="restart"', html)
         self.assertNotIn('data-video-preview-action="toggle-mute"', html)
-        self.assertIn("重新生成TTS配音", html)
+        self.assertIn("生成配音", html)
+        self.assertNotIn("重新生成TTS配音", html)
         self.assertNotIn("videoPreviewButtonInnerHtml('edit', '编辑TTS')", html)
         self.assertIn("video-preview-tts-waveform", html)
         self.assertIn("buildTtsWaveformPath", html)
@@ -6884,124 +7349,114 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertEqual(body["text"], "走，带你们去看面料样品，工厂到了！")
         self.assertFalse(body["manual"])
 
-    def test_batch_merge_keeps_selection_order_and_removes_selected_sources(self) -> None:
+    def test_delete_merged_edit_state_cascades_to_source_and_burned_results(self) -> None:
         result_root = self.root / "用户生成结果"
-        video_dir = result_root / "video"
-        preview_dir = result_root / "preview"
-        extension_video_dir = result_root / "extensions" / "video"
-        extension_preview_dir = result_root / "extensions" / "preview"
-        extension_cover_dir = result_root / "extensions" / "cover"
-        video_dir.mkdir(parents=True)
-        preview_dir.mkdir(parents=True)
-        extension_video_dir.mkdir(parents=True)
-        extension_preview_dir.mkdir(parents=True)
-        extension_cover_dir.mkdir(parents=True)
-        first = video_dir / "first.mp4"
-        second = video_dir / "second.mp4"
-        first.write_bytes(b"first")
-        second.write_bytes(b"second")
-        (preview_dir / "first.jpg").write_bytes(b"first-preview")
-        (preview_dir / "second.jpg").write_bytes(b"second-preview")
-        frame_name = hashlib.sha256(b"video/second.mp4").hexdigest()[:24]
-        frame_path = result_root / "extension-frame" / f"{frame_name}.png"
-        frame_path.parent.mkdir(parents=True)
-        frame_path.write_bytes(b"frame")
-        (frame_path.parent / f"{frame_name}-batch-1.state.json").write_text("{}", encoding="utf-8")
-        review_root = self.root / "html-motion-reviews"
-        review_id = hashlib.sha256(b"video/second.mp4").hexdigest()[:32]
-        review_dir = review_root / review_id
-        review_dir.mkdir(parents=True)
-        (review_dir / "candidate.mp4").write_bytes(b"candidate")
-        derived_video = extension_video_dir / "derived.mp4"
-        derived_preview = extension_preview_dir / "derived.jpg"
-        derived_cover = extension_cover_dir / "derived.jpg"
-        derived_video.write_bytes(b"derived")
-        derived_preview.write_bytes(b"derived-preview")
-        derived_cover.write_bytes(b"derived-cover")
-        archive_root = self.root / "archive"
-        archive_root.mkdir()
-        manifest_path = archive_root / "derived-manifest.json"
-        manifest_path.write_text("{}", encoding="utf-8")
-        tts_dir = self.root / "tts"
-        tts_dir.mkdir()
-        audio_path = tts_dir / "derived.m4a"
-        audio_path.write_bytes(b"audio")
-        JsonlAssetStore(self.root / "assets.jsonl").rewrite_all([
-            {"archiveKey": "video/first.mp4", "archiveLocalPath": str(first)},
-            {"archiveKey": "video/second.mp4", "archiveLocalPath": str(second)},
-            {
-                "archiveKey": "extensions/video/derived.mp4",
-                "archiveLocalPath": str(derived_video),
-                "userGeneratedPreviewKey": "extensions/preview/derived.jpg",
-                "archiveCoverKey": "extensions/cover/derived.jpg",
-                "archiveManifestPath": str(manifest_path),
-                "archiveMeta": {"localTts": {"audioPath": str(audio_path)}},
-                "firstFrame": {"source": str(frame_path)},
-            },
-        ])
-        captured: list[str] = []
+        source_video_dir = result_root / "source" / "video"
+        source_preview_dir = result_root / "source" / "preview"
+        source_cover_dir = result_root / "source" / "cover"
+        burned_video_dir = result_root / "burned" / "video"
+        burned_preview_dir = result_root / "burned" / "preview"
+        for directory in (
+            source_video_dir,
+            source_preview_dir,
+            source_cover_dir,
+            burned_video_dir,
+            burned_preview_dir,
+        ):
+            directory.mkdir(parents=True, exist_ok=True)
+        source_keys = ["source/video/first.mp4", "source/video/second.mp4"]
+        source_files = [source_video_dir / "first.mp4", source_video_dir / "second.mp4"]
+        burned_files = [burned_video_dir / "first.mp4", burned_video_dir / "second.mp4"]
+        for index, (source, burned) in enumerate(zip(source_files, burned_files), start=1):
+            source.write_bytes(f"source-{index}".encode())
+            burned.write_bytes(f"burned-{index}".encode())
+            (source_preview_dir / f"{source.stem}.jpg").write_bytes(b"source-preview")
+            (source_cover_dir / f"{source.stem}.jpg").write_bytes(b"source-cover")
+            (burned_preview_dir / f"{source.stem}.jpg").write_bytes(b"burned-preview")
+            metadata = ai8video_web.restored_result_metadata_path(result_root, source_keys[index - 1])
+            metadata.parent.mkdir(parents=True, exist_ok=True)
+            metadata.write_text("{}", encoding="utf-8")
+            bgm_base = ai8video_web.hidden_bgm_base_path(result_root, source_keys[index - 1])
+            bgm_base.parent.mkdir(parents=True, exist_ok=True)
+            bgm_base.write_bytes(b"bgm-base")
 
-        def fake_concat(paths, target):
-            captured.extend(path.name for path in paths)
-            target.write_bytes(b"merged")
-            return {"status": "merged", "method": "test"}
+        state = ai8video_web.create_batch_merge_edit_state(
+            result_root,
+            source_keys=source_keys,
+            source_video_chunks=[
+                {"sourceStartSeconds": 0.0, "sourceEndSeconds": 1.0},
+                {"sourceStartSeconds": 1.0, "sourceEndSeconds": 2.0},
+            ],
+            video_chunks=[
+                {"sourceStartSeconds": 0.0, "sourceEndSeconds": 1.0},
+                {"sourceStartSeconds": 1.0, "sourceEndSeconds": 2.0},
+            ],
+            source_durations=[1.0, 1.0],
+            edited_durations=[1.0, 1.0],
+            first_preview_key="source/preview/first.jpg",
+        )
+        cache_root = self.root / "merge-cache"
+        merge_id = ai8video_web.batch_merge_edit_id(state["userGeneratedKey"])
+        cache = cache_root / "merged-edit-state" / f"{merge_id}.mp4"
+        cache.parent.mkdir(parents=True)
+        cache.write_bytes(b"edited-cache")
+        asset_service = Mock()
 
-        with patch.dict(os.environ, {"AI8VIDEO_ARCHIVE_LOCAL_DIR": str(archive_root)}), patch.object(
+        with patch.object(
+            ai8video_web,
+            "ensure_user_generated_result_dir",
+            return_value=result_root,
+        ), patch.object(
+            ai8video_web,
+            "MERGE_TEMP_MEDIA_DIR",
+            cache_root,
+        ), patch.object(
+            ai8video_web,
+            "_find_related_user_generated_asset_identity",
+            return_value={"jobIds": set(), "keys": set()},
+        ), patch.object(
+            ai8video_web,
+            "_asset_maintenance_service",
+            return_value=asset_service,
+        ), patch.object(
+            ai8video_web,
+            "VIDEO_TIMELINE_REVIEW_ROOT",
+            self.root / "video-timeline-reviews",
+        ), patch.object(
+            ai8video_web,
+            "TTS_TIMELINE_REVIEW_ROOT",
+            self.root / "tts-timeline-reviews",
+        ), patch.object(
             ai8video_web,
             "HTML_MOTION_REVIEW_ROOT",
-            review_root,
-        ), patch.object(
-            ai8video_web,
-            "local_tts_output_dir",
-            return_value=tts_dir,
-        ), patch.object(ai8video_web, "ensure_user_generated_result_dir", return_value=result_root), patch.object(
-            ai8video_web,
-            "concat_videos",
-            side_effect=fake_concat,
-        ), patch.object(
-            ai8video_web,
-            "_tts_narration_text_for_user_generated_video",
-            side_effect=lambda key, path: (path.stem, {}),
-        ), patch.object(
-            ai8video_web,
-            "save_video_timeline_review",
-            return_value={"ok": True},
-        ), patch.object(
-            ai8video_web,
-            "merge_html_motion_reviews",
-            return_value={"ok": True, "reviewReady": False},
-        ), patch.object(
-            ai8video_web,
-            "_current_video_timeline_status",
-            return_value={},
-        ), patch.object(
-            ai8video_web,
-            "_current_tts_timeline_status",
-            return_value={},
-        ), patch.object(ai8video_web, "schedule_burned_result_copy") as schedule_copy:
-            body = ai8video_web._batch_merge_user_generated_videos(["video/second.mp4", "video/first.mp4"])
+            self.root / "html-motion-reviews",
+        ):
+            with self.assertRaisesRegex(ValueError, "请删除合并视频"):
+                ai8video_web._delete_user_generated_video(source_keys[0], "editable")
+            result = ai8video_web._delete_user_generated_video(
+                state["userGeneratedKey"],
+                "merged-editable",
+            )
 
-        self.assertEqual(captured, ["second.mp4", "first.mp4"])
-        self.assertFalse(first.exists())
-        self.assertFalse(second.exists())
-        self.assertFalse((preview_dir / "first.jpg").exists())
-        self.assertFalse((preview_dir / "second.jpg").exists())
-        self.assertFalse(frame_path.exists())
-        self.assertFalse(review_dir.exists())
-        self.assertFalse(derived_video.exists())
-        self.assertFalse(derived_preview.exists())
-        self.assertFalse(derived_cover.exists())
-        self.assertFalse(manifest_path.exists())
-        self.assertFalse(audio_path.exists())
-        self.assertEqual(JsonlAssetStore(self.root / "assets.jsonl").read_all(), [])
-        merged = result_root / body["userGeneratedKey"]
-        schedule_copy.assert_called_once_with(
-            merged.resolve(),
-            result_root=result_root.resolve(),
-            overwrite=True,
+        self.assertEqual(result["artifactKind"], "merged-editable")
+        self.assertEqual(result["sourceKeys"], source_keys)
+        self.assertTrue(all(not path.exists() for path in source_files))
+        self.assertTrue(all(not path.exists() for path in burned_files))
+        self.assertFalse(cache.exists())
+        self.assertEqual(
+            ai8video_web._batch_merge_edit_state_for_key(result_root, state["userGeneratedKey"]),
+            {},
         )
-        self.assertEqual(merged.read_bytes(), b"merged")
-        self.assertEqual((result_root / body["previewKey"]).read_bytes(), b"second-preview")
+        for source_key in source_keys:
+            stem = Path(source_key).stem
+            self.assertIn(source_key, result["deleted"])
+            self.assertIn(f"burned/video/{stem}.mp4", result["deleted"])
+            self.assertFalse((source_preview_dir / f"{stem}.jpg").exists())
+            self.assertFalse((source_cover_dir / f"{stem}.jpg").exists())
+            self.assertFalse((burned_preview_dir / f"{stem}.jpg").exists())
+            self.assertFalse(ai8video_web.restored_result_metadata_path(result_root, source_key).exists())
+            self.assertFalse(ai8video_web.hidden_bgm_base_path(result_root, source_key).exists())
+        asset_service.remove_records.assert_called_once()
 
     def test_hidden_bgm_timeline_continues_same_music_and_resets_different_music(self) -> None:
         first_music = self.root / "first.mp3"
@@ -7115,67 +7570,28 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
 
         self.assertEqual(next_scenes[0]["_timelineSourceIndex"], 4)
 
-    def test_batch_merge_uses_clean_html_motion_base_when_available(self) -> None:
-        video_path = self.root / "burned.mp4"
-        clean_base = self.root / "clean.mp4"
-        fallback = self.root / "bgm-base.mp4"
-
-        with patch.object(
-            ai8video_web,
-            "html_motion_review_base_path",
-            return_value=clean_base,
-        ):
-            source = ai8video_web._batch_merge_visual_source(
-                video_path,
-                "video/demo.mp4",
-                fallback,
-            )
-
-        self.assertEqual(source, clean_base)
-
-    def test_batch_merge_falls_back_when_clean_html_motion_base_is_missing(self) -> None:
-        video_path = self.root / "burned.mp4"
-        fallback = self.root / "bgm-base.mp4"
-
-        with patch.object(
-            ai8video_web,
-            "html_motion_review_base_path",
-            side_effect=LookupError("missing"),
-        ):
-            source = ai8video_web._batch_merge_visual_source(
-                video_path,
-                "video/demo.mp4",
-                fallback,
-            )
-
-        self.assertEqual(source, fallback)
-
-    def test_batch_merge_restores_sources_when_install_fails(self) -> None:
+    def test_batch_merge_failure_preserves_sources_and_discards_logical_state(self) -> None:
         result_root = self.root / "用户生成结果"
-        video_dir = result_root / "video"
+        video_dir = result_root / "source" / "video"
         video_dir.mkdir(parents=True)
         first = video_dir / "first.mp4"
         second = video_dir / "second.mp4"
         first.write_bytes(b"first")
         second.write_bytes(b"second")
-        frame_name = hashlib.sha256(b"video/first.mp4").hexdigest()[:24]
-        frame_path = result_root / "extension-frame" / f"{frame_name}.png"
-        frame_path.parent.mkdir(parents=True)
-        frame_path.write_bytes(b"frame")
-        review_root = self.root / "html-motion-reviews"
-        review_id = hashlib.sha256(b"video/first.mp4").hexdigest()[:32]
-        review_dir = review_root / review_id
-        review_dir.mkdir(parents=True)
-        (review_dir / "candidate.mp4").write_bytes(b"candidate")
+        cache_root = self.root / "merge-cache"
 
-        def fake_concat(paths, target):
-            target.write_bytes(b"merged")
+        def fake_concat(_paths, target):
+            target.write_bytes(b"raw-concatenation")
             return {"status": "merged", "method": "test"}
 
-        with patch.object(ai8video_web, "HTML_MOTION_REVIEW_ROOT", review_root), patch.object(
+        with patch.object(
             ai8video_web,
             "ensure_user_generated_result_dir",
             return_value=result_root,
+        ), patch.object(
+            ai8video_web,
+            "MERGE_TEMP_MEDIA_DIR",
+            cache_root,
         ), patch.object(
             ai8video_web,
             "concat_videos",
@@ -7186,25 +7602,31 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             return_value=("", {}),
         ), patch.object(
             ai8video_web,
-            "save_video_timeline_review",
-            return_value={"ok": True},
+            "track_duration",
+            return_value=1.0,
         ), patch.object(
             ai8video_web,
-            "merge_html_motion_reviews",
-            return_value={"ok": True, "reviewReady": False},
+            "_current_video_timeline_status",
+            return_value={"timelineChunks": [], "pending": False},
         ), patch.object(
             ai8video_web,
-            "generate_preview_for_video",
-            return_value={"ok": False},
+            "_current_tts_timeline_status",
+            return_value={"available": False, "timelineChunks": [], "pending": False},
+        ), patch.object(
+            ai8video_web,
+            "render_video_timeline_video",
+            side_effect=RuntimeError("cache render failed"),
         ):
-            with self.assertRaisesRegex(RuntimeError, "预览图生成失败"):
-                ai8video_web._batch_merge_user_generated_videos(["video/first.mp4", "video/second.mp4"])
+            with self.assertRaisesRegex(RuntimeError, "cache render failed"):
+                ai8video_web._batch_merge_user_generated_videos([
+                    "source/video/first.mp4",
+                    "source/video/second.mp4",
+                ])
 
         self.assertEqual(first.read_bytes(), b"first")
         self.assertEqual(second.read_bytes(), b"second")
-        self.assertEqual(frame_path.read_bytes(), b"frame")
-        self.assertEqual((review_dir / "candidate.mp4").read_bytes(), b"candidate")
-        self.assertEqual(list(video_dir.glob("批量合并-*.mp4")), [])
+        self.assertEqual(ai8video_web.list_batch_merge_edit_states(result_root), [])
+        self.assertEqual(list(cache_root.rglob("*.mp4")), [])
 
     def test_saved_tts_narration_overrides_regenerate_text(self) -> None:
         result_root = self.root / "用户生成结果"
@@ -8420,21 +8842,17 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             ai8video_web, "generate_preview_for_video", return_value={"ok": True},
         ), patch.object(
             ai8video_web, "_delete_extension_state_assets", return_value={"ok": True, "deleted": []},
-        ), patch.object(ai8video_web, "schedule_burned_result_copy") as schedule_copy:
+        ):
             body = ai8video_web._replace_user_generated_video(
                 "video/original.mp4",
                 "extensions/video/selected.mp4",
             )
 
         base = ai8video_web.hidden_bgm_base_path(result_root, "video/original.mp4")
-        schedule_copy.assert_called_once_with(
-            left.resolve(),
-            result_root=result_root,
-            overwrite=True,
-        )
         self.assertTrue(body["ok"])
         self.assertEqual(left.read_bytes(), b"selected-variant")
         self.assertEqual(base.read_bytes(), b"selected-variant")
+        self.assertFalse((result_root / "burned").exists())
 
     def test_replace_video_reapplies_current_tts_timeline_to_selected_visual(self) -> None:
         result_root = self.root / "用户生成结果"
@@ -8471,20 +8889,16 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
             ai8video_web, "generate_preview_for_video", return_value={"ok": True},
         ), patch.object(
             ai8video_web, "_delete_extension_state_assets", return_value={"ok": True, "deleted": []},
-        ), patch.object(ai8video_web, "schedule_burned_result_copy") as schedule_copy:
+        ):
             ai8video_web._replace_user_generated_video(
                 "video/original.mp4",
                 "extensions/video/selected.mp4",
             )
 
         base = ai8video_web.hidden_bgm_base_path(result_root, "video/original.mp4")
-        schedule_copy.assert_called_once_with(
-            left.resolve(),
-            result_root=result_root,
-            overwrite=True,
-        )
         self.assertEqual(left.read_bytes(), b"selected-visual-with-current-tts")
         self.assertEqual(base.read_bytes(), b"selected-visual-with-current-tts")
+        self.assertFalse((result_root / "burned").exists())
 
     def test_regenerate_html_motion_uses_retained_video_prompt(self) -> None:
         result_root = self.root / "用户生成结果"
@@ -8978,8 +9392,10 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("时间轴仍在被其他操作更新，请稍后再试", html)
         self.assertIn("function fetchChatStatusWithBatchFallback(sessionId, session, options = {})", html)
         self.assertIn("function restoreSucceededProgressFromUserResults()", html)
-        self.assertIn("data?.phase === 'unknown_generation_batch'", html)
-        self.assertIn("omitGenerationBatchId: true", html)
+        self.assertNotIn("if (!preferLatestBatch && !res.ok && data?.phase === 'unknown_generation_batch')", html)
+        self.assertIn("const res = await fetch(buildChatStatusUrl(sessionId, session, {", html)
+        self.assertIn("omitGenerationBatchId: preferLatestBatch", html)
+        self.assertIn("原生成批次已失效，未切换到其他批次", html)
         self.assertIn("尾帧已准备完成，点击继续后才会提交下一条视频。", html)
         self.assertIn("status: 'deleted'", html)
         self.assertIn("deletedCount: items.filter((item) => item?.status === 'deleted').length", html)
