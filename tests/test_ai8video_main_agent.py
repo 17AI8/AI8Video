@@ -182,16 +182,63 @@ class AI8VideoMainAgentTest(unittest.TestCase):
         self.assertEqual(pi.calls, 6)
         self.assertEqual(completed["reply"]["text"], "2 条视频已完成并归档。")
 
-    def test_policy_blocks_generation_above_user_count(self) -> None:
+    def test_policy_blocks_generation_that_does_not_match_reviewed_plan(self) -> None:
         guard = ActionPolicyGuard()
-        with self.assertRaisesRegex(Exception, "超过用户明确要求"):
+        with self.assertRaisesRegex(Exception, "服从已审核方案"):
             guard.authorize(
                 "generate_video_batch",
                 {"count": 3},
-                AgentPolicyContext(requested_video_count=2),
+                AgentPolicyContext(planned_video_count=2),
             )
 
-    def test_two_identical_high_level_observations_stop_the_agent_loop(self) -> None:
+    def test_empty_agent_decision_fails_as_a_protocol_error(self) -> None:
+        pi = _FakePiClient([""])
+        controller = AI8VideoMainAgent(
+            self.store,
+            self.journal,
+            pi_client=pi,
+            composite_tools=_FakeCompositeTools(),
+        )
+
+        with patch(
+            "ai8video.application.agent_controller.bound_llm_config",
+            return_value={"baseUrl": "https://example.invalid/v1", "apiKey": "secret", "model": "test"},
+        ):
+            response = controller.handle_message(
+                conversation=self.conversation,
+                run_id=self.run_id,
+                message="这里是一份完整剧本",
+            )
+
+        self.assertEqual(response["status"], "failed")
+        self.assertEqual(response["error"]["code"], "agent_empty_decision")
+        self.assertIn("未返回工具调用或有效回复", response["reply"]["text"])
+        self.assertEqual(self.journal.get_run(self.run_id)["state"], "failed")
+        context = get_run_context(self.path, self.run_id)
+        self.assertNotIn("pendingUserQuestion", context)
+        self.assertNotIn("finalText", context)
+
+    def test_user_message_is_not_parsed_by_standard_mode_rules(self) -> None:
+        controller = AI8VideoMainAgent(
+            self.store,
+            self.journal,
+            pi_client=_FakePiClient([]),
+            composite_tools=_FakeCompositeTools(),
+        )
+
+        controller._apply_user_message(
+            self.run_id,
+            get_run_context(self.path, self.run_id),
+            "生成 99 条视频",
+            planning_input="生成 99 条视频\n\n共享知识内容",
+        )
+
+        context = get_run_context(self.path, self.run_id)
+        self.assertNotIn("requestedVideoCount", context)
+        self.assertEqual(context["latestUserMessage"], "生成 99 条视频")
+        self.assertIn("共享知识内容", context["planningInput"])
+
+    def test_two_identical_high_level_observations_fail_instead_of_scripted_followup(self) -> None:
         self.journal.start_decision(self.run_id)
         action = self.journal.request_action(
             self.run_id,
@@ -222,7 +269,8 @@ class AI8VideoMainAgentTest(unittest.TestCase):
 
         response = controller.resume(self.run_id)
 
-        self.assertEqual(response["status"], "waiting_user")
+        self.assertEqual(response["status"], "failed")
+        self.assertEqual(response["error"]["code"], "agent_no_progress")
         self.assertEqual(pi.calls, 0)
         self.assertEqual(self.journal.get_run(self.run_id)["noProgressCount"], 1)
 

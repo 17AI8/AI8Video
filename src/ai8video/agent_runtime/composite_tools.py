@@ -13,6 +13,12 @@ from ai8video.application.agent_context import (
 from ai8video.application.agent_journal import AgentJournal
 from ai8video.application.conversation_store import ConversationStoreError
 from ai8video.agent_runtime.bound_runtime import build_bound_pipeline
+from ai8video.assets.default_reference_image import (
+    default_reference_image_custom_prompt,
+    default_reference_image_path,
+    enabled_default_reference_image_options,
+)
+from ai8video.assets.user_materials import expand_material_mentions
 from ai8video.agent_runtime.generation_observations import (
     aggregate_generation_observations,
     build_failed_generation_observation,
@@ -21,7 +27,7 @@ from ai8video.agent_runtime.generation_observations import (
     terminal_generation_observations,
 )
 from ai8video.core.models import ParsedRequest, VideoPrompt
-from ai8video.application.message_parser import parse_employee_message
+from ai8video.generation.business_prompt import read_business_prompt
 from ai8video.generation.generation_batch_context import (
     reset_current_generation_batch_id,
     reset_current_generation_session_id,
@@ -30,6 +36,9 @@ from ai8video.generation.generation_batch_context import (
 )
 from ai8video.generation.generation_mode import (
     default_concurrent_generation_enabled,
+    default_manual_video_count,
+    default_smart_split_confirmation_enabled,
+    default_smart_split_enabled,
     default_tail_frame_chaining_enabled,
     default_tail_frame_chaining_mode,
 )
@@ -41,6 +50,15 @@ from ai8video.generation.generation_progress import (
     register_generation_child_batch,
 )
 from ai8video.generation.output_review import review_final_outputs
+from ai8video.knowledge.default_script_reference import (
+    apply_default_script_reference,
+    apply_retrieved_temporary_script_knowledge,
+    load_default_script_reference,
+    split_temporary_script_knowledge,
+)
+from ai8video.media.background_music import background_music_track_status
+from ai8video.media.motion.html_motion_overlay import default_html_motion_overlay_enabled
+from ai8video.media.video_text_overlay import video_text_overlay_status
 
 
 TerminalCallback = Callable[[str], None]
@@ -114,29 +132,91 @@ class AgentCompositeTools:
         goal = str(arguments.get("goal") or "").strip()
         if not goal:
             raise ConversationStoreError("agent_goal_required", "准备视频方案需要明确目标。", status=400)
-        request = parse_employee_message(goal)
-        requested_count = self._optional_count(arguments.get("videoCount"))
-        if requested_count is not None:
-            request.video_count = requested_count
-            request.mode = "batch_videos" if requested_count > 1 else "single_video"
-        elif request.video_count is None:
-            request.video_count = 1
-            request.mode = "single_video"
-        request.concurrent_generation = default_concurrent_generation_enabled()
-        request.tail_frame_chaining = default_tail_frame_chaining_enabled()
-        request.tail_frame_chaining_mode = default_tail_frame_chaining_mode()
         pipeline = self.pipeline_factory(conversation.get("modelBinding") or {})
+        run_context = get_run_context(self.journal.path, run_id)
+        planning_input = str(run_context.get("planningInput") or goal).strip()
+        control_text, temporary_knowledge = split_temporary_script_knowledge(planning_input)
+        planning_text = self._merge_agent_goal(control_text, goal)
+        constraints = [
+            str(item).strip()
+            for item in arguments.get("constraints") or []
+            if str(item).strip()
+        ]
+        if constraints:
+            planning_text += "\n\nAgent 识别的任务补充约束：\n- " + "\n- ".join(constraints[:20])
+        planning_text, material_context = expand_material_mentions(planning_text)
+        planning_text, material_context = apply_default_script_reference(
+            planning_text,
+            material_context,
+            prefer_full=False,
+            rerank_llm=getattr(pipeline, "script_rerank_llm", None),
+            query_llm=getattr(pipeline, "script_query_llm", None),
+        )
+        if temporary_knowledge:
+            planning_text = apply_retrieved_temporary_script_knowledge(
+                planning_text,
+                temporary_knowledge,
+                query_text=control_text,
+                query_llm=getattr(pipeline, "script_query_llm", None),
+                rerank_llm=getattr(pipeline, "script_rerank_llm", None),
+            )
+
+        smart_split = default_smart_split_enabled()
+        agent_video_count = self._optional_count(arguments.get("videoCount"))
+        video_count = agent_video_count if smart_split else default_manual_video_count()
+        tail_frame_chaining = default_tail_frame_chaining_enabled() if smart_split else False
+        concurrent_generation = default_concurrent_generation_enabled() and not tail_frame_chaining
+        reference_image = self._selected_reference_image(material_context)
+        request = ParsedRequest(
+            raw_text=planning_text,
+            mode="batch_videos" if smart_split or int(video_count or 1) > 1 else "single_video",
+            video_count=video_count,
+            reference_image=reference_image,
+            reference_image_custom_prompt=(
+                default_reference_image_custom_prompt() if reference_image else None
+            ),
+            style_hint=self._optional_text(arguments.get("styleHint")),
+            core_keywords=self._optional_text(arguments.get("coreKeywords")),
+            duration_seconds=self._optional_positive_int(
+                arguments.get("durationSeconds"),
+                field_name="durationSeconds",
+                default=10,
+            ),
+            ratio=self._optional_text(arguments.get("ratio")) or "9:16",
+            resolution=self._optional_text(arguments.get("resolution")) or "480p",
+            preset=self._optional_text(arguments.get("preset")) or "custom",
+            concurrent_generation=concurrent_generation,
+            tail_frame_chaining=tail_frame_chaining,
+            tail_frame_chaining_mode=default_tail_frame_chaining_mode(),
+            html_motion_overlay_enabled=default_html_motion_overlay_enabled(),
+            reference_image_transform_options=(
+                enabled_default_reference_image_options() if reference_image else None
+            ),
+        )
         videos = pipeline.plan_request(
             request,
             progress_session_id=conversation["id"],
-            smart_split=bool(request.video_count and request.video_count > 1),
-            smart_split_count_locked=request.video_count is not None,
+            smart_split=smart_split,
+            smart_split_count_locked=smart_split and agent_video_count is not None,
+        )
+        shared_settings = self._shared_settings_snapshot(
+            request,
+            smart_split=smart_split,
+            manual_video_count=default_manual_video_count(),
         )
         payload = {
             "status": "completed",
             "request": asdict(request),
             "videos": [asdict(video) for video in videos],
             "videoCount": len(videos),
+            "sharedSettings": shared_settings,
+            "requiresUserConfirmation": (
+                smart_split and default_smart_split_confirmation_enabled()
+            ),
+            "materials": {
+                "imageCount": len(material_context.get("images") or []),
+                "scriptCount": len(material_context.get("scripts") or []),
+            },
             "summary": f"已准备 {len(videos)} 条视频方案。",
         }
         update_run_context(
@@ -144,8 +224,10 @@ class AgentCompositeTools:
             run_id,
             {
                 "objective": goal,
-                "requestedVideoCount": int(request.video_count or len(videos) or 1),
+                "plannedVideoCount": len(videos),
                 "planStatus": "prepared",
+                "sharedToolbarSettings": shared_settings,
+                "planRequiresUserConfirmation": payload["requiresUserConfirmation"],
             },
         )
         return payload
@@ -481,6 +563,75 @@ class AgentCompositeTools:
         if count < 1:
             raise ConversationStoreError("agent_video_count_invalid", "视频数量必须是正整数。")
         return count
+
+    @staticmethod
+    def _optional_positive_int(value: Any, *, field_name: str, default: int) -> int:
+        if value is None or str(value).strip() == "":
+            return default
+        try:
+            number = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ConversationStoreError(
+                "agent_action_input_invalid",
+                f"{field_name} 必须是正整数。",
+                status=400,
+            ) from exc
+        if number < 1:
+            raise ConversationStoreError(
+                "agent_action_input_invalid",
+                f"{field_name} 必须是正整数。",
+                status=400,
+            )
+        return number
+
+    @staticmethod
+    def _optional_text(value: Any) -> str | None:
+        text = str(value or "").strip()
+        return text or None
+
+    @staticmethod
+    def _merge_agent_goal(control_text: str, goal: str) -> str:
+        source = str(control_text or "").strip()
+        objective = str(goal or "").strip()
+        if not source:
+            return objective
+        if not objective or objective == source or objective in source:
+            return source
+        if source in objective:
+            return objective
+        return f"{source}\n\nAgent 对本轮任务的理解：\n{objective}"
+
+    @staticmethod
+    def _selected_reference_image(
+        material_context: dict[str, Any],
+    ) -> str | None:
+        images = material_context.get("images") if isinstance(material_context, dict) else []
+        if isinstance(images, list):
+            for item in images:
+                if isinstance(item, dict) and str(item.get("path") or "").strip():
+                    return str(item["path"]).strip()
+        return default_reference_image_path()
+
+    @staticmethod
+    def _shared_settings_snapshot(
+        request: ParsedRequest,
+        *,
+        smart_split: bool,
+        manual_video_count: int,
+    ) -> dict[str, Any]:
+        return {
+            "systemPromptEnabled": bool(read_business_prompt().strip()),
+            "backgroundMusicEnabled": bool(background_music_track_status().get("enabled")),
+            "referenceImageEnabled": bool(request.reference_image),
+            "knowledgeReferenceEnabled": bool(load_default_script_reference()),
+            "flowerTextEnabled": bool(video_text_overlay_status().get("enabled")),
+            "concurrentGeneration": bool(request.concurrent_generation),
+            "splitMode": "smart" if smart_split else "manual",
+            "manualVideoCount": int(manual_video_count),
+            "tailFrameChaining": bool(request.tail_frame_chaining),
+            "tailFrameChainingMode": request.tail_frame_chaining_mode,
+            "htmlMotionOverlayEnabled": bool(request.html_motion_overlay_enabled),
+        }
 
     @staticmethod
     def _result_summary(payload: dict[str, Any]) -> str:

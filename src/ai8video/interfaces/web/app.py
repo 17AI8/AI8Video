@@ -7496,7 +7496,15 @@ def api_chat():
         }
     conversation = locked_conversation["conversation"]
     clear_generation_progress(session_id)
-    if conversation.get("executionMode") == "agent" and agent_mode_enabled():
+    if conversation.get("executionMode") == "agent":
+        if not agent_mode_enabled():
+            response.status = 503
+            return {
+                "ok": False,
+                "code": "AGENT_MODE_DISABLED",
+                "error": "Agent 模式当前已关闭，不能回退到标准模式。",
+                "chatBackend": "ai8video-main-agent",
+            }
         run = locked_conversation.get("agentRun") or {}
         run_id = str(run.get("id") or "")
         if not run_id:
@@ -7514,6 +7522,7 @@ def api_chat():
                 conversation=conversation,
                 run_id=run_id,
                 message=conversation_message,
+                planning_input=message,
             )
             return append_assistant_message(session_id, body)
         except Exception as exc:

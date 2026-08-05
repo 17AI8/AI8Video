@@ -25,10 +25,20 @@ function agentTools(requestId) {
     {
       name: "prepare_video_plan",
       label: "准备视频方案",
-      description: "把用户目标转换成结构化视频方案。只负责规划，不生成视频。",
+      description: "自主理解用户目标并准备结构化视频方案。工具栏中的共享设置由服务端注入，不要自行覆盖。只负责规划，不生成视频。",
       parameters: Type.Object({
-        goal: Type.String({ description: "本轮用户目标" }),
-        videoCount: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 })),
+        goal: Type.String({ description: "结合完整对话理解出的本轮任务目标，不要求用户使用固定口令" }),
+        videoCount: Type.Optional(Type.Integer({
+          minimum: 1,
+          maximum: 50,
+          description: "仅在智能分集模式且用户语义明确限定数量时填写；手动批量数量由工具栏设置决定",
+        })),
+        styleHint: Type.Optional(Type.String()),
+        coreKeywords: Type.Optional(Type.String()),
+        durationSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 60 })),
+        ratio: Type.Optional(Type.String()),
+        resolution: Type.Optional(Type.String()),
+        preset: Type.Optional(Type.String()),
         constraints: Type.Optional(Type.Array(Type.String())),
       }),
     },

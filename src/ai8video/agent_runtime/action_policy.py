@@ -10,7 +10,7 @@ from ai8video.application.conversation_store import ConversationStoreError
 
 @dataclass(frozen=True)
 class AgentPolicyContext:
-    requested_video_count: int
+    planned_video_count: int | None = None
     generated_video_count: int = 0
     paid_retry_count: int = 0
     approved_operations: frozenset[str] = field(default_factory=frozenset)
@@ -55,15 +55,21 @@ class ActionPolicyGuard:
         cost_units = 0.0
         if name == "generate_video_batch":
             count = self._positive_int(clean.get("count"), field_name="count")
-            allowed_count = max(1, int(context.requested_video_count or 1))
-            if count > allowed_count:
+            planned_count = int(context.planned_video_count or 0)
+            if planned_count < 1:
                 raise ConversationStoreError(
-                    "agent_generation_count_exceeded",
-                    "Agent 不能生成超过用户明确要求的数量。",
-                    details={"requested": allowed_count, "attempted": count},
+                    "agent_generation_plan_required",
+                    "Agent 必须先依据已准备并审核的视频方案确定生成数量。",
+                )
+            retry_failed = bool(clean.get("retryFailedOnly"))
+            count_mismatch = count > planned_count or (not retry_failed and count != planned_count)
+            if count_mismatch:
+                raise ConversationStoreError(
+                    "agent_generation_count_mismatch",
+                    "Agent 生成数量必须服从已审核方案。",
+                    details={"planned": planned_count, "attempted": count},
                 )
             clean["count"] = count
-            retry_failed = bool(clean.get("retryFailedOnly"))
             requires_approval = retry_failed and "paid_retry" not in context.approved_operations
             cost_units = float(count)
         elif name == "archive_and_deliver":
