@@ -9705,6 +9705,17 @@ class AI8VideoShortVideoWebTest(unittest.TestCase):
         self.assertIn("pruneSettledPendingProgressFromSessions();\n      persistSessions();", html)
         self.assertIn("return false;", html)
 
+    def test_static_conversation_inventory_keeps_server_idle_state_authoritative(self) -> None:
+        html = read_static_source()
+
+        self.assertIn("const inventory = await conversationRequest('/api/conversations');", html)
+        self.assertIn("async function reconcileMissingLegacyConversations(legacySessions, inventory)", html)
+        self.assertIn("serverLifecycleAuthoritative: true,", html)
+        self.assertIn(
+            "session.serverLifecycleAuthoritative && session.lifecycleState === 'idle' && session.canDelete === true",
+            html,
+        )
+
     def test_static_force_cancel_without_index_targets_latest_pending_message(self) -> None:
         html = read_static_source()
 

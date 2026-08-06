@@ -265,17 +265,23 @@ def extract_script_keywords_with_ai(
 
 def build_global_video_outline_prompt(
     script: str,
-    video_count: int,
+    video_count: int | None,
     style_hint: str | None,
     core_keywords: str | None,
     task_constraints: str | None,
 ) -> str:
+    count_instruction = (
+        f"请先为 {video_count} 条短视频建立唯一的系列大纲和连续性设定，再划分逐集 brief。"
+        if video_count is not None
+        else f"请先判断这份素材最适合拆成多少条短视频（1 到 {SMART_SPLIT_MAX_VIDEOS} 条），"
+        "再建立唯一的系列大纲和连续性设定，并划分逐集 brief。episodes 数组长度就是最终分集数量。"
+    )
     return apply_agent_skills("planner", f"""你是AI8video 的标准模式智能分集总规划器。
 
 {business_prompt_block()}
 {format_task_constraint_block(task_constraints)}
 
-请先为 {video_count} 条短视频建立唯一的系列大纲和连续性设定，再划分逐集 brief。此阶段不要写详细分镜或完整台词。
+{count_instruction}此阶段不要写详细分镜或完整台词。
 连续性表示人物身份、衣着、场景体系、时间背景、视觉风格和事实统一；每条视频仍须有独立开场、主体和收束，可单独发布。
 设定必须来自本轮素材和用户要求，不得补入无依据的品牌、身份、衣着或场景。没有明确要求时使用空字符串，不要擅自具体化。
 逐集 brief 必须覆盖不同素材范围，并记录与前后集的主题承接，但不能让单集依赖其他集才能看懂。
@@ -302,11 +308,16 @@ def build_global_video_outline_prompt(
 """)
 
 
-def _parse_global_video_outline(raw: str, video_count: int) -> GlobalVideoOutline:
+def _parse_global_video_outline(raw: str, video_count: int | None) -> GlobalVideoOutline:
     data = parse_json_object(raw)
     episode_items = data.get("episodes")
-    if not isinstance(episode_items, list) or len(episode_items) != video_count:
-        raise ValueError(f"全局大纲包含 {len(episode_items or [])} 集，预期 {video_count} 集")
+    if not isinstance(episode_items, list):
+        raise ValueError("全局大纲 episodes 必须是数组")
+    episode_count = len(episode_items)
+    if video_count is not None and episode_count != video_count:
+        raise ValueError(f"全局大纲包含 {episode_count} 集，预期 {video_count} 集")
+    if video_count is None and not 1 <= episode_count <= SMART_SPLIT_MAX_VIDEOS:
+        raise ValueError(f"全局大纲集数必须在 1 到 {SMART_SPLIT_MAX_VIDEOS} 之间")
     episodes = tuple(
         EpisodePlanningBrief(
             index=int(item.get("index") or position),
@@ -322,7 +333,7 @@ def _parse_global_video_outline(raw: str, video_count: int) -> GlobalVideoOutlin
         for position, item in enumerate(episode_items, 1)
         if isinstance(item, dict)
     )
-    expected_indexes = list(range(1, video_count + 1))
+    expected_indexes = list(range(1, episode_count + 1))
     if sorted(episode.index for episode in episodes) != expected_indexes:
         raise ValueError("全局大纲的分集 index 不完整或重复")
     return GlobalVideoOutline(
@@ -579,7 +590,7 @@ def _plan_episode_detail(
 
 def plan_standard_smart_split_prompts_with_ai(
     script: str,
-    video_count: int,
+    video_count: int | None,
     style_hint: str | None = None,
     core_keywords: str | None = None,
     task_constraints: str | None = None,
@@ -589,13 +600,13 @@ def plan_standard_smart_split_prompts_with_ai(
     trace_session_id: str | None = None,
     tail_frame_chaining: bool = False,
 ) -> list[VideoPrompt]:
-    if video_count < 1:
+    if video_count is not None and video_count < 1:
         raise ValueError("video_count must be >= 1")
     if llm is None:
         if allow_mock:
-            return mock_plan_video_prompts(script, video_count, style_hint, core_keywords)
+            return mock_plan_video_prompts(script, video_count or 1, style_hint, core_keywords)
         raise RuntimeError("An LLM callable is required for intelligent script splitting")
-    model_script = prepare_script_for_model(script, video_count)
+    model_script = prepare_script_for_model(script, video_count or SMART_SPLIT_MAX_VIDEOS)
     outline_prompt = build_global_video_outline_prompt(
         model_script, video_count, style_hint, core_keywords, task_constraints
     )
@@ -609,8 +620,9 @@ def plan_standard_smart_split_prompts_with_ai(
         append_prompt_trace("global_outline_model_error", session_id=trace_session_id, payload={"errorType": exc.__class__.__name__, "error": str(exc), "raw": outline_raw})
         raise RuntimeError("全局分集大纲格式异常，请重新规划。") from exc
 
+    planned_video_count = len(outline.episodes)
     configured_concurrency = int(os.getenv("AI8VIDEO_EPISODE_PLANNING_CONCURRENCY", str(DEFAULT_EPISODE_PLANNING_CONCURRENCY)))
-    worker_count = max(1, min(video_count, configured_concurrency))
+    worker_count = max(1, min(planned_video_count, configured_concurrency))
     fanout_started_at = time.monotonic()
     videos_by_index: dict[int, VideoPrompt] = {}
     with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="episode-planner") as executor:
@@ -632,11 +644,11 @@ def plan_standard_smart_split_prompts_with_ai(
         for future in as_completed(future_to_episode):
             episode = future_to_episode[future]
             videos_by_index[episode.index] = future.result()
-    expected_indexes = list(range(1, video_count + 1))
+    expected_indexes = list(range(1, planned_video_count + 1))
     if sorted(videos_by_index) != expected_indexes:
         raise RuntimeError("并发规划结果不完整，请重新规划。")
     videos = [videos_by_index[index] for index in expected_indexes]
-    append_prompt_trace("planning_fanout_completed", session_id=trace_session_id, payload={"videoCount": video_count, "workerCount": worker_count, "elapsedMilliseconds": round((time.monotonic() - fanout_started_at) * 1000)})
+    append_prompt_trace("planning_fanout_completed", session_id=trace_session_id, payload={"videoCount": planned_video_count, "workerCount": worker_count, "elapsedMilliseconds": round((time.monotonic() - fanout_started_at) * 1000)})
     return videos
 
 

@@ -68,17 +68,21 @@ def _execute_planning(
     request = data.request
     video_count = request.video_count
     if data.smart_split:
-        if not data.smart_split_count_locked:
+        model_decides_count = not data.smart_split_count_locked and data.use_parallel_episode_planning
+        if model_decides_count:
+            # 标准智能分集的未锁定数量可能来自文本规则或旧状态；不能把它带入全局大纲提示词。
+            video_count = None
+        if not data.smart_split_count_locked and not model_decides_count:
             video_count, request.smart_split_reason = infer_count(
                 request.raw_text,
                 llm=data.llm,
                 duration_seconds=data.target_duration,
                 trace_session_id=data.trace_session_id,
             )
-        if not video_count:
+        if not video_count and not model_decides_count:
             raise ValueError("video_count is required for video planning")
         selected_smart_plan = parallel_smart_plan if data.use_parallel_episode_planning else smart_plan
-        return selected_smart_plan(
+        videos = selected_smart_plan(
             request.raw_text,
             video_count,
             request.style_hint,
@@ -90,6 +94,10 @@ def _execute_planning(
             trace_session_id=data.trace_session_id,
             tail_frame_chaining=bool(request.tail_frame_chaining),
         )
+        if model_decides_count:
+            request.video_count = len(videos)
+            request.smart_split_reason = f"全局分集大纲模型规划为 {len(videos)} 条视频。"
+        return videos
     if request.mode == "batch_videos":
         if not video_count:
             raise ValueError("video_count is required for manual batch generation")

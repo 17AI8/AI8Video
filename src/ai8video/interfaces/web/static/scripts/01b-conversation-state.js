@@ -65,7 +65,11 @@
       const activeId = String(state.activeId || '');
       state.sessions = (Array.isArray(items) ? items : [])
         .filter((item) => item && typeof item === 'object' && String(item.id || '').trim())
-        .map((item) => localConversationFromMetadata(item, previousById.get(String(item.id))));
+        .map((item) => ({
+          ...localConversationFromMetadata(item, previousById.get(String(item.id))),
+          // The inventory is newer than any local pending snapshot retained for offline recovery.
+          serverLifecycleAuthoritative: true,
+        }));
       state.activeId = state.sessions.some((item) => item.id === activeId)
         ? activeId
         : (state.sessions[0]?.id || null);
@@ -84,20 +88,32 @@
       };
     }
 
+    async function reconcileMissingLegacyConversations(legacySessions, inventory) {
+      const serverItems = Array.isArray(inventory?.items)
+        ? inventory.items
+        : (Array.isArray(inventory?.conversations) ? inventory.conversations : []);
+      const serverIds = new Set(serverItems.map((item) => String(item?.id || '').trim()).filter(Boolean));
+      const missing = legacySessions
+        .filter((session) => !serverIds.has(String(session?.id || '').trim()))
+        .map(legacyConversationPayload)
+        .filter((session) => session.id);
+      if (!missing.length) return inventory;
+      return conversationRequest('/api/conversations/reconcile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversations: missing }),
+      });
+    }
+
     async function initializeConversations() {
       const legacySessions = Array.isArray(state.sessions) ? [...state.sessions] : [];
       state.conversationSyncing = true;
       state.conversationError = '';
       try {
-        let data;
+        const inventory = await conversationRequest('/api/conversations');
+        let data = inventory;
         if (legacySessions.length) {
-          data = await conversationRequest('/api/conversations/reconcile', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ conversations: legacySessions.map(legacyConversationPayload) }),
-          });
-        } else {
-          data = await conversationRequest('/api/conversations');
+          data = await reconcileMissingLegacyConversations(legacySessions, inventory);
         }
         applyConversationCapacity(data);
         mergeConversationInventory(data.items || data.conversations || [], legacySessions);

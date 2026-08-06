@@ -213,6 +213,50 @@ class CapabilityRegistryTest(unittest.TestCase):
         self.assertEqual(calls, {"legacy": 1, "parallel": 1})
         self.assertTrue(parallel_kwargs["tail_frame_chaining"])
 
+    def test_unlocked_parallel_smart_split_lets_global_outline_decide_count(self) -> None:
+        request = ParsedRequest(raw_text="智能分集素材", mode="batch_videos", video_count=1)
+        received_counts: list[int | None] = []
+
+        def infer_count(*_args, **_kwargs):
+            raise AssertionError("未锁定的标准智能分集不应预先推断集数")
+
+        def parallel_plan(_script, video_count, *_args, **_kwargs):
+            received_counts.append(video_count)
+            return [
+                VideoPrompt(index=1, title="主题 1", prompt="方案 1"),
+                VideoPrompt(index=2, title="主题 2", prompt="方案 2"),
+            ]
+
+        capability = build_planning_capability(
+            infer_count=infer_count,
+            smart_plan=lambda *_args, **_kwargs: [],
+            parallel_smart_plan=parallel_plan,
+            repeat_plan=lambda *_args, **_kwargs: [],
+            single_plan=lambda *_args, **_kwargs: [],
+        )
+        registry = CapabilityRegistry()
+        registry.register(capability)
+
+        result = registry.execute(
+            PLANNING_CAPABILITY_NAME,
+            AgentRunContext(),
+            PlanningCapabilityInput(
+                request=request,
+                target_duration=10,
+                task_constraints="",
+                smart_split=True,
+                use_parallel_episode_planning=True,
+                allow_mock=True,
+                llm=None,
+                trace_session_id=None,
+            ),
+        )
+
+        self.assertEqual(len(result.value), 2)
+        self.assertEqual(received_counts, [None])
+        self.assertEqual(request.video_count, 2)
+        self.assertEqual(request.smart_split_reason, "全局分集大纲模型规划为 2 条视频。")
+
 
 if __name__ == "__main__":
     unittest.main()

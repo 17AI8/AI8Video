@@ -289,6 +289,25 @@ class AI8VideoVideoPromptPlannerTest(unittest.TestCase):
         self.assertTrue(all("- 表情/情绪/身体状态：" in video.prompt for video in videos))
         self.assertTrue(all("- 音效建议：" in video.prompt for video in videos))
 
+    def test_standard_smart_split_uses_global_outline_episode_count_when_unlocked(self) -> None:
+        model_prompts: list[str] = []
+
+        def fake_llm(prompt: str) -> str:
+            model_prompts.append(prompt)
+            if "标准模式智能分集总规划器" in prompt:
+                return self._parallel_outline_json(2)
+            if "只展开第 1 集" in prompt:
+                return self._episode_json(1)
+            if "只展开第 2 集" in prompt:
+                return self._episode_json(2)
+            raise AssertionError(f"unexpected prompt: {prompt[:80]}")
+
+        videos = plan_standard_smart_split_prompts_with_ai("系列素材", None, llm=fake_llm)
+
+        outline_prompt = next(prompt for prompt in model_prompts if "标准模式智能分集总规划器" in prompt)
+        self.assertIn("episodes 数组长度就是最终分集数量", outline_prompt)
+        self.assertEqual([video.index for video in videos], [1, 2])
+
     def test_standard_smart_split_routes_tail_frame_mode_to_reference_frame_schema(self) -> None:
         model_prompts: list[str] = []
 

@@ -11,6 +11,9 @@
 
     function conversationLifecycleLabel(session) {
       if (!session) return '不可用';
+      if (session.serverLifecycleAuthoritative && session.lifecycleState === 'idle' && session.canDelete === true) {
+        return Number(session.messageCount || 0) > 0 ? '空闲' : '空对话';
+      }
       const runState = String(session.agentRun?.state || session.agentRunState || '');
       if (runState === 'deciding') return '正在决策';
       if (runState === 'queued') return '等待执行';
@@ -35,6 +38,9 @@
     }
 
     function conversationIsBusy(session) {
+      if (session?.serverLifecycleAuthoritative && session.lifecycleState === 'idle' && session.canDelete === true) {
+        return false;
+      }
       const runState = String(session?.agentRun?.state || session?.agentRunState || '');
       return session?.lifecycleState === 'busy' || AGENT_BUSY_STATES.has(runState) || isSessionPending(session);
     }
